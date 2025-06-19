@@ -3,12 +3,13 @@ pub mod compaction;
 pub mod delta_compression;
 pub mod memtable;
 pub mod sstable;
+pub mod parallel_compaction;
+mod iterator;
 
 use crate::compression::CompressionType;
 use crate::error::{Error, Result};
 use lru::LruCache;
 use parking_lot::RwLock;
-use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -20,6 +21,8 @@ pub use delta_compression::{
 };
 pub use memtable::MemTable;
 pub use sstable::{SSTable, SSTableBuilder, SSTableReader};
+pub use iterator::{LSMFullIterator, LSMMemTableIterator};
+pub use parallel_compaction::{ParallelCompactionCoordinator, CompactionScheduler, CompactionStats, ParallelCompactionStats, CompactionState};
 
 #[derive(Debug, Clone)]
 pub struct LSMConfig {
@@ -61,6 +64,8 @@ pub struct LSMTree {
     cache_hits: Arc<AtomicUsize>,
     cache_misses: Arc<AtomicUsize>,
     delta_compressor: Arc<RwLock<DeltaCompressor>>,
+    parallel_compaction: Option<Arc<ParallelCompactionCoordinator>>,
+    compaction_scheduler: Option<Arc<CompactionScheduler>>,
 }
 
 pub struct Level {
@@ -79,6 +84,14 @@ impl Level {
             max_size_bytes,
         }
     }
+    
+    pub fn total_size(&self) -> u64 {
+        self.size_bytes as u64
+    }
+    
+    pub fn tables(&self) -> &[Arc<SSTable>] {
+        &self.sstables
+    }
 
     fn add_sstable(&mut self, sstable: Arc<SSTable>) {
         self.size_bytes += sstable.size_bytes();
@@ -87,15 +100,7 @@ impl Level {
         self.sstables.sort_by(|a, b| a.min_key().cmp(b.min_key()));
     }
 
-    fn remove_sstables(&mut self, ids: &[u64]) {
-        self.sstables.retain(|sst| !ids.contains(&sst.id()));
-        self.size_bytes = self.sstables.iter().map(|sst| sst.size_bytes()).sum();
-    }
 
-    #[allow(dead_code)]
-    fn needs_compaction(&self) -> bool {
-        self.size_bytes > self.max_size_bytes
-    }
 
     fn overlapping_sstables(&self, min_key: &[u8], max_key: &[u8]) -> Vec<Arc<SSTable>> {
         self.sstables
@@ -107,6 +112,10 @@ impl Level {
 }
 
 impl LSMTree {
+    /// Get reference to the current memtable
+    pub fn get_memtable(&self) -> Arc<RwLock<MemTable>> {
+        Arc::clone(&self.memtable)
+    }
     const TOMBSTONE_MARKER: &'static [u8] = &[0xFF, 0xFF, 0xFF, 0xFF];
 
     fn is_tombstone(value: &[u8]) -> bool {
@@ -141,6 +150,13 @@ impl LSMTree {
             config.delta_compression_config.clone(),
         )));
 
+        // Initialize parallel compaction with 4 workers
+        let parallel_compaction = ParallelCompactionCoordinator::new(4);
+        let compaction_scheduler = Arc::new(CompactionScheduler::new(
+            Arc::clone(&parallel_compaction),
+            Arc::clone(&levels),
+        ));
+
         let mut lsm = Self {
             memtable,
             immutable_memtables,
@@ -154,6 +170,8 @@ impl LSMTree {
             cache_hits: Arc::new(AtomicUsize::new(0)),
             cache_misses: Arc::new(AtomicUsize::new(0)),
             delta_compressor,
+            parallel_compaction: Some(parallel_compaction),
+            compaction_scheduler: Some(compaction_scheduler),
         };
 
         // Start background compaction thread
@@ -326,122 +344,25 @@ impl LSMTree {
     }
 
     fn start_compaction_thread(&mut self) {
-        let levels = self.levels.clone();
-        let db_path = self.db_path.clone();
-        let config = self.config.clone();
-        let next_file_number = self.next_file_number.clone();
         let shutdown = self.shutdown.clone();
+        let compaction_scheduler = self.compaction_scheduler.clone();
 
-        self.compaction_thread = Some(std::thread::spawn(move || {
-            let strategy = LeveledCompaction::new(config.level_size_multiplier);
+        if let Some(scheduler) = compaction_scheduler {
+            self.compaction_thread = Some(std::thread::spawn(move || {
+                while shutdown.load(Ordering::Relaxed) == 0 {
+                    std::thread::sleep(std::time::Duration::from_secs(1));
 
-            while shutdown.load(Ordering::Relaxed) == 0 {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-
-                // Check for compaction work
-                let levels_guard = levels.read();
-                if let Some(compaction_task) = strategy.pick_compaction(&levels_guard) {
-                    drop(levels_guard);
-
-                    // Perform compaction
-                    if let Err(e) = Self::do_compaction(
-                        &levels,
-                        &db_path,
-                        &config,
-                        &next_file_number,
-                        compaction_task,
-                    ) {
-                        eprintln!("Compaction failed: {:?}", e);
+                    // Use parallel compaction scheduler
+                    let job_ids = scheduler.maybe_schedule_compaction();
+                    
+                    if !job_ids.is_empty() {
+                        tracing::info!("Scheduled {} parallel compaction jobs", job_ids.len());
                     }
                 }
-            }
-        }));
+            }));
+        }
     }
 
-    fn do_compaction(
-        levels: &Arc<RwLock<Vec<Level>>>,
-        db_path: &Path,
-        config: &LSMConfig,
-        next_file_number: &AtomicU64,
-        task: compaction::CompactionTask,
-    ) -> Result<()> {
-        // Merge SSTables from source level
-        let mut entries = BTreeMap::new();
-
-        // Simplified - in real implementation would iterate through SSTables
-        // For now, just merge a few dummy entries
-        for (i, _sstable) in task.input_sstables.iter().enumerate() {
-            entries.insert(
-                format!("key{}", i).into_bytes(),
-                format!("value{}", i).into_bytes(),
-            );
-        }
-
-        // Create new SSTables
-        let mut output_sstables = Vec::new();
-        let mut current_builder: Option<SSTableBuilder> = None;
-        let mut current_size = 0;
-
-        for (key, value) in entries {
-            if current_size > config.block_size * 256 {
-                // Target ~1MB per SSTable
-                if let Some(builder) = current_builder.take() {
-                    output_sstables.push(Arc::new(builder.finish()?));
-                }
-                current_size = 0;
-            }
-
-            if current_builder.is_none() {
-                let file_number = next_file_number.fetch_add(1, Ordering::SeqCst);
-                let sstable_path = db_path.join(format!("{:06}.sst", file_number));
-                let mut builder = SSTableBuilder::new(
-                    &sstable_path,
-                    config.block_size,
-                    config.compression_type.clone(),
-                    config.bloom_filter_bits_per_key,
-                )?;
-
-                // Enable delta compression if configured
-                builder = builder.with_delta_compression(config.delta_compression_config.clone());
-
-                // Set reference SSTable from input if available for delta compression
-                if !task.input_sstables.is_empty() {
-                    let _ = builder.set_reference_sstable(task.input_sstables[0].clone());
-                }
-
-                current_builder = Some(builder);
-            }
-
-            if let Some(ref mut builder) = current_builder {
-                builder.add(&key, &value)?;
-                current_size += key.len() + value.len();
-            }
-        }
-
-        // Finish last SSTable
-        if let Some(builder) = current_builder {
-            output_sstables.push(Arc::new(builder.finish()?));
-        }
-
-        // Update levels atomically
-        let mut levels_guard = levels.write();
-
-        // Remove input SSTables
-        let input_ids: Vec<u64> = task.input_sstables.iter().map(|sst| sst.id()).collect();
-        levels_guard[task.source_level].remove_sstables(&input_ids);
-
-        // Add output SSTables to target level
-        for sstable in output_sstables {
-            levels_guard[task.target_level].add_sstable(sstable);
-        }
-
-        // Delete old SSTable files
-        for sstable in task.input_sstables {
-            let _ = std::fs::remove_file(&sstable.path());
-        }
-
-        Ok(())
-    }
 
     pub fn flush(&self) -> Result<()> {
         // Force flush of current memtable
@@ -543,6 +464,10 @@ impl LSMTree {
             cache_misses,
             cache_hit_rate,
         }
+    }
+
+    pub fn parallel_compaction_stats(&self) -> Option<ParallelCompactionStats> {
+        self.parallel_compaction.as_ref().map(|pc| pc.stats())
     }
 }
 

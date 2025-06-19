@@ -23,7 +23,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Test data
     let small_key = b"key123";
-    let medium_key = b"this_is_a_medium_sized_key_32b";
     let small_value = b"val";
     let medium_value = b"this is a medium sized value with some data";
     

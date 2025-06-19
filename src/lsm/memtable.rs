@@ -14,6 +14,23 @@ impl MemTable {
             size_bytes: AtomicUsize::new(0),
         }
     }
+    
+    fn is_tombstone(value: &[u8]) -> bool {
+        value == &[0xFF, 0xFF, 0xFF, 0xFF]
+    }
+    
+    /// Get iterator over all entries
+    pub fn entries(&self) -> impl Iterator<Item = (Vec<u8>, Option<Vec<u8>>)> + '_ {
+        self.map.iter().map(|entry| {
+            let key = entry.key().clone();
+            let value = if Self::is_tombstone(entry.value()) {
+                None
+            } else {
+                Some(entry.value().clone())
+            };
+            (key, value)
+        })
+    }
 
     pub fn insert(&self, key: Vec<u8>, value: Vec<u8>) {
         let size_delta = key.len() + value.len() + 16; // Overhead estimate

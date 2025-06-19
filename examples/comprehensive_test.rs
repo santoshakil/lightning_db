@@ -567,18 +567,28 @@ fn test_persistence(path: &std::path::Path) -> Result<TestResult, Box<dyn std::e
     }
     
     // Try to recover
+    let mut critical_failure = false;
     match Database::open(&path.join("crash_test"), LightningDbConfig::default()) {
         Ok(db) => {
             if db.get(b"pre_crash")?.is_none() {
                 issues.push("Crash recovery failed".to_string());
             }
         }
-        Err(e) => issues.push(format!("Failed to open after crash: {}", e)),
+        Err(e) => {
+            issues.push(format!("Failed to open after crash: {}", e));
+            critical_failure = true;
+        }
     }
     
     Ok(TestResult {
         feature: "Persistence & Recovery",
-        status: if issues.is_empty() { TestStatus::Working } else { TestStatus::PartiallyWorking },
+        status: if critical_failure { 
+            TestStatus::NotWorking 
+        } else if issues.is_empty() { 
+            TestStatus::Working 
+        } else { 
+            TestStatus::PartiallyWorking 
+        },
         details: if issues.is_empty() {
             "Data persistence, WAL, and crash recovery working".to_string()
         } else {

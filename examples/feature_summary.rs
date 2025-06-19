@@ -217,7 +217,7 @@ fn test_basic_crud(path: &std::path::Path) -> Result<Option<(f64, f64)>, Box<dyn
     for i in 0..count {
         db.put(format!("k{}", i).as_bytes(), b"value")?;
     }
-    let write_time = start.elapsed();
+    let _write_time = start.elapsed();
     
     let start = Instant::now();
     for i in 0..count {

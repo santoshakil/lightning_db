@@ -1,5 +1,5 @@
 use lightning_db::{Database, LightningDbConfig};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tempfile::tempdir;
 
 struct BenchmarkResult {

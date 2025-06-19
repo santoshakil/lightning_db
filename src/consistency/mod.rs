@@ -207,47 +207,41 @@ impl HybridLogicalClock {
         self.linearized_timestamp.load(std::sync::atomic::Ordering::Acquire) >= timestamp
     }
     
-    #[allow(dead_code)]
-    pub(crate) fn mark_linearized(&self, timestamp: u64) {
-        self.linearized_timestamp.fetch_max(timestamp, std::sync::atomic::Ordering::AcqRel);
-    }
 }
 
 /// Session manager for session consistency
 struct SessionManager {
     sessions: parking_lot::RwLock<std::collections::HashMap<u64, SessionState>>,
-    _next_session_id: std::sync::atomic::AtomicU64,
+    #[cfg(test)]
+    next_session_id: std::sync::atomic::AtomicU64,
 }
 
 #[derive(Debug)]
 struct SessionState {
     last_write_timestamp: u64,
-    _last_read_timestamp: u64,
-    _created_at: std::time::Instant,
 }
 
 impl SessionManager {
     fn new() -> Self {
         Self {
             sessions: parking_lot::RwLock::new(std::collections::HashMap::new()),
-            _next_session_id: std::sync::atomic::AtomicU64::new(1),
+            #[cfg(test)]
+            next_session_id: std::sync::atomic::AtomicU64::new(1),
         }
     }
     
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn create_session(&self) -> u64 {
-        let session_id = self._next_session_id.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        let session_id = self.next_session_id.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         let state = SessionState {
             last_write_timestamp: 0,
-            _last_read_timestamp: 0,
-            _created_at: std::time::Instant::now(),
         };
         
         self.sessions.write().insert(session_id, state);
         session_id
     }
     
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn update_write_timestamp(&self, session_id: u64, timestamp: u64) {
         if let Some(session) = self.sessions.write().get_mut(&session_id) {
             session.last_write_timestamp = session.last_write_timestamp.max(timestamp);
@@ -272,14 +266,6 @@ impl SessionManager {
         }
         
         Err(Error::Timeout("Session consistency timeout".to_string()))
-    }
-    
-    #[allow(dead_code)]
-    fn cleanup_old_sessions(&self, max_age: Duration) {
-        let now = std::time::Instant::now();
-        self.sessions.write().retain(|_, session| {
-            now.duration_since(session._created_at) < max_age
-        });
     }
 }
 

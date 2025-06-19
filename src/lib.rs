@@ -15,6 +15,9 @@ pub mod storage;
 pub mod thread_local_cache;
 pub mod transaction;
 pub mod wal;
+pub mod wal_improved;
+pub mod lock_free;
+pub mod simd;
 pub mod zero_copy;
 
 use btree::BPlusTree;
@@ -35,6 +38,7 @@ use transaction::{
     OptimizedTransactionManager, TransactionManager, TransactionStatistics, VersionStore,
 };
 use wal::WriteAheadLog;
+use wal_improved::{ImprovedWriteAheadLog, TransactionRecoveryState};
 
 // Include protobuf generated code
 include!(concat!(env!("OUT_DIR"), "/lightning_db.rs"));
@@ -54,6 +58,7 @@ pub struct LightningDbConfig {
     pub use_optimized_page_manager: bool,
     pub mmap_config: Option<storage::MmapConfig>,
     pub consistency_config: ConsistencyConfig,
+    pub use_improved_wal: bool,
 }
 
 impl Default for LightningDbConfig {
@@ -72,6 +77,7 @@ impl Default for LightningDbConfig {
             use_optimized_page_manager: true, // Standard page manager has incomplete trait impl
             mmap_config: Some(storage::MmapConfig::default()),
             consistency_config: ConsistencyConfig::default(),
+            use_improved_wal: true,
         }
     }
 }
@@ -86,6 +92,7 @@ pub struct Database {
     memory_pool: Option<Arc<MemoryPool>>,
     lsm_tree: Option<Arc<LSMTree>>,
     wal: Option<Arc<WriteAheadLog>>,
+    improved_wal: Option<Arc<ImprovedWriteAheadLog>>,
     prefetch_manager: Option<Arc<PrefetchManager>>,
     metrics_collector: Arc<MetricsCollector>,
     consistency_manager: Arc<ConsistencyManager>,
@@ -175,7 +182,11 @@ impl Database {
         };
 
         // Optional WAL for durability
-        let wal = Some(Arc::new(WriteAheadLog::create(&wal_path)?));
+        let (wal, improved_wal) = if config.use_improved_wal {
+            (None, Some(ImprovedWriteAheadLog::create(&db_path.join("wal"))?))
+        } else {
+            (Some(Arc::new(WriteAheadLog::create(&wal_path)?)), None)
+        };
 
         // Optional prefetch manager for performance
         let prefetch_manager = if config.prefetch_enabled {
@@ -232,6 +243,7 @@ impl Database {
             memory_pool,
             lsm_tree,
             wal,
+            improved_wal,
             prefetch_manager,
             metrics_collector,
             consistency_manager,
@@ -315,59 +327,117 @@ impl Database {
                 None
             };
 
-            // WAL path for existing database
-            let wal_path = db_path.join("wal.log");
-            let wal = if wal_path.exists() {
-                let wal_instance = Arc::new(WriteAheadLog::open(&wal_path)?);
-                
-                // Replay WAL operations to recover state
-                {
-                    let lsm_ref = &lsm_tree;
-                    let version_store_ref = &version_store;
+            // WAL recovery for existing database
+            let (wal, improved_wal) = if config.use_improved_wal {
+                // Use improved WAL with better recovery
+                let wal_dir = db_path.join("wal");
+                if wal_dir.exists() {
+                    let improved_wal_instance = ImprovedWriteAheadLog::open(&wal_dir)?;
                     
-                    wal_instance.replay_from_checkpoint(|operation| {
-                        match operation {
-                            wal::WALOperation::Put { key, value } => {
-                                // Apply to LSM tree if available, otherwise to version store
-                                if let Some(ref lsm) = lsm_ref {
-                                    lsm.insert(key.clone(), value.clone())?;
-                                } else {
-                                    // For non-LSM databases, write directly to version store
-                                    let timestamp = std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_millis() as u64;
-                                    version_store_ref.put(key.clone(), Some(value.clone()), timestamp, 0);
+                    // Replay with transaction awareness
+                    {
+                        let lsm_ref = &lsm_tree;
+                        let version_store_ref = &version_store;
+                        let mut operations_recovered = 0;
+                        
+                        improved_wal_instance.recover_with_progress(
+                            |operation, tx_state| {
+                                match operation {
+                                    wal::WALOperation::Put { key, value } => {
+                                        // Only apply if transaction is committed
+                                        if matches!(tx_state, TransactionRecoveryState::Committed) {
+                                            if let Some(ref lsm) = lsm_ref {
+                                                lsm.insert(key.clone(), value.clone())?;
+                                            } else {
+                                                let timestamp = std::time::SystemTime::now()
+                                                    .duration_since(std::time::UNIX_EPOCH)
+                                                    .unwrap_or_default()
+                                                    .as_millis() as u64;
+                                                version_store_ref.put(key.clone(), Some(value.clone()), timestamp, 0);
+                                            }
+                                            operations_recovered += 1;
+                                        }
+                                    }
+                                    wal::WALOperation::Delete { key } => {
+                                        // Only apply if transaction is committed
+                                        if matches!(tx_state, TransactionRecoveryState::Committed) {
+                                            if let Some(ref lsm) = lsm_ref {
+                                                lsm.delete(key)?;
+                                            } else {
+                                                let timestamp = std::time::SystemTime::now()
+                                                    .duration_since(std::time::UNIX_EPOCH)
+                                                    .unwrap_or_default()
+                                                    .as_millis() as u64;
+                                                version_store_ref.put(key.clone(), None, timestamp, 0);
+                                            }
+                                            operations_recovered += 1;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                                Ok(())
+                            },
+                            |current, _total| {
+                                if current % 1000 == 0 {
+                                    tracing::info!("Recovery progress: LSN {}", current);
                                 }
                             }
-                            wal::WALOperation::Delete { key } => {
-                                // Apply delete to LSM tree if available, otherwise to version store
-                                if let Some(ref lsm) = lsm_ref {
-                                    lsm.delete(key)?;
-                                } else {
-                                    // For non-LSM databases, write delete to version store
-                                    let timestamp = std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_millis() as u64;
-                                    version_store_ref.put(key.clone(), None, timestamp, 0);
-                                }
-                            }
-                            wal::WALOperation::TransactionBegin { .. } |
-                            wal::WALOperation::TransactionCommit { .. } |
-                            wal::WALOperation::TransactionAbort { .. } |
-                            wal::WALOperation::Checkpoint { .. } => {
-                                // These operations are handled internally by the WAL
-                                // No need to replay them into the storage
-                            }
-                        }
-                        Ok(())
-                    })?;
+                        )?;
+                        
+                        tracing::info!("WAL recovery complete: {} operations recovered", operations_recovered);
+                    }
+                    
+                    (None, Some(improved_wal_instance))
+                } else {
+                    (None, Some(ImprovedWriteAheadLog::create(&wal_dir)?))
                 }
-                
-                Some(wal_instance)
             } else {
-                Some(Arc::new(WriteAheadLog::create(&wal_path)?))
+                // Use standard WAL
+                let wal_path = db_path.join("wal.log");
+                let wal = if wal_path.exists() {
+                    let wal_instance = Arc::new(WriteAheadLog::open(&wal_path)?);
+                    
+                    // Standard replay
+                    {
+                        let lsm_ref = &lsm_tree;
+                        let version_store_ref = &version_store;
+                        
+                        wal_instance.replay_from_checkpoint(|operation| {
+                            match operation {
+                                wal::WALOperation::Put { key, value } => {
+                                    if let Some(ref lsm) = lsm_ref {
+                                        lsm.insert(key.clone(), value.clone())?;
+                                    } else {
+                                        let timestamp = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_millis() as u64;
+                                        version_store_ref.put(key.clone(), Some(value.clone()), timestamp, 0);
+                                    }
+                                }
+                                wal::WALOperation::Delete { key } => {
+                                    if let Some(ref lsm) = lsm_ref {
+                                        lsm.delete(key)?;
+                                    } else {
+                                        let timestamp = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_millis() as u64;
+                                        version_store_ref.put(key.clone(), None, timestamp, 0);
+                                    }
+                                }
+                                _ => {}
+                            }
+                            Ok(())
+                        })?;
+                    }
+                    
+                    Some(wal_instance)
+                } else {
+                    Some(Arc::new(WriteAheadLog::create(&wal_path)?))
+                };
+                
+                (wal, None)
             };
 
             // Optional prefetch manager for performance
@@ -425,6 +495,7 @@ impl Database {
                 memory_pool,
                 lsm_tree,
                 wal,
+                improved_wal,
                 prefetch_manager,
                 metrics_collector,
                 consistency_manager,
@@ -439,7 +510,13 @@ impl Database {
         // Fast path for non-transactional puts with LSM
         if let Some(ref lsm) = self.lsm_tree {
             // Write to WAL first for durability
-            if let Some(ref wal) = self.wal {
+            if let Some(ref improved_wal) = self.improved_wal {
+                use wal::WALOperation;
+                improved_wal.append(WALOperation::Put {
+                    key: key.to_vec(),
+                    value: value.to_vec(),
+                })?;
+            } else if let Some(ref wal) = self.wal {
                 use wal::WALOperation;
                 wal.append(WALOperation::Put {
                     key: key.to_vec(),
@@ -467,7 +544,13 @@ impl Database {
         
         metrics.record_operation(OperationType::Write, || {
             // Write to WAL first for durability
-            if let Some(ref wal) = self.wal {
+            if let Some(ref improved_wal) = self.improved_wal {
+                use wal::WALOperation;
+                improved_wal.append(WALOperation::Put {
+                    key: key.to_vec(),
+                    value: value.to_vec(),
+                })?;
+            } else if let Some(ref wal) = self.wal {
                 use wal::WALOperation;
                 wal.append(WALOperation::Put {
                     key: key.to_vec(),
@@ -572,7 +655,12 @@ impl Database {
         
         metrics.record_operation(OperationType::Delete, || {
             // Write to WAL first for durability
-            if let Some(ref wal) = self.wal {
+            if let Some(ref improved_wal) = self.improved_wal {
+                use wal::WALOperation;
+                improved_wal.append(WALOperation::Delete {
+                    key: key.to_vec(),
+                })?;
+            } else if let Some(ref wal) = self.wal {
                 use wal::WALOperation;
                 wal.append(WALOperation::Delete {
                     key: key.to_vec(),
@@ -1078,8 +1166,14 @@ impl Drop for Database {
             // LSM tree will stop its own background threads in its Drop impl
         }
         
+        // Shutdown improved WAL if present
+        if let Some(ref improved_wal) = self.improved_wal {
+            improved_wal.shutdown();
+        }
+        
         // Sync any pending writes
-        let _ = self.sync();
+        // TODO: Implement sync method to flush all pending writes
+        // let _ = self.sync();
     }
 }
 

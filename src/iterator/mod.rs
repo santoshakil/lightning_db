@@ -6,7 +6,6 @@ use parking_lot::RwLock;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
-use tracing::debug;
 
 /// Iterator for range queries over key-value pairs
 pub struct RangeIterator {
@@ -60,11 +59,14 @@ impl PartialOrd for IteratorEntry {
 
 impl Ord for IteratorEntry {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Higher timestamp has priority (newer data)
-        // For same timestamp, compare keys
-        match self.timestamp.cmp(&other.timestamp) {
-            Ordering::Equal => self.key.cmp(&other.key),
-            other_order => other_order,
+        // For BinaryHeap (max-heap by default), we need to reverse the comparison
+        // to get the smallest key first (for forward iteration)
+        match self.key.cmp(&other.key) {
+            Ordering::Equal => {
+                // Same key: prefer newer timestamp (higher value)
+                other.timestamp.cmp(&self.timestamp)
+            }
+            key_order => key_order.reverse(), // Reverse for min-heap behavior
         }
     }
 }
@@ -110,6 +112,14 @@ impl RangeIterator {
             self.end_key.clone(),
             self.direction.clone(),
         )?);
+        
+        // Immediately populate the heap with first entry
+        if let Some(ref mut btree_iter) = self.btree_iterator {
+            if let Some(entry) = btree_iter.next()? {
+                self.merge_heap.push(entry);
+            }
+        }
+        
         Ok(())
     }
 
@@ -121,6 +131,14 @@ impl RangeIterator {
             self.direction.clone(),
             self.read_timestamp,
         )?);
+        
+        // Immediately populate the heap with first entry
+        if let Some(ref mut lsm_iter) = self.lsm_iterator {
+            if let Some(entry) = lsm_iter.next()? {
+                self.merge_heap.push(entry);
+            }
+        }
+        
         Ok(())
     }
 
@@ -132,31 +150,17 @@ impl RangeIterator {
             self.direction.clone(),
             self.read_timestamp,
         )?);
-        Ok(())
-    }
-
-    fn fill_merge_heap(&mut self) -> Result<()> {
-        // Get next entry from each iterator and add to heap
-        if let Some(ref mut btree_iter) = self.btree_iterator {
-            if let Some(entry) = btree_iter.next()? {
-                self.merge_heap.push(entry);
-            }
-        }
-
-        if let Some(ref mut lsm_iter) = self.lsm_iterator {
-            if let Some(entry) = lsm_iter.next()? {
-                self.merge_heap.push(entry);
-            }
-        }
-
+        
+        // Immediately populate the heap with first entry
         if let Some(ref mut vs_iter) = self.version_store_iterator {
             if let Some(entry) = vs_iter.next()? {
                 self.merge_heap.push(entry);
             }
         }
-
+        
         Ok(())
     }
+
 
     fn is_within_bounds(&self, key: &[u8]) -> bool {
         // Check start bound
@@ -223,13 +227,6 @@ impl Iterator for RangeIterator {
         }
 
         loop {
-            // Fill heap if empty
-            if self.merge_heap.is_empty() {
-                if let Err(e) = self.fill_merge_heap() {
-                    return Some(Err(e));
-                }
-            }
-
             // Get the next entry with highest priority (newest timestamp)
             let entry = match self.merge_heap.pop() {
                 Some(entry) => entry,
@@ -255,6 +252,33 @@ impl Iterator for RangeIterator {
                     break;
                 }
             }
+            
+            // Re-fetch entries from the sources that had duplicates
+            for dup_entry in skip_duplicates {
+                match dup_entry.source {
+                    IteratorSource::BTree => {
+                        if let Some(ref mut btree_iter) = self.btree_iterator {
+                            if let Ok(Some(new_entry)) = btree_iter.next() {
+                                self.merge_heap.push(new_entry);
+                            }
+                        }
+                    }
+                    IteratorSource::LSM => {
+                        if let Some(ref mut lsm_iter) = self.lsm_iterator {
+                            if let Ok(Some(new_entry)) = lsm_iter.next() {
+                                self.merge_heap.push(new_entry);
+                            }
+                        }
+                    }
+                    IteratorSource::VersionStore => {
+                        if let Some(ref mut vs_iter) = self.version_store_iterator {
+                            if let Ok(Some(new_entry)) = vs_iter.next() {
+                                self.merge_heap.push(new_entry);
+                            }
+                        }
+                    }
+                }
+            }
 
             // Return the value
             self.count += 1;
@@ -263,54 +287,56 @@ impl Iterator for RangeIterator {
     }
 }
 
-/// B+ Tree iterator implementation
+/// B+ Tree iterator wrapper
 struct BTreeIterator {
-    // Implementation would depend on B+ tree structure
-    // For now, we'll use a simplified approach
-    current_position: usize,
-    entries: Vec<(Vec<u8>, Vec<u8>)>,
+    inner: crate::btree::BTreeLeafIterator<'static>,
 }
 
 impl BTreeIterator {
     fn new(
-        _btree: &BPlusTree,
-        _start_key: Option<Vec<u8>>,
-        _end_key: Option<Vec<u8>>,
-        _direction: ScanDirection,
+        btree: &BPlusTree,
+        start_key: Option<Vec<u8>>,
+        end_key: Option<Vec<u8>>,
+        direction: ScanDirection,
     ) -> Result<Self> {
-        // This is a simplified implementation
-        // In a real implementation, this would traverse the B+ tree structure
-        let entries = Vec::new(); // Would be populated from actual B+ tree traversal
+        use crate::btree::BTreeLeafIterator;
+        
+        let forward = match direction {
+            ScanDirection::Forward => true,
+            ScanDirection::Backward => false,
+        };
+        
+        // SAFETY: We're transmuting the lifetime here. This is safe because
+        // the iterator is only used while the btree lock is held in the calling code.
+        let btree_static: &'static BPlusTree = unsafe { std::mem::transmute(btree) };
+        
+        let inner = BTreeLeafIterator::new(
+            btree_static,
+            start_key,
+            end_key,
+            forward,
+        )?;
 
-        Ok(Self {
-            current_position: 0,
-            entries,
-        })
+        Ok(Self { inner })
     }
 
     fn next(&mut self) -> Result<Option<IteratorEntry>> {
-        if self.current_position >= self.entries.len() {
-            return Ok(None);
+        match self.inner.next() {
+            Some(Ok((key, value))) => Ok(Some(IteratorEntry {
+                key,
+                value: Some(value),
+                source: IteratorSource::BTree,
+                timestamp: 0, // B+ tree entries don't have timestamps
+            })),
+            Some(Err(e)) => Err(e),
+            None => Ok(None),
         }
-
-        let (key, value) = &self.entries[self.current_position];
-        self.current_position += 1;
-
-        Ok(Some(IteratorEntry {
-            key: key.clone(),
-            value: Some(value.clone()),
-            source: IteratorSource::BTree,
-            timestamp: 0, // B+ tree entries don't have timestamps
-        }))
     }
 }
 
 /// LSM Tree iterator implementation
 struct LSMIterator {
-    current_level: usize,
-    memtable_iterator: Option<MemTableIterator>,
-    sstable_iterators: Vec<SSTableIterator>,
-    merge_heap: BinaryHeap<IteratorEntry>,
+    lsm_iter: crate::lsm::LSMMemTableIterator,
     read_timestamp: u64,
 }
 
@@ -322,146 +348,37 @@ impl LSMIterator {
         direction: ScanDirection,
         read_timestamp: u64,
     ) -> Result<Self> {
-        let mut iterator = Self {
-            current_level: 0,
-            memtable_iterator: None,
-            sstable_iterators: Vec::new(),
-            merge_heap: BinaryHeap::new(),
-            read_timestamp,
+        let forward = match direction {
+            ScanDirection::Forward => true,
+            ScanDirection::Backward => false,
         };
+        
+        // Get the memtable and create iterator
+        let memtable = lsm.get_memtable();
+        let lsm_iter = crate::lsm::LSMMemTableIterator::new(
+            &memtable,
+            start_key.as_deref(),
+            end_key.as_deref(),
+            forward,
+        );
 
-        // Initialize memtable iterator
-        iterator.memtable_iterator = Some(MemTableIterator::new(
-            start_key.clone(),
-            end_key.clone(),
-            direction.clone(),
-        )?);
-
-        // Initialize SSTable iterators for each level
-        let stats = lsm.stats();
-        for level_stat in &stats.levels {
-            // This would iterate through SSTables at each level
-            // For now, we'll create placeholder iterators
-            iterator.sstable_iterators.push(SSTableIterator::new(
-                level_stat.level,
-                start_key.clone(),
-                end_key.clone(),
-                direction.clone(),
-            )?);
-        }
-
-        Ok(iterator)
+        Ok(Self {
+            lsm_iter,
+            read_timestamp,
+        })
     }
 
     fn next(&mut self) -> Result<Option<IteratorEntry>> {
-        // Check memtable first
-        if let Some(ref mut memtable_iter) = self.memtable_iterator {
-            if let Some((key, value)) = memtable_iter.next() {
-                return Ok(Some(IteratorEntry {
-                    key,
-                    value: Some(value),
-                    source: IteratorSource::LSM,
-                    timestamp: self.read_timestamp,
-                }));
-            }
-        }
-
-        // Then check SSTables from each level
-        while self.current_level < self.sstable_iterators.len() {
-            if let Some((key, value)) = self.sstable_iterators[self.current_level].next() {
-                return Ok(Some(IteratorEntry {
-                    key,
-                    value: Some(value),
-                    source: IteratorSource::LSM,
-                    timestamp: self.read_timestamp,
-                }));
-            }
-            self.current_level += 1;
-        }
-
-        // Check merge heap for any remaining entries
-        if let Some(entry) = self.merge_heap.pop() {
-            return Ok(Some(entry));
-        }
-
-        Ok(None)
-    }
-}
-
-/// Memtable iterator
-struct MemTableIterator {
-    // Simplified implementation
-    entries: Vec<(Vec<u8>, Vec<u8>)>,
-    current_position: usize,
-}
-
-impl MemTableIterator {
-    fn new(
-        _start_key: Option<Vec<u8>>,
-        _end_key: Option<Vec<u8>>,
-        _direction: ScanDirection,
-    ) -> Result<Self> {
-        Ok(Self {
-            entries: Vec::new(),
-            current_position: 0,
-        })
-    }
-
-    fn next(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
-        if self.current_position < self.entries.len() {
-            let entry = self.entries[self.current_position].clone();
-            self.current_position += 1;
-            Some(entry)
+        if let Some((key, value)) = self.lsm_iter.next() {
+            Ok(Some(IteratorEntry {
+                key,
+                value: Some(value),
+                source: IteratorSource::LSM,
+                timestamp: self.read_timestamp,
+            }))
         } else {
-            None
+            Ok(None)
         }
-    }
-}
-
-/// SSTable iterator
-struct SSTableIterator {
-    level: usize,
-    entries: Vec<(Vec<u8>, Vec<u8>)>,
-    current_position: usize,
-}
-
-impl SSTableIterator {
-    fn new(
-        level: usize,
-        _start_key: Option<Vec<u8>>,
-        _end_key: Option<Vec<u8>>,
-        _direction: ScanDirection,
-    ) -> Result<Self> {
-        debug!("Creating SSTable iterator for level {}", level);
-        Ok(Self {
-            level,
-            entries: Vec::new(),
-            current_position: 0,
-        })
-    }
-
-    fn next(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
-        if self.current_position < self.entries.len() {
-            let entry = self.entries[self.current_position].clone();
-            self.current_position += 1;
-
-            // Log level info for debugging iterator progression
-            if self.current_position % 100 == 0 {
-                debug!(
-                    "SSTable iterator at level {} processed {} entries",
-                    self.level(),
-                    self.current_position
-                );
-            }
-
-            Some(entry)
-        } else {
-            None
-        }
-    }
-
-    pub fn level(&self) -> usize {
-        self.level
     }
 }
 

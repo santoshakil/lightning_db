@@ -21,6 +21,7 @@ pub struct SSTable {
     min_key: Vec<u8>,
     max_key: Vec<u8>,
     size_bytes: usize,
+    creation_time: std::time::SystemTime,
 }
 
 impl std::fmt::Debug for SSTable {
@@ -129,9 +130,22 @@ impl SSTable {
         Ok(None)
     }
 
-    pub fn iter(&self) -> Result<impl Iterator<Item = Result<BlockEntry>>> {
-        // Return a simple iterator for now
-        Ok(std::iter::empty())
+    pub fn iter(&self) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        // Read all entries - simplified for parallel compaction
+        let mut all_entries = Vec::new();
+        
+        for index_entry in &self.index.entries {
+            let block = self.read_block(index_entry.offset, index_entry.size)?;
+            for entry in block.entries {
+                all_entries.push((entry.key, entry.value));
+            }
+        }
+        
+        Ok(all_entries)
+    }
+    
+    pub fn creation_time(&self) -> std::time::SystemTime {
+        self.creation_time
     }
 
     fn read_block(&self, offset: u64, size: u32) -> Result<DataBlock> {
@@ -443,6 +457,7 @@ impl SSTableBuilder {
             min_key,
             max_key,
             size_bytes,
+            creation_time: std::time::SystemTime::now(),
         })
     }
 }
@@ -525,6 +540,10 @@ impl SSTableReader {
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(0);
 
+        // Get creation time from file metadata
+        let creation_time = metadata.created()
+            .unwrap_or_else(|_| std::time::SystemTime::now());
+
         Ok(SSTable {
             id,
             path,
@@ -533,71 +552,11 @@ impl SSTableReader {
             min_key,
             max_key,
             size_bytes: file_size as usize,
+            creation_time,
         })
     }
 }
 
-pub struct SSTableIterator {
-    sstable: *const SSTable,
-    current_block_idx: usize,
-    current_entry_idx: usize,
-    current_block: Option<DataBlock>,
-}
-
-impl SSTableIterator {
-    #[allow(dead_code)]
-    fn new(sstable: &SSTable) -> Self {
-        Self {
-            sstable: sstable as *const SSTable,
-            current_block_idx: 0,
-            current_entry_idx: 0,
-            current_block: None,
-        }
-    }
-
-    fn load_next_block(&mut self) -> Result<bool> {
-        unsafe {
-            let sstable = &*self.sstable;
-
-            if self.current_block_idx >= sstable.index.entries.len() {
-                return Ok(false);
-            }
-
-            let index_entry = &sstable.index.entries[self.current_block_idx];
-            self.current_block = Some(sstable.read_block(index_entry.offset, index_entry.size)?);
-            self.current_entry_idx = 0;
-            self.current_block_idx += 1;
-
-            Ok(true)
-        }
-    }
-}
-
-impl Iterator for SSTableIterator {
-    type Item = Result<BlockEntry>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(ref block) = self.current_block {
-                if self.current_entry_idx < block.entries.len() {
-                    let entry = block.entries[self.current_entry_idx].clone();
-                    self.current_entry_idx += 1;
-                    return Some(Ok(entry));
-                }
-            }
-
-            // Need to load next block
-            match self.load_next_block() {
-                Ok(true) => continue,
-                Ok(false) => return None,
-                Err(e) => return Some(Err(e)),
-            }
-        }
-    }
-}
-
-// Implement Send for iterator (safe because SSTable is immutable)
-unsafe impl Send for SSTableIterator {}
 
 impl CompressionType {
     fn to_u8(&self) -> u8 {

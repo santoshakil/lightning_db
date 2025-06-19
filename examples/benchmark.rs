@@ -19,7 +19,6 @@ struct BenchmarkResults {
     delete_latency_us: f64,
     
     memory_usage_mb: f64,
-    disk_usage_mb: f64,
     compression_ratio: f64,
 }
 
@@ -185,9 +184,9 @@ fn run_benchmark(path: &std::path::Path, config: LightningDbConfig) -> Result<Be
     let start = Instant::now();
     for _ in 0..scan_count {
         let scan = db.scan(None, None)?;
-        let mut count = 0;
+        let mut _count = 0;
         for _ in scan.take(100) {
-            count += 1;
+            _count += 1;
         }
     }
     let scan_duration = start.elapsed();

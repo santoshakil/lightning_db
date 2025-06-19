@@ -1,4 +1,5 @@
 pub mod optimized_manager;
+pub mod mvcc;
 
 use crate::error::{Error, Result};
 use crossbeam_skiplist::SkipMap;
@@ -8,6 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub use optimized_manager::{OptimizedTransactionManager, TransactionStatistics};
+pub use mvcc::{MVCCTransactionManager, MVCCTransaction, MVCCVersionStore};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TxState {

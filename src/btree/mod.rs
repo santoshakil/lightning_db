@@ -1,4 +1,8 @@
 pub mod node;
+mod delete;
+mod iterator;
+
+pub use iterator::BTreeLeafIterator;
 
 use crate::error::{Error, Result};
 use crate::storage::{Page, PageManager, PageManagerWrapper, PAGE_SIZE};
@@ -129,8 +133,8 @@ impl BPlusTree {
     }
 
     pub fn delete(&mut self, key: &[u8]) -> Result<bool> {
-        let deletion_path = self.find_leaf_path(key)?;
-        self.delete_from_leaf(&deletion_path, key)
+        // Use the complete deletion implementation with rebalancing
+        self.delete_complete(key)
     }
 
     fn find_leaf_path(
@@ -298,33 +302,6 @@ impl BPlusTree {
         Ok(())
     }
 
-    fn delete_from_leaf(
-        &self,
-        path: &[u32],
-        key: &[u8],
-    ) -> Result<bool> {
-        let leaf_page_id = *path.last().ok_or(Error::Index("Empty path".to_string()))?;
-        let mut leaf_page = self.page_manager.get_page(leaf_page_id)?;
-        let mut leaf_node = BTreeNode::deserialize_from_page(&leaf_page)?;
-
-        // Find and remove the key
-        let mut found = false;
-        leaf_node.entries.retain(|entry| {
-            if entry.key == key {
-                found = true;
-                false
-            } else {
-                true
-            }
-        });
-
-        if found {
-            leaf_node.serialize_to_page(&mut leaf_page)?;
-            self.page_manager.write_page(&leaf_page)?;
-        }
-
-        Ok(found)
-    }
 
     pub fn root_page_id(&self) -> u32 {
         self.root_page_id
