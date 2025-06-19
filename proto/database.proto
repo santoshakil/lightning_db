@@ -1,0 +1,33 @@
+syntax = "proto3";
+package lightning_db;
+
+message DatabaseConfig {
+  uint64 page_size = 1;           // Default: 4096
+  uint64 cache_size = 2;          // Default: 100MB
+  uint64 mmap_size = 3;           // Optional, 0 = unlimited
+  bool compression_enabled = 4;    // Default: true
+  CompressionType compression = 5; // Default: ZSTD
+}
+
+enum CompressionType {
+  NONE = 0;
+  ZSTD = 1;
+  LZ4 = 2;
+}
+
+message KeyValue {
+  bytes key = 1;
+  bytes value = 2;
+  uint64 version = 3;
+  uint64 timestamp = 4;
+}
+
+message PageHeader {
+  uint32 magic = 1;         // 0x4C444200 ("LDB\0")
+  uint32 version = 2;       // Format version
+  uint32 page_type = 3;     // 0=leaf, 1=internal, 2=overflow
+  uint32 checksum = 4;      // CRC32
+  uint32 num_entries = 5;
+  uint32 free_space = 6;
+  uint64 right_sibling = 7; // For B+tree navigation
+}

@@ -1,0 +1,156 @@
+use crossbeam_skiplist::SkipMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[derive(Debug)]
+pub struct MemTable {
+    map: SkipMap<Vec<u8>, Vec<u8>>,
+    size_bytes: AtomicUsize,
+}
+
+impl MemTable {
+    pub fn new() -> Self {
+        Self {
+            map: SkipMap::new(),
+            size_bytes: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn insert(&self, key: Vec<u8>, value: Vec<u8>) {
+        let size_delta = key.len() + value.len() + 16; // Overhead estimate
+
+        // Check if key already exists
+        if let Some(old_entry) = self.map.get(&key) {
+            let old_size = key.len() + old_entry.value().len() + 16;
+            self.size_bytes.fetch_sub(old_size, Ordering::Relaxed);
+        }
+
+        self.map.insert(key, value);
+        self.size_bytes.fetch_add(size_delta, Ordering::Relaxed);
+    }
+
+    pub fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
+        self.map.get(key).map(|entry| entry.value().clone())
+    }
+
+    pub fn delete(&self, key: &[u8]) {
+        if let Some(entry) = self.map.remove(key) {
+            let size = entry.key().len() + entry.value().len() + 16;
+            self.size_bytes.fetch_sub(size, Ordering::Relaxed);
+        }
+    }
+
+    pub fn size_bytes(&self) -> usize {
+        self.size_bytes.load(Ordering::Relaxed)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = MemTableEntry> + '_ {
+        self.map.iter().map(|entry| MemTableEntry {
+            key: entry.key().clone(),
+            value: entry.value().clone(),
+        })
+    }
+
+    pub fn range(&self, start: &[u8], end: &[u8]) -> impl Iterator<Item = MemTableEntry> + '_ {
+        self.map
+            .range(start.to_vec()..end.to_vec())
+            .map(|entry| MemTableEntry {
+                key: entry.key().clone(),
+                value: entry.value().clone(),
+            })
+    }
+
+    pub fn clear(&self) {
+        self.map.clear();
+        self.size_bytes.store(0, Ordering::Relaxed);
+    }
+}
+
+impl Default for MemTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub struct MemTableEntry {
+    key: Vec<u8>,
+    value: Vec<u8>,
+}
+
+impl MemTableEntry {
+    pub fn key(&self) -> &[u8] {
+        &self.key
+    }
+
+    pub fn value(&self) -> &[u8] {
+        &self.value
+    }
+
+    pub fn is_tombstone(&self) -> bool {
+        self.value == &[0xFF, 0xFF, 0xFF, 0xFF]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_memtable_basic() {
+        let memtable = MemTable::new();
+
+        memtable.insert(b"key1".to_vec(), b"value1".to_vec());
+        memtable.insert(b"key2".to_vec(), b"value2".to_vec());
+
+        assert_eq!(memtable.get(b"key1"), Some(b"value1".to_vec()));
+        assert_eq!(memtable.get(b"key2"), Some(b"value2".to_vec()));
+        assert_eq!(memtable.get(b"key3"), None);
+
+        assert_eq!(memtable.len(), 2);
+        assert!(memtable.size_bytes() > 0);
+    }
+
+    #[test]
+    fn test_memtable_update() {
+        let memtable = MemTable::new();
+
+        memtable.insert(b"key".to_vec(), b"value1".to_vec());
+        assert_eq!(memtable.get(b"key"), Some(b"value1".to_vec()));
+
+        memtable.insert(b"key".to_vec(), b"value2".to_vec());
+        assert_eq!(memtable.get(b"key"), Some(b"value2".to_vec()));
+
+        assert_eq!(memtable.len(), 1);
+    }
+
+    #[test]
+    fn test_memtable_delete() {
+        let memtable = MemTable::new();
+
+        memtable.insert(b"key".to_vec(), b"value".to_vec());
+        assert_eq!(memtable.get(b"key"), Some(b"value".to_vec()));
+
+        memtable.delete(b"key");
+        assert_eq!(memtable.get(b"key"), None);
+        assert_eq!(memtable.len(), 0);
+    }
+
+    #[test]
+    fn test_memtable_iteration() {
+        let memtable = MemTable::new();
+
+        memtable.insert(b"b".to_vec(), b"2".to_vec());
+        memtable.insert(b"a".to_vec(), b"1".to_vec());
+        memtable.insert(b"c".to_vec(), b"3".to_vec());
+
+        let keys: Vec<Vec<u8>> = memtable.iter().map(|e| e.key().to_vec()).collect();
+        assert_eq!(keys, vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec()]);
+    }
+}

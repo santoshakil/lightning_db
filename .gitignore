@@ -1,0 +1,30 @@
+# Build artifacts
+/target/
+*.rlib
+*.so
+*.dylib
+*.dll
+
+# Demo and test data
+/data/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Generated C headers
+lightning_db.h
+
+# Documentation drafts
+*LUDE.md
