@@ -4,7 +4,7 @@ A high-performance embedded key-value database written in Rust, designed for spe
 
 ## Features
 
-- **Blazing Fast**: 1M+ reads/sec, 100K+ writes/sec with <1μs read latency
+- **Blazing Fast**: 14M+ reads/sec, 350K+ writes/sec with <0.1μs read latency
 - **Small Footprint**: <5MB binary size, configurable memory usage from 10MB
 - **ACID Transactions**: Full transaction support with MVCC
 - **Write Optimization**: LSM tree architecture with compaction
