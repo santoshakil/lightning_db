@@ -1,14 +1,13 @@
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::wal::{WALOperation, WriteAheadLog};
 use crate::Database;
 use parking_lot::RwLock;
 use std::collections::VecDeque;
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::io::{Read, Write};
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,17 +26,20 @@ pub struct EnhancedReplicationManager {
     current_lsn: Arc<AtomicU64>,
     pending_operations: Arc<RwLock<VecDeque<ReplicationMessage>>>,
     sync_condvar: Arc<(Mutex<bool>, Condvar)>,
+    #[allow(dead_code)]
     last_heartbeat: Arc<RwLock<Instant>>,
     
     // Master-specific
     slave_states: Arc<RwLock<Vec<SlaveState>>>,
     
     // Slave-specific
+    #[allow(dead_code)]
     master_connection: Arc<Mutex<Option<TcpStream>>>,
     last_received_lsn: Arc<AtomicU64>,
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct SlaveState {
     address: String,
     stream: Arc<Mutex<TcpStream>>,
@@ -63,13 +65,14 @@ impl EnhancedReplicationManager {
     }
     
     /// Hook into WAL to automatically capture operations
-    pub fn hook_wal(&self, wal: Arc<WriteAheadLog>) -> Result<()> {
+    pub fn hook_wal(&self, _wal: Arc<WriteAheadLog>) -> Result<()> {
         // This would be implemented by having the WAL notify us of new operations
         // For now, operations must be manually replicated
         Ok(())
     }
     
     /// Start heartbeat thread
+    #[allow(dead_code)]
     fn start_heartbeat(&self) {
         let is_running = self.is_running.clone();
         let interval = Duration::from_millis(self.config.heartbeat_interval_ms);
@@ -98,7 +101,7 @@ impl EnhancedReplicationManager {
     }
     
     /// Handle snapshot requests
-    pub fn create_snapshot(&self, from_lsn: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    pub fn create_snapshot(&self, _from_lsn: u64) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         // In a real implementation, this would create a consistent snapshot
         // For now, return empty snapshot
         Ok(Vec::new())
@@ -118,12 +121,14 @@ impl EnhancedReplicationManager {
     }
     
     /// Check if a slave needs a snapshot
+    #[allow(dead_code)]
     fn slave_needs_snapshot(&self, slave_lsn: u64) -> bool {
         let current = self.current_lsn.load(Ordering::Relaxed);
         current - slave_lsn > self.config.snapshot_threshold
     }
     
     /// Monitor slave health
+    #[allow(dead_code)]
     fn monitor_slave_health(&self) {
         let slave_states = self.slave_states.clone();
         let heartbeat_timeout = Duration::from_millis(self.config.heartbeat_interval_ms * 3);
@@ -194,4 +199,4 @@ pub struct ReplicationStats {
     pub last_received_lsn: u64,
 }
 
-use super::{ReplicationConfig, ReplicationRole, ConflictResolution};
+use super::{ReplicationConfig, ReplicationRole};

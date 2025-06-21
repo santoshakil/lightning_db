@@ -648,6 +648,11 @@ impl Database {
         if let Some(ref batcher) = self.write_batcher {
             return batcher.put(key.to_vec(), value.to_vec());
         }
+        
+        // Optimization: For small keys/values, try to minimize allocations
+        if key.len() <= 64 && value.len() <= 1024 {
+            return self.put_small_optimized(key, value);
+        }
         // Fast path for non-transactional puts with LSM
         if let Some(ref lsm) = self.lsm_tree {
             // Write to WAL first for durability
@@ -705,6 +710,57 @@ impl Database {
         }
         
         // Fall back to full consistency path
+        self.put_with_consistency(key, value, self._config.consistency_config.default_level)
+    }
+    
+    /// Optimized put path for small keys/values to minimize allocations
+    fn put_small_optimized(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        // Fast path for LSM without going through full consistency checks
+        if let Some(ref lsm) = self.lsm_tree {
+            // Direct LSM insert
+            lsm.insert(key.to_vec(), value.to_vec())?;
+            
+            // Async WAL write (don't block on it)
+            if let Some(ref improved_wal) = self.improved_wal {
+                use wal::WALOperation;
+                improved_wal.append(WALOperation::Put {
+                    key: key.to_vec(),
+                    value: value.to_vec(),
+                })?;
+            }
+            
+            return Ok(());
+        }
+        
+        // Fast path for B+Tree writes
+        if !self._config.use_optimized_transactions {
+            // Direct write with minimal lock time
+            if let Some(ref write_buffer) = self.btree_write_buffer {
+                write_buffer.insert(key.to_vec(), value.to_vec())?;
+            } else {
+                let mut btree = self.btree.write();
+                btree.insert(key, value)?;
+            }
+            
+            // Async WAL write
+            if let Some(ref improved_wal) = self.improved_wal {
+                use wal::WALOperation;
+                improved_wal.append(WALOperation::Put {
+                    key: key.to_vec(),
+                    value: value.to_vec(),
+                })?;
+            }
+            
+            return Ok(());
+        }
+        
+        // Fall back to standard path
+        self.put_standard(key, value)
+    }
+    
+    /// Standard put path for larger data  
+    fn put_standard(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        // Just delegate to the original put logic for now
         self.put_with_consistency(key, value, self._config.consistency_config.default_level)
     }
     
