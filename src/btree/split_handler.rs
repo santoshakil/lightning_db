@@ -13,6 +13,7 @@ impl<'a> SplitHandler<'a> {
     }
     
     /// Handle a split that may propagate up the tree
+    #[allow(dead_code)]
     pub fn handle_split(
         &self,
         node: &mut BTreeNode,
@@ -145,6 +146,7 @@ impl<'a> SplitHandler<'a> {
     }
     
     /// Handle split propagation up the tree
+    #[allow(dead_code)]
     pub fn propagate_split(
         &self,
         path: &[u32],

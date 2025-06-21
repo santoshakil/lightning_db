@@ -1,5 +1,9 @@
+mod enhanced;
+
+pub use enhanced::{EnhancedReplicationManager, ReplicationMessage, ReplicationStats};
+
 use crate::error::{Error, Result};
-use crate::wal::WALOperation;
+use crate::wal::{WALOperation, WriteAheadLog};
 use crate::Database;
 use parking_lot::RwLock;
 use std::collections::VecDeque;
@@ -7,8 +11,9 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::io::{Read, Write};
+use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ReplicationRole {
@@ -23,6 +28,16 @@ pub struct ReplicationConfig {
     pub master_address: Option<String>,
     pub sync_interval_ms: u64,
     pub batch_size: usize,
+    pub heartbeat_interval_ms: u64,
+    pub snapshot_threshold: u64,
+    pub conflict_resolution: ConflictResolution,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum ConflictResolution {
+    LastWriteWins,
+    MasterWins,
+    SlaveWins,
 }
 
 impl Default for ReplicationConfig {
@@ -33,6 +48,9 @@ impl Default for ReplicationConfig {
             master_address: None,
             sync_interval_ms: 100,
             batch_size: 1000,
+            heartbeat_interval_ms: 5000,
+            snapshot_threshold: 10000,
+            conflict_resolution: ConflictResolution::LastWriteWins,
         }
     }
 }
@@ -44,7 +62,11 @@ pub struct ReplicationManager {
     last_synced_lsn: Arc<AtomicU64>,
     pending_operations: Arc<RwLock<VecDeque<WALOperation>>>,
     sync_condvar: Arc<(Mutex<bool>, Condvar)>,
+    last_heartbeat: Arc<RwLock<Instant>>,
+    slave_connections: Arc<RwLock<Vec<TcpStream>>>,
 }
+
+
 
 impl ReplicationManager {
     pub fn new(config: ReplicationConfig, database: Arc<Database>) -> Self {
@@ -55,6 +77,8 @@ impl ReplicationManager {
             last_synced_lsn: Arc::new(AtomicU64::new(0)),
             pending_operations: Arc::new(RwLock::new(VecDeque::new())),
             sync_condvar: Arc::new((Mutex::new(false), Condvar::new())),
+            last_heartbeat: Arc::new(RwLock::new(Instant::now())),
+            slave_connections: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -305,6 +329,9 @@ mod tests {
         assert_eq!(config.role, ReplicationRole::Master);
         assert_eq!(config.bind_address, "127.0.0.1:7890");
         assert_eq!(config.sync_interval_ms, 100);
+        assert_eq!(config.heartbeat_interval_ms, 5000);
+        assert_eq!(config.snapshot_threshold, 10000);
+        assert_eq!(config.conflict_resolution, ConflictResolution::LastWriteWins);
     }
 
     #[test]
@@ -365,5 +392,34 @@ mod tests {
         // Cleanup
         master_repl.stop();
         slave_repl.stop();
+    }
+    
+    #[test]
+    fn test_enhanced_replication() {
+        let dir = tempdir().unwrap();
+        let config = LightningDbConfig::default();
+        let db = Arc::new(Database::create(&dir.path().join("test.db"), config).unwrap());
+        
+        let repl_config = ReplicationConfig::default();
+        let manager = EnhancedReplicationManager::new(repl_config, db.clone());
+        
+        // Test statistics
+        let stats = manager.get_stats();
+        assert_eq!(stats.role, ReplicationRole::Master);
+        assert!(!stats.is_running);
+        assert_eq!(stats.current_lsn, 0);
+        assert_eq!(stats.pending_operations, 0);
+        
+        // Test operation replication
+        let op = WALOperation::Put {
+            key: b"test_key".to_vec(),
+            value: b"test_value".to_vec(),
+        };
+        
+        manager.replicate_operation(op).unwrap();
+        
+        let stats = manager.get_stats();
+        assert_eq!(stats.current_lsn, 1);
+        assert_eq!(stats.pending_operations, 1);
     }
 }
