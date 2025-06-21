@@ -196,6 +196,13 @@ impl LSMTree {
         Ok(())
     }
 
+    /// Insert without WAL logging - used by auto batcher for optimized batch writes
+    pub fn insert_no_wal(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        // Same as insert but called separately to indicate no WAL logging needed
+        // The actual WAL logging is handled by the caller (auto batcher)
+        self.insert(key, value)
+    }
+
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         // Check read cache first - need write lock for LRU update
         let cache_result = {

@@ -433,7 +433,16 @@ impl ImprovedWriteAheadLog {
         // Write entry
         segment.write_entry(&entry)?;
         
-        if self.sync_on_commit {
+        // Only sync on transaction commit/abort operations when sync_on_commit is enabled
+        // For Put/Delete operations within a transaction, sync will be done at commit time
+        let should_sync = self.sync_on_commit && matches!(
+            entry.operation,
+            WALOperation::TransactionCommit { .. } | 
+            WALOperation::TransactionAbort { .. } |
+            WALOperation::Checkpoint { .. }
+        );
+        
+        if should_sync {
             segment.sync()?;
         }
         

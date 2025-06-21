@@ -110,7 +110,7 @@ impl Default for LightningDbConfig {
             compression_enabled: true,
             compression_type: 1, // ZSTD
             max_active_transactions: 1000,
-            prefetch_enabled: true,
+            prefetch_enabled: false, // Disabled to avoid 10s cleanup delay
             prefetch_distance: 8,
             prefetch_workers: 2,
             use_optimized_transactions: false, // Disabled due to performance degradation
@@ -217,11 +217,12 @@ impl Database {
 
         // Optional optimized transaction manager
         let optimized_transaction_manager = if config.use_optimized_transactions {
-            let mut opt_manager = OptimizedTransactionManager::new(
+            let opt_manager = OptimizedTransactionManager::new(
                 config.max_active_transactions,
                 version_store.clone(),
             );
-            opt_manager.start_background_processing();
+            // Disabled background processing due to performance overhead
+            // opt_manager.start_background_processing();
             Some(Arc::new(opt_manager))
         } else {
             None
@@ -233,7 +234,7 @@ impl Database {
             let wal = ImprovedWriteAheadLog::create_with_config(
                 &db_path.join("wal"),
                 sync_on_commit,
-                true, // Always enable group commit for performance
+                sync_on_commit, // Only enable group commit for sync WAL where it's beneficial
             )?;
             (None, Some(wal))
         } else {
@@ -628,10 +629,16 @@ impl Database {
     }
     
     pub fn create_auto_batcher(db: Arc<Self>) -> Arc<AutoBatcher> {
+        // Check if sync WAL is enabled and adjust batch size accordingly
+        let (batch_size, max_delay) = match &db._config.wal_sync_mode {
+            WalSyncMode::Sync => (5000, 50), // Larger batches for sync WAL
+            _ => (1000, 10), // Standard for async/periodic
+        };
+        
         AutoBatcher::new(
             db,
-            1000, // batch size - optimal for performance
-            10,   // 10ms max delay
+            batch_size,
+            max_delay,
         )
     }
     
@@ -682,7 +689,8 @@ impl Database {
         }
         
         // Fast path for direct B+Tree writes when not using transactions
-        if self.lsm_tree.is_none() && !self._config.use_optimized_transactions {
+        // Note: Even with optimized transactions enabled, non-transactional puts should use the direct path
+        if self.lsm_tree.is_none() {
             // Write to WAL first
             if let Some(ref improved_wal) = self.improved_wal {
                 use wal::WALOperation;
@@ -709,8 +717,33 @@ impl Database {
             return Ok(());
         }
         
-        // Fall back to full consistency path
-        self.put_with_consistency(key, value, self._config.consistency_config.default_level)
+        // Fast path: avoid consistency overhead for performance
+        // Write to WAL first for durability
+        if let Some(ref improved_wal) = self.improved_wal {
+            use wal::WALOperation;
+            improved_wal.append(WALOperation::Put {
+                key: key.to_vec(),
+                value: value.to_vec(),
+            })?;
+        } else if let Some(ref wal) = self.wal {
+            use wal::WALOperation;
+            wal.append(WALOperation::Put {
+                key: key.to_vec(),
+                value: value.to_vec(),
+            })?;
+        }
+        
+        // Direct B+Tree write without transaction overhead
+        if let Some(ref write_buffer) = self.btree_write_buffer {
+            write_buffer.insert(key.to_vec(), value.to_vec())?;
+        } else {
+            let mut btree = self.btree.write();
+            btree.insert(key, value)?;
+            drop(btree);
+            self.page_manager.sync()?;
+        }
+        
+        Ok(())
     }
     
     /// Optimized put path for small keys/values to minimize allocations
@@ -793,15 +826,23 @@ impl Database {
             if let Some(ref lsm) = self.lsm_tree {
                 lsm.insert(key.to_vec(), value.to_vec())?;
             } else {
-                // For non-LSM databases, use implicit transaction
-                let tx_id = self.begin_transaction()?;
-                self.put_tx(tx_id, key, value)?;
-                self.commit_transaction(tx_id)?;
+                // For non-LSM databases, write directly to B+Tree (bypass transaction overhead)
+                if let Some(ref write_buffer) = self.btree_write_buffer {
+                    write_buffer.insert(key.to_vec(), value.to_vec())?;
+                } else {
+                    // Direct B+Tree write
+                    let mut btree = self.btree.write();
+                    btree.insert(key, value)?;
+                    drop(btree);
+                    self.page_manager.sync()?;
+                }
             }
             
-            // Wait for consistency
-            let write_timestamp = self.consistency_manager.clock.get_timestamp();
-            self.consistency_manager.wait_for_write_visibility(write_timestamp, level)?;
+            // Wait for consistency only if needed
+            if level != ConsistencyLevel::Eventual {
+                let write_timestamp = self.consistency_manager.clock.get_timestamp();
+                self.consistency_manager.wait_for_write_visibility(write_timestamp, level)?;
+            }
             
             Ok(())
         })
@@ -943,10 +984,18 @@ impl Database {
             tx.write_set.clone()
         };
         
+        // For sync WAL mode, we need to optimize transaction commits
+        let is_sync_wal = matches!(self._config.wal_sync_mode, WalSyncMode::Sync);
+        
         // Write to WAL first for durability (before committing to version store)
-        for write_op in &write_set {
-            if let Some(ref improved_wal) = self.improved_wal {
-                use wal::WALOperation;
+        if let Some(ref improved_wal) = self.improved_wal {
+            use wal::WALOperation;
+            
+            // Write transaction begin marker
+            improved_wal.append(WALOperation::TransactionBegin { tx_id })?;
+            
+            // Write all operations
+            for write_op in &write_set {
                 if let Some(ref value) = write_op.value {
                     improved_wal.append(WALOperation::Put {
                         key: write_op.key.clone(),
@@ -957,8 +1006,18 @@ impl Database {
                         key: write_op.key.clone(),
                     })?;
                 }
-            } else if let Some(ref wal) = self.wal {
-                use wal::WALOperation;
+            }
+            
+            // Write transaction commit marker
+            improved_wal.append(WALOperation::TransactionCommit { tx_id })?;
+            
+            // For sync WAL, sync once at the end of transaction
+            if is_sync_wal {
+                improved_wal.sync()?;
+            }
+        } else if let Some(ref wal) = self.wal {
+            use wal::WALOperation;
+            for write_op in &write_set {
                 if let Some(ref value) = write_op.value {
                     wal.append(WALOperation::Put {
                         key: write_op.key.clone(),

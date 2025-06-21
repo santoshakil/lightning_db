@@ -424,15 +424,22 @@ impl PrefetchManager {
         thread::spawn(move || {
             debug!("Prefetch cleanup thread started");
 
+            let mut last_cleanup = Instant::now();
+            
             while running.load(Ordering::SeqCst) {
-                thread::sleep(Duration::from_secs(30));
+                // Sleep in smaller increments to be more responsive to shutdown
+                thread::sleep(Duration::from_millis(100));
+                
+                // Only do cleanup every 30 seconds
+                if last_cleanup.elapsed() >= Duration::from_secs(30) {
+                    // Clean up old access patterns
+                    {
+                        let mut patterns_guard = patterns.write();
+                        let cutoff = Instant::now() - Duration::from_secs(300); // 5 minutes
 
-                // Clean up old access patterns
-                {
-                    let mut patterns_guard = patterns.write();
-                    let cutoff = Instant::now() - Duration::from_secs(300); // 5 minutes
-
-                    patterns_guard.retain(|_, pattern| pattern.last_access_time > cutoff);
+                        patterns_guard.retain(|_, pattern| pattern.last_access_time > cutoff);
+                    }
+                    last_cleanup = Instant::now();
                 }
             }
 
