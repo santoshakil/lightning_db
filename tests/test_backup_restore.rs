@@ -74,6 +74,8 @@ fn test_incremental_backup() {
         compress: false, // Disable compression for easier debugging
         verify: true,
         max_incremental_size: 10 * 1024 * 1024,
+        online_backup: true,
+        io_throttle_mb_per_sec: 50,
     };
     let backup_manager = BackupManager::new(backup_config);
     let full_metadata = backup_manager.create_backup(&db_path, &full_backup_path).unwrap();

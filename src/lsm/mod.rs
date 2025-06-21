@@ -7,7 +7,7 @@ pub mod parallel_compaction;
 mod iterator;
 
 use crate::compression::CompressionType;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use lru::LruCache;
 use parking_lot::RwLock;
 use std::num::NonZeroUsize;
@@ -124,7 +124,7 @@ impl LSMTree {
 
     pub fn new<P: AsRef<Path>>(db_path: P, config: LSMConfig) -> Result<Self> {
         let db_path = db_path.as_ref().to_path_buf();
-        std::fs::create_dir_all(&db_path).map_err(Error::Io)?;
+        std::fs::create_dir_all(&db_path)?;
 
         let memtable = Arc::new(RwLock::new(MemTable::new()));
         let immutable_memtables = Arc::new(RwLock::new(Vec::new()));

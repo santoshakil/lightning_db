@@ -145,7 +145,21 @@ impl OptimizedPageManager {
             debug!("Grew file to {} bytes for page {}", new_size, page_id);
         }
         
-        debug!("Allocated new page: {}", page_id);
+        // Initialize the new page with empty data
+        let mut page = Page::new(page_id);
+        // Set page type to 0 (leaf) by default
+        let data = page.get_mut_data();
+        data[0..4].copy_from_slice(&crate::storage::MAGIC.to_le_bytes());
+        data[4..8].copy_from_slice(&1u32.to_le_bytes()); // version
+        data[8..12].copy_from_slice(&0u32.to_le_bytes()); // page type (leaf)
+        // checksum will be calculated on write
+        data[16..20].copy_from_slice(&0u32.to_le_bytes()); // num_entries
+        data[20..24].copy_from_slice(&(PAGE_SIZE as u32 - 64).to_le_bytes()); // free_space
+        
+        // Write the initialized page
+        self.write_page(&page)?;
+        
+        debug!("Allocated and initialized new page: {}", page_id);
         Ok(page_id)
     }
     

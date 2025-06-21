@@ -122,11 +122,11 @@ impl TransactionManager {
     }
 
     pub fn begin(&self) -> Result<u64> {
-        // Check if we've reached the maximum number of active transactions
+        // Check transaction limit
         if self.active_transactions.len() >= self.max_active_transactions {
-            return Err(Error::Transaction(
-                "Too many active transactions".to_string(),
-            ));
+            return Err(Error::TransactionLimitReached {
+                limit: self.max_active_transactions,
+            });
         }
 
         let tx_id = self.next_tx_id.fetch_add(1, Ordering::SeqCst);
@@ -142,7 +142,7 @@ impl TransactionManager {
         self.active_transactions
             .get(&tx_id)
             .map(|entry| entry.value().clone())
-            .ok_or(Error::Transaction("Transaction not found".to_string()))
+            .ok_or(Error::TransactionNotFound { id: tx_id })
     }
 
     pub fn commit(&self, tx_id: u64) -> Result<()> {
@@ -153,7 +153,10 @@ impl TransactionManager {
         let tx_data = {
             let mut tx = tx_arc.write();
             if !tx.is_active() {
-                return Err(Error::Transaction("Transaction is not active".to_string()));
+                return Err(Error::TransactionInvalidState {
+                    id: tx_id,
+                    state: format!("{:?}", tx.state),
+                });
             }
             tx.prepare(); // Mark as preparing
             tx.clone()
@@ -193,7 +196,10 @@ impl TransactionManager {
         {
             let mut tx = tx_arc.write();
             if !tx.is_active() && tx.state != TxState::Preparing {
-                return Err(Error::Transaction("Transaction is not active".to_string()));
+                return Err(Error::TransactionInvalidState {
+                    id: tx_id,
+                    state: format!("{:?}", tx.state),
+                });
             }
             tx.abort();
         }

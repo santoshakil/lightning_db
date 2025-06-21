@@ -1,0 +1,12 @@
+# cbindgen configuration
+
+language = "C"
+
+[parse]
+# Exclude async modules from FFI binding generation
+exclude = ["async_database", "async_page_manager", "async_storage", "async_transaction", "async_wal"]
+
+[export]
+# Only export FFI-related functions
+include = []
+prefix = "lightning_db_"

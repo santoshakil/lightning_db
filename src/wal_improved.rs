@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
 use crate::wal::{WALOperation, WALEntry};
 use bincode::{Decode, Encode};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, RwLock, Condvar};
 use std::collections::{HashMap, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
@@ -14,8 +14,8 @@ use tracing::{debug, info, warn};
 const WAL_MAGIC: u32 = 0x57414C22; // "WAL" version 2
 const WAL_VERSION: u32 = 2;
 const SEGMENT_SIZE: u64 = 64 * 1024 * 1024; // 64MB segments
-const GROUP_COMMIT_INTERVAL: Duration = Duration::from_millis(10);
-const GROUP_COMMIT_SIZE: usize = 100;
+const GROUP_COMMIT_INTERVAL: Duration = Duration::from_micros(100);
+const GROUP_COMMIT_SIZE: usize = 2000;
 
 /// Recovery information for resumable recovery
 #[derive(Debug, Clone, Encode, Decode)]
@@ -51,14 +51,14 @@ impl WALSegment {
             .write(true)
             .truncate(true)
             .open(&path)
-            .map_err(Error::Io)?;
+            ?;
         
         let mut writer = BufWriter::with_capacity(1024 * 1024, file); // 1MB buffer
         
         // Write segment header
-        writer.write_all(&WAL_MAGIC.to_le_bytes()).map_err(Error::Io)?;
-        writer.write_all(&WAL_VERSION.to_le_bytes()).map_err(Error::Io)?;
-        writer.write_all(&segment_id.to_le_bytes()).map_err(Error::Io)?;
+        writer.write_all(&WAL_MAGIC.to_le_bytes())?;
+        writer.write_all(&WAL_VERSION.to_le_bytes())?;
+        writer.write_all(&segment_id.to_le_bytes())?;
         
         Ok(Self {
             segment_id,
@@ -70,16 +70,16 @@ impl WALSegment {
     }
     
     fn open(path: PathBuf) -> Result<(Self, u64, u64)> {
-        let mut file = File::open(&path).map_err(Error::Io)?;
+        let mut file = File::open(&path)?;
         
         // Read and verify header
         let mut magic = [0u8; 4];
         let mut version = [0u8; 4];
         let mut segment_id_bytes = [0u8; 8];
         
-        file.read_exact(&mut magic).map_err(Error::Io)?;
-        file.read_exact(&mut version).map_err(Error::Io)?;
-        file.read_exact(&mut segment_id_bytes).map_err(Error::Io)?;
+        file.read_exact(&mut magic)?;
+        file.read_exact(&mut version)?;
+        file.read_exact(&mut segment_id_bytes)?;
         
         let magic = u32::from_le_bytes(magic);
         let version = u32::from_le_bytes(version);
@@ -101,7 +101,7 @@ impl WALSegment {
             .write(true)
             .append(true)
             .open(&path)
-            .map_err(Error::Io)?;
+            ?;
         
         let writer = BufWriter::with_capacity(1024 * 1024, file);
         
@@ -123,13 +123,13 @@ impl WALSegment {
         let mut last_valid_offset = 16; // After header
         
         loop {
-            let offset = file.stream_position().map_err(Error::Io)?;
+            let offset = file.stream_position()?;
             
             match Self::read_entry_with_recovery(file) {
                 Ok(entry) => {
                     if entry.verify_checksum() {
                         last_lsn = entry.lsn;
-                        last_valid_offset = file.stream_position().map_err(Error::Io)?;
+                        last_valid_offset = file.stream_position()?;
                     } else {
                         warn!("Corrupted entry at offset {}, stopping scan", offset);
                         break;
@@ -156,9 +156,9 @@ impl WALSegment {
         match reader.read_exact(&mut len_bytes) {
             Ok(_) => {},
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                return Err(Error::Io(e));
+                return Err(Error::Io(e.to_string()));
             }
-            Err(e) => return Err(Error::Io(e)),
+            Err(e) => return Err(Error::Io(e.to_string())),
         }
         
         let len = u32::from_le_bytes(len_bytes) as usize;
@@ -174,9 +174,9 @@ impl WALSegment {
             Ok(_) => {},
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                 // Incomplete write detected
-                return Err(Error::Io(e));
+                return Err(Error::Io(e.to_string()));
             }
-            Err(e) => return Err(Error::Io(e)),
+            Err(e) => return Err(Error::Io(e.to_string())),
         }
         
         let (entry, _): (WALEntry, usize) =
@@ -188,7 +188,7 @@ impl WALSegment {
     
     fn is_incomplete_write(error: &Error) -> bool {
         match error {
-            Error::Io(e) => e.kind() == std::io::ErrorKind::UnexpectedEof,
+            Error::Io(e) => e.contains("UnexpectedEof"),
             _ => false,
         }
     }
@@ -203,8 +203,8 @@ impl WALSegment {
         
         // Write length and data
         writer.write_all(&(serialized.len() as u32).to_le_bytes())
-            .map_err(Error::Io)?;
-        writer.write_all(&serialized).map_err(Error::Io)?;
+            ?;
+        writer.write_all(&serialized)?;
         
         // Update size
         let new_size = self.size.fetch_add(entry_size, Ordering::SeqCst) + entry_size;
@@ -214,11 +214,11 @@ impl WALSegment {
     
     fn sync(&self) -> Result<()> {
         let mut writer = self.writer.lock();
-        writer.flush().map_err(Error::Io)?;
+        writer.flush()?;
         
         // Get the underlying file and sync to disk
         let file = writer.get_mut();
-        file.sync_all().map_err(Error::Io)?;
+        file.sync_all()?;
         
         Ok(())
     }
@@ -247,6 +247,7 @@ pub struct ImprovedWriteAheadLog {
     
     // Group commit
     commit_queue: Arc<Mutex<VecDeque<(WALEntry, Arc<Mutex<Option<Result<u64>>>>)>>>,
+    commit_condvar: Arc<Condvar>,
     shutdown: Arc<AtomicBool>,
     
     // Recovery tracking
@@ -260,8 +261,16 @@ pub struct ImprovedWriteAheadLog {
 
 impl ImprovedWriteAheadLog {
     pub fn create<P: AsRef<Path>>(path: P) -> Result<Arc<Self>> {
+        Self::create_with_config(path, true, true)
+    }
+    
+    pub fn create_with_config<P: AsRef<Path>>(
+        path: P, 
+        sync_on_commit: bool, 
+        group_commit_enabled: bool
+    ) -> Result<Arc<Self>> {
         let base_path = path.as_ref().to_path_buf();
-        std::fs::create_dir_all(&base_path).map_err(Error::Io)?;
+        std::fs::create_dir_all(&base_path)?;
         
         // Create initial segment
         let segment = Arc::new(WALSegment::create(&base_path, 0)?);
@@ -274,6 +283,7 @@ impl ImprovedWriteAheadLog {
             next_segment_id: AtomicU64::new(1),
             last_checkpoint_lsn: AtomicU64::new(0),
             commit_queue: Arc::new(Mutex::new(VecDeque::new())),
+            commit_condvar: Arc::new(Condvar::new()),
             shutdown: Arc::new(AtomicBool::new(false)),
             recovery_info: Arc::new(RwLock::new(RecoveryInfo {
                 last_good_lsn: 0,
@@ -282,8 +292,8 @@ impl ImprovedWriteAheadLog {
                 checkpoint_lsn: 0,
             })),
             max_segment_size: SEGMENT_SIZE,
-            sync_on_commit: true,
-            group_commit_enabled: true,
+            sync_on_commit,
+            group_commit_enabled,
         });
         
         // Start group commit thread
@@ -311,8 +321,8 @@ impl ImprovedWriteAheadLog {
             checkpoint_lsn: 0,
         };
         
-        for entry in std::fs::read_dir(&base_path).map_err(Error::Io)? {
-            let entry = entry.map_err(Error::Io)?;
+        for entry in std::fs::read_dir(&base_path)? {
+            let entry = entry?;
             let path = entry.path();
             
             if path.extension().and_then(|s| s.to_str()) == Some("seg") {
@@ -343,6 +353,7 @@ impl ImprovedWriteAheadLog {
             next_segment_id: AtomicU64::new(max_segment_id + 1),
             last_checkpoint_lsn: AtomicU64::new(recovery_info.checkpoint_lsn),
             commit_queue: Arc::new(Mutex::new(VecDeque::new())),
+            commit_condvar: Arc::new(Condvar::new()),
             shutdown: Arc::new(AtomicBool::new(false)),
             recovery_info: Arc::new(RwLock::new(recovery_info)),
             max_segment_size: SEGMENT_SIZE,
@@ -372,9 +383,12 @@ impl ImprovedWriteAheadLog {
             {
                 let mut queue = self.commit_queue.lock();
                 queue.push_back((entry, result.clone()));
+                // Notify the commit thread
+                self.commit_condvar.notify_one();
             }
             
-            // Wait for result
+            // Wait for result with exponential backoff
+            let mut spin_count = 0;
             loop {
                 {
                     let r = result.lock();
@@ -385,7 +399,16 @@ impl ImprovedWriteAheadLog {
                         };
                     }
                 }
-                std::thread::yield_now();
+                
+                // Spin a few times before yielding
+                spin_count += 1;
+                if spin_count < 100 {
+                    std::hint::spin_loop();
+                } else if spin_count < 1000 {
+                    std::thread::yield_now();
+                } else {
+                    std::thread::sleep(Duration::from_micros(10));
+                }
             }
         } else {
             // Direct write
@@ -451,7 +474,11 @@ impl ImprovedWriteAheadLog {
             if !batch.entries.is_empty() {
                 self.process_commit_batch(batch);
             } else {
-                std::thread::sleep(Duration::from_millis(1));
+                // Wait on condition variable instead of sleeping
+                let mut queue = self.commit_queue.lock();
+                if queue.is_empty() && !self.shutdown.load(Ordering::Relaxed) {
+                    self.commit_condvar.wait_for(&mut queue, Duration::from_micros(100));
+                }
             }
         }
     }
@@ -518,17 +545,18 @@ impl ImprovedWriteAheadLog {
     {
         let segments = self.segments.read();
         let mut recovery_info = self.recovery_info.write();
+        let mut current_tx_id: Option<u64> = None;
         
         for segment in segments.iter() {
             let mut file = BufReader::new(
-                File::open(&segment.path).map_err(Error::Io)?
+                File::open(&segment.path)?
             );
             
             // Skip header
-            file.seek(SeekFrom::Start(16)).map_err(Error::Io)?;
+            file.seek(SeekFrom::Start(16))?;
             
             loop {
-                let offset = file.stream_position().map_err(Error::Io)?;
+                let offset = file.stream_position()?;
                 
                 match WALSegment::read_entry_with_recovery(&mut file) {
                     Ok(entry) => {
@@ -544,6 +572,7 @@ impl ImprovedWriteAheadLog {
                         // Handle transaction operations
                         match &entry.operation {
                             WALOperation::TransactionBegin { tx_id } => {
+                                current_tx_id = Some(*tx_id);
                                 recovery_info.recovered_transactions.insert(
                                     *tx_id,
                                     TransactionRecoveryState::InProgress { operations: Vec::new() }
@@ -563,35 +592,32 @@ impl ImprovedWriteAheadLog {
                                         TransactionRecoveryState::Committed
                                     );
                                 }
+                                if current_tx_id == Some(*tx_id) {
+                                    current_tx_id = None;
+                                }
                             }
                             WALOperation::TransactionAbort { tx_id } => {
                                 recovery_info.recovered_transactions.insert(
                                     *tx_id,
                                     TransactionRecoveryState::Aborted
                                 );
+                                if current_tx_id == Some(*tx_id) {
+                                    current_tx_id = None;
+                                }
                             }
                             WALOperation::Checkpoint { lsn } => {
                                 recovery_info.checkpoint_lsn = *lsn;
                             }
                             op @ (WALOperation::Put { .. } | WALOperation::Delete { .. }) => {
-                                // Find the transaction this operation belongs to
-                                let tx_state = recovery_info.recovered_transactions
-                                    .values()
-                                    .find_map(|state| match state {
-                                        TransactionRecoveryState::InProgress { .. } => Some(state),
-                                        _ => None,
-                                    })
-                                    .unwrap_or(&TransactionRecoveryState::Committed);
-                                
-                                // Apply operation
-                                apply_op(op, tx_state)?;
-                                
-                                // Add to transaction if in progress
-                                for (_, state) in recovery_info.recovered_transactions.iter_mut() {
-                                    if let TransactionRecoveryState::InProgress { operations } = state {
+                                // If we have a current transaction, add the operation to it
+                                if let Some(tx_id) = current_tx_id {
+                                    if let Some(TransactionRecoveryState::InProgress { operations }) = 
+                                        recovery_info.recovered_transactions.get_mut(&tx_id) {
                                         operations.push(op.clone());
-                                        break;
                                     }
+                                } else {
+                                    // No active transaction - operation is implicitly committed
+                                    apply_op(op, &TransactionRecoveryState::Committed)?;
                                 }
                             }
                         }
@@ -641,7 +667,7 @@ impl ImprovedWriteAheadLog {
                 old_segment.close()?;
                 
                 let archive_path = old_segment.path.with_extension("archive");
-                std::fs::rename(&old_segment.path, &archive_path).map_err(Error::Io)?;
+                std::fs::rename(&old_segment.path, &archive_path)?;
                 
                 archived.push(archive_path);
                 segments.remove(0);

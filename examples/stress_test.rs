@@ -1,6 +1,5 @@
 use lightning_db::{Database, LightningDbConfig};
-use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -115,14 +114,14 @@ fn test_mixed_workload(db: Arc<Database>) {
             let mut local_writes = 0u64;
             
             while start.elapsed() < duration {
-                if rng.random_bool(0.7) { // 70% reads
-                    let key_id = rng.random_range(0..100_000);
+                if rng.random::<f32>() < 0.7 { // 70% reads
+                    let key_id = (rng.random::<f32>() * 100_000.0) as u32;
                     let key = format!("key_{}", key_id);
                     
                     let _ = db_clone.get(key.as_bytes());
                     local_reads += 1;
                 } else { // 30% writes
-                    let key_id = rng.random_range(0..100_000);
+                    let key_id = (rng.random::<f32>() * 100_000.0) as u32;
                     let key = format!("key_{}", key_id);
                     let value = vec![rng.random::<u8>(); 256];
                     
@@ -279,18 +278,18 @@ fn test_long_running(db: Arc<Database>) {
             
             while start.elapsed() < duration {
                 // Mix of operations
-                match rng.random_range(0..10) {
+                match (rng.random::<f32>() * 10.0) as u32 {
                     0..=5 => { // 60% reads
-                        let key = format!("key_{}", rng.random_range(0..1_000_000));
+                        let key = format!("key_{}", (rng.random::<f32>() * 1_000_000.0) as u32);
                         let _ = db_clone.get(key.as_bytes());
                     }
                     6..=8 => { // 30% writes
-                        let key = format!("key_{}", rng.random_range(0..1_000_000));
+                        let key = format!("key_{}", (rng.random::<f32>() * 1_000_000.0) as u32);
                         let value = vec![rng.random::<u8>(); 256];
                         db_clone.put(key.as_bytes(), &value).expect("Put failed");
                     }
                     9 => { // 10% deletes
-                        let key = format!("key_{}", rng.random_range(0..1_000_000));
+                        let key = format!("key_{}", (rng.random::<f32>() * 1_000_000.0) as u32);
                         let _ = db_clone.delete(key.as_bytes());
                     }
                     _ => unreachable!(),

@@ -573,8 +573,9 @@ mod tests {
             timestamp: 200,
         };
 
-        // Higher timestamp should have higher priority
-        assert!(entry2 > entry1);
+        // Higher timestamp should have higher priority in the heap (comes out first)
+        // For a min-heap, this means entry2 should be considered "less than" entry1
+        assert!(entry2 < entry1);
     }
 
     #[test]

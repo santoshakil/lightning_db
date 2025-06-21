@@ -82,8 +82,8 @@ impl OptimizedMmapManager {
             open_options.custom_flags(libc::O_DIRECT);
         }
         
-        let file = open_options.open(&path).map_err(Error::Io)?;
-        file.set_len(initial_size).map_err(Error::Io)?;
+        let file = open_options.open(&path)?;
+        file.set_len(initial_size)?;
         
         let manager = Self {
             config,
@@ -115,8 +115,8 @@ impl OptimizedMmapManager {
             open_options.custom_flags(libc::O_DIRECT);
         }
         
-        let file = open_options.open(&path).map_err(Error::Io)?;
-        let metadata = file.metadata().map_err(Error::Io)?;
+        let file = open_options.open(&path)?;
+        let metadata = file.metadata()?;
         let file_size = metadata.len();
         
         let manager = Self {
@@ -191,7 +191,7 @@ impl OptimizedMmapManager {
                 .offset(offset)
                 .len(region_size)
                 .map_mut(&*file)
-                .map_err(Error::Io)?
+                ?
         };
         
         // Apply memory advice for performance after mapping
@@ -229,7 +229,7 @@ impl OptimizedMmapManager {
             if let Some(region) = regions.remove(&region_id) {
                 // Sync if dirty
                 if region.dirty {
-                    region.mmap.flush().map_err(Error::Io)?;
+                    region.mmap.flush()?;
                     self.bytes_synced.fetch_add(region.size as u64, Ordering::Relaxed);
                 }
                 
@@ -332,9 +332,9 @@ impl OptimizedMmapManager {
         for region in regions.values_mut() {
             if region.dirty {
                 if self.config.enable_async_msync {
-                    region.mmap.flush_async().map_err(Error::Io)?;
+                    region.mmap.flush_async()?;
                 } else {
-                    region.mmap.flush().map_err(Error::Io)?;
+                    region.mmap.flush()?;
                 }
                 region.dirty = false;  // Mark as clean after sync
                 total_synced += region.size as u64;
@@ -345,7 +345,7 @@ impl OptimizedMmapManager {
         
         // Sync file metadata
         let file = self.file.lock();
-        file.sync_all().map_err(Error::Io)?;
+        file.sync_all()?;
         
         Ok(())
     }
@@ -358,7 +358,7 @@ impl OptimizedMmapManager {
         }
         
         let file = self.file.lock();
-        file.set_len(new_size).map_err(Error::Io)?;
+        file.set_len(new_size)?;
         self.file_size.store(new_size, Ordering::Release);
         
         debug!("Grew mmap file from {} to {} bytes", current_size, new_size);
@@ -378,22 +378,43 @@ impl OptimizedMmapManager {
             while shutdown.load(Ordering::Relaxed) == 0 {
                 thread::sleep(flush_interval);
                 
-                let mut regions_guard = regions.write();
+                // Collect dirty regions to flush without holding the lock
+                let dirty_regions: Vec<(u64, usize)> = {
+                    let regions_guard = regions.read();
+                    regions_guard
+                        .iter()
+                        .filter(|(_, r)| r.dirty)
+                        .map(|(id, r)| (*id, r.size))
+                        .collect()
+                };
+                
                 let mut synced = 0u64;
                 
-                for region in regions_guard.values_mut() {
-                    if region.dirty {
-                        match if enable_async_msync {
-                            region.mmap.flush_async()
+                // Flush each dirty region individually, taking write lock only when needed
+                for (region_id, size) in dirty_regions {
+                    // Take write lock only for this specific region
+                    let flush_result = {
+                        let regions_guard = regions.read();
+                        if let Some(region) = regions_guard.get(&region_id) {
+                            if enable_async_msync {
+                                region.mmap.flush_async()
+                            } else {
+                                region.mmap.flush()
+                            }
                         } else {
-                            region.mmap.flush()
-                        } {
-                            Ok(()) => {
-                                synced += region.size as u64;
-                                region.dirty = false;
-                            },
-                            Err(e) => warn!("Failed to sync mmap region: {}", e),
+                            continue;
                         }
+                    };
+                    
+                    // Update dirty flag if flush succeeded
+                    if let Ok(()) = flush_result {
+                        let mut regions_guard = regions.write();
+                        if let Some(region) = regions_guard.get_mut(&region_id) {
+                            region.dirty = false;
+                            synced += size as u64;
+                        }
+                    } else if let Err(e) = flush_result {
+                        warn!("Failed to sync mmap region {}: {}", region_id, e);
                     }
                 }
                 
