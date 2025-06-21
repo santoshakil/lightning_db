@@ -294,13 +294,18 @@ impl ParallelCompactionCoordinator {
                 )?;
                 
                 let mut bytes = 0u64;
+                let mut entry_count = 0;
                 for (key, value) in chunk.iter() {
                     builder.add(key, value)?;
                     bytes += (key.len() + value.len()) as u64;
                     progress.output_bytes.fetch_add((key.len() + value.len()) as u64, Ordering::Relaxed);
+                    entry_count += 1;
                 }
                 
-                builder.finish()?;
+                // Only finish if we have entries to avoid "No keys added" error
+                if entry_count > 0 {
+                    builder.finish()?;
+                }
                 
                 Ok((chunk.len(), bytes))
             })
