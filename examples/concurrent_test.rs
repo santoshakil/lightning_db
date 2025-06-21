@@ -8,8 +8,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⚡ Lightning DB Concurrent Operations Test\n");
     
     let dir = tempdir()?;
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Async;
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async,
+        ..Default::default()
+    };
     
     let db = Arc::new(Database::create(&dir.path().join("concurrent.db"), config)?);
     

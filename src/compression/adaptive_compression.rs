@@ -37,14 +37,14 @@ impl Default for AdaptiveCompressionConfig {
 
 /// Statistics for a specific compression type
 #[derive(Debug, Default)]
-struct CompressionTypeStats {
-    total_compressions: AtomicU64,
-    total_original_bytes: AtomicU64,
-    total_compressed_bytes: AtomicU64,
-    total_compression_time_us: AtomicU64,
-    total_decompression_time_us: AtomicU64,
-    success_count: AtomicU64,
-    failure_count: AtomicU64,
+pub struct CompressionTypeStats {
+    pub total_compressions: AtomicU64,
+    pub total_original_bytes: AtomicU64,
+    pub total_compressed_bytes: AtomicU64,
+    pub total_compression_time_us: AtomicU64,
+    pub total_decompression_time_us: AtomicU64,
+    pub success_count: AtomicU64,
+    pub failure_count: AtomicU64,
 }
 
 impl CompressionTypeStats {
@@ -90,7 +90,6 @@ struct DataSample {
     size: usize,
     best_compression: CompressionType,
     compression_ratio: f64,
-    timestamp: Instant,
 }
 
 /// Advanced adaptive compression system
@@ -140,7 +139,7 @@ impl AdaptiveCompressionEngine {
             return Ok((data.to_vec(), CompressionType::None));
         }
         
-        let start = Instant::now();
+        let _start = Instant::now();
         
         // Analyze data pattern
         let pattern = self.detect_pattern(data);
@@ -178,7 +177,6 @@ impl AdaptiveCompressionEngine {
                 size: data.len(),
                 best_compression: compression_type,
                 compression_ratio: 1.0 - (compressed.len() as f64 / data.len() as f64),
-                timestamp: start,
             });
         }
         

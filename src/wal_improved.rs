@@ -340,10 +340,14 @@ impl ImprovedWriteAheadLog {
         // Sort segments by ID
         segments.sort_by_key(|s| s.segment_id);
         
-        // Use last segment as active
-        let active_segment = segments.last()
-            .cloned()
-            .unwrap_or_else(|| Arc::new(WALSegment::create(&base_path, 0).unwrap()));
+        // Use last segment as active, or create new one if none exist
+        let active_segment = if let Some(segment) = segments.last() {
+            segment.clone()
+        } else {
+            let new_segment = Arc::new(WALSegment::create(&base_path, 0).unwrap());
+            segments.push(new_segment.clone());
+            new_segment
+        };
         
         let wal = Arc::new(Self {
             base_path,
@@ -815,8 +819,11 @@ mod tests {
         let dir = tempdir().unwrap();
         let wal_path = dir.path().join("wal");
         
+        eprintln!("WAL path: {:?}", wal_path);
+        
         {
             let wal = ImprovedWriteAheadLog::create(&wal_path).unwrap();
+            eprintln!("Created WAL");
             
             // Complete transaction
             wal.append(WALOperation::TransactionBegin { tx_id: 1 }).unwrap();
@@ -833,18 +840,33 @@ mod tests {
                 value: b"tx2_value".to_vec(),
             }).unwrap();
             // No commit!
+            
+            // Force sync to ensure data is written
+            wal.sync().unwrap();
         }
         
         // Recover
+        eprintln!("Opening WAL for recovery");
         let wal = ImprovedWriteAheadLog::open(&wal_path).unwrap();
+        eprintln!("Opened WAL, segments count: {}", wal.segments.read().len());
         
         let mut committed_ops = Vec::new();
         let mut uncommitted_ops = Vec::new();
+        let mut all_ops = Vec::new();
         
         wal.recover_with_progress(
             |op, state| {
+                all_ops.push((op.clone(), state.clone()));
                 match state {
-                    TransactionRecoveryState::Committed => committed_ops.push(op.clone()),
+                    TransactionRecoveryState::Committed => {
+                        // Only count Put/Delete operations
+                        match op {
+                            WALOperation::Put { .. } | WALOperation::Delete { .. } => {
+                                committed_ops.push(op.clone());
+                            }
+                            _ => {}
+                        }
+                    }
                     _ => uncommitted_ops.push(op.clone()),
                 }
                 Ok(())
@@ -852,6 +874,9 @@ mod tests {
             |_, _| {},
         ).unwrap();
         
+        eprintln!("All ops: {:?}", all_ops);
+        eprintln!("Committed ops: {:?}", committed_ops);
+        eprintln!("Uncommitted ops: {:?}", uncommitted_ops);
         assert_eq!(committed_ops.len(), 1);
         assert_eq!(uncommitted_ops.len(), 0); // Uncommitted ops are not applied
     }
