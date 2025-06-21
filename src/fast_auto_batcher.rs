@@ -121,25 +121,46 @@ impl FastAutoBatcher {
             writes
         };
         
-        // Execute batch as direct puts
-        let _write_count = writes.len() as u64;
-        let mut success_count = 0u64;
-        
-        for (key, value) in writes {
-            match db.put(&key, &value) {
-                Ok(_) => {
-                    success_count += 1;
-                }
-                Err(_) => {
-                    stats.write_errors.fetch_add(1, Ordering::Relaxed);
-                }
+        // Execute batch as single transaction for better performance
+        let write_count = writes.len() as u64;
+        let success_count = match Self::execute_batch_transaction(&db, writes.into()) {
+            Ok(count) => count,
+            Err(_) => {
+                stats.write_errors.fetch_add(write_count, Ordering::Relaxed);
+                0
             }
-        }
+        };
         
         stats.writes_completed.fetch_add(success_count, Ordering::Relaxed);
         stats.batches_flushed.fetch_add(1, Ordering::Relaxed);
     }
     
+    /// Optimized batch execution using a single transaction
+    fn execute_batch_transaction(db: &Database, writes: Vec<(Vec<u8>, Vec<u8>)>) -> Result<u64> {
+        if writes.is_empty() {
+            return Ok(0);
+        }
+        
+        // Use a single transaction for the entire batch
+        let tx_id = db.begin_transaction()?;
+        let mut success_count = 0u64;
+        
+        for (key, value) in writes {
+            match db.put_tx(tx_id, &key, &value) {
+                Ok(_) => success_count += 1,
+                Err(_) => {
+                    // Abort transaction on any failure
+                    let _ = db.abort_transaction(tx_id);
+                    return Err(crate::error::Error::Generic("Batch transaction failed".to_string()));
+                }
+            }
+        }
+        
+        // Commit all writes at once
+        db.commit_transaction(tx_id)?;
+        Ok(success_count)
+    }
+
     pub fn shutdown(&self) {
         self.shutdown.store(true, Ordering::Relaxed);
         // Give the background thread time to flush

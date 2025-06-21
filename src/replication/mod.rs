@@ -3,7 +3,7 @@ mod enhanced;
 pub use enhanced::{EnhancedReplicationManager, ReplicationMessage, ReplicationStats};
 
 use crate::error::{Error, Result};
-use crate::wal::{WALOperation, WriteAheadLog};
+use crate::wal::WALOperation;
 use crate::Database;
 use parking_lot::RwLock;
 use std::collections::VecDeque;
@@ -62,7 +62,9 @@ pub struct ReplicationManager {
     last_synced_lsn: Arc<AtomicU64>,
     pending_operations: Arc<RwLock<VecDeque<WALOperation>>>,
     sync_condvar: Arc<(Mutex<bool>, Condvar)>,
+    #[allow(dead_code)]
     last_heartbeat: Arc<RwLock<Instant>>,
+    #[allow(dead_code)]
     slave_connections: Arc<RwLock<Vec<TcpStream>>>,
 }
 
