@@ -1,7 +1,7 @@
 use lightning_db::{Database, LightningDbConfig};
 use std::time::Instant;
 
-fn test_config(name: &str, mut config: LightningDbConfig, count: usize) -> Result<(), Box<dyn std::error::Error>> {
+fn test_config(name: &str, config: LightningDbConfig, count: usize) -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempfile::tempdir()?;
     let db_path = temp_dir.path();
     

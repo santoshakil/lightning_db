@@ -62,7 +62,7 @@ impl FastAutoBatcher {
         
         thread::spawn(move || {
             while !shutdown_clone.load(Ordering::Relaxed) {
-                thread::sleep(Duration::from_micros(100)); // Check every 100μs
+                thread::sleep(Duration::from_millis(10)); // Check every 10ms for better batching
                 
                 let should_flush = {
                     let inner = inner_clone.lock();
