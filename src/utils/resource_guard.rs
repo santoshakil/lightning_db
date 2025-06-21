@@ -94,21 +94,20 @@ impl BoundedMemoryPool {
     pub fn allocate(&mut self) -> Option<Vec<u8>> {
         if let Some(buffer) = self.pool.pop() {
             Some(buffer)
-        } else if self.pool.len() < self.max_items {
-            let current_size = self.pool.len() * self.item_size;
-            if current_size + self.item_size <= self.total_size_limit {
+        } else {
+            // Check if we can create a new buffer
+            if self.item_size <= self.total_size_limit {
                 Some(vec![0u8; self.item_size])
             } else {
                 None
             }
-        } else {
-            None
         }
     }
     
     pub fn deallocate(&mut self, mut buffer: Vec<u8>) {
-        if buffer.capacity() == self.item_size && self.pool.len() < self.max_items {
+        if buffer.capacity() >= self.item_size && self.pool.len() < self.max_items {
             buffer.clear();
+            buffer.resize(self.item_size, 0);  // Ensure correct length
             self.pool.push(buffer);
         }
     }
