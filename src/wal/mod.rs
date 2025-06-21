@@ -113,7 +113,6 @@ pub trait WriteAheadLog: Send + Sync {
 
 /// Basic Write-Ahead Log implementation
 pub struct BasicWriteAheadLog {
-    path: std::path::PathBuf,
     file: std::sync::Mutex<std::fs::File>,
     next_lsn: std::sync::atomic::AtomicU64,
 }
@@ -131,7 +130,6 @@ impl BasicWriteAheadLog {
             .map_err(|e| crate::error::Error::Io(e.to_string()))?;
             
         Ok(Self {
-            path: path.to_path_buf(),
             file: std::sync::Mutex::new(file),
             next_lsn: std::sync::atomic::AtomicU64::new(1),
         })
@@ -149,7 +147,6 @@ impl BasicWriteAheadLog {
             
         // TODO: Read existing entries to set next_lsn correctly
         Ok(Self {
-            path: path.to_path_buf(),
             file: std::sync::Mutex::new(file),
             next_lsn: std::sync::atomic::AtomicU64::new(1),
         })

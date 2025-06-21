@@ -316,7 +316,6 @@ impl Iterator for RangeIterator {
 struct BTreeIterator {
     entries: Vec<(Vec<u8>, Vec<u8>)>,
     position: usize,
-    reverse: bool,
 }
 
 impl BTreeIterator {
@@ -358,7 +357,6 @@ impl BTreeIterator {
         Ok(Self { 
             entries,
             position: 0,
-            reverse: !forward,
         })
     }
 

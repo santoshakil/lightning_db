@@ -17,8 +17,7 @@ impl AsyncDatabase {
             .await
             .map_err(|e| {
                 crate::error::Error::Io(e.to_string())
-            })?
-            .map_err(|e| e)?;
+            })??;
 
         Ok(Self {
             inner: Arc::new(db),
@@ -33,8 +32,7 @@ impl AsyncDatabase {
             .await
             .map_err(|e| {
                 crate::error::Error::Io(e.to_string())
-            })?
-            .map_err(|e| e)?;
+            })??;
 
         Ok(Self {
             inner: Arc::new(db),
