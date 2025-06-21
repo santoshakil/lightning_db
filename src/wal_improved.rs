@@ -629,6 +629,40 @@ impl ImprovedWriteAheadLog {
                                     apply_op(op, &TransactionRecoveryState::Committed)?;
                                 }
                             }
+                            WALOperation::BeginTransaction { tx_id } => {
+                                current_tx_id = Some(*tx_id);
+                                recovery_info.recovered_transactions.insert(
+                                    *tx_id,
+                                    TransactionRecoveryState::InProgress { operations: Vec::new() }
+                                );
+                            }
+                            WALOperation::CommitTransaction { tx_id } => {
+                                if let Some(TransactionRecoveryState::InProgress { operations }) = 
+                                    recovery_info.recovered_transactions.get(tx_id) {
+                                    
+                                    // Apply all operations in the transaction
+                                    for op in operations {
+                                        apply_op(op, &TransactionRecoveryState::Committed)?;
+                                    }
+                                    
+                                    recovery_info.recovered_transactions.insert(
+                                        *tx_id,
+                                        TransactionRecoveryState::Committed
+                                    );
+                                }
+                                if current_tx_id == Some(*tx_id) {
+                                    current_tx_id = None;
+                                }
+                            }
+                            WALOperation::AbortTransaction { tx_id } => {
+                                recovery_info.recovered_transactions.insert(
+                                    *tx_id,
+                                    TransactionRecoveryState::Aborted
+                                );
+                                if current_tx_id == Some(*tx_id) {
+                                    current_tx_id = None;
+                                }
+                            }
                         }
                         
                         // Report progress

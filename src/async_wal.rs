@@ -217,6 +217,18 @@ impl AsyncWriteAheadLog {
                 data.push(6); // Checkpoint type
                 data.extend_from_slice(&lsn.to_le_bytes());
             }
+            WALOperation::BeginTransaction { tx_id } => {
+                data.push(7); // Begin transaction type (alternate)
+                data.extend_from_slice(&tx_id.to_le_bytes());
+            }
+            WALOperation::CommitTransaction { tx_id } => {
+                data.push(8); // Commit transaction type (alternate)
+                data.extend_from_slice(&tx_id.to_le_bytes());
+            }
+            WALOperation::AbortTransaction { tx_id } => {
+                data.push(9); // Abort transaction type (alternate)
+                data.extend_from_slice(&tx_id.to_le_bytes());
+            }
         }
         
         // Add checksum (simple CRC32)
@@ -357,7 +369,10 @@ impl AsyncWriteAheadLog {
             WALOperation::TransactionBegin { .. } |
             WALOperation::TransactionCommit { .. } |
             WALOperation::TransactionAbort { .. } |
-            WALOperation::Checkpoint { .. } => {
+            WALOperation::Checkpoint { .. } |
+            WALOperation::BeginTransaction { .. } |
+            WALOperation::CommitTransaction { .. } |
+            WALOperation::AbortTransaction { .. } => {
                 size += 8; // tx_id or lsn
             }
         }

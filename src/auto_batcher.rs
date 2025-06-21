@@ -73,11 +73,9 @@ impl AutoBatcher {
                     let batch_size = inner.batch_size;
                     let max_delay = inner.max_delay;
                     
-                    if pending_len > 0 {
-                        if debug {
-                            println!("DEBUG: Pending: {}, Batch size: {}, Time elapsed: {:?}, Max delay: {:?}", 
-                                   pending_len, batch_size, time_elapsed, max_delay);
-                        }
+                    if pending_len > 0 && debug {
+                        println!("DEBUG: Pending: {}, Batch size: {}, Time elapsed: {:?}, Max delay: {:?}", 
+                               pending_len, batch_size, time_elapsed, max_delay);
                     }
                     
                     !inner.pending.is_empty() && 

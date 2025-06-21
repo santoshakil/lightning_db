@@ -282,6 +282,15 @@ impl ReplicationManager {
             WALOperation::Checkpoint { .. } => {
                 // Checkpoints are handled locally
             }
+            WALOperation::BeginTransaction { .. } => {
+                // Transactions are handled locally
+            }
+            WALOperation::CommitTransaction { .. } => {
+                // Transactions are handled locally
+            }
+            WALOperation::AbortTransaction { .. } => {
+                // Transactions are handled locally
+            }
         }
         Ok(())
     }

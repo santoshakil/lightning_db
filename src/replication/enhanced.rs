@@ -65,7 +65,7 @@ impl EnhancedReplicationManager {
     }
     
     /// Hook into WAL to automatically capture operations
-    pub fn hook_wal(&self, _wal: Arc<WriteAheadLog>) -> Result<()> {
+    pub fn hook_wal(&self, _wal: Arc<dyn WriteAheadLog + Send + Sync>) -> Result<()> {
         // This would be implemented by having the WAL notify us of new operations
         // For now, operations must be manually replicated
         Ok(())

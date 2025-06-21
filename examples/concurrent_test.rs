@@ -125,7 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut commits = 0;
                 let mut conflicts = 0;
                 
-                for i in 0..increments_per_thread {
+                for _i in 0..increments_per_thread {
                     let mut retry_count = 0;
                     let mut increment_succeeded = false;
                     
