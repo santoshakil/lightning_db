@@ -312,8 +312,19 @@ impl LSMTree {
         .with_delta_compression(self.config.delta_compression_config.clone());
 
         // Write all entries
+        let mut entry_count = 0;
         for entry in memtable.iter() {
             builder.add(entry.key(), entry.value())?;
+            entry_count += 1;
+        }
+
+        // Safety check: only create SSTable if we have entries
+        if entry_count == 0 {
+            // Empty memtable, just remove it without creating SSTable
+            self.immutable_memtables
+                .write()
+                .retain(|m| !Arc::ptr_eq(m, &memtable));
+            return Ok(());
         }
 
         let sstable = Arc::new(builder.finish()?);
