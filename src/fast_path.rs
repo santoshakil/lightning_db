@@ -14,7 +14,7 @@ impl FastPath {
         key: &[u8],
         value: &[u8],
         lsm: &Option<Arc<LSMTree>>,
-        wal: &Option<Arc<WriteAheadLog>>,
+        wal: &Option<Arc<dyn WriteAheadLog + Send + Sync>>,
     ) -> Result<()> {
         // Write to WAL first for durability
         if let Some(ref wal) = wal {
@@ -72,7 +72,7 @@ impl BatchOps {
     pub fn put_batch_optimized(
         pairs: &[(Vec<u8>, Vec<u8>)],
         lsm: &Option<Arc<LSMTree>>,
-        wal: &Option<Arc<WriteAheadLog>>,
+        wal: &Option<Arc<dyn WriteAheadLog + Send + Sync>>,
     ) -> Result<()> {
         // Write all to WAL in one go
         if let Some(ref wal) = wal {

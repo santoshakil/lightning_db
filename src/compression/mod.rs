@@ -1,10 +1,14 @@
+pub mod adaptive_compression;
+
 use crate::error::{Error, Result};
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 use snap::raw::{Decoder, Encoder};
 use std::sync::Arc;
 use zstd::stream::{decode_all, encode_all};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+pub use adaptive_compression::{AdaptiveCompressionEngine, AdaptiveCompressionConfig, DataPattern};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CompressionType {
     None,
     Zstd,

@@ -60,7 +60,7 @@ use storage::{PageManager, PAGE_SIZE};
 use transaction::{
     OptimizedTransactionManager, TransactionManager, TransactionStatistics, VersionStore,
 };
-use wal::WriteAheadLog;
+use wal::{WriteAheadLog, BasicWriteAheadLog};
 use wal_improved::{ImprovedWriteAheadLog, TransactionRecoveryState};
 use sync_write_batcher::SyncWriteBatcher;
 pub use auto_batcher::AutoBatcher;
@@ -133,7 +133,7 @@ pub struct Database {
     version_store: Arc<VersionStore>,
     memory_pool: Option<Arc<MemoryPool>>,
     lsm_tree: Option<Arc<LSMTree>>,
-    wal: Option<Arc<WriteAheadLog>>,
+    wal: Option<Arc<dyn WriteAheadLog + Send + Sync>>,
     improved_wal: Option<Arc<ImprovedWriteAheadLog>>,
     prefetch_manager: Option<Arc<PrefetchManager>>,
     metrics_collector: Arc<MetricsCollector>,
@@ -238,7 +238,7 @@ impl Database {
             )?;
             (None, Some(wal))
         } else {
-            (Some(Arc::new(WriteAheadLog::create(&wal_path)?)), None)
+            (Some(Arc::new(BasicWriteAheadLog::create(&wal_path)?) as Arc<dyn WriteAheadLog + Send + Sync>), None)
         };
 
         // Optional prefetch manager for performance
@@ -436,7 +436,7 @@ impl Database {
                                         // Only apply if transaction is committed
                                         if matches!(tx_state, TransactionRecoveryState::Committed) {
                                             if let Some(ref lsm) = lsm_ref {
-                                                lsm.delete(key)?;
+                                                lsm.delete(&key)?;
                                             } else {
                                                 let timestamp = std::time::SystemTime::now()
                                                     .duration_since(std::time::UNIX_EPOCH)
@@ -475,15 +475,16 @@ impl Database {
                 // Use standard WAL
                 let wal_path = db_path.join("wal.log");
                 let wal = if wal_path.exists() {
-                    let wal_instance = Arc::new(WriteAheadLog::open(&wal_path)?);
+                    let wal_instance: Arc<dyn WriteAheadLog + Send + Sync> = Arc::new(BasicWriteAheadLog::open(&wal_path)?);
                     
                     // Standard replay
                     {
                         let lsm_ref = &lsm_tree;
                         let version_store_ref = &version_store;
                         
-                        wal_instance.replay_from_checkpoint(|operation| {
-                            match operation {
+                        let operations = wal_instance.replay()?;
+                        for operation in operations {
+                            match &operation {
                                 wal::WALOperation::Put { key, value } => {
                                     if let Some(ref lsm) = lsm_ref {
                                         lsm.insert(key.clone(), value.clone())?;
@@ -497,7 +498,7 @@ impl Database {
                                 }
                                 wal::WALOperation::Delete { key } => {
                                     if let Some(ref lsm) = lsm_ref {
-                                        lsm.delete(key)?;
+                                        lsm.delete(&key)?;
                                     } else {
                                         let timestamp = std::time::SystemTime::now()
                                             .duration_since(std::time::UNIX_EPOCH)
@@ -508,13 +509,12 @@ impl Database {
                                 }
                                 _ => {}
                             }
-                            Ok(())
-                        })?;
+                        }
                     }
                     
                     Some(wal_instance)
                 } else {
-                    Some(Arc::new(WriteAheadLog::create(&wal_path)?))
+                    Some(Arc::new(BasicWriteAheadLog::create(&wal_path)?) as Arc<dyn WriteAheadLog + Send + Sync>)
                 };
                 
                 (wal, None)

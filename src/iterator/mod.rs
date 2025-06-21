@@ -279,6 +279,31 @@ impl Iterator for RangeIterator {
                     }
                 }
             }
+            
+            // CRITICAL: Also refill from the source that provided the main entry
+            match entry.source {
+                IteratorSource::BTree => {
+                    if let Some(ref mut btree_iter) = self.btree_iterator {
+                        if let Ok(Some(new_entry)) = btree_iter.next() {
+                            self.merge_heap.push(new_entry);
+                        }
+                    }
+                }
+                IteratorSource::LSM => {
+                    if let Some(ref mut lsm_iter) = self.lsm_iterator {
+                        if let Ok(Some(new_entry)) = lsm_iter.next() {
+                            self.merge_heap.push(new_entry);
+                        }
+                    }
+                }
+                IteratorSource::VersionStore => {
+                    if let Some(ref mut vs_iter) = self.version_store_iterator {
+                        if let Ok(Some(new_entry)) = vs_iter.next() {
+                            self.merge_heap.push(new_entry);
+                        }
+                    }
+                }
+            }
 
             // Return the value
             self.count += 1;
@@ -289,7 +314,9 @@ impl Iterator for RangeIterator {
 
 /// B+ Tree iterator wrapper
 struct BTreeIterator {
-    inner: crate::btree::BTreeLeafIterator<'static>,
+    entries: Vec<(Vec<u8>, Vec<u8>)>,
+    position: usize,
+    reverse: bool,
 }
 
 impl BTreeIterator {
@@ -306,30 +333,47 @@ impl BTreeIterator {
             ScanDirection::Backward => false,
         };
         
-        // SAFETY: We're transmuting the lifetime here. This is safe because
-        // the iterator is only used while the btree lock is held in the calling code.
-        let btree_static: &'static BPlusTree = unsafe { std::mem::transmute(btree) };
-        
-        let inner = BTreeLeafIterator::new(
-            btree_static,
-            start_key,
-            end_key,
+        // Create iterator and collect all entries to avoid lifetime issues
+        let iter = BTreeLeafIterator::new(
+            btree,
+            start_key.clone(),
+            end_key.clone(),
             forward,
         )?;
+        
+        // Collect all entries that match the range
+        let mut entries = Vec::new();
+        for result in iter {
+            match result {
+                Ok((key, value)) => entries.push((key, value)),
+                Err(e) => return Err(e),
+            }
+        }
+        
+        // For backward iteration, reverse the entries
+        if !forward {
+            entries.reverse();
+        }
 
-        Ok(Self { inner })
+        Ok(Self { 
+            entries,
+            position: 0,
+            reverse: !forward,
+        })
     }
 
     fn next(&mut self) -> Result<Option<IteratorEntry>> {
-        match self.inner.next() {
-            Some(Ok((key, value))) => Ok(Some(IteratorEntry {
+        if self.position < self.entries.len() {
+            let (key, value) = self.entries[self.position].clone();
+            self.position += 1;
+            Ok(Some(IteratorEntry {
                 key,
                 value: Some(value),
                 source: IteratorSource::BTree,
                 timestamp: 0, // B+ tree entries don't have timestamps
-            })),
-            Some(Err(e)) => Err(e),
-            None => Ok(None),
+            }))
+        } else {
+            Ok(None)
         }
     }
 }

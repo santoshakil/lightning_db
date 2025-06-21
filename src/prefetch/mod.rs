@@ -279,10 +279,8 @@ impl PrefetchManager {
             pattern.record_access(page_id);
 
             // Check if we should trigger prefetch
-            if pattern.should_prefetch(self.sequential_threshold) {
-                if !self.config.prefetch_on_miss_only || !was_cache_hit {
-                    self.trigger_prefetch(table_id, page_id, pattern);
-                }
+            if pattern.should_prefetch(self.sequential_threshold) && (!self.config.prefetch_on_miss_only || !was_cache_hit) {
+                self.trigger_prefetch(table_id, page_id, pattern);
             }
         }
     }

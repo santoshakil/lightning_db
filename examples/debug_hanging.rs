@@ -1,9 +1,9 @@
 use lightning_db::{Database, LightningDbConfig, WalSyncMode};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tempfile::tempdir;
 
-fn test_with_timeout<F>(name: &str, timeout_secs: u64, test_fn: F) -> bool 
+fn test_with_timeout<F>(name: &str, _timeout_secs: u64, test_fn: F) -> bool 
 where 
     F: FnOnce() -> Result<(), Box<dyn std::error::Error>>,
 {

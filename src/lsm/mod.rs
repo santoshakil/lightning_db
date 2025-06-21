@@ -258,10 +258,8 @@ impl LSMTree {
             // Use bloom filters to skip SSTables
             let mut candidates = Vec::new();
             for sstable in &level.sstables {
-                if key >= sstable.min_key() && key <= sstable.max_key() {
-                    if sstable.might_contain(key) {
-                        candidates.push(sstable.clone());
-                    }
+                if key >= sstable.min_key() && key <= sstable.max_key() && sstable.might_contain(key) {
+                    candidates.push(sstable.clone());
                 }
             }
 
