@@ -31,8 +31,8 @@ pub struct ConsistencyConfig {
 impl Default for ConsistencyConfig {
     fn default() -> Self {
         Self {
-            default_level: ConsistencyLevel::Strong,
-            consistency_timeout: Duration::from_millis(100),
+            default_level: ConsistencyLevel::Eventual, // Changed to Eventual for better performance
+            consistency_timeout: Duration::from_millis(10), // Reduced timeout
             enable_read_repair: true,
             max_clock_skew: Duration::from_millis(10),
         }

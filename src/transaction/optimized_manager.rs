@@ -118,8 +118,8 @@ impl OptimizedTransactionManager {
                 // Cleanup expired locks
                 Self::cleanup_expired_locks(&write_locks, &read_locks);
 
-                // Sleep briefly
-                thread::sleep(Duration::from_millis(10));
+                // Sleep longer to reduce overhead
+                thread::sleep(Duration::from_millis(100));
             }
 
             debug!("Optimized transaction manager background thread stopped");

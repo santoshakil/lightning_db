@@ -125,33 +125,66 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut commits = 0;
                 let mut conflicts = 0;
                 
-                for _ in 0..increments_per_thread {
-                    loop {
+                for i in 0..increments_per_thread {
+                    let mut retry_count = 0;
+                    let mut increment_succeeded = false;
+                    
+                    while !increment_succeeded {
                         let tx_id = db.begin_transaction().unwrap();
                         
                         // Read counter
-                        let current = db.get_tx(tx_id, b"counter")
-                            .unwrap()
-                            .unwrap_or_else(|| b"0".to_vec());
+                        let current = match db.get_tx(tx_id, b"counter") {
+                            Ok(Some(val)) => val,
+                            Ok(None) => b"0".to_vec(),
+                            Err(_) => {
+                                let _ = db.abort_transaction(tx_id);
+                                std::thread::sleep(std::time::Duration::from_micros(100));
+                                continue;
+                            }
+                        };
                         
-                        let value: i32 = std::str::from_utf8(&current)
+                        let value: i32 = match std::str::from_utf8(&current)
                             .unwrap()
-                            .parse()
-                            .unwrap();
+                            .parse() {
+                            Ok(v) => v,
+                            Err(_) => {
+                                let _ = db.abort_transaction(tx_id);
+                                std::thread::sleep(std::time::Duration::from_micros(100));
+                                continue;
+                            }
+                        };
                         
                         // Increment
                         let new_value = (value + 1).to_string();
-                        db.put_tx(tx_id, b"counter", new_value.as_bytes()).unwrap();
+                        
+                        // Try to write
+                        if let Err(_) = db.put_tx(tx_id, b"counter", new_value.as_bytes()) {
+                            let _ = db.abort_transaction(tx_id);
+                            std::thread::sleep(std::time::Duration::from_micros(100));
+                            continue;
+                        }
                         
                         // Try to commit
                         match db.commit_transaction(tx_id) {
                             Ok(_) => {
                                 commits += 1;
-                                break;
+                                increment_succeeded = true;
                             }
                             Err(_) => {
                                 conflicts += 1;
-                                // Retry
+                                retry_count += 1;
+                                // Don't need to abort - commit already failed
+                                // Exponential backoff with longer max delay
+                                let delay = 100 * (1 << retry_count.min(8)); // Max delay: 25.6ms
+                                std::thread::sleep(std::time::Duration::from_micros(delay));
+                                
+                                // Reset retry count periodically to prevent giving up
+                                if retry_count > 50 {
+                                    retry_count = 0;
+                                    // Add some randomness to reduce contention
+                                    let extra_delay = (std::process::id() as u64 % 10) * 100;
+                                    std::thread::sleep(std::time::Duration::from_micros(extra_delay));
+                                }
                             }
                         }
                     }

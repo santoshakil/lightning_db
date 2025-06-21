@@ -66,8 +66,17 @@ impl MetricsCollector {
         let handle = thread::spawn(move || {
             info!("Started metrics collection thread");
             
+            let mut last_collection = std::time::Instant::now();
+            
             while !shutdown.load(std::sync::atomic::Ordering::Relaxed) {
-                thread::sleep(interval);
+                // Sleep in small increments to be more responsive to shutdown
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                
+                // Only collect metrics at the specified interval
+                if last_collection.elapsed() < interval {
+                    continue;
+                }
+                last_collection = std::time::Instant::now();
                 
                 // Collect database metrics snapshot
                 let db_snapshot = database_metrics.get_snapshot();
