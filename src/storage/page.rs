@@ -86,11 +86,11 @@ impl PageManager {
             .write(true)
             .create(true)
             .open(path)
-            .map_err(Error::Io)?;
+            ?;
 
-        file.set_len(initial_size).map_err(Error::Io)?;
+        file.set_len(initial_size)?;
 
-        let mmap = unsafe { MmapOptions::new().map_mut(&file).map_err(Error::Io)? };
+        let mmap = unsafe { MmapOptions::new().map_mut(&file)? };
 
         let mut manager = Self {
             file,
@@ -109,12 +109,12 @@ impl PageManager {
             .read(true)
             .write(true)
             .open(path)
-            .map_err(Error::Io)?;
+            ?;
 
-        let metadata = file.metadata().map_err(Error::Io)?;
+        let metadata = file.metadata()?;
         let file_size = metadata.len();
 
-        let mmap = unsafe { MmapOptions::new().map_mut(&file).map_err(Error::Io)? };
+        let mmap = unsafe { MmapOptions::new().map_mut(&file)? };
 
         let mut manager = Self {
             file,
@@ -146,7 +146,7 @@ impl PageManager {
         let checksum = hasher.finalize();
         header_data[12..16].copy_from_slice(&checksum.to_le_bytes());
 
-        self.mmap.flush().map_err(Error::Io)?;
+        self.mmap.flush()?;
         Ok(())
     }
 
@@ -178,7 +178,10 @@ impl PageManager {
         let calculated_checksum = hasher.finalize();
 
         if stored_checksum != calculated_checksum {
-            return Err(Error::CorruptedPage);
+            return Err(Error::ChecksumMismatch {
+                expected: stored_checksum,
+                actual: calculated_checksum,
+            });
         }
 
         // Calculate next page ID based on file size
@@ -188,8 +191,8 @@ impl PageManager {
     }
 
     pub fn allocate_page(&mut self) -> Result<u32> {
-        if let Some(page_id) = self.free_pages.pop() {
-            Ok(page_id)
+        let page_id = if let Some(page_id) = self.free_pages.pop() {
+            page_id
         } else {
             let page_id = self.next_page_id;
             self.next_page_id += 1;
@@ -200,8 +203,24 @@ impl PageManager {
                 self.grow_file(required_size)?;
             }
 
-            Ok(page_id)
-        }
+            page_id
+        };
+
+        // Initialize the new page with empty data
+        let mut page = Page::new(page_id);
+        // Set page type to 0 (leaf) by default
+        let data = page.get_mut_data();
+        data[0..4].copy_from_slice(&MAGIC.to_le_bytes());
+        data[4..8].copy_from_slice(&1u32.to_le_bytes()); // version
+        data[8..12].copy_from_slice(&0u32.to_le_bytes()); // page type (leaf)
+        // checksum will be calculated on write
+        data[16..20].copy_from_slice(&0u32.to_le_bytes()); // num_entries
+        data[20..24].copy_from_slice(&(PAGE_SIZE as u32 - 64).to_le_bytes()); // free_space
+        
+        // Write the initialized page
+        self.write_page(&page)?;
+
+        Ok(page_id)
     }
 
     pub fn free_page(&mut self, page_id: u32) {
@@ -259,7 +278,7 @@ impl PageManager {
         }
 
         self.mmap[offset..offset + PAGE_SIZE].copy_from_slice(&page_data);
-        self.mmap.flush().map_err(Error::Io)?;
+        self.mmap.flush()?;
 
         Ok(())
     }
@@ -268,20 +287,20 @@ impl PageManager {
         // Calculate new size with some overhead
         let grow_size = std::cmp::max(new_size, self.file_size * 2);
 
-        self.file.set_len(grow_size).map_err(Error::Io)?;
+        self.file.set_len(grow_size)?;
         self.file_size = grow_size;
 
         // Recreate mmap with new size
         drop(std::mem::replace(&mut self.mmap, unsafe {
-            MmapOptions::new().map_mut(&self.file).map_err(Error::Io)?
+            MmapOptions::new().map_mut(&self.file)?
         }));
 
         Ok(())
     }
 
     pub fn sync(&mut self) -> Result<()> {
-        self.mmap.flush().map_err(Error::Io)?;
-        self.file.sync_all().map_err(Error::Io)?;
+        self.mmap.flush()?;
+        self.file.sync_all()?;
         Ok(())
     }
 

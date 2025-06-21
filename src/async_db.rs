@@ -16,7 +16,7 @@ impl AsyncDatabase {
         let db = task::spawn_blocking(move || Database::create(path, config))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
             .map_err(|e| e)?;
 
@@ -32,7 +32,7 @@ impl AsyncDatabase {
         let db = task::spawn_blocking(move || Database::open(path, config))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
             .map_err(|e| e)?;
 
@@ -46,7 +46,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.put(&key, &value))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -55,7 +55,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.get(&key))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -64,7 +64,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.delete(&key))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -73,7 +73,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.begin_transaction())
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -82,7 +82,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.commit_transaction(tx_id))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -91,7 +91,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.abort_transaction(tx_id))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -100,7 +100,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.put_tx(tx_id, &key, &value))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -109,7 +109,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.get_tx(tx_id, &key))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -118,7 +118,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.delete_tx(tx_id, &key))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -127,7 +127,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.put_batch(&pairs))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -136,7 +136,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.get_batch(&keys))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -145,14 +145,14 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.delete_batch(&keys))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
     pub async fn sync(&self) -> Result<()> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.sync()).await.map_err(|e| {
-            crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+            crate::error::Error::Io(e.to_string())
         })?
     }
 
@@ -161,7 +161,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || Ok(db.stats()))
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -170,7 +170,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.flush_lsm())
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -179,7 +179,7 @@ impl AsyncDatabase {
         task::spawn_blocking(move || db.compact_lsm())
             .await
             .map_err(|e| {
-                crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+                crate::error::Error::Io(e.to_string())
             })?
     }
 
@@ -209,10 +209,7 @@ impl AsyncDatabase {
         for future in futures {
             match future.await {
                 Ok(result) => results.push(result),
-                Err(e) => results.push(Err(crate::error::Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e,
-                )))),
+                Err(e) => results.push(Err(crate::error::Error::Io(e.to_string()))),
             }
         }
         results
@@ -232,10 +229,7 @@ impl AsyncDatabase {
         for future in futures {
             match future.await {
                 Ok(result) => results.push(result),
-                Err(e) => results.push(Err(crate::error::Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e,
-                )))),
+                Err(e) => results.push(Err(crate::error::Error::Io(e.to_string()))),
             }
         }
         results
@@ -255,10 +249,7 @@ impl AsyncDatabase {
         for future in futures {
             match future.await {
                 Ok(result) => results.push(result),
-                Err(e) => results.push(Err(crate::error::Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e,
-                )))),
+                Err(e) => results.push(Err(crate::error::Error::Io(e.to_string()))),
             }
         }
         results

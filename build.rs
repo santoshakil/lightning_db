@@ -1,11 +1,13 @@
-use std::env;
-use std::path::PathBuf;
+// use std::env;
+// use std::path::PathBuf;
 
 fn main() {
     // Generate protobuf code
     prost_build::compile_protos(&["proto/database.proto"], &["proto/"]).unwrap();
 
-    // Generate C headers
+    // Generate C headers - temporarily disabled due to async parsing issues
+    // TODO: Re-enable when FFI is implemented
+    /*
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let output_file = PathBuf::from(&crate_dir)
         .join("include")
@@ -17,4 +19,5 @@ fn main() {
         .generate()
         .expect("Unable to generate bindings")
         .write_to_file(output_file);
+    */
 }

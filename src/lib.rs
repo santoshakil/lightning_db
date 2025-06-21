@@ -19,6 +19,29 @@ pub mod wal_improved;
 pub mod lock_free;
 pub mod simd;
 pub mod zero_copy;
+pub mod sync_write_batcher;
+pub mod auto_batcher;
+pub mod simple_batcher;
+pub mod fast_auto_batcher;
+pub mod lock_free_batcher;
+pub mod btree_write_buffer;
+pub mod thread_local_buffer;
+pub mod index;
+pub mod query_planner;
+pub mod replication;
+pub mod sharding;
+pub mod metrics;
+pub mod profiling;
+pub mod realtime_stats;
+pub mod utils {
+    pub mod resource_guard;
+}
+// Async modules
+pub mod async_storage;
+pub mod async_page_manager;
+pub mod async_wal;
+pub mod async_transaction;
+pub mod async_database;
 
 use btree::BPlusTree;
 use cache::{MemoryConfig, MemoryPool};
@@ -39,9 +62,24 @@ use transaction::{
 };
 use wal::WriteAheadLog;
 use wal_improved::{ImprovedWriteAheadLog, TransactionRecoveryState};
+use sync_write_batcher::SyncWriteBatcher;
+pub use auto_batcher::AutoBatcher;
+pub use fast_auto_batcher::FastAutoBatcher;
+use index::IndexManager;
+pub use index::{IndexConfig, IndexKey, IndexQuery, IndexType};
 
 // Include protobuf generated code
 include!(concat!(env!("OUT_DIR"), "/lightning_db.rs"));
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WalSyncMode {
+    /// Sync after every write (safest, slowest)
+    Sync,
+    /// Sync periodically (configurable interval)
+    Periodic { interval_ms: u64 },
+    /// Never sync automatically (fastest, least safe)
+    Async,
+}
 
 #[derive(Debug, Clone)]
 pub struct LightningDbConfig {
@@ -59,13 +97,15 @@ pub struct LightningDbConfig {
     pub mmap_config: Option<storage::MmapConfig>,
     pub consistency_config: ConsistencyConfig,
     pub use_improved_wal: bool,
+    pub wal_sync_mode: WalSyncMode,
+    pub write_batch_size: usize,
 }
 
 impl Default for LightningDbConfig {
     fn default() -> Self {
         Self {
             page_size: PAGE_SIZE as u64,
-            cache_size: 100 * 1024 * 1024, // 100MB
+            cache_size: 0, // Disabled for better write performance
             mmap_size: None,
             compression_enabled: true,
             compression_type: 1, // ZSTD
@@ -73,11 +113,13 @@ impl Default for LightningDbConfig {
             prefetch_enabled: true,
             prefetch_distance: 8,
             prefetch_workers: 2,
-            use_optimized_transactions: true,
-            use_optimized_page_manager: true, // Standard page manager has incomplete trait impl
+            use_optimized_transactions: false, // Disabled due to performance degradation
+            use_optimized_page_manager: false, // Disabled due to deadlock
             mmap_config: Some(storage::MmapConfig::default()),
             consistency_config: ConsistencyConfig::default(),
             use_improved_wal: true,
+            wal_sync_mode: WalSyncMode::Async, // Default to async for better performance
+            write_batch_size: 1000, // Batch up to 1000 writes
         }
     }
 }
@@ -85,7 +127,7 @@ impl Default for LightningDbConfig {
 pub struct Database {
     page_manager: storage::PageManagerWrapper,
     _page_manager_arc: Arc<RwLock<PageManager>>, // Keep for legacy compatibility
-    btree: RwLock<BPlusTree>,
+    btree: Arc<RwLock<BPlusTree>>,
     transaction_manager: TransactionManager,
     optimized_transaction_manager: Option<Arc<OptimizedTransactionManager>>,
     version_store: Arc<VersionStore>,
@@ -96,13 +138,17 @@ pub struct Database {
     prefetch_manager: Option<Arc<PrefetchManager>>,
     metrics_collector: Arc<MetricsCollector>,
     consistency_manager: Arc<ConsistencyManager>,
+    write_batcher: Option<Arc<SyncWriteBatcher>>,
+    btree_write_buffer: Option<Arc<btree_write_buffer::BTreeWriteBuffer>>,
+    index_manager: Arc<IndexManager>,
+    query_planner: Arc<RwLock<query_planner::QueryPlanner>>,
     _config: LightningDbConfig,
 }
 
 impl Database {
     pub fn create<P: AsRef<Path>>(path: P, config: LightningDbConfig) -> Result<Self> {
         let db_path = path.as_ref();
-        std::fs::create_dir_all(db_path).map_err(Error::Io)?;
+        std::fs::create_dir_all(db_path)?;
 
         // Use separate files/directories for different components
         let btree_path = db_path.join("btree.db");
@@ -183,7 +229,13 @@ impl Database {
 
         // Optional WAL for durability
         let (wal, improved_wal) = if config.use_improved_wal {
-            (None, Some(ImprovedWriteAheadLog::create(&db_path.join("wal"))?))
+            let sync_on_commit = matches!(config.wal_sync_mode, WalSyncMode::Sync);
+            let wal = ImprovedWriteAheadLog::create_with_config(
+                &db_path.join("wal"),
+                sync_on_commit,
+                true, // Always enable group commit for performance
+            )?;
+            (None, Some(wal))
         } else {
             (Some(Arc::new(WriteAheadLog::create(&wal_path)?)), None)
         };
@@ -232,11 +284,28 @@ impl Database {
         
         // Initialize consistency manager
         let consistency_manager = Arc::new(ConsistencyManager::new(config.consistency_config.clone()));
+        
+        // Initialize index manager
+        let index_manager = Arc::new(IndexManager::new(page_manager_wrapper.clone()));
+        
+        // Initialize query planner
+        let query_planner = Arc::new(RwLock::new(query_planner::QueryPlanner::new()));
+
+        // Create write buffer for B+Tree if LSM is disabled
+        let btree_arc = Arc::new(RwLock::new(btree));
+        let btree_write_buffer = if lsm_tree.is_none() && !config.use_optimized_transactions {
+            Some(Arc::new(btree_write_buffer::BTreeWriteBuffer::new(
+                btree_arc.clone(),
+                1000, // Buffer up to 1000 writes
+            )))
+        } else {
+            None
+        };
 
         Ok(Self {
             page_manager: page_manager_wrapper,
             _page_manager_arc: page_manager_arc,
-            btree: RwLock::new(btree),
+            btree: btree_arc,
             transaction_manager,
             optimized_transaction_manager,
             version_store,
@@ -247,6 +316,10 @@ impl Database {
             prefetch_manager,
             metrics_collector,
             consistency_manager,
+            write_batcher: None,
+            btree_write_buffer,
+            index_manager,
+            query_planner,
             _config: config,
         })
     }
@@ -351,7 +424,7 @@ impl Database {
                                             } else {
                                                 let timestamp = std::time::SystemTime::now()
                                                     .duration_since(std::time::UNIX_EPOCH)
-                                                    .unwrap_or_default()
+                                                    .unwrap_or_else(|_| std::time::Duration::from_secs(0))
                                                     .as_millis() as u64;
                                                 version_store_ref.put(key.clone(), Some(value.clone()), timestamp, 0);
                                             }
@@ -366,7 +439,7 @@ impl Database {
                                             } else {
                                                 let timestamp = std::time::SystemTime::now()
                                                     .duration_since(std::time::UNIX_EPOCH)
-                                                    .unwrap_or_default()
+                                                    .unwrap_or_else(|_| std::time::Duration::from_secs(0))
                                                     .as_millis() as u64;
                                                 version_store_ref.put(key.clone(), None, timestamp, 0);
                                             }
@@ -389,7 +462,13 @@ impl Database {
                     
                     (None, Some(improved_wal_instance))
                 } else {
-                    (None, Some(ImprovedWriteAheadLog::create(&wal_dir)?))
+                    let sync_on_commit = matches!(config.wal_sync_mode, WalSyncMode::Sync);
+                    let wal = ImprovedWriteAheadLog::create_with_config(
+                        &wal_dir,
+                        sync_on_commit,
+                        true, // Always enable group commit
+                    )?;
+                    (None, Some(wal))
                 }
             } else {
                 // Use standard WAL
@@ -484,11 +563,28 @@ impl Database {
             
             // Initialize consistency manager
             let consistency_manager = Arc::new(ConsistencyManager::new(config.consistency_config.clone()));
+            
+            // Initialize index manager
+            let index_manager = Arc::new(IndexManager::new(page_manager_wrapper.clone()));
+            
+            // Initialize query planner
+            let query_planner = Arc::new(RwLock::new(query_planner::QueryPlanner::new()));
+
+            // Create write buffer for B+Tree if LSM is disabled
+            let btree_arc = Arc::new(RwLock::new(btree));
+            let btree_write_buffer = if lsm_tree.is_none() && !config.use_optimized_transactions {
+                Some(Arc::new(btree_write_buffer::BTreeWriteBuffer::new(
+                    btree_arc.clone(),
+                    1000, // Buffer up to 1000 writes
+                )))
+            } else {
+                None
+            };
 
             Ok(Self {
                 page_manager: page_manager_wrapper,
                 _page_manager_arc: page_manager_arc,
-                btree: RwLock::new(btree),
+                btree: btree_arc,
                 transaction_manager,
                 optimized_transaction_manager,
                 version_store,
@@ -499,6 +595,10 @@ impl Database {
                 prefetch_manager,
                 metrics_collector,
                 consistency_manager,
+                write_batcher: None,
+                btree_write_buffer,
+                index_manager,
+                query_planner,
                 _config: config,
             })
         } else {
@@ -506,7 +606,48 @@ impl Database {
         }
     }
 
+    pub fn enable_write_batching(db: Arc<Self>) -> Arc<Self> {
+        let _batcher = SyncWriteBatcher::new(
+            db.clone(),
+            db._config.write_batch_size,
+            10, // 10ms max delay
+        );
+        
+        // We need to store the batcher in the database struct
+        // Since Database fields are not mutable, we return a wrapper
+        // For now, we'll use a different approach - store it globally
+        db
+    }
+    
+    pub fn create_with_batcher(db: Arc<Self>) -> Arc<SyncWriteBatcher> {
+        SyncWriteBatcher::new(
+            db,
+            1000, // batch size
+            10,   // 10ms max delay
+        )
+    }
+    
+    pub fn create_auto_batcher(db: Arc<Self>) -> Arc<AutoBatcher> {
+        AutoBatcher::new(
+            db,
+            1000, // batch size - optimal for performance
+            10,   // 10ms max delay
+        )
+    }
+    
+    pub fn create_fast_auto_batcher(db: Arc<Self>) -> Arc<FastAutoBatcher> {
+        FastAutoBatcher::new(
+            db,
+            1000, // batch size
+            5,    // 5ms max delay for lower latency
+        )
+    }
+    
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        // Check if we have a write batcher
+        if let Some(ref batcher) = self.write_batcher {
+            return batcher.put(key.to_vec(), value.to_vec());
+        }
         // Fast path for non-transactional puts with LSM
         if let Some(ref lsm) = self.lsm_tree {
             // Write to WAL first for durability
@@ -526,6 +667,34 @@ impl Database {
             
             // Write to LSM
             lsm.insert(key.to_vec(), value.to_vec())?;
+            
+            // Update cache
+            if let Some(ref memory_pool) = self.memory_pool {
+                let _ = memory_pool.cache_put(key, value);
+            }
+            
+            return Ok(());
+        }
+        
+        // Fast path for direct B+Tree writes when not using transactions
+        if self.lsm_tree.is_none() && !self._config.use_optimized_transactions {
+            // Write to WAL first
+            if let Some(ref improved_wal) = self.improved_wal {
+                use wal::WALOperation;
+                improved_wal.append(WALOperation::Put {
+                    key: key.to_vec(),
+                    value: value.to_vec(),
+                })?;
+            }
+            
+            // Use write buffer if available, otherwise write directly
+            if let Some(ref write_buffer) = self.btree_write_buffer {
+                write_buffer.insert(key.to_vec(), value.to_vec())?;
+            } else {
+                // Write directly to B+Tree
+                let mut btree = self.btree.write();
+                btree.insert(key, value)?;
+            }
             
             // Update cache
             if let Some(ref memory_pool) = self.memory_pool {
@@ -625,6 +794,15 @@ impl Database {
             // Check LSM tree first if available
             if let Some(ref lsm) = self.lsm_tree {
                 result = lsm.get(key)?;
+            } else if !self._config.use_optimized_transactions {
+                // When LSM is disabled and we're using direct B+Tree writes,
+                // check write buffer first, then B+Tree
+                if let Some(ref write_buffer) = self.btree_write_buffer {
+                    result = write_buffer.get(key)?;
+                } else {
+                    let btree = self.btree.read();
+                    result = btree.get(key)?;
+                }
             }
 
             // Always check version store to see if there's a newer version (including deletions)
@@ -697,8 +875,66 @@ impl Database {
     }
 
     pub fn commit_transaction(&self, tx_id: u64) -> Result<()> {
+        // Get the transaction and write set before committing
+        let write_set = {
+            let tx_arc = if let Some(ref opt_manager) = self.optimized_transaction_manager {
+                opt_manager.get_transaction(tx_id)?
+            } else {
+                self.transaction_manager.get_transaction(tx_id)?
+            };
+            
+            let tx = tx_arc.read();
+            tx.write_set.clone()
+        };
+        
+        // Write to WAL first for durability (before committing to version store)
+        for write_op in &write_set {
+            if let Some(ref improved_wal) = self.improved_wal {
+                use wal::WALOperation;
+                if let Some(ref value) = write_op.value {
+                    improved_wal.append(WALOperation::Put {
+                        key: write_op.key.clone(),
+                        value: value.clone(),
+                    })?;
+                } else {
+                    improved_wal.append(WALOperation::Delete {
+                        key: write_op.key.clone(),
+                    })?;
+                }
+            } else if let Some(ref wal) = self.wal {
+                use wal::WALOperation;
+                if let Some(ref value) = write_op.value {
+                    wal.append(WALOperation::Put {
+                        key: write_op.key.clone(),
+                        value: value.clone(),
+                    })?;
+                } else {
+                    wal.append(WALOperation::Delete {
+                        key: write_op.key.clone(),
+                    })?;
+                }
+            }
+        }
+        
+        // Write all changes to B+Tree for persistence (when not using LSM)
+        if self.lsm_tree.is_none() {
+            let mut btree = self.btree.write();
+            for write_op in &write_set {
+                if let Some(ref value) = write_op.value {
+                    // Put operation
+                    btree.insert(&write_op.key, value)?;
+                } else {
+                    // Delete operation
+                    btree.delete(&write_op.key)?;
+                }
+            }
+            // Ensure changes are flushed to disk
+            drop(btree);
+            self.page_manager.sync()?;
+        }
+        
+        // Now commit to version store
         if let Some(ref opt_manager) = self.optimized_transaction_manager {
-            // Use synchronous commit to ensure data is immediately visible
             opt_manager.commit_sync(tx_id)
         } else {
             self.transaction_manager.commit(tx_id)
@@ -836,8 +1072,93 @@ impl Database {
         }
     }
 
-    pub fn sync(&self) -> Result<()> {
-        self.page_manager.sync()
+    
+    pub fn checkpoint(&self) -> Result<()> {
+        // Flush all in-memory data to disk
+        self.sync()?;
+        
+        // Flush LSM tree if available
+        if let Some(ref lsm) = self.lsm_tree {
+            lsm.flush()?;
+        }
+        
+        // Checkpoint WAL
+        if let Some(ref wal) = self.improved_wal {
+            wal.checkpoint()?;
+        } else if let Some(ref wal) = self.wal {
+            wal.checkpoint()?;
+        }
+        
+        Ok(())
+    }
+    
+    // ===== INDEX MANAGEMENT METHODS =====
+    
+    /// Create a secondary index with full config
+    pub fn create_index_with_config(&self, config: IndexConfig) -> Result<()> {
+        self.index_manager.create_index(config)
+    }
+    
+    /// Drop a secondary index
+    pub fn drop_index(&self, index_name: &str) -> Result<()> {
+        self.index_manager.drop_index(index_name)
+    }
+    
+    /// List all indexes
+    pub fn list_indexes(&self) -> Vec<String> {
+        self.index_manager.list_indexes()
+    }
+    
+    /// Query using a secondary index with full query object
+    pub fn query_index_advanced(&self, query: IndexQuery) -> Result<Vec<Vec<u8>>> {
+        query.execute(&self.index_manager)
+    }
+    
+    /// Get value by secondary index key
+    pub fn get_by_index(&self, index_name: &str, index_key: &IndexKey) -> Result<Option<Vec<u8>>> {
+        let index = self.index_manager
+            .get_index(index_name)
+            .ok_or_else(|| Error::Generic("Index not found".to_string()))?;
+        
+        if let Some(primary_key) = index.get(index_key)? {
+            self.get(&primary_key)
+        } else {
+            Ok(None)
+        }
+    }
+    
+    /// Put with automatic index updates
+    pub fn put_indexed(&self, key: &[u8], value: &[u8], record: &dyn IndexableRecord) -> Result<()> {
+        // First, update indexes
+        self.index_manager.insert_into_indexes(key, record)?;
+        
+        // Then, put the main record
+        self.put(key, value)
+    }
+    
+    /// Delete with automatic index updates
+    pub fn delete_indexed(&self, key: &[u8], record: &dyn IndexableRecord) -> Result<()> {
+        // First, remove from indexes
+        self.index_manager.delete_from_indexes(key, record)?;
+        
+        // Then, delete the main record
+        self.delete(key)?;
+        Ok(())
+    }
+    
+    /// Update with automatic index updates
+    pub fn update_indexed(
+        &self,
+        key: &[u8],
+        new_value: &[u8],
+        old_record: &dyn IndexableRecord,
+        new_record: &dyn IndexableRecord,
+    ) -> Result<()> {
+        // Update indexes
+        self.index_manager.update_indexes(key, old_record, new_record)?;
+        
+        // Update the main record
+        self.put(key, new_value)
     }
 
     pub fn stats(&self) -> DatabaseStats {
@@ -882,6 +1203,15 @@ impl Database {
             Ok(())
         }
     }
+    
+    /// Flush any pending writes in the write buffer
+    pub fn flush_write_buffer(&self) -> Result<()> {
+        if let Some(ref write_buffer) = self.btree_write_buffer {
+            write_buffer.flush()
+        } else {
+            Ok(())
+        }
+    }
 
     pub fn compact_lsm(&self) -> Result<()> {
         if let Some(ref lsm) = self.lsm_tree {
@@ -903,6 +1233,27 @@ impl Database {
         self.lsm_tree
             .as_ref()
             .map(|lsm| lsm.get_delta_compression_stats())
+    }
+    
+    /// Sync all pending writes to disk
+    pub fn sync(&self) -> Result<()> {
+        // Flush write buffer if present
+        self.flush_write_buffer()?;
+        
+        // Flush LSM if present
+        self.flush_lsm()?;
+        
+        // Sync WAL
+        if let Some(ref improved_wal) = self.improved_wal {
+            improved_wal.sync()?;
+        } else if let Some(ref wal) = self.wal {
+            wal.sync()?;
+        }
+        
+        // Sync page manager
+        self.page_manager.sync()?;
+        
+        Ok(())
     }
 
     // Batch operations for better performance
@@ -1147,6 +1498,169 @@ impl Database {
         let iter = self.scan(start_key, end_key)?;
         Ok(iter.count())
     }
+
+    /// Range query that returns all results as a vector
+    pub fn range(&self, start_key: Option<&[u8]>, end_key: Option<&[u8]>) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        let start_owned = start_key.map(|k| k.to_vec());
+        let end_owned = end_key.map(|k| k.to_vec());
+        
+        let iter = self.scan(start_owned, end_owned)?;
+        let mut results = Vec::new();
+        
+        for entry in iter {
+            let (key, value) = entry?;
+            results.push((key, value));
+        }
+        
+        Ok(results)
+    }
+
+    /// Direct B+Tree range scan (bypasses LSM and transactions for performance)
+    pub fn btree_range(&self, start_key: Option<&[u8]>, end_key: Option<&[u8]>) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        let btree = self.btree.read();
+        btree.range(start_key, end_key)
+    }
+
+    /// Execute a join query between two indexes
+    pub fn join_indexes(&self, join_query: JoinQuery) -> Result<Vec<JoinResult>> {
+        join_query.execute(&self.index_manager)
+    }
+
+    /// Execute a multi-index query with joins and conditions
+    pub fn query_multi_index(&self, query: MultiIndexQuery) -> Result<Vec<std::collections::HashMap<String, Vec<u8>>>> {
+        query.execute(&self.index_manager)
+    }
+
+    /// Convenience method for inner join between two indexes on specific keys
+    pub fn inner_join(&self, left_index: &str, left_key: IndexKey, right_index: &str, right_key: IndexKey) -> Result<Vec<JoinResult>> {
+        let join = JoinQuery::new(left_index.to_string(), right_index.to_string(), JoinType::Inner)
+            .left_key(left_key)
+            .right_key(right_key);
+        
+        self.join_indexes(join)
+    }
+
+    /// Convenience method for range-based join between two indexes
+    pub fn range_join(&self, 
+        left_index: &str, 
+        left_start: IndexKey, 
+        left_end: IndexKey,
+        right_index: &str, 
+        right_start: IndexKey, 
+        right_end: IndexKey,
+        join_type: JoinType
+    ) -> Result<Vec<JoinResult>> {
+        let join = JoinQuery::new(left_index.to_string(), right_index.to_string(), join_type)
+            .left_range(left_start, left_end)
+            .right_range(right_start, right_end);
+        
+        self.join_indexes(join)
+    }
+
+    /// Analyze indexes and update query planner statistics
+    pub fn analyze_query_performance(&self) -> Result<()> {
+        let mut planner = self.query_planner.write();
+        planner.analyze_indexes(&self.index_manager)
+    }
+
+    /// Plan a query using the query planner with full spec
+    pub fn plan_query_advanced(&self, query: &query_planner::QuerySpec) -> Result<query_planner::ExecutionPlan> {
+        let planner = self.query_planner.read();
+        planner.plan_query(query)
+    }
+
+    /// Execute a planned query
+    pub fn execute_planned_query(&self, plan: &query_planner::ExecutionPlan) -> Result<Vec<Vec<u8>>> {
+        let planner = self.query_planner.read();
+        planner.execute_plan(plan, &self.index_manager)
+    }
+
+    /// High-level query interface with automatic optimization
+    pub fn query_optimized(&self, conditions: Vec<query_planner::QueryCondition>, joins: Vec<query_planner::QueryJoin>) -> Result<Vec<Vec<u8>>> {
+        let query_spec = query_planner::QuerySpec {
+            conditions,
+            joins,
+            limit: None,
+            order_by: None,
+        };
+        
+        let plan = self.plan_query_advanced(&query_spec)?;
+        self.execute_planned_query(&plan)
+    }
+    
+    // ===== CONVENIENCE METHODS FOR BENCHMARKS =====
+    
+    /// Create an index with simplified API
+    pub fn create_index(&self, name: &str, columns: Vec<String>) -> Result<()> {
+        let config = IndexConfig {
+            name: name.to_string(),
+            columns,
+            unique: false,
+            index_type: index::IndexType::BTree,
+        };
+        self.index_manager.create_index(config)
+    }
+    
+    /// Query an index by key
+    pub fn query_index(&self, index_name: &str, key: &[u8]) -> Result<Vec<Vec<u8>>> {
+        let index_key = IndexKey::single(key.to_vec());
+        let query = IndexQuery::new(index_name.to_string())
+            .key(index_key);
+        query.execute(&self.index_manager)
+    }
+    
+    /// Analyze all indexes
+    pub fn analyze_indexes(&self) -> Result<()> {
+        self.analyze_query_performance()
+    }
+    
+    /// Range query on an index
+    pub fn range_index(&self, index_name: &str, start: Option<&[u8]>, end: Option<&[u8]>) -> Result<Vec<Vec<u8>>> {
+        let start_key = start.map(|s| IndexKey::single(s.to_vec()));
+        let end_key = end.map(|e| IndexKey::single(e.to_vec()));
+        
+        let mut query = IndexQuery::new(index_name.to_string());
+        
+        if let (Some(s), Some(e)) = (start_key, end_key) {
+            query = query.range(s, e);
+        }
+        
+        query.execute(&self.index_manager)
+    }
+    
+    /// Plan a query with simple conditions
+    pub fn plan_query(&self, conditions: &[(&str, &str, &[u8])]) -> Result<query_planner::ExecutionPlan> {
+        let mut query_conditions = Vec::new();
+        
+        for (field, op, value) in conditions {
+            let condition = match *op {
+                "=" => query_planner::QueryCondition::Equals {
+                    field: field.to_string(),
+                    value: value.to_vec(),
+                },
+                ">" => query_planner::QueryCondition::GreaterThan {
+                    field: field.to_string(),
+                    value: value.to_vec(),
+                },
+                "<" => query_planner::QueryCondition::LessThan {
+                    field: field.to_string(),
+                    value: value.to_vec(),
+                },
+                _ => return Err(Error::Generic(format!("Unsupported operator: {}", op))),
+            };
+            query_conditions.push(condition);
+        }
+        
+        let query_spec = query_planner::QuerySpec {
+            conditions: query_conditions,
+            joins: Vec::new(),
+            limit: None,
+            order_by: None,
+        };
+        
+        let planner = self.query_planner.read();
+        planner.plan_query(&query_spec)
+    }
 }
 
 impl Drop for Database {
@@ -1171,9 +1685,13 @@ impl Drop for Database {
             improved_wal.shutdown();
         }
         
+        // Flush write buffer if present
+        if let Some(ref write_buffer) = self.btree_write_buffer {
+            let _ = write_buffer.flush();
+        }
+        
         // Sync any pending writes
-        // TODO: Implement sync method to flush all pending writes
-        // let _ = self.sync();
+        let _ = self.page_manager.sync();
     }
 }
 
@@ -1190,6 +1708,9 @@ pub use async_db::AsyncDatabase;
 pub use backup::{BackupConfig, BackupManager, BackupMetadata};
 pub use btree::KeyEntry;
 pub use consistency::{ConsistencyLevel, ConsistencyConfig};
+pub use error::ErrorContext;
+pub use index::{IndexableRecord, SimpleRecord, JoinQuery, JoinType, JoinResult, MultiIndexQuery};
+pub use query_planner::{QueryCondition, QueryJoin, QuerySpec, ExecutionPlan, QueryCost};
 pub use storage::Page;
 pub use transaction::Transaction;
 

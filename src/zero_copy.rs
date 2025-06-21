@@ -1,138 +1,73 @@
-use std::mem::MaybeUninit;
+use crate::error::Result;
+use crate::storage::PAGE_SIZE;
+use std::ops::Deref;
 
-/// Small key optimization - avoid heap allocation for keys <= 32 bytes
-#[derive(Clone)]
-pub enum SmallKey {
-    Inline([u8; 32], u8), // data + length
-    Heap(Vec<u8>),
+/// Zero-copy page reference that directly points to memory-mapped data
+pub struct ZeroCopyPage<'a> {
+    pub page_id: u32,
+    pub data: &'a [u8; PAGE_SIZE],
 }
 
-impl SmallKey {
-    #[inline(always)]
-    pub fn new(key: &[u8]) -> Self {
-        if key.len() <= 32 {
-            let mut data = [0u8; 32];
-            data[..key.len()].copy_from_slice(key);
-            SmallKey::Inline(data, key.len() as u8)
-        } else {
-            SmallKey::Heap(key.to_vec())
-        }
-    }
-
-    #[inline(always)]
-    pub fn as_bytes(&self) -> &[u8] {
-        match self {
-            SmallKey::Inline(data, len) => &data[..*len as usize],
-            SmallKey::Heap(vec) => vec.as_slice(),
-        }
-    }
-}
-
-/// Stack-allocated buffer for temporary operations
-pub struct StackBuffer<const N: usize> {
-    data: [MaybeUninit<u8>; N],
-    len: usize,
-}
-
-impl<const N: usize> StackBuffer<N> {
-    #[inline(always)]
-    pub fn new() -> Self {
-        Self {
-            data: unsafe { MaybeUninit::uninit().assume_init() },
-            len: 0,
-        }
-    }
-
-    #[inline(always)]
-    pub fn from_slice(slice: &[u8]) -> Option<Self> {
-        if slice.len() > N {
-            return None;
-        }
-        
-        let mut buffer = Self::new();
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                slice.as_ptr(),
-                buffer.data.as_mut_ptr() as *mut u8,
-                slice.len(),
-            );
-        }
-        buffer.len = slice.len();
-        Some(buffer)
-    }
-
-    #[inline(always)]
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(
-                self.data.as_ptr() as *const u8,
-                self.len,
-            )
-        }
-    }
-}
-
-/// Fast hash function for keys
-#[inline(always)]
-pub fn fast_hash(key: &[u8]) -> u64 {
-    if key.len() >= 8 {
-        // Use first 8 bytes as hash for speed
-        u64::from_le_bytes(key[..8].try_into().unwrap())
-    } else {
-        // Simple hash for small keys
-        let mut hash = 0u64;
-        for (i, &byte) in key.iter().enumerate() {
-            hash |= (byte as u64) << (i * 8);
-        }
-        hash
-    }
-}
-
-/// SIMD-optimized key comparison
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-pub fn fast_key_compare(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-
-    // For small keys, use simple comparison
-    if a.len() < 16 {
-        return a == b;
-    }
-
-    // For larger keys, use SIMD if available
-    #[cfg(target_feature = "sse2")]
-    unsafe {
-        use std::arch::x86_64::*;
-        
-        let chunks = a.len() / 16;
-        let remainder = a.len() % 16;
-        
-        for i in 0..chunks {
-            let offset = i * 16;
-            let a_vec = _mm_loadu_si128(a[offset..].as_ptr() as *const __m128i);
-            let b_vec = _mm_loadu_si128(b[offset..].as_ptr() as *const __m128i);
-            let cmp = _mm_cmpeq_epi8(a_vec, b_vec);
-            let mask = _mm_movemask_epi8(cmp);
-            if mask != 0xFFFF {
-                return false;
-            }
-        }
-        
-        // Compare remainder
-        let offset = chunks * 16;
-        a[offset..] == b[offset..]
+impl<'a> ZeroCopyPage<'a> {
+    pub fn new(page_id: u32, data: &'a [u8; PAGE_SIZE]) -> Self {
+        Self { page_id, data }
     }
     
-    #[cfg(not(target_feature = "sse2"))]
-    {
-        a == b
+    /// Get the page data without copying
+    pub fn data(&self) -> &[u8; PAGE_SIZE] {
+        self.data
+    }
+    
+    /// Verify checksum without copying
+    pub fn verify_checksum(&self) -> bool {
+        use crc32fast::Hasher;
+        
+        // Skip checksum verification for header page and empty pages
+        if self.page_id == 0 || self.data.iter().all(|&b| b == 0) {
+            return true;
+        }
+        
+        // Extract stored checksum
+        let stored_checksum = u32::from_le_bytes([
+            self.data[12], self.data[13], self.data[14], self.data[15]
+        ]);
+        
+        // Calculate actual checksum
+        let mut hasher = Hasher::new();
+        hasher.update(&self.data[16..]);
+        let calculated = hasher.finalize();
+        
+        stored_checksum == calculated
     }
 }
 
-#[cfg(not(target_arch = "x86_64"))]
-#[inline(always)]
-pub fn fast_key_compare(a: &[u8], b: &[u8]) -> bool {
-    a == b
+impl<'a> Deref for ZeroCopyPage<'a> {
+    type Target = [u8; PAGE_SIZE];
+    
+    fn deref(&self) -> &Self::Target {
+        self.data
+    }
+}
+
+/// Extension trait for zero-copy operations
+pub trait ZeroCopyExt {
+    /// Get a page without copying the data
+    fn get_page_zero_copy(&self, page_id: u32) -> Result<ZeroCopyPage>;
+}
+
+// We'll implement this for PageManagerWrapper later
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_zero_copy_page() {
+        let mut data = [0u8; PAGE_SIZE];
+        data[0..4].copy_from_slice(&[1, 2, 3, 4]);
+        
+        let page = ZeroCopyPage::new(1, &data);
+        assert_eq!(page.page_id, 1);
+        assert_eq!(&page.data[0..4], &[1, 2, 3, 4]);
+    }
 }

@@ -89,14 +89,14 @@ impl BTreeNode {
             }
         }
 
+        // Check if data fits in page
+        if buffer.len() > PAGE_SIZE {
+            return Err(Error::PageOverflow);
+        }
+
         // Pad to page size
         while buffer.len() < PAGE_SIZE {
             buffer.put_u8(0);
-        }
-
-        // Truncate if too large
-        if buffer.len() > PAGE_SIZE {
-            buffer.truncate(PAGE_SIZE);
         }
 
         // Copy to page
@@ -108,6 +108,13 @@ impl BTreeNode {
 
     pub fn deserialize_from_page(page: &Page) -> Result<Self> {
         let data = page.get_data();
+        
+        // Check if page is empty (all zeros) - this can happen with newly allocated pages
+        if data.iter().all(|&b| b == 0) {
+            // Return an empty leaf node for empty pages
+            return Ok(Self::new_leaf(page.id));
+        }
+        
         let mut cursor = Cursor::new(data);
 
         // Read page header
@@ -139,6 +146,11 @@ impl BTreeNode {
 
         // Read entries
         for _ in 0..num_entries {
+            // Check if we have enough data for key length
+            if cursor.remaining() < 4 {
+                // Page is corrupted or incomplete - treat as empty node
+                return Ok(Self::new_leaf(page.id));
+            }
             let key_len = cursor.get_u32_le() as usize;
             let mut key = vec![0u8; key_len];
             cursor

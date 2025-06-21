@@ -109,18 +109,18 @@ impl WriteAheadLog {
             .write(true)
             .truncate(true)
             .open(&wal_path)
-            .map_err(Error::Io)?;
+            ?;
 
         let mut writer = BufWriter::new(file);
 
         // Write WAL header
         writer
             .write_all(&WAL_MAGIC.to_le_bytes())
-            .map_err(Error::Io)?;
+            ?;
         writer
             .write_all(&WAL_VERSION.to_le_bytes())
-            .map_err(Error::Io)?;
-        writer.flush().map_err(Error::Io)?;
+            ?;
+        writer.flush()?;
 
         Ok(Self {
             path: wal_path,
@@ -133,13 +133,13 @@ impl WriteAheadLog {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let wal_path = path.as_ref().to_path_buf();
 
-        let mut file = File::open(&wal_path).map_err(Error::Io)?;
+        let mut file = File::open(&wal_path)?;
 
         // Verify WAL header
         let mut magic = [0u8; 4];
         let mut version = [0u8; 4];
-        file.read_exact(&mut magic).map_err(Error::Io)?;
-        file.read_exact(&mut version).map_err(Error::Io)?;
+        file.read_exact(&mut magic)?;
+        file.read_exact(&mut version)?;
 
         let magic = u32::from_le_bytes(magic);
         let version = u32::from_le_bytes(version);
@@ -174,7 +174,7 @@ impl WriteAheadLog {
             .write(true)
             .append(true)
             .open(&wal_path)
-            .map_err(Error::Io)?;
+            ?;
 
         let writer = BufWriter::new(file);
 
@@ -192,7 +192,7 @@ impl WriteAheadLog {
 
         let mut writer = self.writer.lock().unwrap();
         Self::write_entry(&mut *writer, &entry)?;
-        writer.flush().map_err(Error::Io)?;
+        writer.flush()?;
 
         Ok(lsn)
     }
@@ -204,19 +204,19 @@ impl WriteAheadLog {
         // Write entry length followed by entry data
         writer
             .write_all(&(serialized.len() as u32).to_le_bytes())
-            .map_err(Error::Io)?;
-        writer.write_all(&serialized).map_err(Error::Io)?;
+            ?;
+        writer.write_all(&serialized)?;
 
         Ok(())
     }
 
     fn read_entry<R: Read>(reader: &mut R) -> Result<WALEntry> {
         let mut len_bytes = [0u8; 4];
-        reader.read_exact(&mut len_bytes).map_err(Error::Io)?;
+        reader.read_exact(&mut len_bytes)?;
         let len = u32::from_le_bytes(len_bytes) as usize;
 
         let mut entry_bytes = vec![0u8; len];
-        reader.read_exact(&mut entry_bytes).map_err(Error::Io)?;
+        reader.read_exact(&mut entry_bytes)?;
 
         let (entry, _): (WALEntry, usize) =
             bincode::decode_from_slice(&entry_bytes, bincode::config::standard())
@@ -229,10 +229,10 @@ impl WriteAheadLog {
     where
         F: FnMut(&WALOperation) -> Result<()>,
     {
-        let mut file = File::open(&self.path).map_err(Error::Io)?;
+        let mut file = File::open(&self.path)?;
 
         // Skip header
-        file.seek(SeekFrom::Start(8)).map_err(Error::Io)?;
+        file.seek(SeekFrom::Start(8))?;
 
         let checkpoint_lsn = self.last_checkpoint_lsn.load(Ordering::SeqCst);
         let mut in_replay_range = checkpoint_lsn == 0; // If no checkpoint, replay from beginning
@@ -272,8 +272,8 @@ impl WriteAheadLog {
         let temp_path = self.path.with_extension("tmp");
         let new_wal = Self::create(&temp_path)?;
 
-        let mut file = File::open(&self.path).map_err(Error::Io)?;
-        file.seek(SeekFrom::Start(8)).map_err(Error::Io)?; // Skip header
+        let mut file = File::open(&self.path)?;
+        file.seek(SeekFrom::Start(8))?; // Skip header
 
         while let Ok(entry) = Self::read_entry(&mut file) {
             if !entry.verify_checksum() {
@@ -287,14 +287,15 @@ impl WriteAheadLog {
         }
 
         // Replace the old WAL with the new one
-        std::fs::rename(&temp_path, &self.path).map_err(Error::Io)?;
+        std::fs::rename(&temp_path, &self.path)?;
 
         Ok(())
     }
 
     pub fn sync(&self) -> Result<()> {
         let mut writer = self.writer.lock().unwrap();
-        writer.flush().map_err(Error::Io)
+        writer.flush()?;
+        Ok(())
     }
 
     pub fn current_lsn(&self) -> u64 {

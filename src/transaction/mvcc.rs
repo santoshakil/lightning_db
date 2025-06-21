@@ -288,13 +288,12 @@ impl MVCCTransactionManager {
             
             // Check if any version was written after our snapshot
             for version in versions {
-                if version.timestamp > tx.read_timestamp {
-                    // Check if the writing transaction was active in our snapshot
-                    if !tx.snapshot.active_tx_ids.contains(&version.tx_id) {
-                        return Err(Error::Transaction(
-                            "Write-write conflict: concurrent modification".to_string()
-                        ));
-                    }
+                if version.timestamp > tx.read_timestamp && version.tx_id != tx.id {
+                    // A newer version exists from a different transaction
+                    // This is a write-write conflict
+                    return Err(Error::Transaction(
+                        "Write-write conflict: concurrent modification".to_string()
+                    ));
                 }
             }
         }

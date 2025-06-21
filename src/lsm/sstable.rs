@@ -149,11 +149,11 @@ impl SSTable {
     }
 
     fn read_block(&self, offset: u64, size: u32) -> Result<DataBlock> {
-        let mut file = File::open(&self.path).map_err(Error::Io)?;
-        file.seek(SeekFrom::Start(offset)).map_err(Error::Io)?;
+        let mut file = File::open(&self.path)?;
+        file.seek(SeekFrom::Start(offset))?;
 
         let mut compressed_data = vec![0u8; size as usize];
-        file.read_exact(&mut compressed_data).map_err(Error::Io)?;
+        file.read_exact(&mut compressed_data)?;
 
         // Decompress if needed
         let decompressed = if self.index.entries.is_empty() {
@@ -245,7 +245,7 @@ impl SSTableBuilder {
         _bloom_bits_per_key: usize,
     ) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
-        let file = File::create(&path).map_err(Error::Io)?;
+        let file = File::create(&path)?;
         let writer = BufWriter::new(file);
 
         Ok(Self {
@@ -357,7 +357,7 @@ impl SSTableBuilder {
 
         // Write to file
         let block_offset = self.current_offset;
-        self.writer.write_all(&final_data).map_err(Error::Io)?;
+        self.writer.write_all(&final_data)?;
         self.current_offset += final_data.len() as u64;
 
         // Add to index
@@ -389,24 +389,24 @@ impl SSTableBuilder {
 
         // Write min/max keys
         let min_key_offset = self.current_offset;
-        self.writer.write_all(&min_key).map_err(Error::Io)?;
+        self.writer.write_all(&min_key)?;
         self.current_offset += min_key.len() as u64;
 
         let max_key_offset = self.current_offset;
-        self.writer.write_all(&max_key).map_err(Error::Io)?;
+        self.writer.write_all(&max_key)?;
         self.current_offset += max_key.len() as u64;
 
         // Write bloom filter (custom serialization)
         let bloom_data = self.serialize_bloom_filter()?;
         let bloom_offset = self.current_offset;
-        self.writer.write_all(&bloom_data).map_err(Error::Io)?;
+        self.writer.write_all(&bloom_data)?;
         self.current_offset += bloom_data.len() as u64;
 
         // Write index
         let index_data = bincode::encode_to_vec(&self.index, bincode::config::standard())
             .map_err(|_| Error::Serialization)?;
         let index_offset = self.current_offset;
-        self.writer.write_all(&index_data).map_err(Error::Io)?;
+        self.writer.write_all(&index_data)?;
         self.current_offset += index_data.len() as u64;
 
         // Write footer
@@ -426,17 +426,17 @@ impl SSTableBuilder {
 
         let footer_data = bincode::encode_to_vec(&footer, bincode::config::standard())
             .map_err(|_| Error::Serialization)?;
-        self.writer.write_all(&footer_data).map_err(Error::Io)?;
+        self.writer.write_all(&footer_data)?;
 
         // Write footer size at the end
         self.writer
             .write_all(&(footer_data.len() as u32).to_le_bytes())
-            .map_err(Error::Io)?;
+            ?;
 
-        self.writer.flush().map_err(Error::Io)?;
+        self.writer.flush()?;
 
         // Get metadata
-        let metadata = self.writer.get_ref().metadata().map_err(Error::Io)?;
+        let metadata = self.writer.get_ref().metadata()?;
         let size_bytes = metadata.len() as usize;
 
         // Extract ID from filename (assumed to be numeric)
@@ -478,21 +478,21 @@ impl SSTableReader {
 impl SSTableReader {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<SSTable> {
         let path = path.as_ref().to_path_buf();
-        let mut file = File::open(&path).map_err(Error::Io)?;
-        let metadata = file.metadata().map_err(Error::Io)?;
+        let mut file = File::open(&path)?;
+        let metadata = file.metadata()?;
         let file_size = metadata.len();
 
         // Read footer size
-        file.seek(SeekFrom::End(-4)).map_err(Error::Io)?;
+        file.seek(SeekFrom::End(-4))?;
         let mut footer_size_bytes = [0u8; 4];
-        file.read_exact(&mut footer_size_bytes).map_err(Error::Io)?;
+        file.read_exact(&mut footer_size_bytes)?;
         let footer_size = u32::from_le_bytes(footer_size_bytes) as u64;
 
         // Read footer
         file.seek(SeekFrom::End(-(4 + footer_size as i64)))
-            .map_err(Error::Io)?;
+            ?;
         let mut footer_data = vec![0u8; footer_size as usize];
-        file.read_exact(&mut footer_data).map_err(Error::Io)?;
+        file.read_exact(&mut footer_data)?;
         let footer: Footer = bincode::decode_from_slice(&footer_data, bincode::config::standard())
             .map_err(|_| Error::Serialization)?
             .0;
@@ -507,27 +507,27 @@ impl SSTableReader {
 
         // Read min/max keys
         file.seek(SeekFrom::Start(footer.min_key_offset))
-            .map_err(Error::Io)?;
+            ?;
         let mut min_key = vec![0u8; footer.min_key_size as usize];
-        file.read_exact(&mut min_key).map_err(Error::Io)?;
+        file.read_exact(&mut min_key)?;
 
         file.seek(SeekFrom::Start(footer.max_key_offset))
-            .map_err(Error::Io)?;
+            ?;
         let mut max_key = vec![0u8; footer.max_key_size as usize];
-        file.read_exact(&mut max_key).map_err(Error::Io)?;
+        file.read_exact(&mut max_key)?;
 
         // Read bloom filter
         file.seek(SeekFrom::Start(footer.bloom_offset))
-            .map_err(Error::Io)?;
+            ?;
         let mut bloom_data = vec![0u8; footer.bloom_size as usize];
-        file.read_exact(&mut bloom_data).map_err(Error::Io)?;
+        file.read_exact(&mut bloom_data)?;
         let bloom_filter: BloomFilter = Self::deserialize_bloom_filter(&bloom_data)?;
 
         // Read index
         file.seek(SeekFrom::Start(footer.index_offset))
-            .map_err(Error::Io)?;
+            ?;
         let mut index_data = vec![0u8; footer.index_size as usize];
-        file.read_exact(&mut index_data).map_err(Error::Io)?;
+        file.read_exact(&mut index_data)?;
         let index: Vec<IndexEntry> =
             bincode::decode_from_slice(&index_data, bincode::config::standard())
                 .map_err(|_| Error::Serialization)?
@@ -564,6 +564,7 @@ impl CompressionType {
             CompressionType::None => 0,
             CompressionType::Zstd => 1,
             CompressionType::Lz4 => 2,
+            CompressionType::Snappy => 3,
         }
     }
 
@@ -572,6 +573,7 @@ impl CompressionType {
             0 => CompressionType::None,
             1 => CompressionType::Zstd,
             2 => CompressionType::Lz4,
+            3 => CompressionType::Snappy,
             _ => CompressionType::None,
         }
     }
