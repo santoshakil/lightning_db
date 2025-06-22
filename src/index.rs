@@ -289,6 +289,12 @@ pub struct SimpleRecord {
     fields: HashMap<String, Vec<u8>>,
 }
 
+impl Default for SimpleRecord {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SimpleRecord {
     pub fn new() -> Self {
         Self {
@@ -664,6 +670,12 @@ pub struct MultiIndexQuery {
     conditions: Vec<(String, IndexQuery)>,
     join_operations: Vec<JoinQuery>,
     limit: Option<usize>,
+}
+
+impl Default for MultiIndexQuery {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MultiIndexQuery {

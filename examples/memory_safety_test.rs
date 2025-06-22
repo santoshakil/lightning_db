@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 2: Concurrent access safety
     println!("\nTest 2: Concurrent access safety");
     {
-        let db = Arc::new(Database::create(&dir.path().join("concurrent.db"), config.clone())?);
+        let db = Arc::new(Database::create(dir.path().join("concurrent.db"), config.clone())?);
         let barrier = Arc::new(Barrier::new(10));
         let mut handles = vec![];
         
@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 3: Transaction isolation
     println!("\nTest 3: Transaction isolation");
     {
-        let db = Arc::new(Database::create(&dir.path().join("tx_isolation.db"), config.clone())?);
+        let db = Arc::new(Database::create(dir.path().join("tx_isolation.db"), config.clone())?);
         let barrier = Arc::new(Barrier::new(5));
         let mut handles = vec![];
         
@@ -146,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 4: Large allocation handling
     println!("\nTest 4: Large allocation handling");
     {
-        let db = Database::create(&dir.path().join("large_alloc.db"), config.clone())?;
+        let db = Database::create(dir.path().join("large_alloc.db"), config.clone())?;
         
         // Try to insert very large values
         let sizes = [1024 * 1024, 5 * 1024 * 1024, 10 * 1024 * 1024]; // 1MB, 5MB, 10MB

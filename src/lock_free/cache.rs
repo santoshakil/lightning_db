@@ -213,7 +213,7 @@ where
         thread_local! {
             static LOCAL_CACHE: std::cell::RefCell<
                 Option<dashmap::DashMap<Vec<u8>, (Vec<u8>, Instant)>>
-            > = std::cell::RefCell::new(None);
+            > = const { std::cell::RefCell::new(None) };
         }
         
         // For now, just use shared cache

@@ -277,7 +277,7 @@ impl CompressionBenchmark {
 
         for &byte in &data[..sample_size] {
             // Count printable ASCII characters and common whitespace
-            if (byte >= 32 && byte <= 126) || byte == 9 || byte == 10 || byte == 13 {
+            if (32..=126).contains(&byte) || byte == 9 || byte == 10 || byte == 13 {
                 text_chars += 1;
             }
         }

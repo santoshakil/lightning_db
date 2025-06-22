@@ -151,7 +151,7 @@ impl AsyncWriteAheadLog {
                 // Write all operations in sequence
                 for request in requests.iter() {
                     let serialized = Self::serialize_operation(&request.operation, request.sequence);
-                    if let Err(_) = file.write_all(&serialized).await {
+                    if (file.write_all(&serialized).await).is_err() {
                         success = false;
                         break;
                     }

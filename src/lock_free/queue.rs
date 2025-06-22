@@ -81,6 +81,12 @@ pub struct LockFreeSegQueue<T> {
     queue: Arc<SegQueue<T>>,
 }
 
+impl<T> Default for LockFreeSegQueue<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> LockFreeSegQueue<T> {
     pub fn new() -> Self {
         Self {
@@ -136,6 +142,12 @@ pub struct PrefetchRequest {
 pub enum PrefetchPriority {
     High,
     Normal,
+}
+
+impl Default for PrefetchQueue {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PrefetchQueue {

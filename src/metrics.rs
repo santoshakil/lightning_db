@@ -91,6 +91,12 @@ pub struct MetricsRecorder {
     enabled: bool,
 }
 
+impl Default for MetricsRecorder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MetricsRecorder {
     pub fn new() -> Self {
         Self { enabled: true }

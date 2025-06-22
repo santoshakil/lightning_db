@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut config = LightningDbConfig::default();
     config.wal_sync_mode = WalSyncMode::Async;
     
-    let db = Arc::new(Database::create(&dir.path().join("index_bench.db"), config)?);
+    let db = Arc::new(Database::create(dir.path().join("index_bench.db"), config)?);
     
     // Create indexes
     println!("Creating secondary indexes...");
@@ -22,8 +22,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Generate test data
     let count = 10000;
-    let categories = vec!["electronics", "books", "clothing", "food", "toys"];
-    let brands = vec!["apple", "samsung", "nike", "adidas", "sony"];
+    let categories = ["electronics", "books", "clothing", "food", "toys"];
+    let brands = ["apple", "samsung", "nike", "adidas", "sony"];
     
     println!("Inserting {} test records...", count);
     let insert_start = Instant::now();

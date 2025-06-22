@@ -311,7 +311,7 @@ impl LSMTree {
         let mut builder = SSTableBuilder::new(
             &sstable_path,
             self.config.block_size,
-            self.config.compression_type.clone(),
+            self.config.compression_type,
             self.config.bloom_filter_bits_per_key,
         )?
         .with_delta_compression(self.config.delta_compression_config.clone());

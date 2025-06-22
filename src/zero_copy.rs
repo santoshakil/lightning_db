@@ -41,7 +41,7 @@ impl<'a> ZeroCopyPage<'a> {
     }
 }
 
-impl<'a> Deref for ZeroCopyPage<'a> {
+impl Deref for ZeroCopyPage<'_> {
     type Target = [u8; PAGE_SIZE];
     
     fn deref(&self) -> &Self::Target {

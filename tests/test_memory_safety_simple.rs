@@ -7,7 +7,7 @@ use tempfile::tempdir;
 fn test_basic_thread_safety() {
     let dir = tempdir().unwrap();
     let config = LightningDbConfig::default();
-    let db = Arc::new(Database::create(&dir.path().join("thread_safe.db"), config).unwrap());
+    let db = Arc::new(Database::create(dir.path().join("thread_safe.db"), config).unwrap());
     
     let mut handles = vec![];
     
@@ -45,7 +45,7 @@ fn test_basic_thread_safety() {
 fn test_value_size_limits() {
     let dir = tempdir().unwrap();
     let config = LightningDbConfig::default();
-    let db = Database::create(&dir.path().join("size_limits.db"), config).unwrap();
+    let db = Database::create(dir.path().join("size_limits.db"), config).unwrap();
     
     // Test 1MB value (should succeed)
     let value_1mb = vec![0x42; 1024 * 1024];

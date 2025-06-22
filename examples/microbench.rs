@@ -71,7 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- With all optimizations enabled ---");
     
     let config_opt = LightningDbConfig::default();
-    let db_opt = Database::create(&db_path.join("opt"), config_opt)?;
+    let db_opt = Database::create(db_path.join("opt"), config_opt)?;
     
     // Warmup
     for _ in 0..1000 {

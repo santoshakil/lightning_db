@@ -27,6 +27,12 @@ pub struct LockFreeMetricsCollector {
     start_time: Instant,
 }
 
+impl Default for LockFreeMetricsCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LockFreeMetricsCollector {
     pub fn new() -> Self {
         Self {
@@ -230,7 +236,7 @@ impl<'a> OperationTimer<'a> {
     }
 }
 
-impl<'a> Drop for OperationTimer<'a> {
+impl Drop for OperationTimer<'_> {
     fn drop(&mut self) {
         let duration = self.start.elapsed();
         match self.operation {

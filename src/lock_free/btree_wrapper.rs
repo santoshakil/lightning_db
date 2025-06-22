@@ -173,6 +173,12 @@ pub struct OptimisticBTreeReader {
     version: Arc<AtomicU64>,
 }
 
+impl Default for OptimisticBTreeReader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OptimisticBTreeReader {
     pub fn new() -> Self {
         Self {
@@ -195,7 +201,7 @@ impl OptimisticBTreeReader {
         
         let result = {
             let node_guard = node.read();
-            f(&*node_guard)
+            f(&node_guard)
         };
         
         // Validate version hasn't changed

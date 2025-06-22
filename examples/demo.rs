@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Max Active Transactions: {}", MAX_ACTIVE_TRANSACTIONS);
 
     let start = Instant::now();
-    let db = Database::create(&db_path, config)?;
+    let db = Database::create(db_path, config)?;
     let db_arc = Arc::new(db);
     println!("\nDatabase created in {}", format_duration(start.elapsed()));
 

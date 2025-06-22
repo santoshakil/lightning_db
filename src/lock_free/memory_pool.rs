@@ -117,7 +117,7 @@ impl<'a> BufferGuard<'a> {
     }
 }
 
-impl<'a> Drop for BufferGuard<'a> {
+impl Drop for BufferGuard<'_> {
     fn drop(&mut self) {
         if let Some(buffer) = self.buffer.take() {
             if self.is_key {
@@ -129,7 +129,7 @@ impl<'a> Drop for BufferGuard<'a> {
     }
 }
 
-impl<'a> std::ops::Deref for BufferGuard<'a> {
+impl std::ops::Deref for BufferGuard<'_> {
     type Target = Vec<u8>;
     
     fn deref(&self) -> &Self::Target {
@@ -137,7 +137,7 @@ impl<'a> std::ops::Deref for BufferGuard<'a> {
     }
 }
 
-impl<'a> std::ops::DerefMut for BufferGuard<'a> {
+impl std::ops::DerefMut for BufferGuard<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.buffer.as_mut().unwrap()
     }

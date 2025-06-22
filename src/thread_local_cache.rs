@@ -17,7 +17,7 @@ where
     KEY_BUFFER.with(|buffer| {
         let mut buf = buffer.borrow_mut();
         buf.clear();
-        f(&mut *buf)
+        f(&mut buf)
     })
 }
 
@@ -30,7 +30,7 @@ where
     VALUE_BUFFER.with(|buffer| {
         let mut buf = buffer.borrow_mut();
         buf.clear();
-        f(&mut *buf)
+        f(&mut buf)
     })
 }
 

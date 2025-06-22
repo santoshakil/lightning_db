@@ -348,7 +348,7 @@ impl SSTableBuilder {
         };
 
         // Apply regular compression
-        let compressor = get_compressor(self.compression_type.clone());
+        let compressor = get_compressor(self.compression_type);
         let compressed = compressor.compress(&final_block_data)?;
 
         // Write compression type + compressed data

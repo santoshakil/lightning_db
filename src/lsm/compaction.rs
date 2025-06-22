@@ -112,7 +112,7 @@ impl UniversalCompaction {
         }
 
         // Sort by size (largest first)
-        let mut sorted: Vec<_> = sstables.iter().cloned().collect();
+        let mut sorted: Vec<_> = sstables.to_vec();
         sorted.sort_by_key(|sst| std::cmp::Reverse(sst.size_bytes()));
 
         // Look for runs of similar-sized files
