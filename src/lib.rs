@@ -1791,7 +1791,9 @@ impl Drop for Database {
             opt_manager.stop();
         }
         
-        if let Some(ref _lsm_tree) = self.lsm_tree {
+        if let Some(ref lsm_tree) = self.lsm_tree {
+            // Flush LSM tree to ensure all data is persisted
+            let _ = lsm_tree.flush();
             // LSM tree will stop its own background threads in its Drop impl
         }
         

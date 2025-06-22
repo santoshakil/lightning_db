@@ -6,6 +6,8 @@ mod split_handler;
 pub use iterator::BTreeLeafIterator;
 
 use crate::error::{Error, Result};
+#[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
+use crate::simd::key_compare::simd_compare_keys;
 use crate::storage::{Page, PageManager, PageManagerWrapper};
 use parking_lot::RwLock;
 use std::cmp::Ordering;
@@ -20,6 +22,19 @@ pub use node::*;
 // Use a conservative limit to ensure we never overflow.
 pub(crate) const MIN_KEYS_PER_NODE: usize = 50;
 pub(crate) const MAX_KEYS_PER_NODE: usize = 100;
+
+/// Helper function to compare keys using SIMD when beneficial
+#[inline]
+fn compare_keys(a: &[u8], b: &[u8]) -> Ordering {
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
+    {
+        // Use SIMD for keys longer than 8 bytes
+        if a.len() >= 8 && b.len() >= 8 {
+            return simd_compare_keys(a, b);
+        }
+    }
+    a.cmp(b)
+}
 
 #[derive(Debug, Clone)]
 pub struct KeyEntry {
@@ -193,7 +208,7 @@ impl BPlusTree {
                 let mut child_index = 0;
 
                 for (i, entry) in node.entries.iter().enumerate() {
-                    match key.cmp(&entry.key) {
+                    match compare_keys(key, &entry.key) {
                         Ordering::Less => break,
                         Ordering::Equal => {
                             child_index = i + 1;
@@ -219,7 +234,7 @@ impl BPlusTree {
         }
 
         for entry in &node.entries {
-            match key.cmp(&entry.key) {
+            match compare_keys(key, &entry.key) {
                 Ordering::Equal => return Ok(Some(entry.value.clone())),
                 Ordering::Less => break,
                 Ordering::Greater => continue,
@@ -241,7 +256,7 @@ impl BPlusTree {
         // Find insertion position
         let mut insert_pos = leaf_node.entries.len();
         for (i, existing_entry) in leaf_node.entries.iter().enumerate() {
-            match entry.key.cmp(&existing_entry.key) {
+            match compare_keys(&entry.key, &existing_entry.key) {
                 Ordering::Less => {
                     insert_pos = i;
                     break;
