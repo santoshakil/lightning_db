@@ -952,10 +952,16 @@ impl Database {
             if let Some(ref lsm) = self.lsm_tree {
                 lsm.delete(key)?;
             } else {
-                // For non-LSM databases, use implicit transaction for consistency
-                let tx_id = self.begin_transaction()?;
-                self.delete_tx(tx_id, key)?;
-                self.commit_transaction(tx_id)?;
+                // For non-LSM databases, delete directly from B+Tree
+                if let Some(ref write_buffer) = self.btree_write_buffer {
+                    write_buffer.delete(key)?;
+                } else {
+                    // Direct B+Tree delete
+                    let mut btree = self.btree.write();
+                    btree.delete(key)?;
+                    drop(btree);
+                    self.page_manager.sync()?;
+                }
             }
             
             Ok(true)
@@ -1795,6 +1801,9 @@ impl Drop for Database {
             // Flush LSM tree to ensure all data is persisted
             let _ = lsm_tree.flush();
             // LSM tree will stop its own background threads in its Drop impl
+        } else {
+            // If not using LSM, ensure B+Tree changes are persisted
+            let _ = self.page_manager.sync();
         }
         
         // Shutdown improved WAL if present
