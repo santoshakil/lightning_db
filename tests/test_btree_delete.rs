@@ -44,7 +44,9 @@ fn test_btree_delete_with_reopen() {
     
     // Create and populate database
     {
-        let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
+        let mut config = LightningDbConfig::default();
+        config.compression_enabled = false; // Use B+Tree only for this test
+        let db = Database::create(dir.path(), config).unwrap();
         
         for i in 0..50 {
             let key = format!("key{:02}", i);
@@ -57,11 +59,16 @@ fn test_btree_delete_with_reopen() {
             let key = format!("key{:02}", i);
             db.delete(key.as_bytes()).unwrap();
         }
+        
+        // Ensure data is synced before closing
+        db.sync().unwrap();
     }
     
     // Reopen and verify
     {
-        let db = Database::open(dir.path(), LightningDbConfig::default()).unwrap();
+        let mut config = LightningDbConfig::default();
+        config.compression_enabled = false; // Use B+Tree only for this test
+        let db = Database::open(dir.path(), config).unwrap();
         
         for i in 0..50 {
             let key = format!("key{:02}", i);

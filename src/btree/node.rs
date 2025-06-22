@@ -1,6 +1,8 @@
 use crate::btree::KeyEntry;
 use crate::error::{Error, Result};
 use crate::storage::{Page, PAGE_SIZE};
+#[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
+use crate::simd::key_compare::simd_compare_keys;
 use bytes::{Buf, BufMut, BytesMut};
 use std::io::{Cursor, Read};
 
@@ -208,6 +210,16 @@ impl BTreeNode {
     }
 
     pub fn find_key_position(&self, key: &[u8]) -> (bool, usize) {
+        // Use SIMD for larger nodes when available
+        #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
+        {
+            if self.entries.len() > 8 {
+                // For larger nodes, try SIMD binary search
+                return self.find_key_position_simd(key);
+            }
+        }
+        
+        // Fallback to regular comparison
         for (i, entry) in self.entries.iter().enumerate() {
             match key.cmp(&entry.key) {
                 std::cmp::Ordering::Equal => return (true, i),
@@ -216,6 +228,24 @@ impl BTreeNode {
             }
         }
         (false, self.entries.len())
+    }
+    
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
+    fn find_key_position_simd(&self, key: &[u8]) -> (bool, usize) {
+        // Binary search using SIMD comparisons
+        let mut left = 0;
+        let mut right = self.entries.len();
+        
+        while left < right {
+            let mid = left + (right - left) / 2;
+            match simd_compare_keys(key, &self.entries[mid].key) {
+                std::cmp::Ordering::Equal => return (true, mid),
+                std::cmp::Ordering::Less => right = mid,
+                std::cmp::Ordering::Greater => left = mid + 1,
+            }
+        }
+        
+        (false, left)
     }
 
     pub fn get_size_estimate(&self) -> usize {

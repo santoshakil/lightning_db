@@ -230,6 +230,12 @@ impl WALSegment {
     }
 }
 
+impl Drop for WALSegment {
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
 /// Group commit batch
 struct CommitBatch {
     entries: Vec<(WALEntry, Arc<Mutex<Option<Result<u64>>>>)>,
@@ -573,6 +579,7 @@ impl ImprovedWriteAheadLog {
                 
                 match WALSegment::read_entry_with_recovery(&mut file) {
                     Ok(entry) => {
+                        eprintln!("Read entry: {:?}", entry.operation);
                         if !entry.verify_checksum() {
                             warn!("Corrupted entry at LSN {}, stopping recovery", entry.lsn);
                             break;
@@ -592,19 +599,25 @@ impl ImprovedWriteAheadLog {
                                 );
                             }
                             WALOperation::TransactionCommit { tx_id } => {
-                                if let Some(TransactionRecoveryState::InProgress { operations }) = 
+                                // Clone operations before applying
+                                let ops_to_apply = if let Some(TransactionRecoveryState::InProgress { operations }) = 
                                     recovery_info.recovered_transactions.get(tx_id) {
-                                    
-                                    // Apply all operations in the transaction
-                                    for op in operations {
-                                        apply_op(op, &TransactionRecoveryState::Committed)?;
-                                    }
-                                    
-                                    recovery_info.recovered_transactions.insert(
-                                        *tx_id,
-                                        TransactionRecoveryState::Committed
-                                    );
+                                    operations.clone()
+                                } else {
+                                    Vec::new()
+                                };
+                                
+                                // Apply all operations in the transaction
+                                for op in ops_to_apply {
+                                    apply_op(&op, &TransactionRecoveryState::Committed)?;
                                 }
+                                
+                                // Mark transaction as committed
+                                recovery_info.recovered_transactions.insert(
+                                    *tx_id,
+                                    TransactionRecoveryState::Committed
+                                );
+                                
                                 if current_tx_id == Some(*tx_id) {
                                     current_tx_id = None;
                                 }
@@ -641,19 +654,25 @@ impl ImprovedWriteAheadLog {
                                 );
                             }
                             WALOperation::CommitTransaction { tx_id } => {
-                                if let Some(TransactionRecoveryState::InProgress { operations }) = 
+                                // Clone operations before applying
+                                let ops_to_apply = if let Some(TransactionRecoveryState::InProgress { operations }) = 
                                     recovery_info.recovered_transactions.get(tx_id) {
-                                    
-                                    // Apply all operations in the transaction
-                                    for op in operations {
-                                        apply_op(op, &TransactionRecoveryState::Committed)?;
-                                    }
-                                    
-                                    recovery_info.recovered_transactions.insert(
-                                        *tx_id,
-                                        TransactionRecoveryState::Committed
-                                    );
+                                    operations.clone()
+                                } else {
+                                    Vec::new()
+                                };
+                                
+                                // Apply all operations in the transaction
+                                for op in ops_to_apply {
+                                    apply_op(&op, &TransactionRecoveryState::Committed)?;
                                 }
+                                
+                                // Mark transaction as committed
+                                recovery_info.recovered_transactions.insert(
+                                    *tx_id,
+                                    TransactionRecoveryState::Committed
+                                );
+                                
                                 if current_tx_id == Some(*tx_id) {
                                     current_tx_id = None;
                                 }
@@ -819,11 +838,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let wal_path = dir.path().join("wal");
         
-        eprintln!("WAL path: {:?}", wal_path);
-        
         {
             let wal = ImprovedWriteAheadLog::create(&wal_path).unwrap();
-            eprintln!("Created WAL");
             
             // Complete transaction
             wal.append(WALOperation::TransactionBegin { tx_id: 1 }).unwrap();
@@ -843,20 +859,19 @@ mod tests {
             
             // Force sync to ensure data is written
             wal.sync().unwrap();
+            
+            // Properly shutdown to ensure all data is written
+            wal.shutdown();
         }
         
         // Recover
-        eprintln!("Opening WAL for recovery");
         let wal = ImprovedWriteAheadLog::open(&wal_path).unwrap();
-        eprintln!("Opened WAL, segments count: {}", wal.segments.read().len());
         
         let mut committed_ops = Vec::new();
         let mut uncommitted_ops = Vec::new();
-        let mut all_ops = Vec::new();
         
         wal.recover_with_progress(
             |op, state| {
-                all_ops.push((op.clone(), state.clone()));
                 match state {
                     TransactionRecoveryState::Committed => {
                         // Only count Put/Delete operations
@@ -874,9 +889,6 @@ mod tests {
             |_, _| {},
         ).unwrap();
         
-        eprintln!("All ops: {:?}", all_ops);
-        eprintln!("Committed ops: {:?}", committed_ops);
-        eprintln!("Uncommitted ops: {:?}", uncommitted_ops);
         assert_eq!(committed_ops.len(), 1);
         assert_eq!(uncommitted_ops.len(), 0); // Uncommitted ops are not applied
     }
