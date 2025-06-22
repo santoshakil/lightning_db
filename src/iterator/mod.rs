@@ -228,10 +228,7 @@ impl Iterator for RangeIterator {
 
         loop {
             // Get the next entry with highest priority (newest timestamp)
-            let entry = match self.merge_heap.pop() {
-                Some(entry) => entry,
-                None => return None, // No more entries
-            };
+            let entry = self.merge_heap.pop()?;
 
             // Skip entries not within bounds
             if !self.is_within_bounds(&entry.key) {

@@ -28,6 +28,12 @@ pub struct PerformanceProfiler {
     flame_graph_data: Arc<RwLock<Vec<String>>>,
 }
 
+impl Default for PerformanceProfiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PerformanceProfiler {
     pub fn new() -> Self {
         Self {
@@ -223,7 +229,7 @@ impl<'a> ProfileGuard<'a> {
     }
 }
 
-impl<'a> Drop for ProfileGuard<'a> {
+impl Drop for ProfileGuard<'_> {
     fn drop(&mut self) {
         let duration = self.start.elapsed();
         self.profiler.exit_function();

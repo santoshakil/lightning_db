@@ -213,6 +213,12 @@ pub struct PageBitmap {
     pages_per_chunk: u32,
 }
 
+impl Default for PageBitmap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PageBitmap {
     pub fn new() -> Self {
         Self {

@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut config = LightningDbConfig::default();
         config.wal_sync_mode = WalSyncMode::Sync;
-        let db = Arc::new(Database::create(&db_path.with_extension("tx"), config)?);
+        let db = Arc::new(Database::create(db_path.with_extension("tx"), config)?);
         
         println!("Test 2: Batch writes in transaction");
         let start = Instant::now();

@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let db = Database::create(&db_path, config)?;
+    let db = Database::create(db_path, config)?;
 
     // 1. Initial Cache State
     println!("\n1. Initial Cache Statistics:");

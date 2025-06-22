@@ -188,7 +188,7 @@ impl HybridLogicalClock {
         if now > prev_physical {
             self.physical_time.store(now, std::sync::atomic::Ordering::Release);
             self.logical_time.store(0, std::sync::atomic::Ordering::Release);
-            (now << 16) | 0
+            now << 16
         } else {
             let logical = self.logical_time.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
             (prev_physical << 16) | (logical & 0xFFFF)

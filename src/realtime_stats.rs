@@ -70,6 +70,12 @@ pub struct RealtimeStatsCollector {
     range_counter: Arc<AtomicU64>,
 }
 
+impl Default for RealtimeStatsCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RealtimeStatsCollector {
     pub fn new() -> Self {
         Self {

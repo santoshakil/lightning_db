@@ -232,7 +232,7 @@ impl Database {
         let (wal, improved_wal) = if config.use_improved_wal {
             let sync_on_commit = matches!(config.wal_sync_mode, WalSyncMode::Sync);
             let wal = ImprovedWriteAheadLog::create_with_config(
-                &db_path.join("wal"),
+                db_path.join("wal"),
                 sync_on_commit,
                 sync_on_commit, // Only enable group commit for sync WAL where it's beneficial
             )?;
@@ -436,7 +436,7 @@ impl Database {
                                         // Only apply if transaction is committed
                                         if matches!(tx_state, TransactionRecoveryState::Committed) {
                                             if let Some(ref lsm) = lsm_ref {
-                                                lsm.delete(&key)?;
+                                                lsm.delete(key)?;
                                             } else {
                                                 let timestamp = std::time::SystemTime::now()
                                                     .duration_since(std::time::UNIX_EPOCH)
@@ -498,7 +498,7 @@ impl Database {
                                 }
                                 wal::WALOperation::Delete { key } => {
                                     if let Some(ref lsm) = lsm_ref {
-                                        lsm.delete(&key)?;
+                                        lsm.delete(key)?;
                                     } else {
                                         let timestamp = std::time::SystemTime::now()
                                             .duration_since(std::time::UNIX_EPOCH)
@@ -851,7 +851,7 @@ impl Database {
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         // Fast path: try cache first without metrics overhead
         if let Some(ref memory_pool) = self.memory_pool {
-            if let Ok(Some(cached_value)) = memory_pool.cache_get(&key.to_vec()) {
+            if let Ok(Some(cached_value)) = memory_pool.cache_get(key) {
                 // Skip metrics for cache hits in fast path
                 return Ok(Some(cached_value));
             }
@@ -869,7 +869,7 @@ impl Database {
 
             // Try cache first if available
             if let Some(ref memory_pool) = self.memory_pool {
-                if let Ok(Some(cached_value)) = memory_pool.cache_get(&key.to_vec()) {
+                if let Ok(Some(cached_value)) = memory_pool.cache_get(key) {
                     was_cache_hit = true;
                     result = Some(cached_value);
                     metrics.record_cache_hit();

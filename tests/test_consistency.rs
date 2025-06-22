@@ -107,7 +107,7 @@ fn test_concurrent_consistency() {
             }
             
             // With eventual consistency, we might not see all writes immediately
-            assert!(found_count >= 0 && found_count <= 10);
+            assert!((0..=10).contains(&found_count));
         });
         handles.push(handle);
     }

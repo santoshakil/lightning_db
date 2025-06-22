@@ -74,7 +74,7 @@ fn test_btree_delete_with_reopen() {
             let key = format!("key{:02}", i);
             let result = db.get(key.as_bytes()).unwrap();
             
-            if i >= 10 && i < 40 && (i - 10) % 3 == 0 {
+            if (10..40).contains(&i) && (i - 10) % 3 == 0 {
                 assert!(result.is_none(), "Key {} should be deleted", key);
             } else {
                 assert!(result.is_some(), "Key {} should exist", key);

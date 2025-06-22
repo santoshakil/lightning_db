@@ -71,7 +71,8 @@ fn benchmark_page_write(c: &mut Criterion) {
                         let data = page.get_mut_data();
                         data[0] = 42;
                         data[PAGE_SIZE - 1] = 24;
-                        black_box(manager.write_page(&page).unwrap());
+                        manager.write_page(&page).unwrap();
+                        black_box(());
                     }
                 });
             },
@@ -99,7 +100,8 @@ fn benchmark_page_write(c: &mut Criterion) {
                         let data = page.get_mut_data();
                         data[0] = 42;
                         data[PAGE_SIZE - 1] = 24;
-                        black_box(manager.write_page(&page).unwrap());
+                        manager.write_page(&page).unwrap();
+                        black_box(());
                     }
                 });
             },
@@ -196,7 +198,8 @@ fn benchmark_sync_performance(c: &mut Criterion) {
         }
         
         b.iter(|| {
-            black_box(manager.sync().unwrap());
+            manager.sync().unwrap();
+            black_box(());
         });
     });
     
@@ -219,7 +222,8 @@ fn benchmark_sync_performance(c: &mut Criterion) {
         }
         
         b.iter(|| {
-            black_box(manager.sync().unwrap());
+            manager.sync().unwrap();
+            black_box(());
         });
     });
     

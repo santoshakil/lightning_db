@@ -123,7 +123,7 @@ impl FastAutoBatcher {
         
         // Execute batch as single transaction for better performance
         let write_count = writes.len() as u64;
-        let success_count = match Self::execute_batch_transaction(&db, writes.into()) {
+        let success_count = match Self::execute_batch_transaction(db, writes.into()) {
             Ok(count) => count,
             Err(_) => {
                 stats.write_errors.fetch_add(write_count, Ordering::Relaxed);

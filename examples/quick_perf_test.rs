@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut config = LightningDbConfig::default();
         config.wal_sync_mode = WalSyncMode::Async;
-        let db = Arc::new(Database::create(&dir.path().join("async.db"), config)?);
+        let db = Arc::new(Database::create(dir.path().join("async.db"), config)?);
         
         println!("Testing Async WAL write performance...");
         let start = Instant::now();
@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut config = LightningDbConfig::default();
         config.wal_sync_mode = WalSyncMode::Async;
-        let db = Arc::new(Database::create(&dir.path().join("batcher.db"), config)?);
+        let db = Arc::new(Database::create(dir.path().join("batcher.db"), config)?);
         let batcher = Database::create_auto_batcher(db.clone());
         
         println!("\nTesting AutoBatcher performance...");

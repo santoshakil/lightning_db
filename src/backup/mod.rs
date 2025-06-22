@@ -1015,7 +1015,7 @@ mod tests {
             db.put(b"key2", b"value2").unwrap();
             db.sync().unwrap();
             // Also flush LSM to ensure data is written to disk
-            if let Err(_) = db.flush_lsm() {
+            if db.flush_lsm().is_err() {
                 // LSM flush may fail if not using LSM, which is fine
             }
             // Explicitly drop to ensure all resources are released

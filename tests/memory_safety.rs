@@ -7,7 +7,7 @@ use tempfile::tempdir;
 fn test_concurrent_access_safety() {
     let dir = tempdir().unwrap();
     let config = LightningDbConfig::default();
-    let db = Arc::new(Database::create(&dir.path().join("concurrent.db"), config).unwrap());
+    let db = Arc::new(Database::create(dir.path().join("concurrent.db"), config).unwrap());
     
     let barrier = Arc::new(Barrier::new(5));
     let mut handles = vec![];
@@ -73,7 +73,7 @@ fn test_transaction_cleanup() {
 fn test_large_value_handling() {
     let dir = tempdir().unwrap();
     let config = LightningDbConfig::default();
-    let db = Database::create(&dir.path().join("large.db"), config).unwrap();
+    let db = Database::create(dir.path().join("large.db"), config).unwrap();
     
     // Test various sizes
     let sizes = [1024, 64 * 1024, 512 * 1024, 1024 * 1024]; // 1KB, 64KB, 512KB, 1MB
@@ -102,7 +102,7 @@ fn test_large_value_handling() {
 fn test_concurrent_transactions() {
     let dir = tempdir().unwrap();
     let config = LightningDbConfig::default();
-    let db = Arc::new(Database::create(&dir.path().join("tx_concurrent.db"), config).unwrap());
+    let db = Arc::new(Database::create(dir.path().join("tx_concurrent.db"), config).unwrap());
     
     // Initialize counter
     db.put(b"counter", b"0").unwrap();

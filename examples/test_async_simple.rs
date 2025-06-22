@@ -1,6 +1,5 @@
 use lightning_db::async_database::{AsyncDatabase, AsyncDatabaseConfigBuilder};
 use tempfile::tempdir;
-use tokio;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

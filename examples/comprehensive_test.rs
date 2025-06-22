@@ -559,7 +559,7 @@ fn test_persistence(path: &std::path::Path) -> Result<TestResult, Box<dyn std::e
     
     // Test crash recovery simulation
     {
-        let db = Database::create(&path.join("crash_test"), LightningDbConfig::default())?;
+        let db = Database::create(path.join("crash_test"), LightningDbConfig::default())?;
         db.put(b"pre_crash", b"data")?;
         
         // Simulate crash by not properly closing
@@ -568,7 +568,7 @@ fn test_persistence(path: &std::path::Path) -> Result<TestResult, Box<dyn std::e
     
     // Try to recover
     let mut critical_failure = false;
-    match Database::open(&path.join("crash_test"), LightningDbConfig::default()) {
+    match Database::open(path.join("crash_test"), LightningDbConfig::default()) {
         Ok(db) => {
             if db.get(b"pre_crash")?.is_none() {
                 issues.push("Crash recovery failed".to_string());
@@ -763,10 +763,8 @@ fn test_edge_cases(path: &std::path::Path) -> Result<TestResult, Box<dyn std::er
     let mut issues = Vec::new();
     
     // Empty key
-    if db.put(b"", b"empty_key_value").is_ok() {
-        if db.get(b"")?.is_none() {
-            issues.push("Empty key write succeeded but read failed".to_string());
-        }
+    if db.put(b"", b"empty_key_value").is_ok() && db.get(b"")?.is_none() {
+        issues.push("Empty key write succeeded but read failed".to_string());
     }
     
     // Empty value
@@ -785,10 +783,8 @@ fn test_edge_cases(path: &std::path::Path) -> Result<TestResult, Box<dyn std::er
     let large_value = vec![b'y'; 1024 * 1024]; // 1MB value
     if let Err(e) = db.put(b"large_value_key", &large_value) {
         issues.push(format!("Large value failed: {}", e));
-    } else {
-        if db.get(b"large_value_key")?.as_deref() != Some(large_value.as_slice()) {
-            issues.push("Large value retrieval incorrect".to_string());
-        }
+    } else if db.get(b"large_value_key")?.as_deref() != Some(large_value.as_slice()) {
+        issues.push("Large value retrieval incorrect".to_string());
     }
     
     // Special characters

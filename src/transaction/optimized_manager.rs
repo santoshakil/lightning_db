@@ -69,7 +69,9 @@ enum LockPriority {
 
 impl OptimizedTransactionManager {
     pub fn new(max_active_transactions: usize, version_store: Arc<VersionStore>) -> Self {
-        let manager = Self {
+        
+
+        Self {
             next_tx_id: Arc::new(AtomicU64::new(1)),
             active_transactions: Arc::new(DashMap::with_capacity(max_active_transactions)),
             commit_timestamp: Arc::new(AtomicU64::new(1)),
@@ -87,9 +89,7 @@ impl OptimizedTransactionManager {
             deadlock_count: Arc::new(AtomicU64::new(0)),
             background_thread: Arc::new(Mutex::new(None)),
             shutdown: Arc::new(AtomicUsize::new(0)),
-        };
-
-        manager
+        }
     }
 
     pub fn start_background_processing(&mut self) {

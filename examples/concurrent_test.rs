@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     
-    let db = Arc::new(Database::create(&dir.path().join("concurrent.db"), config)?);
+    let db = Arc::new(Database::create(dir.path().join("concurrent.db"), config)?);
     
     // Test 1: Basic concurrent writes
     println!("Test 1: Basic concurrent writes");
@@ -160,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let new_value = (value + 1).to_string();
                         
                         // Try to write
-                        if let Err(_) = db.put_tx(tx_id, b"counter", new_value.as_bytes()) {
+                        if db.put_tx(tx_id, b"counter", new_value.as_bytes()).is_err() {
                             let _ = db.abort_transaction(tx_id);
                             std::thread::sleep(std::time::Duration::from_micros(100));
                             continue;

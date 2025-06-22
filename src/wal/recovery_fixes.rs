@@ -32,6 +32,12 @@ pub struct WALRecoveryContext {
     pub repair_checksums: bool,
 }
 
+impl Default for WALRecoveryContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WALRecoveryContext {
     pub fn new() -> Self {
         Self {

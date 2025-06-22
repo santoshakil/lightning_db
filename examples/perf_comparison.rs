@@ -85,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         
         // Verify data was written
         let key = format!("key{:06}", 0);
-        if let Some(_) = db.get(key.as_bytes())? {
+        if (db.get(key.as_bytes())?).is_some() {
             println!("  ✅ Data verified\n");
         } else {
             println!("  ❌ Data not found!\n");

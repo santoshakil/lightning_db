@@ -167,11 +167,11 @@ impl AsyncPageManager {
                 let mut success = true;
                 for write in writes.iter() {
                     let offset = write.page.id as u64 * PAGE_SIZE as u64;
-                    if let Err(_) = file.seek(SeekFrom::Start(offset)).await {
+                    if (file.seek(SeekFrom::Start(offset)).await).is_err() {
                         success = false;
                         break;
                     }
-                    if let Err(_) = file.write_all(write.page.get_data()).await {
+                    if (file.write_all(write.page.get_data()).await).is_err() {
                         success = false;
                         break;
                     }

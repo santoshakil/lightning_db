@@ -353,13 +353,13 @@ mod tests {
         // Create master database
         let master_config = LightningDbConfig::default();
         let master_db = Arc::new(
-            Database::create(&master_dir.path().join("master.db"), master_config).unwrap()
+            Database::create(master_dir.path().join("master.db"), master_config).unwrap()
         );
         
         // Create slave database
         let slave_config = LightningDbConfig::default();
         let slave_db = Arc::new(
-            Database::create(&slave_dir.path().join("slave.db"), slave_config).unwrap()
+            Database::create(slave_dir.path().join("slave.db"), slave_config).unwrap()
         );
         
         // Setup master replication
@@ -409,7 +409,7 @@ mod tests {
     fn test_enhanced_replication() {
         let dir = tempdir().unwrap();
         let config = LightningDbConfig::default();
-        let db = Arc::new(Database::create(&dir.path().join("test.db"), config).unwrap());
+        let db = Arc::new(Database::create(dir.path().join("test.db"), config).unwrap());
         
         let repl_config = ReplicationConfig::default();
         let manager = EnhancedReplicationManager::new(repl_config, db.clone());

@@ -67,7 +67,7 @@ fn test_key_comparison(keys: &[Vec<u8>]) {
     let mut scalar_count = 0;
     for _ in 0..iterations {
         for i in 0..keys.len()-1 {
-            let cmp = keys[i].as_slice().cmp(&keys[i+1].as_slice());
+            let cmp = keys[i].as_slice().cmp(keys[i+1].as_slice());
             if cmp == std::cmp::Ordering::Less {
                 scalar_count += 1;
             }

@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 1: Basic operations
     {
         print!("Test 1: Basic put/get...");
-        let db = Database::create(&dir.path().join("basic.db"), LightningDbConfig::default())?;
+        let db = Database::create(dir.path().join("basic.db"), LightningDbConfig::default())?;
         db.put(b"key1", b"value1")?;
         let result = db.get(b"key1")?;
         if result == Some(b"value1".to_vec()) {
@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 2: Transactions
     {
         print!("Test 2: Transactions...");
-        let db = Database::create(&dir.path().join("tx.db"), LightningDbConfig::default())?;
+        let db = Database::create(dir.path().join("tx.db"), LightningDbConfig::default())?;
         let tx_id = db.begin_transaction()?;
         db.put_tx(tx_id, b"tx_key", b"tx_value")?;
         db.commit_transaction(tx_id)?;
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 3: Delete operations
     {
         print!("Test 3: Delete operations...");
-        let db = Database::create(&dir.path().join("delete.db"), LightningDbConfig::default())?;
+        let db = Database::create(dir.path().join("delete.db"), LightningDbConfig::default())?;
         db.put(b"del_key", b"del_value")?;
         db.delete(b"del_key")?;
         let result = db.get(b"del_key")?;
@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("Test 4: LSM tree...");
         let mut config = LightningDbConfig::default();
         config.compression_enabled = true;
-        let db = Database::create(&dir.path().join("lsm.db"), config)?;
+        let db = Database::create(dir.path().join("lsm.db"), config)?;
         db.put(b"lsm_key", b"lsm_value")?;
         let result = db.get(b"lsm_key")?;
         if result == Some(b"lsm_value".to_vec()) {
@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 5: Auto batcher
     {
         print!("Test 5: Auto batcher...");
-        let db = Arc::new(Database::create(&dir.path().join("batch.db"), LightningDbConfig::default())?);
+        let db = Arc::new(Database::create(dir.path().join("batch.db"), LightningDbConfig::default())?);
         let batcher = Database::create_auto_batcher(db.clone());
         batcher.put(b"batch_key".to_vec(), b"batch_value".to_vec())?;
         batcher.wait_for_completion()?;

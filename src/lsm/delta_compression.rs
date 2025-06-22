@@ -289,7 +289,7 @@ impl DeltaCompressor {
         key_index.insert(end_key.clone(), 0);
 
         // Also index some intermediate keys for better lookup
-        if start_key.len() > 0 && end_key.len() > 0 && start_key != end_key {
+        if !start_key.is_empty() && !end_key.is_empty() && start_key != end_key {
             let mid_key = start_key
                 .iter()
                 .zip(end_key.iter())

@@ -65,7 +65,7 @@ impl<'a> BTreeLeafIterator<'a> {
 
     /// Find the leftmost leaf that might contain keys >= start_key
     fn find_start_leaf(&self) -> Result<u32> {
-        let start_key = self.start_key.as_ref().map(|k| k.as_slice());
+        let start_key = self.start_key.as_deref();
         
         let mut current_page_id = self.btree.root_page_id();
         let mut level = self.btree.height();
@@ -97,7 +97,7 @@ impl<'a> BTreeLeafIterator<'a> {
 
     /// Find the rightmost leaf that might contain keys <= end_key
     fn find_end_leaf(&self) -> Result<u32> {
-        let end_key = self.end_key.as_ref().map(|k| k.as_slice());
+        let end_key = self.end_key.as_deref();
         
         let mut current_page_id = self.btree.root_page_id();
         let mut level = self.btree.height();
@@ -274,7 +274,7 @@ impl<'a> BTreeLeafIterator<'a> {
     }
 }
 
-impl<'a> Iterator for BTreeLeafIterator<'a> {
+impl Iterator for BTreeLeafIterator<'_> {
     type Item = Result<(Vec<u8>, Vec<u8>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -397,7 +397,7 @@ mod tests {
         assert_eq!(results.len(), 4); // key03, key04, key05, key06
 
         // Verify the keys
-        let expected_keys = vec!["key03", "key04", "key05", "key06"];
+        let expected_keys = ["key03", "key04", "key05", "key06"];
         for (i, result) in results.iter().enumerate() {
             let (key, _) = result.as_ref().unwrap();
             assert_eq!(key, expected_keys[i].as_bytes());

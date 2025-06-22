@@ -148,7 +148,7 @@ pub struct MetricsSummary {
 /// Text formatter for metrics snapshot
 struct TextReport<'a>(&'a MetricsSnapshot);
 
-impl<'a> fmt::Display for TextReport<'a> {
+impl fmt::Display for TextReport<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = self.0;
         writeln!(f, "=== Database Metrics Report ===")?;
@@ -197,7 +197,7 @@ impl<'a> fmt::Display for TextReport<'a> {
 /// Text formatter for window metrics
 struct WindowTextReport<'a>(&'a WindowMetrics);
 
-impl<'a> fmt::Display for WindowTextReport<'a> {
+impl fmt::Display for WindowTextReport<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let w = self.0;
         writeln!(f, "  Window Duration:    {:?}", w.window)?;

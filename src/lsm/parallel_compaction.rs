@@ -212,7 +212,7 @@ impl ParallelCompactionCoordinator {
         progress: &CompactionProgress,
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         // Split tables into chunks for parallel processing
-        let chunk_size = (tables.len() + self.worker_count - 1) / self.worker_count;
+        let chunk_size = tables.len().div_ceil(self.worker_count);
         
         let chunks: Vec<_> = tables
             .par_chunks(chunk_size)
@@ -478,10 +478,7 @@ impl CompactionScheduler {
     /// Select tables for compaction
     fn select_compaction_tables(&self, level: &Level, _level_idx: usize) -> Vec<Arc<SSTable>> {
         // Simple strategy: compact oldest tables
-        let mut tables: Vec<_> = level.tables()
-            .iter()
-            .cloned()
-            .collect();
+        let mut tables: Vec<_> = level.tables().to_vec();
         
         // Sort by creation time (or use other criteria)
         tables.sort_by_key(|t| t.creation_time());
