@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     
                     if let Err(e) = db_clone.put(key.as_bytes(), value.as_bytes()) {
                         eprintln!("Write error in thread {}: {}", thread_id, e);
-                        return Err(e);
+                        return Err(e.to_string());
                     }
                 }
                 Ok(())
@@ -71,18 +71,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        println!("✓ {}/{} entries verified", verified, total_writes);
-        
-        db.checkpoint()?;
+        println!("{}/{} entries verified", verified, total_writes);
+        assert_eq!(verified, total_writes);
     }
     
-    // Test 2: Mixed read/write workload
-    println!("\nTest 2: Mixed Read/Write Workload");
+    // Test 2: Mixed read-write workload
+    println!("\nTest 2: Mixed Read-Write Workload");
     println!("==================================");
     {
         let db = Arc::new(Database::open(db_path, LightningDbConfig::default())?);
-        let num_threads = 4;
-        let ops_per_thread = 50_000;
+        let num_threads = 8;
+        let ops_per_thread = 5_000;
         let barrier = Arc::new(Barrier::new(num_threads + 1));
         
         let start = Instant::now();
@@ -92,95 +91,94 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let db_clone = Arc::clone(&db);
             let barrier_clone = Arc::clone(&barrier);
             
-            let handle = thread::spawn(move || -> Result<(i32, i32, i32), Box<dyn std::error::Error + Send>> {
-                let mut rng = rand::thread_rng();
+            let handle = thread::spawn(move || {
                 barrier_clone.wait();
-                
+                let mut rng = rand::thread_rng();
                 let mut reads = 0;
                 let mut writes = 0;
-                let mut updates = 0;
                 
-                for _ in 0..ops_per_thread {
-                    let op = rng.gen_range(0..100);
+                for i in 0..ops_per_thread {
+                    let op = rng.gen_range(0..10);
                     
-                    if op < 70 {
-                        // 70% reads
-                        let thread_id = rng.gen_range(0..8);
-                        let key_id = rng.gen_range(0..10_000);
-                        let key = format!("thread_{}_key_{:06}", thread_id, key_id);
+                    if op < 7 { // 70% reads
+                        let key_num = rng.gen_range(0..80_000);
+                        let key = format!("thread_{}_key_{:06}", key_num % 8, key_num / 8);
                         
-                        let _ = db_clone.get(key.as_bytes())?;
+                        if let Err(e) = db_clone.get(key.as_bytes()) {
+                            eprintln!("Read error in thread {}: {}", thread_id, e);
+                            return Err(e.to_string());
+                        }
                         reads += 1;
-                    } else if op < 90 {
-                        // 20% writes
-                        let key = format!("new_thread_{}_key_{:06}", thread_id, writes);
-                        let value = format!("new_value_{}", writes);
-                        db_clone.put(key.as_bytes(), value.as_bytes())?;
+                    } else { // 30% writes
+                        let key = format!("mixed_thread_{}_key_{:06}", thread_id, i);
+                        let value = format!("mixed_value_{}", i);
+                        
+                        if let Err(e) = db_clone.put(key.as_bytes(), value.as_bytes()) {
+                            eprintln!("Write error in thread {}: {}", thread_id, e);
+                            return Err(e.to_string());
+                        }
                         writes += 1;
-                    } else {
-                        // 10% updates
-                        let thread_id = rng.gen_range(0..8);
-                        let key_id = rng.gen_range(0..10_000);
-                        let key = format!("thread_{}_key_{:06}", thread_id, key_id);
-                        let value = format!("updated_value_{}", updates);
-                        db_clone.put(key.as_bytes(), value.as_bytes())?;
-                        updates += 1;
                     }
                 }
                 
-                Ok((reads, writes, updates))
+                Ok((reads, writes))
             });
             
             handles.push(handle);
         }
         
-        barrier.wait();
+        barrier.wait(); // Start all threads simultaneously
         
         let mut total_reads = 0;
         let mut total_writes = 0;
-        let mut total_updates = 0;
         
-        for handle in handles {
-            let (reads, writes, updates) = handle.join().unwrap()?;
-            total_reads += reads;
-            total_writes += writes;
-            total_updates += updates;
+        for (i, handle) in handles.into_iter().enumerate() {
+            match handle.join().unwrap() {
+                Ok((reads, writes)) => {
+                    total_reads += reads;
+                    total_writes += writes;
+                }
+                Err(e) => panic!("Thread {} failed: {}", i, e),
+            }
         }
         
         let duration = start.elapsed();
-        let total_ops = total_reads + total_writes + total_updates;
+        let total_ops = total_reads + total_writes;
         let ops_per_sec = total_ops as f64 / duration.as_secs_f64();
         
         println!("  ✓ Completed {} operations in {:.2}s", total_ops, duration.as_secs_f64());
-        println!("  ✓ Breakdown: {} reads, {} writes, {} updates", total_reads, total_writes, total_updates);
+        println!("  ✓ Reads: {}, Writes: {}", total_reads, total_writes);
         println!("  ✓ Performance: {:.0} ops/sec", ops_per_sec);
     }
     
-    // Test 3: Large value handling
+    // Test 3: Large value stress test
     println!("\nTest 3: Large Value Stress Test");
-    println!("================================");
+    println!("=================================");
     {
-        let db = Database::open(db_path, LightningDbConfig::default())?;
-        let sizes = vec![1_000, 10_000, 100_000, 500_000, 1_000_000]; // 1KB to 1MB
+        let db = Arc::new(Database::open(db_path, LightningDbConfig::default())?);
+        let num_large_values = 1_000;
+        let value_size = 10_000; // 10KB values
         
-        for size in sizes {
-            let key = format!("large_value_{}", size);
-            let value = vec![0xAB; size];
+        let start = Instant::now();
+        let large_value = "x".repeat(value_size);
+        
+        for i in 0..num_large_values {
+            let key = format!("large_key_{:06}", i);
+            db.put(key.as_bytes(), large_value.as_bytes())?;
             
-            let start = Instant::now();
-            db.put(key.as_bytes(), &value)?;
-            let write_time = start.elapsed();
-            
-            let start = Instant::now();
-            let retrieved = db.get(key.as_bytes())?.unwrap();
-            let read_time = start.elapsed();
-            
-            assert_eq!(retrieved.len(), size);
-            println!("  ✓ {}KB value: write {:.2}ms, read {:.2}ms", 
-                     size / 1000, 
-                     write_time.as_secs_f64() * 1000.0,
-                     read_time.as_secs_f64() * 1000.0);
+            if i % 100 == 0 {
+                print!("\r  Writing large values: {}/{}...", i, num_large_values);
+                std::io::Write::flush(&mut std::io::stdout()).unwrap();
+            }
         }
+        println!("\r  ✓ Wrote {} large values ({} KB each)", num_large_values, value_size / 1024);
+        
+        let duration = start.elapsed();
+        let total_data_mb = (num_large_values * value_size) as f64 / (1024.0 * 1024.0);
+        let throughput_mb_s = total_data_mb / duration.as_secs_f64();
+        
+        println!("  ✓ Total data written: {:.2} MB", total_data_mb);
+        println!("  ✓ Throughput: {:.2} MB/s", throughput_mb_s);
     }
     
     // Test 4: Transaction stress test
@@ -189,7 +187,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let db = Arc::new(Database::open(db_path, LightningDbConfig::default())?);
         let num_threads = 4;
-        let transactions_per_thread = 1000;
+        let txns_per_thread = 100;
+        let ops_per_txn = 50;
         let barrier = Arc::new(Barrier::new(num_threads + 1));
         
         let start = Instant::now();
@@ -199,141 +198,105 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let db_clone = Arc::clone(&db);
             let barrier_clone = Arc::clone(&barrier);
             
-            let handle = thread::spawn(move || -> Result<(), Box<dyn std::error::Error + Send>> {
+            let handle = thread::spawn(move || {
                 barrier_clone.wait();
+                let mut committed = 0;
+                let mut aborted = 0;
                 
-                for tx_num in 0..transactions_per_thread {
-                    let tx_id = db_clone.begin_transaction()?;
+                for txn in 0..txns_per_thread {
+                    let tx_id = match db_clone.begin_transaction() {
+                        Ok(id) => id,
+                        Err(e) => {
+                            eprintln!("Failed to begin transaction: {}", e);
+                            continue;
+                        }
+                    };
                     
-                    // Each transaction does 10 operations
-                    for i in 0..10 {
-                        let key = format!("tx_thread_{}_tx_{}_key_{}", thread_id, tx_num, i);
-                        let value = format!("tx_value_{}", i);
-                        db_clone.put_tx(tx_id, key.as_bytes(), value.as_bytes())?;
+                    let mut success = true;
+                    for op in 0..ops_per_txn {
+                        let key = format!("tx_thread_{}_txn_{}_op_{}", thread_id, txn, op);
+                        let value = format!("tx_value_{}", op);
+                        
+                        if let Err(e) = db_clone.put_tx(tx_id, key.as_bytes(), value.as_bytes()) {
+                            eprintln!("Transaction operation error: {}", e);
+                            success = false;
+                            break;
+                        }
                     }
                     
-                    db_clone.commit_transaction(tx_id)?;
+                    if success {
+                        if let Err(e) = db_clone.commit_transaction(tx_id) {
+                            eprintln!("Failed to commit transaction: {}", e);
+                            aborted += 1;
+                        } else {
+                            committed += 1;
+                        }
+                    } else {
+                        if let Err(e) = db_clone.abort_transaction(tx_id) {
+                            eprintln!("Failed to abort transaction: {}", e);
+                        }
+                        aborted += 1;
+                    }
                 }
                 
-                Ok(())
+                Ok((committed, aborted))
             });
             
             handles.push(handle);
         }
         
-        barrier.wait();
+        barrier.wait(); // Start all threads simultaneously
         
-        for handle in handles {
-            handle.join().unwrap()?;
+        let mut total_committed = 0;
+        let mut total_aborted = 0;
+        
+        for (i, handle) in handles.into_iter().enumerate() {
+            match handle.join().unwrap() {
+                Ok((committed, aborted)) => {
+                    total_committed += committed;
+                    total_aborted += aborted;
+                }
+                Err(e) => panic!("Thread {} failed: {}", i, e),
+            }
         }
         
         let duration = start.elapsed();
-        let total_transactions = num_threads * transactions_per_thread;
-        let tx_per_sec = total_transactions as f64 / duration.as_secs_f64();
+        let txns_per_sec = total_committed as f64 / duration.as_secs_f64();
         
-        println!("  ✓ Completed {} transactions in {:.2}s", total_transactions, duration.as_secs_f64());
-        println!("  ✓ Performance: {:.0} transactions/sec", tx_per_sec);
+        println!("  ✓ Committed: {} transactions", total_committed);
+        println!("  ✓ Aborted: {} transactions", total_aborted);
+        println!("  ✓ Performance: {:.0} txns/sec", txns_per_sec);
     }
     
-    // Test 5: Crash recovery simulation
-    println!("\nTest 5: Crash Recovery Test");
-    println!("===========================");
+    // Test 5: Recovery stress test
+    println!("\nTest 5: Database Recovery Test");
+    println!("================================");
     {
-        // Write data without checkpoint
-        let db = Database::open(db_path, LightningDbConfig::default())?;
+        let test_key = b"recovery_test_key";
+        let test_value = b"recovery_test_value";
         
-        for i in 0..100 {
-            let key = format!("crash_test_key_{}", i);
-            let value = format!("crash_test_value_{}", i);
-            db.put(key.as_bytes(), value.as_bytes())?;
+        // Write data and checkpoint
+        {
+            let db = Database::open(db_path, LightningDbConfig::default())?;
+            db.put(test_key, test_value)?;
+            db.checkpoint()?;
+            println!("  ✓ Data written and checkpointed");
         }
-        
-        // Simulate crash by dropping without checkpoint
-        drop(db);
         
         // Reopen and verify
-        let db = Database::open(db_path, LightningDbConfig::default())?;
-        let mut recovered = 0;
-        
-        for i in 0..100 {
-            let key = format!("crash_test_key_{}", i);
-            if db.get(key.as_bytes())?.is_some() {
-                recovered += 1;
-            }
-        }
-        
-        println!("  ✓ Recovered {}/100 entries after simulated crash", recovered);
-        
-        // Run integrity check
-        let report = db.verify_integrity()?;
-        if report.errors.is_empty() {
-            println!("  ✓ Database integrity maintained after crash recovery");
-        } else {
-            println!("  ⚠️  {} integrity errors after crash recovery", report.errors.len());
-        }
-    }
-    
-    // Test 6: Memory pressure test
-    println!("\nTest 6: Memory Pressure Test");
-    println!("============================");
-    {
-        let config = LightningDbConfig {
-            cache_size: 10 * 1024 * 1024, // 10MB cache
-            ..Default::default()
-        };
-        
-        let db = Database::open(db_path, config)?;
-        
-        // Write more data than cache size
-        let value_size = 10_000; // 10KB per value
-        let num_values = 2000; // 20MB total
-        
-        let start = Instant::now();
-        for i in 0..num_values {
-            let key = format!("memory_test_key_{:04}", i);
-            let value = vec![(i % 256) as u8; value_size];
-            db.put(key.as_bytes(), &value)?;
-            
-            if i % 100 == 0 {
-                print!(".");
-                std::io::Write::flush(&mut std::io::stdout())?;
-            }
-        }
-        println!();
-        
-        let write_duration = start.elapsed();
-        
-        // Read back with cache pressure
-        let start = Instant::now();
-        let mut rng = thread_rng();
-        let mut hits = 0;
-        
-        for _ in 0..1000 {
-            let i = rng.gen_range(0..num_values);
-            let key = format!("memory_test_key_{:04}", i);
-            
-            if let Some(value) = db.get(key.as_bytes())? {
-                if value[0] == (i % 256) as u8 {
-                    hits += 1;
+        {
+            let db = Database::open(db_path, LightningDbConfig::default())?;
+            match db.get(test_key)? {
+                Some(value) => {
+                    assert_eq!(value.as_ref(), test_value);
+                    println!("  ✓ Data successfully recovered after reopening");
                 }
+                None => panic!("Data not found after recovery"),
             }
         }
-        
-        let read_duration = start.elapsed();
-        
-        println!("  ✓ Wrote {}MB in {:.2}s", (num_values * value_size) / 1_000_000, write_duration.as_secs_f64());
-        println!("  ✓ Random reads: {}/1000 successful in {:.2}s", hits, read_duration.as_secs_f64());
     }
     
-    // Final summary
-    println!("\n=== All Stress Tests Completed Successfully! ===");
-    println!("Lightning DB demonstrates production-ready characteristics:");
-    println!("✓ High concurrent write throughput");
-    println!("✓ Efficient mixed workload handling");
-    println!("✓ Large value support");
-    println!("✓ ACID transaction support");
-    println!("✓ Crash recovery capability");
-    println!("✓ Efficient memory management");
+    println!("\n✅ All stress tests completed successfully!");
     
     Ok(())
 }

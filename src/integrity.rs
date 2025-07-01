@@ -487,7 +487,8 @@ mod tests {
         let report = verifier.verify().unwrap();
         
         // Empty database might have initialization errors, so we just check that verification runs
-        assert!(report.statistics.total_pages >= 0);
+        // Total pages is u64, so it's always >= 0
+        assert!(report.statistics.total_pages > 0);
         println!("Integrity verification completed with {} errors", report.errors.len());
     }
 }
