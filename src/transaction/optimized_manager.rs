@@ -226,7 +226,7 @@ impl OptimizedTransactionManager {
                             "Force expiring lock on key {:?} held by tx {} for {:?}",
                             key, existing.tx_id, lock_age
                         );
-                        drop(entry.remove());
+                        entry.remove();
                         // Retry acquiring lock
                         self.acquire_write_lock(tx_id, key)
                     } else {

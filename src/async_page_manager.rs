@@ -178,7 +178,7 @@ impl AsyncPageManager {
                 }
                 
                 if success {
-                    if let Err(_) = file.sync_data().await {
+                    if file.sync_data().await.is_err() {
                         success = false;
                     }
                 }

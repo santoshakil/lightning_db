@@ -2,7 +2,7 @@ pub mod recovery_fixes;
 
 pub use recovery_fixes::WALRecoveryContext;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use bincode::{Decode, Encode};
 use serde::{Serialize, Deserialize};
 
@@ -162,7 +162,8 @@ impl WriteAheadLog for BasicWriteAheadLog {
         let mut entry = WALEntry::new(lsn, operation);
         entry.calculate_checksum();
         
-        let mut file = self.file.lock().unwrap();
+        let mut file = self.file.lock()
+            .map_err(|_| Error::LockFailed { resource: "WAL file mutex".to_string() })?;
         
         // Simple format: length + bincode serialized data
         let data = bincode::encode_to_vec(&entry, bincode::config::standard())
@@ -179,7 +180,8 @@ impl WriteAheadLog for BasicWriteAheadLog {
     }
     
     fn sync(&self) -> Result<()> {
-        let file = self.file.lock().unwrap();
+        let file = self.file.lock()
+            .map_err(|_| Error::LockFailed { resource: "WAL file mutex".to_string() })?;
         file.sync_all()
             .map_err(|e| crate::error::Error::Io(e.to_string()))?;
         Ok(())
@@ -188,7 +190,8 @@ impl WriteAheadLog for BasicWriteAheadLog {
     fn replay(&self) -> Result<Vec<WALOperation>> {
         use std::io::{Read, Seek, SeekFrom};
         
-        let mut file = self.file.lock().unwrap();
+        let mut file = self.file.lock()
+            .map_err(|_| Error::LockFailed { resource: "WAL file mutex".to_string() })?;
         file.seek(SeekFrom::Start(0))
             .map_err(|e| crate::error::Error::Io(e.to_string()))?;
             

@@ -181,7 +181,8 @@ impl Error {
             | Error::IndexNotFound { .. }
             | Error::Timeout(_)
             | Error::ConcurrentModification
-            | Error::Cancelled => true,
+            | Error::Cancelled
+            | Error::LockFailed { .. } => true,
             _ => false,
         }
     }
@@ -221,6 +222,32 @@ impl<T> ErrorContext<T> for Result<T> {
         F: FnOnce() -> String,
     {
         self.map_err(|e| Error::Generic(format!("{}: {}", f(), e)))
+    }
+}
+
+
+// Additional error conversions for common external errors
+impl From<bincode::error::EncodeError> for Error {
+    fn from(_err: bincode::error::EncodeError) -> Self {
+        Error::Serialization
+    }
+}
+
+impl From<bincode::error::DecodeError> for Error {
+    fn from(_err: bincode::error::DecodeError) -> Self {
+        Error::Serialization
+    }
+}
+
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(_: std::string::FromUtf8Error) -> Self {
+        Error::Serialization
+    }
+}
+
+impl From<std::num::TryFromIntError> for Error {
+    fn from(err: std::num::TryFromIntError) -> Self {
+        Error::Generic(format!("Integer conversion error: {}", err))
     }
 }
 

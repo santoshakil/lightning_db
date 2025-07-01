@@ -256,16 +256,10 @@ impl SessionManager {
             .unwrap_or(0)
     }
     
-    fn wait_for_timestamp(&self, _timestamp: u64, timeout: Duration) -> Result<()> {
-        let start = std::time::Instant::now();
-        
-        while start.elapsed() < timeout {
-            // In a real implementation, this would wait for replication
-            // For now, we'll simulate immediate consistency
-            return Ok(());
-        }
-        
-        Err(Error::Timeout("Session consistency timeout".to_string()))
+    fn wait_for_timestamp(&self, _timestamp: u64, _timeout: Duration) -> Result<()> {
+        // In a real implementation, this would wait for replication
+        // For now, we'll simulate immediate consistency
+        Ok(())
     }
 }
 
