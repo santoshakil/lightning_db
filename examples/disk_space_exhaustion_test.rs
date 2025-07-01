@@ -1,4 +1,4 @@
-use lightning_db::{Database, LightningDbConfig, LightningDbError};
+use lightning_db::{Database, LightningDbConfig};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
@@ -9,7 +9,7 @@ fn fill_disk_space(path: &Path, leave_bytes: u64) -> Result<Vec<String>, Box<dyn
     
     // Get available space
     let stat = nix::sys::statvfs::statvfs(path)?;
-    let available = stat.blocks_available() * stat.block_size();
+    let available = stat.blocks_available() as u64 * stat.block_size();
     
     if available <= leave_bytes {
         println!("  ⚠️  Only {} bytes available, cannot fill disk", available);
@@ -57,7 +57,7 @@ fn cleanup_filler_files(files: &[String]) -> Result<(), Box<dyn std::error::Erro
 
 fn get_available_space(path: &Path) -> Result<u64, Box<dyn std::error::Error>> {
     let stat = nix::sys::statvfs::statvfs(path)?;
-    Ok(stat.blocks_available() * stat.block_size())
+    Ok(stat.blocks_available() as u64 * stat.block_size())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

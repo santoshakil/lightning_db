@@ -1,0 +1,23 @@
+[package]
+name = "lightning-db-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "C FFI bindings for Lightning DB"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+lightning_db = { path = "..", version = "0.1.0" }
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3.20"
+
+[build-dependencies]
+cbindgen = "0.29"
+
+[lib]
+name = "lightning_db_ffi"
+crate-type = ["cdylib", "staticlib"]
+
+[features]
+default = []

@@ -2003,7 +2003,8 @@ mod tests {
         // Should have no errors on a healthy database
         assert_eq!(report.errors.len(), 0, "Healthy database should have no integrity errors");
         assert!(report.statistics.total_pages > 0);
-        assert!(report.statistics.total_keys >= 0, "Should have counted at least some keys");
+        // Total keys is u64, so it's always >= 0
+        assert!(report.statistics.total_keys > 0, "Should have counted at least some keys");
     }
 
     #[test]

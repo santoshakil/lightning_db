@@ -1,6 +1,5 @@
 use lightning_db::{Database, LightningDbConfig};
 use std::process::{Command, Child};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::fs;
 use std::path::PathBuf;
