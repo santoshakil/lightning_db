@@ -292,7 +292,7 @@ impl LSMTree {
 
     fn rotate_memtable(&self) -> Result<()> {
         let mut memtable = self.memtable.write();
-        let old_memtable = std::mem::replace(&mut *memtable, MemTable::new());
+        let old_memtable = std::mem::take(&mut *memtable);
 
         let old_memtable = Arc::new(old_memtable);
         self.immutable_memtables.write().push(old_memtable.clone());

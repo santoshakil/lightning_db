@@ -1,9 +1,11 @@
 use crate::error::{Error, Result};
+use crate::utils::retry::RetryableOperations;
 use crc32fast::Hasher;
 use memmap2::{MmapMut, MmapOptions};
 use std::fs::OpenOptions;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use tracing;
 
 pub const PAGE_SIZE: usize = 4096;
 pub const MAGIC: u32 = 0x4C444200; // "LDB\0"
@@ -81,16 +83,28 @@ use crate::storage::PageManagerTrait;
 
 impl PageManager {
     pub fn create(path: &Path, initial_size: u64) -> Result<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(path)
-            ?;
+        // Use retry for file creation
+        let file = RetryableOperations::file_operation(|| {
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(path)
+                .map_err(|e| Error::Io(format!("Failed to create page file: {}", e)))
+        })?;
 
-        file.set_len(initial_size)?;
+        // Set file length with retry
+        RetryableOperations::file_operation(|| {
+            file.set_len(initial_size)
+                .map_err(|e| Error::Io(format!("Failed to set file length: {}", e)))
+        })?;
 
-        let mmap = unsafe { MmapOptions::new().map_mut(&file)? };
+        // Create memory map with retry
+        let mmap = RetryableOperations::file_operation(|| {
+            unsafe { MmapOptions::new().map_mut(&file) }
+                .map_err(|e| Error::Io(format!("Failed to create memory map: {}", e)))
+        })?;
 
         let mut manager = Self {
             file,
@@ -105,16 +119,27 @@ impl PageManager {
     }
 
     pub fn open(path: &Path) -> Result<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)
-            ?;
+        // Open file with retry
+        let file = RetryableOperations::file_operation(|| {
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(path)
+                .map_err(|e| Error::Io(format!("Failed to open page file: {}", e)))
+        })?;
 
-        let metadata = file.metadata()?;
+        // Get metadata with retry
+        let metadata = RetryableOperations::file_operation(|| {
+            file.metadata()
+                .map_err(|e| Error::Io(format!("Failed to get file metadata: {}", e)))
+        })?;
         let file_size = metadata.len();
 
-        let mmap = unsafe { MmapOptions::new().map_mut(&file)? };
+        // Create memory map with retry
+        let mmap = RetryableOperations::file_operation(|| {
+            unsafe { MmapOptions::new().map_mut(&file) }
+                .map_err(|e| Error::Io(format!("Failed to create memory map: {}", e)))
+        })?;
 
         let mut manager = Self {
             file,
@@ -287,20 +312,37 @@ impl PageManager {
         // Calculate new size with some overhead
         let grow_size = std::cmp::max(new_size, self.file_size * 2);
 
-        self.file.set_len(grow_size)?;
+        // Set new file length with retry
+        RetryableOperations::file_operation(|| {
+            self.file.set_len(grow_size)
+                .map_err(|e| Error::Io(format!("Failed to grow file: {}", e)))
+        })?;
         self.file_size = grow_size;
 
-        // Recreate mmap with new size
-        drop(std::mem::replace(&mut self.mmap, unsafe {
-            MmapOptions::new().map_mut(&self.file)?
-        }));
+        // Recreate mmap with new size using retry
+        let new_mmap = RetryableOperations::file_operation(|| {
+            unsafe { MmapOptions::new().map_mut(&self.file) }
+                .map_err(|e| Error::Io(format!("Failed to recreate memory map after grow: {}", e)))
+        })?;
+        
+        drop(std::mem::replace(&mut self.mmap, new_mmap));
 
         Ok(())
     }
 
     pub fn sync(&mut self) -> Result<()> {
-        self.mmap.flush()?;
-        self.file.sync_all()?;
+        // Flush memory map with retry
+        RetryableOperations::file_operation(|| {
+            self.mmap.flush()
+                .map_err(|e| Error::Io(format!("Failed to flush memory map: {}", e)))
+        })?;
+        
+        // Sync file with retry
+        RetryableOperations::file_operation(|| {
+            self.file.sync_all()
+                .map_err(|e| Error::Io(format!("Failed to sync file: {}", e)))
+        })?;
+        
         Ok(())
     }
 
@@ -328,31 +370,58 @@ impl ThreadSafePageManager {
 
 impl PageManagerTrait for ThreadSafePageManager {
     fn allocate_page(&self) -> Result<u32> {
-        self.inner.lock().unwrap().allocate_page()
+        self.inner.lock()
+            .map_err(|_| Error::LockFailed { resource: "PageManager mutex".to_string() })?
+            .allocate_page()
     }
     
     fn free_page(&self, page_id: u32) {
-        self.inner.lock().unwrap().free_page(page_id)
+        // Free page is void, so we can't propagate errors easily
+        // Log and continue on lock failure
+        match self.inner.lock() {
+            Ok(mut guard) => guard.free_page(page_id),
+            Err(_) => {
+                tracing::error!("Failed to acquire lock for free_page, page {} may leak", page_id);
+            }
+        }
     }
     
     fn get_page(&self, page_id: u32) -> Result<Page> {
-        self.inner.lock().unwrap().get_page(page_id)
+        self.inner.lock()
+            .map_err(|_| Error::LockFailed { resource: "PageManager mutex".to_string() })?
+            .get_page(page_id)
     }
     
     fn write_page(&self, page: &Page) -> Result<()> {
-        self.inner.lock().unwrap().write_page(page)
+        self.inner.lock()
+            .map_err(|_| Error::LockFailed { resource: "PageManager mutex".to_string() })?
+            .write_page(page)
     }
     
     fn sync(&self) -> Result<()> {
-        self.inner.lock().unwrap().sync()
+        self.inner.lock()
+            .map_err(|_| Error::LockFailed { resource: "PageManager mutex".to_string() })?
+            .sync()
     }
     
     fn page_count(&self) -> u32 {
-        self.inner.lock().unwrap().page_count()
+        match self.inner.lock() {
+            Ok(guard) => guard.page_count(),
+            Err(_) => {
+                tracing::error!("Failed to acquire lock for page_count, returning 0");
+                0
+            }
+        }
     }
     
     fn free_page_count(&self) -> usize {
-        self.inner.lock().unwrap().free_page_count()
+        match self.inner.lock() {
+            Ok(guard) => guard.free_page_count(),
+            Err(_) => {
+                tracing::error!("Failed to acquire lock for free_page_count, returning 0");
+                0
+            }
+        }
     }
 }
 

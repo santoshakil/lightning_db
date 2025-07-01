@@ -180,7 +180,10 @@ impl BPlusTree {
         match underflow_node.node_type {
             NodeType::Leaf => {
                 // For leaf nodes, borrow the last entry from left sibling
-                let borrowed_entry = left_node.entries.pop().unwrap();
+                let borrowed_entry = left_node.entries.pop()
+                    .ok_or_else(|| Error::InvalidOperation { 
+                        reason: "Left sibling has no entries to borrow".to_string() 
+                    })?;
                 underflow_node.entries.insert(0, borrowed_entry.clone());
                 
                 // Update parent separator
@@ -188,8 +191,14 @@ impl BPlusTree {
             }
             NodeType::Internal => {
                 // For internal nodes, rotate through parent
-                let borrowed_entry = left_node.entries.pop().unwrap();
-                let borrowed_child = left_node.children.pop().unwrap();
+                let borrowed_entry = left_node.entries.pop()
+                    .ok_or_else(|| Error::InvalidOperation { 
+                        reason: "Left sibling has no entries to borrow".to_string() 
+                    })?;
+                let borrowed_child = left_node.children.pop()
+                    .ok_or_else(|| Error::InvalidOperation { 
+                        reason: "Left sibling has no children to borrow".to_string() 
+                    })?;
                 
                 // Move separator from parent to underflow node
                 let separator = parent_node.entries[separator_index].clone();
@@ -347,7 +356,6 @@ mod tests {
     use std::sync::Arc;
     use parking_lot::RwLock;
     use tempfile::tempdir;
-    use tracing::error;
 
     #[test]
     fn test_delete_complete() {
@@ -453,10 +461,9 @@ mod tests {
             btree.insert(key.as_bytes(), value.as_bytes()).unwrap();
             
             // Verify insertion worked
-            if btree.get(key.as_bytes()).unwrap().is_none() {
-                error!("Failed to insert key during redistribution: {:?}", key);
-                panic!("Failed to insert key during redistribution");
-            }
+            let result = btree.get(key.as_bytes()).unwrap();
+            assert!(result.is_some(), 
+                   "Failed to insert key during redistribution: {:?}", key);
         }
 
         // Delete many keys to trigger underflow and merging

@@ -30,6 +30,8 @@ rayon = "1.10.0"
 async-trait = "0.1"
 prometheus = "0.13"
 lazy_static = "1.5"
+rand = "0.9"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "json"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -40,10 +42,18 @@ proptest = "1.7"
 tempfile = "3.20"
 rand = "0.9"
 env_logger = "0.11"
+serial_test = "3.2"
 
 [build-dependencies]
 prost-build = "0.14"
 cbindgen = "0.29"
+
+[features]
+default = []
+opentelemetry = []
+compression = []
+async = []
+monitoring = []
 
 [lib]
 name = "lightning_db"

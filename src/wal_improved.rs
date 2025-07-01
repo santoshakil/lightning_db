@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use crate::utils::retry::RetryableOperations;
 use crate::wal::{WALOperation, WALEntry};
 use bincode::{Decode, Encode};
 use parking_lot::{Mutex, RwLock, Condvar};
@@ -46,19 +47,26 @@ impl WALSegment {
     fn create(base_path: &Path, segment_id: u64) -> Result<Self> {
         let path = base_path.join(format!("wal_{:08}.seg", segment_id));
         
-        let file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&path)
-            ?;
+        // Create file with retry
+        let file = RetryableOperations::file_operation(|| {
+            OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&path)
+                .map_err(|e| Error::Io(format!("Failed to create WAL segment: {}", e)))
+        })?;
         
         let mut writer = BufWriter::with_capacity(1024 * 1024, file); // 1MB buffer
         
-        // Write segment header
-        writer.write_all(&WAL_MAGIC.to_le_bytes())?;
-        writer.write_all(&WAL_VERSION.to_le_bytes())?;
-        writer.write_all(&segment_id.to_le_bytes())?;
+        // Write segment header with retry
+        RetryableOperations::file_operation(|| {
+            writer.write_all(&WAL_MAGIC.to_le_bytes())
+                .and_then(|_| writer.write_all(&WAL_VERSION.to_le_bytes()))
+                .and_then(|_| writer.write_all(&segment_id.to_le_bytes()))
+                .and_then(|_| writer.flush())
+                .map_err(|e| Error::Io(format!("Failed to write WAL header: {}", e)))
+        })?;
         
         Ok(Self {
             segment_id,
@@ -70,16 +78,23 @@ impl WALSegment {
     }
     
     fn open(path: PathBuf) -> Result<(Self, u64, u64)> {
-        let mut file = File::open(&path)?;
+        // Open file with retry
+        let mut file = RetryableOperations::file_operation(|| {
+            File::open(&path)
+                .map_err(|e| Error::Io(format!("Failed to open WAL segment: {}", e)))
+        })?;
         
         // Read and verify header
         let mut magic = [0u8; 4];
         let mut version = [0u8; 4];
         let mut segment_id_bytes = [0u8; 8];
         
-        file.read_exact(&mut magic)?;
-        file.read_exact(&mut version)?;
-        file.read_exact(&mut segment_id_bytes)?;
+        RetryableOperations::file_operation(|| {
+            file.read_exact(&mut magic)?;
+            file.read_exact(&mut version)?;
+            file.read_exact(&mut segment_id_bytes)?;
+            Ok(())
+        })?;
         
         let magic = u32::from_le_bytes(magic);
         let version = u32::from_le_bytes(version);
@@ -96,12 +111,13 @@ impl WALSegment {
         // Find the last valid entry and position
         let (last_lsn, file_size) = Self::scan_segment(&mut file)?;
         
-        // Reopen for appending
-        let file = OpenOptions::new()
-            
-            .append(true)
-            .open(&path)
-            ?;
+        // Reopen for appending with retry
+        let file = RetryableOperations::file_operation(|| {
+            OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .map_err(|e| Error::Io(format!("Failed to reopen WAL for append: {}", e)))
+        })?;
         
         let writer = BufWriter::with_capacity(1024 * 1024, file);
         
@@ -194,17 +210,23 @@ impl WALSegment {
     }
     
     fn write_entry(&self, entry: &WALEntry) -> Result<u64> {
-        let serialized = bincode::encode_to_vec(entry, bincode::config::standard())
+        // Calculate checksum before serializing
+        let mut entry_with_checksum = entry.clone();
+        entry_with_checksum.calculate_checksum();
+        
+        let serialized = bincode::encode_to_vec(&entry_with_checksum, bincode::config::standard())
             .map_err(|e| Error::Storage(format!("Failed to serialize: {}", e)))?;
         
         let entry_size = 4 + serialized.len() as u64;
         
         let mut writer = self.writer.lock();
         
-        // Write length and data
-        writer.write_all(&(serialized.len() as u32).to_le_bytes())
-            ?;
-        writer.write_all(&serialized)?;
+        // Write length and data with retry
+        RetryableOperations::file_operation(|| {
+            writer.write_all(&(serialized.len() as u32).to_le_bytes())
+                .and_then(|_| writer.write_all(&serialized))
+                .map_err(|e| Error::Io(format!("Failed to write WAL entry: {}", e)))
+        })?;
         
         // Update size
         let new_size = self.size.fetch_add(entry_size, Ordering::SeqCst) + entry_size;
@@ -214,11 +236,19 @@ impl WALSegment {
     
     fn sync(&self) -> Result<()> {
         let mut writer = self.writer.lock();
-        writer.flush()?;
         
-        // Get the underlying file and sync to disk
+        // Flush buffer with retry
+        RetryableOperations::file_operation(|| {
+            writer.flush()
+                .map_err(|e| Error::Io(format!("Failed to flush WAL buffer: {}", e)))
+        })?;
+        
+        // Get the underlying file and sync to disk with retry
         let file = writer.get_mut();
-        file.sync_all()?;
+        RetryableOperations::file_operation(|| {
+            file.sync_all()
+                .map_err(|e| Error::Io(format!("Failed to sync WAL to disk: {}", e)))
+        })?;
         
         Ok(())
     }
@@ -451,14 +481,24 @@ impl ImprovedWriteAheadLog {
         // Write entry
         segment.write_entry(&entry)?;
         
-        // Only sync on transaction commit/abort operations when sync_on_commit is enabled
-        // For Put/Delete operations within a transaction, sync will be done at commit time
-        let should_sync = self.sync_on_commit && matches!(
-            entry.operation,
+        // Sync based on operation type when sync_on_commit is enabled
+        let should_sync = self.sync_on_commit && match &entry.operation {
+            // Always sync transaction boundaries and checkpoints
             WALOperation::TransactionCommit { .. } | 
             WALOperation::TransactionAbort { .. } |
-            WALOperation::Checkpoint { .. }
-        );
+            WALOperation::Checkpoint { .. } => true,
+            // For Put/Delete: sync if not in a transaction (standalone operations)
+            WALOperation::Put { .. } | WALOperation::Delete { .. } => {
+                // In a real implementation, we'd track if we're in a transaction
+                // For now, always sync these in sync mode for correctness
+                true
+            },
+            // Don't sync transaction begin operations
+            WALOperation::TransactionBegin { .. } |
+            WALOperation::BeginTransaction { .. } |
+            WALOperation::AbortTransaction { .. } |
+            WALOperation::CommitTransaction { .. } => false,
+        };
         
         if should_sync {
             segment.sync()?;

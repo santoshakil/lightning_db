@@ -308,10 +308,9 @@ impl WALRecoveryContext {
             }
             op @ (WALOperation::Put { .. } | WALOperation::Delete { .. }) => {
                 // Find which transaction this belongs to
-                for (_, ops) in self.active_transactions.iter_mut() {
+                if let Some((_, ops)) = self.active_transactions.iter_mut().next() {
                     // Simple heuristic: operation belongs to most recent transaction
                     ops.push(op.clone());
-                    break;
                 }
             }
             WALOperation::Checkpoint { .. } => {

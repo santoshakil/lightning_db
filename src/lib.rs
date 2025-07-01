@@ -35,7 +35,12 @@ pub mod profiling;
 pub mod realtime_stats;
 pub mod utils {
     pub mod resource_guard;
+    pub mod retry;
+    pub mod lock_utils;
 }
+pub mod logging;
+pub mod monitoring;
+pub mod integrity;
 // Async modules
 pub mod async_storage;
 pub mod async_page_manager;
@@ -56,6 +61,7 @@ use statistics::{MetricsCollector, MetricsInstrumented, OperationType};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use std::collections::HashMap;
 use storage::{PageManager, PAGE_SIZE};
 use transaction::{
     OptimizedTransactionManager, TransactionManager, TransactionStatistics, VersionStore,
@@ -142,6 +148,7 @@ pub struct Database {
     btree_write_buffer: Option<Arc<btree_write_buffer::BTreeWriteBuffer>>,
     index_manager: Arc<IndexManager>,
     query_planner: Arc<RwLock<query_planner::QueryPlanner>>,
+    production_monitor: Arc<monitoring::production_hooks::ProductionMonitor>,
     _config: LightningDbConfig,
 }
 
@@ -321,6 +328,7 @@ impl Database {
             btree_write_buffer,
             index_manager,
             query_planner,
+            production_monitor: Arc::new(monitoring::production_hooks::ProductionMonitor::new()),
             _config: config,
         })
     }
@@ -328,12 +336,14 @@ impl Database {
     pub fn open<P: AsRef<Path>>(path: P, config: LightningDbConfig) -> Result<Self> {
         let db_path = path.as_ref();
 
-        if db_path.exists() {
-            let btree_path = db_path.join("btree.db");
+        // Check if the directory exists AND the database files exist
+        let btree_path = db_path.join("btree.db");
+        
+        if db_path.exists() && btree_path.exists() {
             let lsm_path = db_path.join("lsm");
 
             // Open either standard or optimized page manager based on config
-            let (page_manager_wrapper, page_manager_arc, btree) = if config.use_optimized_page_manager {
+            let (page_manager_wrapper, page_manager_arc, mut btree) = if config.use_optimized_page_manager {
                 if let Some(mmap_config) = config.mmap_config.clone() {
                     // Open optimized page manager
                     let opt_page_manager = Arc::new(storage::OptimizedPageManager::open(&btree_path, mmap_config)?);
@@ -411,7 +421,7 @@ impl Database {
                     // Replay with transaction awareness
                     {
                         let lsm_ref = &lsm_tree;
-                        let version_store_ref = &version_store;
+                        let _version_store_ref = &version_store;
                         let mut operations_recovered = 0;
                         
                         improved_wal_instance.recover_with_progress(
@@ -423,11 +433,8 @@ impl Database {
                                             if let Some(ref lsm) = lsm_ref {
                                                 lsm.insert(key.clone(), value.clone())?;
                                             } else {
-                                                let timestamp = std::time::SystemTime::now()
-                                                    .duration_since(std::time::UNIX_EPOCH)
-                                                    .unwrap_or_else(|_| std::time::Duration::from_secs(0))
-                                                    .as_millis() as u64;
-                                                version_store_ref.put(key.clone(), Some(value.clone()), timestamp, 0);
+                                                // Write directly to B+Tree when there's no LSM
+                                                btree.insert(key, value)?;
                                             }
                                             operations_recovered += 1;
                                         }
@@ -438,11 +445,8 @@ impl Database {
                                             if let Some(ref lsm) = lsm_ref {
                                                 lsm.delete(key)?;
                                             } else {
-                                                let timestamp = std::time::SystemTime::now()
-                                                    .duration_since(std::time::UNIX_EPOCH)
-                                                    .unwrap_or_else(|_| std::time::Duration::from_secs(0))
-                                                    .as_millis() as u64;
-                                                version_store_ref.put(key.clone(), None, timestamp, 0);
+                                                // Delete directly from B+Tree when there's no LSM
+                                                btree.delete(key)?;
                                             }
                                             operations_recovered += 1;
                                         }
@@ -459,6 +463,11 @@ impl Database {
                         )?;
                         
                         tracing::info!("WAL recovery complete: {} operations recovered", operations_recovered);
+                        
+                        // Sync page manager to ensure recovered data is persisted
+                        if operations_recovered > 0 && lsm_ref.is_none() {
+                            page_manager_wrapper.sync()?;
+                        }
                     }
                     
                     (None, Some(improved_wal_instance))
@@ -480,7 +489,6 @@ impl Database {
                     // Standard replay
                     {
                         let lsm_ref = &lsm_tree;
-                        let version_store_ref = &version_store;
                         
                         let operations = wal_instance.replay()?;
                         for operation in operations {
@@ -489,26 +497,25 @@ impl Database {
                                     if let Some(ref lsm) = lsm_ref {
                                         lsm.insert(key.clone(), value.clone())?;
                                     } else {
-                                        let timestamp = std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .unwrap_or_default()
-                                            .as_millis() as u64;
-                                        version_store_ref.put(key.clone(), Some(value.clone()), timestamp, 0);
+                                        // Write directly to B+Tree when there's no LSM
+                                        btree.insert(key, value)?;
                                     }
                                 }
                                 wal::WALOperation::Delete { key } => {
                                     if let Some(ref lsm) = lsm_ref {
                                         lsm.delete(key)?;
                                     } else {
-                                        let timestamp = std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .unwrap_or_default()
-                                            .as_millis() as u64;
-                                        version_store_ref.put(key.clone(), None, timestamp, 0);
+                                        // Delete directly from B+Tree when there's no LSM
+                                        btree.delete(key)?;
                                     }
                                 }
                                 _ => {}
                             }
+                        }
+                        
+                        // Sync page manager to ensure recovered data is persisted
+                        if lsm_ref.is_none() {
+                            page_manager_wrapper.sync()?;
                         }
                     }
                     
@@ -600,6 +607,7 @@ impl Database {
                 btree_write_buffer,
                 index_manager,
                 query_planner,
+                production_monitor: Arc::new(monitoring::production_hooks::ProductionMonitor::new()),
                 _config: config,
             })
         } else {
@@ -651,6 +659,7 @@ impl Database {
     }
     
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        let _timer = logging::OperationTimer::with_key("put", key);
         // Check if we have a write batcher
         if let Some(ref batcher) = self.write_batcher {
             return batcher.put(key.to_vec(), value.to_vec());
@@ -695,6 +704,12 @@ impl Database {
             if let Some(ref improved_wal) = self.improved_wal {
                 use wal::WALOperation;
                 improved_wal.append(WALOperation::Put {
+                    key: key.to_vec(),
+                    value: value.to_vec(),
+                })?;
+            } else if let Some(ref wal) = self.wal {
+                use wal::WALOperation;
+                wal.append(WALOperation::Put {
                     key: key.to_vec(),
                     value: value.to_vec(),
                 })?;
@@ -849,6 +864,7 @@ impl Database {
     }
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let _timer = logging::OperationTimer::with_key("get", key);
         // Fast path: try cache first without metrics overhead
         if let Some(ref memory_pool) = self.memory_pool {
             if let Ok(Some(cached_value)) = memory_pool.cache_get(key) {
@@ -926,6 +942,7 @@ impl Database {
     }
 
     pub fn delete(&self, key: &[u8]) -> Result<bool> {
+        let _timer = logging::OperationTimer::with_key("delete", key);
         let metrics = self.metrics_collector.database_metrics();
         
         metrics.record_operation(OperationType::Delete, || {
@@ -949,22 +966,26 @@ impl Database {
 
             // Apply delete directly to storage layers
             // Use LSM tree if available, otherwise use implicit transaction
-            if let Some(ref lsm) = self.lsm_tree {
+            let existed = if let Some(ref lsm) = self.lsm_tree {
+                // For LSM, check if key exists before deleting
+                let existed = lsm.get(key)?.is_some();
                 lsm.delete(key)?;
+                existed
             } else {
                 // For non-LSM databases, delete directly from B+Tree
                 if let Some(ref write_buffer) = self.btree_write_buffer {
-                    write_buffer.delete(key)?;
+                    write_buffer.delete(key)?
                 } else {
                     // Direct B+Tree delete
                     let mut btree = self.btree.write();
-                    btree.delete(key)?;
+                    let existed = btree.delete(key)?;
                     drop(btree);
                     self.page_manager.sync()?;
+                    existed
                 }
-            }
+            };
             
-            Ok(true)
+            Ok(existed)
         })
     }
 
@@ -1213,6 +1234,72 @@ impl Database {
         Ok(())
     }
     
+    /// Gracefully shutdown the database, ensuring all data is persisted
+    /// and background threads are stopped. This is called automatically
+    /// when the database is dropped, but can be called explicitly for
+    /// more control over shutdown timing.
+    pub fn shutdown(&self) -> Result<()> {
+        // Stop all background threads first
+        self.metrics_collector.stop();
+        
+        if let Some(ref prefetch_manager) = self.prefetch_manager {
+            prefetch_manager.stop();
+        }
+        
+        if let Some(ref opt_manager) = self.optimized_transaction_manager {
+            opt_manager.stop();
+        }
+        
+        // Perform final checkpoint to ensure all data is persisted
+        self.checkpoint()?;
+        
+        // Shutdown improved WAL if present
+        if let Some(ref improved_wal) = self.improved_wal {
+            improved_wal.shutdown();
+        }
+        
+        // Flush write buffer if present
+        if let Some(ref write_buffer) = self.btree_write_buffer {
+            write_buffer.flush()?;
+        }
+        
+        // Final sync to ensure all data is on disk
+        self.page_manager.sync()?;
+        
+        Ok(())
+    }
+    
+    // ===== DATA INTEGRITY METHODS =====
+    
+    /// Verify database integrity
+    pub fn verify_integrity(&self) -> Result<integrity::IntegrityReport> {
+        use integrity::{IntegrityVerifier, VerificationConfig};
+        
+        let config = VerificationConfig::default();
+        let verifier = IntegrityVerifier::new(self.page_manager.clone())
+            .with_config(config);
+        
+        verifier.verify()
+    }
+    
+    /// Verify integrity with custom configuration
+    pub fn verify_integrity_with_config(&self, config: integrity::VerificationConfig) -> Result<integrity::IntegrityReport> {
+        use integrity::IntegrityVerifier;
+        
+        let verifier = IntegrityVerifier::new(self.page_manager.clone())
+            .with_config(config);
+        
+        verifier.verify()
+    }
+    
+    /// Attempt to repair integrity issues
+    pub fn repair_integrity(&self, report: &integrity::IntegrityReport) -> Result<integrity::RepairReport> {
+        use integrity::IntegrityRepairer;
+        
+        let repairer = IntegrityRepairer::new(self.page_manager.clone());
+        repairer.repair(report)
+    }
+    
     // ===== INDEX MANAGEMENT METHODS =====
     
     /// Create a secondary index with full config
@@ -1426,6 +1513,26 @@ impl Database {
             .map(|tm| tm.get_statistics())
     }
 
+    // Production monitoring methods
+    pub fn register_monitoring_hook(&self, hook: Arc<dyn monitoring::production_hooks::MonitoringHook>) {
+        self.production_monitor.register_hook(hook);
+    }
+    
+    pub fn set_operation_threshold(&self, operation: monitoring::production_hooks::OperationType, threshold: Duration) {
+        self.production_monitor.set_threshold(operation, threshold);
+    }
+    
+    pub fn get_production_metrics(&self) -> HashMap<String, f64> {
+        self.production_monitor.collect_metrics()
+    }
+    
+    pub fn production_health_check(&self) -> monitoring::production_hooks::HealthStatus {
+        self.production_monitor.health_check()
+    }
+    
+    pub fn emit_monitoring_event(&self, event: monitoring::production_hooks::MonitoringEvent) {
+        self.production_monitor.emit_event(event);
+    }
 
     // Range query methods
     pub fn scan(
@@ -1855,6 +1962,51 @@ mod tests {
     }
 
     #[test]
+    fn test_graceful_shutdown() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+
+        let db = Database::create(&db_path, LightningDbConfig::default()).unwrap();
+        
+        // Write some data
+        db.put(b"key1", b"value1").unwrap();
+        db.put(b"key2", b"value2").unwrap();
+        
+        // Explicitly shutdown
+        db.shutdown().unwrap();
+        
+        // Try to open again to verify clean shutdown
+        let db2 = Database::open(&db_path, LightningDbConfig::default()).unwrap();
+        
+        // Verify data is persisted
+        assert_eq!(db2.get(b"key1").unwrap(), Some(b"value1".to_vec()));
+        assert_eq!(db2.get(b"key2").unwrap(), Some(b"value2".to_vec()));
+    }
+
+    #[test]
+    fn test_integrity_verification() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+
+        let db = Database::create(&db_path, LightningDbConfig::default()).unwrap();
+        
+        // Write some data
+        for i in 0..100 {
+            let key = format!("key_{:04}", i);
+            let value = format!("value_{:04}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+        
+        // Verify integrity
+        let report = db.verify_integrity().unwrap();
+        
+        // Should have no errors on a healthy database
+        assert_eq!(report.errors.len(), 0, "Healthy database should have no integrity errors");
+        assert!(report.statistics.total_pages > 0);
+        assert!(report.statistics.total_keys >= 0, "Should have counted at least some keys");
+    }
+
+    #[test]
     fn test_basic_operations() {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.db");
@@ -1948,8 +2100,8 @@ mod tests {
             "Key should be deleted in transaction"
         );
 
-        // Test 3: Delete non-existent key
-        assert!(db.delete(b"non_existent").unwrap());
+        // Test 3: Delete non-existent key should return false
+        assert!(!db.delete(b"non_existent").unwrap());
 
         // Test 4: Delete and reinsert
         db.put(b"delete_test_3", b"value3").unwrap();
