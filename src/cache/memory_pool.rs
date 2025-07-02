@@ -96,10 +96,22 @@ impl MemoryPool {
                     let mut page_mgr = page_manager.write();
 
                     for (page_id, cached_page) in dirty_pages.iter().take(eviction_batch) {
-                        if let Err(e) = page_mgr.write_page(&cached_page.page) {
-                            eprintln!("Failed to write dirty page {}: {:?}", page_id, e);
-                        } else {
+                        // Skip cache-only pages (those with IDs >= 1000000)
+                        // These are synthetic pages used for key-value caching
+                        if *page_id >= 1000000 {
+                            // Mark cache-only pages as clean without writing
                             arc_cache.mark_clean(*page_id);
+                            continue;
+                        }
+                        
+                        match page_mgr.write_page(&cached_page.page) {
+                            Ok(_) => arc_cache.mark_clean(*page_id),
+                            Err(e) => {
+                                // Log error but continue - some pages might become invalid during shutdown
+                                if shutdown.load(Ordering::Relaxed) == 0 {
+                                    eprintln!("Failed to write dirty page {}: {:?}", page_id, e);
+                                }
+                            }
                         }
                     }
                 }
@@ -213,6 +225,14 @@ impl MemoryPool {
         let mut page_mgr = self.page_manager.write();
 
         for (page_id, cached_page) in dirty_pages {
+            // Skip cache-only pages (those with IDs >= 1000000)
+            // These are synthetic pages used for key-value caching
+            if page_id >= 1000000 {
+                // Mark cache-only pages as clean without writing
+                self.arc_cache.mark_clean(page_id);
+                continue;
+            }
+            
             page_mgr.write_page(&cached_page.page)?;
             self.arc_cache.mark_clean(page_id);
         }
@@ -267,7 +287,10 @@ impl MemoryPool {
             // Update existing page
             let mut page = (*cached_page.page).clone();
             self.update_page_with_kv(&mut page, key, value)?;
-            cached_page.mark_dirty();
+            // Don't mark cache-only pages as dirty - they shouldn't be persisted
+            if page_id < 1000000 {
+                cached_page.mark_dirty();
+            }
             page
         } else {
             // Create new page

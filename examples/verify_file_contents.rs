@@ -1,6 +1,6 @@
 use lightning_db::{Database, LightningDbConfig};
 use std::fs;
-use std::io::{Read, Seek};
+use std::io::Read;
 use tempfile::tempdir;
 
 fn find_in_buffer(buffer: &[u8], pattern: &[u8]) -> Option<usize> {

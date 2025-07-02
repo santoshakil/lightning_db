@@ -317,11 +317,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let db = Database::open(db_path, LightningDbConfig::default())?;
         
         // Test various operations
-        let operations = vec![
-            ("Read", || db.get(b"any_key").map(|_| ())),
-            ("Delete", || db.delete(b"any_key")),
-            ("Small write", || db.put(b"tiny", b"x")),
-            ("Checkpoint", || db.checkpoint()),
+        let operations: Vec<(&str, Box<dyn Fn() -> Result<(), Box<dyn std::error::Error>>>)> = vec![
+            ("Read", Box::new(|| db.get(b"any_key").map(|_| ()).map_err(|e| e.into()))),
+            ("Delete", Box::new(|| db.delete(b"any_key").map(|_| ()).map_err(|e| e.into()))),
+            ("Small write", Box::new(|| db.put(b"tiny", b"x").map_err(|e| e.into()))),
+            ("Checkpoint", Box::new(|| db.checkpoint().map_err(|e| e.into()))),
         ];
         
         for (op_name, op) in operations {

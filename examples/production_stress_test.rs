@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use lightning_db::{Database, LightningDbConfig};
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -192,7 +193,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let barrier = Arc::new(Barrier::new(num_threads + 1));
         
         let start = Instant::now();
-        let mut handles = vec![];
+        let mut handles: Vec<thread::JoinHandle<Result<(i32, i32), String>>> = vec![];
         
         for thread_id in 0..num_threads {
             let db_clone = Arc::clone(&db);
@@ -288,7 +289,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let db = Database::open(db_path, LightningDbConfig::default())?;
             match db.get(test_key)? {
                 Some(value) => {
-                    assert_eq!(value.as_ref(), test_value);
+                    assert_eq!(&value[..], test_value);
                     println!("  ✓ Data successfully recovered after reopening");
                 }
                 None => panic!("Data not found after recovery"),

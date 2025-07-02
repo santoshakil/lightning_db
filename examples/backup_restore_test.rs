@@ -1,8 +1,8 @@
 use lightning_db::{Database, LightningDbConfig};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
-use tempfile::{tempdir, TempDir};
+use tempfile::tempdir;
 use std::io::{Read, Write};
 use flate2::write::GzEncoder;
 use flate2::read::GzDecoder;
@@ -74,7 +74,8 @@ fn create_backup(
             
             if entry_path.is_file() {
                 let relative_path = entry_path.strip_prefix(base_path)?;
-                let path_bytes = relative_path.to_string_lossy().as_bytes();
+                let path_string = relative_path.to_string_lossy();
+                let path_bytes = path_string.as_bytes();
                 let file_data = fs::read(entry_path)?;
                 
                 // Write header: path length (4 bytes) + path + data length (8 bytes) + data
@@ -94,7 +95,7 @@ fn create_backup(
             Ok(size)
         }
         
-        total_size = write_entry(&mut encoder, db_path, db_path)?;
+        total_size += write_entry(&mut encoder, db_path, db_path)?;
         encoder.finish()?;
         
         let compressed_size = fs::metadata(&backup_file)?.len();
@@ -126,7 +127,7 @@ fn create_backup(
             Ok(size)
         }
         
-        total_size = copy_dir_recursive(db_path, backup_path)?;
+        total_size += copy_dir_recursive(db_path, backup_path)?;
     }
     
     let duration = start.elapsed();
@@ -365,7 +366,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("====================================");
     {
         let full_backup_dir = temp_dir.path().join("full_backup");
-        let incremental_dir = temp_dir.path().join("incremental");
+        let _incremental_dir = temp_dir.path().join("incremental");
         
         // Take full backup
         println!("  Taking full backup...");

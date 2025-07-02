@@ -1,7 +1,8 @@
+#![allow(deprecated)]
 use lightning_db::{Database, LightningDbConfig};
 use std::sync::{Arc, Barrier};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tempfile::tempdir;
 
 fn allocate_memory(size_mb: usize) -> Vec<Vec<u8>> {
