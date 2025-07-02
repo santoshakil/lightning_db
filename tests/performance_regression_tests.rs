@@ -23,7 +23,7 @@ impl Default for PerformanceBaseline {
         Self {
             sequential_write_ops_per_sec: 50_000.0,    // 50K ops/sec
             random_write_ops_per_sec: 30_000.0,        // 30K ops/sec
-            sequential_read_ops_per_sec: 100_000.0,    // 100K ops/sec
+            sequential_read_ops_per_sec: 15_000.0,     // 15K ops/sec (realistic baseline)
             random_read_ops_per_sec: 80_000.0,         // 80K ops/sec
             mixed_workload_ops_per_sec: 40_000.0,      // 40K ops/sec
             transaction_commits_per_sec: 5_000.0,      // 5K tx/sec

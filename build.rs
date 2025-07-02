@@ -5,8 +5,8 @@ fn main() {
     // Generate protobuf code
     prost_build::compile_protos(&["proto/database.proto"], &["proto/"]).unwrap();
 
-    // Generate C headers - temporarily disabled due to async parsing issues
-    // TODO: Re-enable when FFI is implemented
+    // C headers are generated in the lightning-db-ffi subdirectory via cbindgen
+    // FFI implementation is complete in lightning-db-ffi/
     /*
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let output_file = PathBuf::from(&crate_dir)

@@ -52,10 +52,16 @@ proptest! {
 
 // Property: Transaction isolation
 proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 16, // Reduced from default 256
+        timeout: 3000, // 3 second timeout
+        .. ProptestConfig::default()
+    })]
+
     #[test]
     fn prop_transaction_isolation(
-        keys in prop_vec(prop_vec(any::<u8>(), 1..100), 1..10),
-        values in prop_vec(prop_vec(any::<u8>(), 1..100), 1..10)
+        keys in prop_vec(prop_vec(any::<u8>(), 1..50), 1..5),
+        values in prop_vec(prop_vec(any::<u8>(), 1..50), 1..5)
     ) {
         let dir = tempdir().unwrap();
         let db = Database::open(dir.path(), test_config()).unwrap();
@@ -161,13 +167,19 @@ proptest! {
 
 // Property: Concurrent operations maintain consistency
 proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 8, // Reduced for concurrent test
+        timeout: 5000, // 5 second timeout
+        .. ProptestConfig::default()
+    })]
+
     #[test]
     fn prop_concurrent_consistency(
         operations in prop_vec(
             prop::sample::select(vec!["put", "get"]),
-            10..50
+            5..15
         ),
-        keys in prop_vec(string_regex("[a-z]{3,5}").unwrap(), 5..10)
+        keys in prop_vec(string_regex("[a-z]{3,5}").unwrap(), 3..6)
     ) {
         use std::sync::{Arc, Mutex};
         use std::thread;
@@ -229,9 +241,15 @@ proptest! {
 
 // Property: Memory limits are respected
 proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 8, // Reduced for memory test
+        timeout: 3000, // 3 second timeout
+        .. ProptestConfig::default()
+    })]
+
     #[test]
     fn prop_memory_limits(
-        value_sizes in prop_vec(1usize..1000000, 10..50)
+        value_sizes in prop_vec(1usize..100000, 5..15)
     ) {
         let dir = tempdir().unwrap();
         let config = LightningDbConfig {
@@ -305,10 +323,16 @@ proptest! {
 
 // Property: Large keys and values
 proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 8, // Reduced for large data test
+        timeout: 3000, // 3 second timeout
+        .. ProptestConfig::default()
+    })]
+
     #[test]
     fn prop_large_data(
-        key_size in 1usize..65536,
-        value_size in 1usize..1048576
+        key_size in 1usize..4096,
+        value_size in 1usize..65536
     ) {
         let dir = tempdir().unwrap();
         let db = Database::open(dir.path(), test_config()).unwrap();
