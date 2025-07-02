@@ -1,7 +1,44 @@
 use std::ffi::CString;
 use std::ptr;
 use tempfile::tempdir;
-use lightning_db_ffi::*;
+
+// Import the FFI functions and types through extern declarations
+// Since this is a test, we need to declare the external C functions
+extern "C" {
+    fn lightning_db_create(path: *const i8, config: *const std::ffi::c_void) -> *mut std::ffi::c_void;
+    fn lightning_db_open(path: *const i8, config: *const std::ffi::c_void) -> *mut std::ffi::c_void;
+    fn lightning_db_free(db: *mut std::ffi::c_void);
+    fn lightning_db_put(db: *mut std::ffi::c_void, key: *const u8, key_len: usize, value: *const u8, value_len: usize) -> i32;
+    fn lightning_db_get(db: *mut std::ffi::c_void, key: *const u8, key_len: usize, result: *mut *mut u8) -> i32;
+    fn lightning_db_delete(db: *mut std::ffi::c_void, key: *const u8, key_len: usize) -> i32;
+    fn lightning_db_checkpoint(db: *mut std::ffi::c_void) -> i32;
+    fn lightning_db_begin_transaction(db: *mut std::ffi::c_void, tx_id: *mut u64) -> i32;
+    fn lightning_db_commit_transaction(db: *mut std::ffi::c_void, tx_id: u64) -> i32;
+    fn lightning_db_abort_transaction(db: *mut std::ffi::c_void, tx_id: u64) -> i32;
+    fn lightning_db_put_tx(db: *mut std::ffi::c_void, tx_id: u64, key: *const u8, key_len: usize, value: *const u8, value_len: usize) -> i32;
+    fn lightning_db_get_tx(db: *mut std::ffi::c_void, tx_id: u64, key: *const u8, key_len: usize) -> i32;
+    fn lightning_db_config_new() -> *mut std::ffi::c_void;
+    fn lightning_db_config_free(config: *mut std::ffi::c_void);
+    fn lightning_db_config_set_page_size(config: *mut std::ffi::c_void, page_size: u32) -> i32;
+    fn lightning_db_config_set_cache_size(config: *mut std::ffi::c_void, cache_size: usize) -> i32;
+    fn lightning_db_error_string(error: i32) -> *const i8;
+    fn lightning_db_free_result(data: *mut u8, len: usize);
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq)]
+enum LightningDBError {
+    Success = 0,
+    NullPointer = -1,
+    InvalidUtf8 = -2,
+    IoError = -3,
+    CorruptedData = -4,
+    InvalidArgument = -5,
+    OutOfMemory = -6,
+    DatabaseLocked = -7,
+    TransactionConflict = -8,
+    UnknownError = -99,
+}
 
 // Test error handling for various FFI edge cases
 #[test]
@@ -135,11 +172,11 @@ LightningDBError::NullPointer
         );
 
         // Test invalid config values
-        let config = lightning_db_ffi::lightning_db_config_new();
+        let config = ffi::lightning_db_config_new();
         assert!(!config.is_null());
 
         // Page size 0 should be rejected
-        let err = lightning_db_ffi::lightning_db_config_set_page_size(config, 0);
+        let err = ffi::lightning_db_config_set_page_size(config, 0);
         // Note: This might be accepted as it could use default, depends on implementation
 
         lightning_db_config_free(config);
@@ -172,8 +209,8 @@ LightningDBError::UnknownError,
             assert!(!rust_str.is_empty());
 
             // Verify error string is not generic for specific errors
-            if error_code != lightning_db_ffi::LightningDBError::Success
-                && error_code != lightning_db_ffi::LightningDBError::UnknownError
+            if error_code != LightningDBError::Success
+                && error_code != LightningDBError::UnknownError
             {
                 assert_ne!(rust_str, "Unknown error");
             }
@@ -218,7 +255,7 @@ fn test_large_data_errors() {
         // Test with very large key (might exceed page size)
         let large_key = vec![0u8; 10_000];
         let value = b"value";
-        let err = lightning_db_ffi::lightning_db_put(
+        let err = ffi::lightning_db_put(
             db,
             large_key.as_ptr(),
             large_key.len(),
@@ -230,7 +267,7 @@ fn test_large_data_errors() {
         // Test with very large value
         let key = b"key";
         let large_value = vec![0u8; 1_000_000];
-        let err = lightning_db_ffi::lightning_db_put(
+        let err = ffi::lightning_db_put(
             db,
             key.as_ptr(),
             key.len(),
@@ -264,12 +301,12 @@ fn test_concurrent_error_handling() {
                 let mut tx_id = 0u64;
                 let err = lightning_db_begin_transaction(*db_clone, &mut tx_id);
                 
-                if err == lightning_db_ffi::LightningDBError::Success {
+                if err == LightningDBError::Success {
                     // Try to commit
                     let commit_err = lightning_db_commit_transaction(*db_clone, tx_id);
                     (err, commit_err)
                 } else {
-                    (err, lightning_db_ffi::LightningDBError::UnknownError)
+                    (err, LightningDBError::UnknownError)
                 }
             });
             handles.push(handle);
