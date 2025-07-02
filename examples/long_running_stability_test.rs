@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use lightning_db::{Database, LightningDbConfig};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -50,7 +51,7 @@ fn format_duration(duration: Duration) -> String {
     }
 }
 
-fn print_status(start_time: Instant, stats: &OperationStats, context: &str) {
+fn print_status(start_time: Instant, _stats: &OperationStats, context: &str) {
     let elapsed = start_time.elapsed();
     let timestamp = Local::now().format("%H:%M:%S");
     println!("[{}] {} - Runtime: {}", timestamp, context, format_duration(elapsed));
@@ -62,13 +63,13 @@ fn continuous_writer(
     stop_signal: Arc<Mutex<bool>>,
     thread_id: usize,
 ) {
-    let mut rng = rand::rng();
+    let mut rng = rand::thread_rng();
     let mut local_writes = 0u64;
     
     while !*stop_signal.lock().unwrap() {
         let key = format!("continuous_t{}_k{}", thread_id, local_writes);
-        let value_size = rng.random_range(100..10_000);
-        let value = vec![rng.gen::<u8>(); value_size];
+        let value_size = rng.gen_range(100..10_000);
+        let value = vec![rng.random::<u8>(); value_size];
         
         match db.put(key.as_bytes(), &value) {
             Ok(_) => {
@@ -97,7 +98,7 @@ fn random_operations(
     stats: Arc<Mutex<OperationStats>>,
     stop_signal: Arc<Mutex<bool>>,
 ) {
-    let mut rng = rand::rng();
+    let mut rng = rand::thread_rng();
     
     while !*stop_signal.lock().unwrap() {
         let op = rng.random_range(0..100);
@@ -275,7 +276,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Monitor loop
     let stdin = std::io::stdin();
-    let mut input = String::new();
+    let _input = String::new();
     
     loop {
         // Non-blocking check for user input
@@ -299,18 +300,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         
         // Periodic status updates every 5 minutes
-        static mut LAST_AUTO_STATUS: Option<Instant> = None;
-        unsafe {
-            if LAST_AUTO_STATUS.is_none() {
-                LAST_AUTO_STATUS = Some(Instant::now());
+        use std::sync::OnceLock;
+        static LAST_AUTO_STATUS: OnceLock<std::sync::Mutex<Option<Instant>>> = OnceLock::new();
+        
+        let last_status_mutex = LAST_AUTO_STATUS.get_or_init(|| std::sync::Mutex::new(None));
+        if let Ok(mut last_status) = last_status_mutex.lock() {
+            if last_status.is_none() {
+                *last_status = Some(Instant::now());
             }
             
-            if let Some(last) = LAST_AUTO_STATUS {
+            if let Some(last) = *last_status {
                 if last.elapsed() > Duration::from_secs(300) {
                     let stats_snapshot = stats.lock().unwrap();
                     print_status(start_time, &stats_snapshot, "Automatic Status");
                     stats_snapshot.print_summary(start_time.elapsed());
-                    LAST_AUTO_STATUS = Some(Instant::now());
+                    *last_status = Some(Instant::now());
                 }
             }
         }

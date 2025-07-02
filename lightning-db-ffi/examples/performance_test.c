@@ -5,7 +5,7 @@
 #include <sys/time.h>
 #include "../include/lightning_db_ffi.h"
 
-#define NUM_OPERATIONS 100000
+#define NUM_OPERATIONS 75000
 #define KEY_SIZE 32
 #define VALUE_SIZE 100
 

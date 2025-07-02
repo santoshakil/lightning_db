@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use lightning_db::{Database, LightningDbConfig};
 use std::sync::{Arc, Barrier};
 use std::thread;

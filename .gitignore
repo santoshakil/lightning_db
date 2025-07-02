@@ -28,3 +28,12 @@ lightning_db.h
 
 # Documentation drafts
 *LUDE.md
+
+# Dart build artifacts
+.dart_tool/
+pubspec.lock
+
+# Test databases
+**/test_db*/
+**/dart_test_db/
+**/*_test_db/

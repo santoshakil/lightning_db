@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use lightning_db::{Database as LightningDB, LightningDbConfig};
 use std::time::{Duration, Instant};
 use tempfile::tempdir;
@@ -171,7 +172,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     for (size_name, num_ops) in test_sizes {
         println!("\n{} Dataset ({} operations)", size_name, num_ops);
-        println!("=" .repeat(50));
+        println!("{}", "=".repeat(50));
         
         // Benchmark Lightning DB
         println!("\nBenchmarking Lightning DB...");
@@ -243,18 +244,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     write_latencies.sort();
     read_latencies.sort();
     
-    let percentiles = vec![50, 90, 95, 99, 99.9];
+    let percentiles = vec![50, 90, 95, 99];
     
     println!("\nWrite Latency Percentiles:");
     for p in &percentiles {
-        let index = (write_latencies.len() as f64 * p / 100.0) as usize;
+        let index = (write_latencies.len() as f64 * *p as f64 / 100.0) as usize;
         let latency = write_latencies[index.min(write_latencies.len() - 1)];
         println!("  p{}: {:.2}μs", p, latency.as_secs_f64() * 1_000_000.0);
     }
     
     println!("\nRead Latency Percentiles:");
     for p in &percentiles {
-        let index = (read_latencies.len() as f64 * p / 100.0) as usize;
+        let index = (read_latencies.len() as f64 * *p as f64 / 100.0) as usize;
         let latency = read_latencies[index.min(read_latencies.len() - 1)];
         println!("  p{}: {:.2}μs", p, latency.as_secs_f64() * 1_000_000.0);
     }
@@ -263,12 +264,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n\nMemory Efficiency Test");
     println!("=====================");
     
-    use sysinfo::{System, SystemExt, ProcessExt};
+    use sysinfo::System;
     let mut system = System::new_all();
     system.refresh_all();
     
-    let pid = sysinfo::get_current_pid().unwrap();
-    let initial_memory = system.process(pid).map(|p| p.memory()).unwrap_or(0);
+    let pid = std::process::id();
+    let initial_memory = system.process(sysinfo::Pid::from_u32(pid)).map(|p| p.memory()).unwrap_or(0);
     
     // Create database with specific cache size
     let config = LightningDbConfig {
@@ -287,7 +288,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     
     system.refresh_all();
-    let final_memory = system.process(pid).map(|p| p.memory()).unwrap_or(0);
+    let final_memory = system.process(sysinfo::Pid::from_u32(pid)).map(|p| p.memory()).unwrap_or(0);
     let memory_increase = final_memory.saturating_sub(initial_memory);
     
     println!("  Cache size configured: 10 MB");
