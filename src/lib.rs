@@ -103,6 +103,9 @@ pub mod utils {
 pub mod logging;
 pub mod monitoring;
 pub mod integrity;
+pub mod observability;
+pub mod resource_limits;
+pub mod safety_guards;
 // Async modules
 pub mod async_storage;
 pub mod async_page_manager;
