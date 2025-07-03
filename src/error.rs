@@ -112,6 +112,12 @@ pub enum Error {
     
     #[error("Page overflow: node data exceeds page size")]
     PageOverflow,
+    
+    #[error("Resource limit exceeded: {0}")]
+    ResourceLimitExceeded(String),
+    
+    #[error("Operation throttled for {0:?}")]
+    Throttled(std::time::Duration),
 }
 
 impl From<std::io::Error> for Error {
@@ -170,6 +176,8 @@ impl Error {
             Error::InvalidOperation { .. } => -33,
             Error::UnsupportedFeature { .. } => -34,
             Error::PageOverflow => -35,
+            Error::ResourceLimitExceeded(_) => -36,
+            Error::Throttled(_) => -37,
         }
     }
 
