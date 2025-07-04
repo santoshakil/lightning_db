@@ -49,8 +49,12 @@ impl VersionCleanupThread {
     fn perform_cleanup(&self) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_micros() as u64;
+            .map(|d| d.as_micros() as u64)
+            .unwrap_or_else(|e| {
+                eprintln!("Warning: Failed to get system time for version cleanup: {}", e);
+                // Return last cleanup time + interval as fallback
+                self.last_cleanup.load(Ordering::Relaxed) + self.cleanup_interval.as_micros() as u64
+            });
         
         // Clean up versions older than retention_duration
         let cleanup_before = now.saturating_sub(self.retention_duration.as_micros() as u64);
@@ -72,14 +76,14 @@ impl VersionCleanupThread {
 /// Cleanup for committed transactions in MVCC
 pub struct TransactionCleanup {
     max_retained_transactions: usize,
-    cleanup_interval: Duration,
+    _cleanup_interval: Duration,
 }
 
 impl TransactionCleanup {
     pub fn new(max_retained_transactions: usize, cleanup_interval: Duration) -> Self {
         Self {
             max_retained_transactions,
-            cleanup_interval,
+            _cleanup_interval: cleanup_interval,
         }
     }
 
@@ -120,7 +124,7 @@ mod tests {
         // Add some versions
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("System time before UNIX epoch in test")
             .as_micros() as u64;
         
         for i in 0..100 {

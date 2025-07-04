@@ -1,7 +1,6 @@
 use clap::{Command, Arg, ArgMatches};
-use lightning_db::{Database, LightningDbConfig, backup::{BackupManager, BackupConfig, BackupType}};
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use lightning_db::{Database, LightningDbConfig, backup::{BackupManager, BackupConfig}};
+use std::time::Instant;
 use std::io::{self, Write};
 
 /// Lightning DB Administrative CLI
@@ -368,7 +367,7 @@ fn cmd_backup(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Creating {} backup...", if incremental { "incremental" } else { "full" });
     
-    let db = Database::open(db_path, LightningDbConfig::default())?;
+    let _db = Database::open(db_path, LightningDbConfig::default())?;
     let config = BackupConfig {
         include_wal: true,
         compress: compress != "none",
@@ -426,7 +425,7 @@ fn cmd_stats(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     let path = matches.get_one::<String>("path").unwrap();
     let detailed = matches.get_flag("detailed");
 
-    let db = Database::open(path, LightningDbConfig::default())?;
+    let _db = Database::open(path, LightningDbConfig::default())?;
     
     // Get statistics from realtime stats
     use lightning_db::realtime_stats::REALTIME_STATS;
@@ -655,7 +654,7 @@ fn cmd_check(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     let mut checker = IntegrityChecker::new(&db);
     
     // Run basic checks
-    let report = checker.check_all()?;
+    let _report = checker.check_all()?;
     
     // Optionally verify checksums
     if checksum_sample > 0 {

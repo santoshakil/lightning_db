@@ -1,5 +1,5 @@
 use lightning_db::{Database, LightningDbConfig, safety_guards::SafetyGuards};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -90,7 +90,7 @@ fn test_read_only_mode(db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
 }
 
 /// Test circuit breaker functionality
-fn test_circuit_breaker(db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
+fn test_circuit_breaker(_db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
     println!("\n⚡ Test 2: Circuit Breaker");
     
     // Simulate failures to trigger circuit breaker
@@ -138,7 +138,7 @@ fn test_circuit_breaker(db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
 }
 
 /// Test rate limiting
-fn test_rate_limiting(db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
+fn test_rate_limiting(_db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
     println!("\n🚦 Test 3: Rate Limiting");
     
     let start_time = Instant::now();
@@ -172,7 +172,7 @@ fn test_rate_limiting(db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
 }
 
 /// Test maintenance mode
-fn test_maintenance_mode(db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
+fn test_maintenance_mode(_db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
     println!("\n🔧 Test 4: Maintenance Mode");
     
     // Enable maintenance mode
@@ -232,7 +232,7 @@ fn test_backup_guard(guards: &Arc<SafetyGuards>) {
 }
 
 /// Test retention guard
-fn test_retention_guard(db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
+fn test_retention_guard(_db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
     println!("\n🗑️  Test 6: Retention Guard");
     
     // Add protected key pattern
@@ -257,7 +257,7 @@ fn test_retention_guard(db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
 }
 
 /// Test emergency procedures
-fn test_emergency_procedures(db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
+fn test_emergency_procedures(_db: &Arc<Database>, guards: &Arc<SafetyGuards>) {
     println!("\n🚨 Test 7: Emergency Procedures");
     
     // Test graceful shutdown

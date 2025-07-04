@@ -63,12 +63,12 @@ fn continuous_writer(
     stop_signal: Arc<Mutex<bool>>,
     thread_id: usize,
 ) {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut local_writes = 0u64;
     
     while !*stop_signal.lock().unwrap() {
         let key = format!("continuous_t{}_k{}", thread_id, local_writes);
-        let value_size = rng.gen_range(100..10_000);
+        let value_size = rng.random_range(100..10_000);
         let value = vec![rng.random::<u8>(); value_size];
         
         match db.put(key.as_bytes(), &value) {
@@ -98,7 +98,7 @@ fn random_operations(
     stats: Arc<Mutex<OperationStats>>,
     stop_signal: Arc<Mutex<bool>>,
 ) {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     
     while !*stop_signal.lock().unwrap() {
         let op = rng.random_range(0..100);

@@ -118,10 +118,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Random reads to stress cache
         println!("\n  Performing random reads...");
         use rand::Rng;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         
         for i in 0..1000 {
-            let key_id = rng.gen_range(0..num_values);
+            let key_id = rng.random_range(0..num_values);
             let key = format!("memory_test_key_{:04}", key_id);
             let _ = db.get(key.as_bytes())?;
             
@@ -299,12 +299,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Random access (even worse for cache)
         println!("\n  Random access pattern...");
         use rand::Rng;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let start = Instant::now();
         hits = 0;
         
         for _ in 0..1000 {
-            let i = rng.gen_range(0..num_keys);
+            let i = rng.random_range(0..num_keys);
             let key = format!("thrash_key_{:04}", i);
             if db.get(key.as_bytes())?.is_some() {
                 hits += 1;

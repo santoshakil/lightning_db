@@ -238,23 +238,23 @@ impl StabilityTester {
                 
                 while !*should_stop.lock().unwrap() {
                     // Perform random operations
-                    let op_type = rng.gen_range(0..100);
+                    let op_type = rng.random_range(0..100);
                     
                     let result = match op_type {
                         0..=40 => {
                             // 40% writes
                             let key = format!("key_{:08}_{:08}", thread_id, local_op_count);
-                            let value = format!("value_{}_data_{}", thread_id, "x".repeat(rng.gen_range(100..1000)));
+                            let value = format!("value_{}_data_{}", thread_id, "x".repeat(rng.random_range(100..1000)));
                             db.put(key.as_bytes(), value.as_bytes())
                         }
                         41..=70 => {
                             // 30% reads
-                            let key = format!("key_{:08}_{:08}", thread_id, rng.gen_range(0..local_op_count.max(1)));
+                            let key = format!("key_{:08}_{:08}", thread_id, rng.random_range(0..local_op_count.max(1)));
                             db.get(key.as_bytes()).map(|_| ())
                         }
                         71..=80 => {
                             // 10% deletes
-                            let key = format!("key_{:08}_{:08}", thread_id, rng.gen_range(0..local_op_count.max(1)));
+                            let key = format!("key_{:08}_{:08}", thread_id, rng.random_range(0..local_op_count.max(1)));
                             db.delete(key.as_bytes()).map(|_| ())
                         }
                         81..=90 => {
@@ -367,6 +367,8 @@ impl StabilityTester {
         
         // Test summary
         println!("\n⏱️  Test Duration: {:?}", report.duration);
+        println!("🕐 Start Time: {:?}", report.start_metrics.timestamp.elapsed());
+        println!("🕑 End Time: {:?}", report.end_metrics.timestamp.elapsed());
         println!("🔢 Operations Performed: {}", report.operations_performed);
         println!("❌ Errors Encountered: {}", report.errors_encountered);
         println!("📈 Error Rate: {:.4}%", report.errors_encountered as f64 / report.operations_performed.max(1) as f64 * 100.0);
@@ -376,6 +378,9 @@ impl StabilityTester {
         println!("   Initial RSS: {:.2} MB", report.start_metrics.memory_rss as f64 / 1024.0 / 1024.0);
         println!("   Final RSS: {:.2} MB", report.end_metrics.memory_rss as f64 / 1024.0 / 1024.0);
         println!("   Peak RSS: {:.2} MB", report.peak_metrics.memory_rss as f64 / 1024.0 / 1024.0);
+        println!("   Initial VSS: {:.2} MB", report.start_metrics.memory_vss as f64 / 1024.0 / 1024.0);
+        println!("   Final VSS: {:.2} MB", report.end_metrics.memory_vss as f64 / 1024.0 / 1024.0);
+        println!("   Peak VSS: {:.2} MB", report.peak_metrics.memory_vss as f64 / 1024.0 / 1024.0);
         println!("   Growth: {:.2} MB ({:.2}%)", 
                  (report.end_metrics.memory_rss as f64 - report.start_metrics.memory_rss as f64) / 1024.0 / 1024.0,
                  (report.end_metrics.memory_rss as f64 / report.start_metrics.memory_rss.max(1) as f64 - 1.0) * 100.0);
@@ -398,6 +403,10 @@ impl StabilityTester {
                  } else {
                      "0".to_string()
                  });
+        println!("   CPU Usage: {:.1}% -> {:.1}% (peak: {:.1}%)",
+                 report.start_metrics.cpu_usage,
+                 report.end_metrics.cpu_usage,
+                 report.peak_metrics.cpu_usage);
         println!("   Disk Usage: {:.2} MB -> {:.2} MB",
                  report.start_metrics.disk_usage as f64 / 1024.0 / 1024.0,
                  report.end_metrics.disk_usage as f64 / 1024.0 / 1024.0);

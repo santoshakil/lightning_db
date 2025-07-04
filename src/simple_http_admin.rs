@@ -1,9 +1,8 @@
 use crate::{Database, realtime_stats::REALTIME_STATS};
 use std::sync::Arc;
 use std::net::{TcpListener, TcpStream};
-use std::io::{Read, Write, BufReader, BufRead};
+use std::io::{Write, BufReader, BufRead};
 use std::thread;
-use std::time::Duration;
 
 /// Simple HTTP Admin API for Lightning DB
 /// 
@@ -272,9 +271,9 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
     use crate::LightningDbConfig;
-    use std::io::{BufReader, BufRead};
+    use std::io::{BufReader, BufRead, Read};
     
-    fn read_response(stream: &mut TcpStream) -> Result<(u16, String), Box<dyn std::error::Error>> {
+    fn _read_response(stream: &mut TcpStream) -> Result<(u16, String), Box<dyn std::error::Error>> {
         let mut reader = BufReader::new(stream);
         let mut status_line = String::new();
         reader.read_line(&mut status_line)?;
@@ -313,8 +312,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db = Arc::new(Database::create(temp_dir.path(), LightningDbConfig::default()).unwrap());
         
-        let handle = start_admin_server_async(db, 0); // Use port 0 for auto-assignment
-        thread::sleep(Duration::from_millis(100)); // Give server time to start
+        let _handle = start_admin_server_async(db, 0); // Use port 0 for auto-assignment
+        thread::sleep(std::time::Duration::from_millis(100)); // Give server time to start
         
         // In a real test, we'd need to get the actual port from the server
         // For now, this is a placeholder showing the test structure

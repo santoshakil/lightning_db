@@ -24,7 +24,7 @@ struct ChaosResult {
     scenario: ChaosScenario,
     success: bool,
     error_message: Option<String>,
-    recovery_time: Option<Duration>,
+    _recovery_time: Option<Duration>,
     data_integrity: bool,
 }
 
@@ -94,7 +94,7 @@ impl ChaosEngineer {
                 scenario: ChaosScenario::DiskFull,
                 success: false,
                 error_message: Some(format!("Failed to create database: {}", e)),
-                recovery_time: None,
+                _recovery_time: None,
                 data_integrity: false,
             },
         };
@@ -161,7 +161,7 @@ impl ChaosEngineer {
             } else {
                 None
             },
-            recovery_time: None,
+            _recovery_time: None,
             data_integrity: read_errors == 0,
         }
     }
@@ -183,7 +183,7 @@ impl ChaosEngineer {
                 scenario: ChaosScenario::MemoryPressure,
                 success: false,
                 error_message: Some(format!("Failed to create database: {}", e)),
-                recovery_time: None,
+                _recovery_time: None,
                 data_integrity: false,
             },
         };
@@ -229,7 +229,7 @@ impl ChaosEngineer {
             } else {
                 None
             },
-            recovery_time: None,
+            _recovery_time: None,
             data_integrity: true,
         }
     }
@@ -309,7 +309,7 @@ impl ChaosEngineer {
                     } else {
                         None
                     },
-                    recovery_time: Some(recovery_time),
+                    _recovery_time: Some(recovery_time),
                     data_integrity: readable_count > corrupted_count,
                 }
             }
@@ -317,7 +317,7 @@ impl ChaosEngineer {
                 scenario: ChaosScenario::CorruptedData,
                 success: false,
                 error_message: Some(format!("Failed to recover from corruption: {}", e)),
-                recovery_time: None,
+                _recovery_time: None,
                 data_integrity: false,
             },
         }
@@ -379,7 +379,7 @@ impl ChaosEngineer {
             } else {
                 None
             },
-            recovery_time: None,
+            _recovery_time: None,
             data_integrity: read_errors == 0,
         }
     }
@@ -456,7 +456,7 @@ impl ChaosEngineer {
             } else {
                 None
             },
-            recovery_time: None,
+            _recovery_time: None,
             data_integrity: read_errors == 0,
         }
     }
@@ -550,7 +550,7 @@ impl ChaosEngineer {
             } else {
                 None
             },
-            recovery_time: Some(duration),
+            _recovery_time: Some(duration),
             data_integrity: true,
         }
     }
@@ -593,7 +593,7 @@ impl ChaosEngineer {
             } else {
                 None
             },
-            recovery_time: None,
+            _recovery_time: None,
             data_integrity: true,
         }
     }

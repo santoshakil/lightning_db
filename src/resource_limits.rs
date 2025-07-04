@@ -68,8 +68,8 @@ pub struct ResourceEnforcer {
     
     // Circuit breaker state
     memory_limit_exceeded: Arc<AtomicBool>,
-    disk_limit_exceeded: Arc<AtomicBool>,
-    throughput_limit_exceeded: Arc<AtomicBool>,
+    _disk_limit_exceeded: Arc<AtomicBool>,
+    _throughput_limit_exceeded: Arc<AtomicBool>,
     
     // Violation tracking
     violations: Arc<Mutex<Vec<ResourceViolation>>>,
@@ -163,8 +163,8 @@ impl ResourceEnforcer {
             write_throughput_tracker: Arc::new(Mutex::new(ThroughputTracker::new(Duration::from_secs(1)))),
             read_throughput_tracker: Arc::new(Mutex::new(ThroughputTracker::new(Duration::from_secs(1)))),
             memory_limit_exceeded: Arc::new(AtomicBool::new(false)),
-            disk_limit_exceeded: Arc::new(AtomicBool::new(false)),
-            throughput_limit_exceeded: Arc::new(AtomicBool::new(false)),
+            _disk_limit_exceeded: Arc::new(AtomicBool::new(false)),
+            _throughput_limit_exceeded: Arc::new(AtomicBool::new(false)),
             violations: Arc::new(Mutex::new(Vec::new())),
         }
     }

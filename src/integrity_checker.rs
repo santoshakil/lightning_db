@@ -1,8 +1,5 @@
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::Database;
-use std::collections::{HashSet, HashMap};
-use std::sync::Arc;
-use parking_lot::RwLock;
 use crc32fast::Hasher;
 
 /// Database Integrity Checker
@@ -203,7 +200,7 @@ impl<'a> IntegrityChecker<'a> {
 }
 
 /// Verify page checksum (assumes CRC32 at end of page)
-fn verify_page_checksum(data: &[u8]) -> bool {
+fn _verify_page_checksum(data: &[u8]) -> bool {
     if data.len() < 4 {
         return false;
     }

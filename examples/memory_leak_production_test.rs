@@ -25,7 +25,7 @@ fn main() {
     // Simulate production workload with high MVCC version turnover
     let duration = Duration::from_secs(60); // 1 minute test
     let start_time = Instant::now();
-    let mut iteration = 0;
+    let _iteration = 0;
     
     let mut handles = Vec::new();
     

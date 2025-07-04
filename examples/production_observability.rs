@@ -1,5 +1,5 @@
 use lightning_db::{Database, LightningDbConfig, observability::{Metrics, HealthStatus}};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -62,19 +62,19 @@ fn main() {
 
 /// Run database workload and record metrics
 fn run_workload(thread_id: usize, db: Arc<Database>, metrics: Arc<Metrics>) {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let start_time = Instant::now();
     
     while start_time.elapsed() < Duration::from_secs(30) {
         // Mix of operations
         use rand::Rng;
-        let op_type = rng.gen_range(0..100);
+        let op_type = rng.random_range(0..100);
         
         match op_type {
             0..=40 => {
                 // 40% writes
-                let key = format!("key_{:08}_{:08}", thread_id, rng.gen::<u32>());
-                let value = format!("value_{}_{}", thread_id, "x".repeat(rng.gen_range(100..1000)));
+                let key = format!("key_{:08}_{:08}", thread_id, rng.random::<u32>());
+                let value = format!("value_{}_{}", thread_id, "x".repeat(rng.random_range(100..1000)));
                 
                 let start = Instant::now();
                 match db.put(key.as_bytes(), value.as_bytes()) {
@@ -84,7 +84,7 @@ fn run_workload(thread_id: usize, db: Arc<Database>, metrics: Arc<Metrics>) {
             }
             41..=80 => {
                 // 40% reads
-                let key = format!("key_{:08}_{:08}", thread_id, rng.gen::<u32>());
+                let key = format!("key_{:08}_{:08}", thread_id, rng.random::<u32>());
                 
                 let start = Instant::now();
                 match db.get(key.as_bytes()) {
@@ -101,7 +101,7 @@ fn run_workload(thread_id: usize, db: Arc<Database>, metrics: Arc<Metrics>) {
             }
             81..=90 => {
                 // 10% deletes
-                let key = format!("key_{:08}_{:08}", thread_id, rng.gen::<u32>());
+                let key = format!("key_{:08}_{:08}", thread_id, rng.random::<u32>());
                 
                 let start = Instant::now();
                 match db.delete(key.as_bytes()) {

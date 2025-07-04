@@ -186,6 +186,9 @@ fn test_atomic_reservation_system() {
     let temp_dir = TempDir::new().unwrap();
     let db = Arc::new(Database::create(temp_dir.path(), LightningDbConfig::default()).unwrap());
     
+    // Set up initial value to create a proper conflict scenario
+    db.put(b"contested_key", b"initial_value").unwrap();
+    
     // This test specifically targets the atomic reservation logic
     let num_threads = 8;
     let barrier = Arc::new(Barrier::new(num_threads));
@@ -199,6 +202,9 @@ fn test_atomic_reservation_system() {
         let handle = thread::spawn(move || {
             // All threads try to write to the same key simultaneously
             let tx_id = db_clone.begin_transaction().unwrap();
+            
+            // Read the initial value to establish read timestamp
+            let _initial = db_clone.get_tx(tx_id, b"contested_key").unwrap();
             
             // Synchronize all threads to start at the same time
             barrier_clone.wait();

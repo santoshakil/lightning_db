@@ -206,7 +206,7 @@ impl TransactionManager {
         Ok(())
     }
 
-    fn validate_transaction(&self, tx: &Transaction) -> Result<()> {
+    fn _validate_transaction(&self, tx: &Transaction) -> Result<()> {
         // For basic TransactionManager, we use optimistic concurrency control
         // Write-write conflicts are resolved by first-committer-wins
         // We don't check against other active transactions here, only committed state
@@ -297,8 +297,12 @@ impl TransactionManager {
     pub fn perform_cleanup(&self, retention_duration_ms: u64, min_versions_per_key: usize) {
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or_else(|_| {
+                // Fallback to a safe default if system time is before epoch (very unlikely)
+                eprintln!("Warning: System time before UNIX epoch in transaction cleanup");
+                0
+            });
 
         // Calculate cleanup threshold
         let cleanup_before_timestamp = current_time.saturating_sub(retention_duration_ms);

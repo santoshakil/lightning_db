@@ -1,5 +1,4 @@
 use lightning_db::{Database, LightningDbConfig};
-use std::fs;
 use std::process;
 use std::sync::{Arc, Mutex};
 use std::thread;

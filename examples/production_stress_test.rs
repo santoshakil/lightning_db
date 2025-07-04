@@ -94,15 +94,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             let handle = thread::spawn(move || {
                 barrier_clone.wait();
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 let mut reads = 0;
                 let mut writes = 0;
                 
                 for i in 0..ops_per_thread {
-                    let op = rng.gen_range(0..10);
+                    let op = rng.random_range(0..10);
                     
                     if op < 7 { // 70% reads
-                        let key_num = rng.gen_range(0..80_000);
+                        let key_num = rng.random_range(0..80_000);
                         let key = format!("thread_{}_key_{:06}", key_num % 8, key_num / 8);
                         
                         if let Err(e) = db_clone.get(key.as_bytes()) {

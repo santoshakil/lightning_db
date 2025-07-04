@@ -143,6 +143,11 @@ impl BackgroundCompactionScheduler {
                     let mut wake = lock.lock().unwrap();
                     *wake = true;
                     cvar.notify_all();
+                } else {
+                    // Reset wake signal when no work is available to prevent spurious wakeups
+                    let (lock, _cvar) = &*wake_signal;
+                    let mut wake = lock.lock().unwrap();
+                    *wake = false;
                 }
 
                 // Sleep until next check
@@ -215,7 +220,8 @@ impl BackgroundCompactionScheduler {
                     while !*wake && running.load(Ordering::SeqCst) {
                         wake = cvar.wait(wake).unwrap();
                     }
-                    *wake = false;
+                    // Don't immediately reset wake flag - let scheduler control it
+                    // This prevents race conditions between multiple workers
                 }
             }
 

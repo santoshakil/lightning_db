@@ -1,7 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::path::Path;
+use std::time::{Duration, Instant, SystemTime};
 use crate::error::{Error, Result};
 
 /// Operational safety guards for production deployments
@@ -77,7 +76,7 @@ pub struct BackupGuard {
 /// Data retention guard to prevent accidental data loss
 pub struct RetentionGuard {
     deletion_enabled: AtomicBool,
-    bulk_deletion_threshold: usize,
+    _bulk_deletion_threshold: usize,
     deletion_confirmation_required: AtomicBool,
     protected_keys: Mutex<Vec<String>>,
 }
@@ -86,8 +85,8 @@ pub struct RetentionGuard {
 pub struct CorruptionGuard {
     corruption_detected: AtomicBool,
     auto_quarantine: AtomicBool,
-    quarantine_path: Mutex<Option<String>>,
-    checksum_verification_enabled: AtomicBool,
+    _quarantine_path: Mutex<Option<String>>,
+    _checksum_verification_enabled: AtomicBool,
 }
 
 impl SafetyGuards {
@@ -114,7 +113,7 @@ impl SafetyGuards {
     }
     
     /// Check if write operations are allowed
-    pub fn check_write_allowed(&self, key: &[u8]) -> Result<()> {
+    pub fn check_write_allowed(&self, _key: &[u8]) -> Result<()> {
         // Check emergency shutdown
         if self.emergency_shutdown.load(Ordering::Relaxed) {
             return Err(Error::InvalidOperation { 
@@ -449,7 +448,7 @@ impl RetentionGuard {
     fn new(bulk_threshold: usize) -> Self {
         Self {
             deletion_enabled: AtomicBool::new(true),
-            bulk_deletion_threshold: bulk_threshold,
+            _bulk_deletion_threshold: bulk_threshold,
             deletion_confirmation_required: AtomicBool::new(false),
             protected_keys: Mutex::new(Vec::new()),
         }
@@ -490,8 +489,8 @@ impl CorruptionGuard {
         Self {
             corruption_detected: AtomicBool::new(false),
             auto_quarantine: AtomicBool::new(true),
-            quarantine_path: Mutex::new(None),
-            checksum_verification_enabled: AtomicBool::new(true),
+            _quarantine_path: Mutex::new(None),
+            _checksum_verification_enabled: AtomicBool::new(true),
         }
     }
     

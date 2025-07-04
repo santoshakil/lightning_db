@@ -1,8 +1,6 @@
 use lightning_db::{Database, LightningDbConfig};
-use std::fs;
-use std::io::Write;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tempfile::TempDir;
 
 /// Working chaos engineering test suite with practical test scenarios
@@ -221,8 +219,9 @@ impl ChaosTestSuite {
         ChaosResult {
             scenario: ChaosScenario::FilePermissions,
             success,
-            error_message: if final_read_errors > 0 {
-                Some(format!("{} keys became unreadable", final_read_errors))
+            error_message: if final_read_errors > 0 || read_errors > 0 || operation_errors > 0 {
+                Some(format!("{} keys became unreadable, {} initial read errors, {} operation errors", 
+                    final_read_errors, read_errors, operation_errors))
             } else {
                 None
             },

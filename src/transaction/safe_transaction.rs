@@ -138,12 +138,12 @@ mod tests {
         }).collect();
         
         let results: Vec<_> = handles.into_iter()
-            .map(|h| h.join().unwrap())
+            .map(|h| h.join().expect("Thread panicked"))
             .collect();
         
         // All transactions should have unique IDs
         let mut ids: Vec<_> = results.into_iter()
-            .map(|r| r.unwrap())
+            .map(|r| r.expect("Transaction creation failed"))
             .collect();
         ids.sort();
         ids.dedup();

@@ -242,19 +242,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let counts_clone = Arc::clone(&operation_counts);
             
             let handle = thread::spawn(move || {
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 barrier_clone.wait();
                 
                 let mut local_counts = HashMap::new();
                 
                 for _ in 0..ops_per_thread {
-                    let op = rng.gen_range(0..100);
-                    let key_id = rng.gen_range(0..1000);
+                    let op = rng.random_range(0..100);
+                    let key_id = rng.random_range(0..1000);
                     let key = format!("random_key_{}", key_id);
                     
                     if op < 40 {
                         // 40% writes
-                        let value = format!("random_value_{}_{}", thread_id, rng.gen_range(0..1000));
+                        let value = format!("random_value_{}_{}", thread_id, rng.random_range(0..1000));
                         let _ = db_clone.put(key.as_bytes(), value.as_bytes());
                         *local_counts.entry("writes").or_insert(0) += 1;
                     } else if op < 70 {
