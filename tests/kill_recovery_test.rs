@@ -44,8 +44,8 @@ impl KillPoint {
 #[derive(Debug)]
 struct KillTestResult {
     kill_point: KillPoint,
-    data_before: HashMap<String, String>,
-    data_after: HashMap<String, String>,
+    _data_before: HashMap<String, String>,
+    _data_after: HashMap<String, String>,
     recovery_time: Duration,
     success: bool,
     error: Option<String>,
@@ -96,8 +96,8 @@ impl KillRecoveryHarness {
                 
                 KillTestResult {
                     kill_point,
-                    data_before: data_written,
-                    data_after,
+                    _data_before: data_written,
+                    _data_after: data_after,
                     recovery_time,
                     success,
                     error,
@@ -105,8 +105,8 @@ impl KillRecoveryHarness {
             }
             Err(e) => KillTestResult {
                 kill_point,
-                data_before: HashMap::new(),
-                data_after: HashMap::new(),
+                _data_before: HashMap::new(),
+                _data_after: HashMap::new(),
                 recovery_time: Duration::ZERO,
                 success: false,
                 error: Some(format!("Failed to spawn process: {}", e)),

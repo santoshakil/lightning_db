@@ -1,10 +1,7 @@
 use lightning_db::{Database, LightningDbConfig};
-use rand::Rng;
 use std::fs;
 use std::io::Write;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tempfile::TempDir;
 
 /// Enhanced chaos engineering test suite with better failure detection
@@ -28,7 +25,7 @@ struct ChaosResult {
     scenario: ChaosScenario,
     success: bool,
     error_message: Option<String>,
-    recovery_time: Option<Duration>,
+    _recovery_time: Option<Duration>,
     data_integrity: bool,
 }
 
@@ -96,7 +93,7 @@ impl ChaosTestSuite {
                 scenario: ChaosScenario::DiskFull,
                 success: false,
                 error_message: Some(format!("Failed to create database: {}", e)),
-                recovery_time: None,
+                _recovery_time: None,
                 data_integrity: false,
             },
         };
@@ -113,7 +110,7 @@ impl ChaosTestSuite {
 
         // Create multiple large files to fill disk more aggressively
         let mut fill_files = Vec::new();
-        let target_fill_size = 100 * 1024 * 1024; // Try to fill 100MB
+        let _target_fill_size = 100 * 1024 * 1024; // Try to fill 100MB
         
         for i in 0..10 {
             let fill_path = temp_dir.path().join(format!("filler_{}.dat", i));
@@ -174,7 +171,7 @@ impl ChaosTestSuite {
             } else {
                 None
             },
-            recovery_time: None,
+            _recovery_time: None,
             data_integrity: read_errors == 0,
         }
     }
@@ -228,7 +225,7 @@ impl ChaosTestSuite {
                     scenario: ChaosScenario::FilePermissions,
                     success: false,
                     error_message: Some(format!("Failed to change permissions: {}", e)),
-                    recovery_time: None,
+                    _recovery_time: None,
                     data_integrity: false,
                 };
             }
@@ -243,7 +240,7 @@ impl ChaosTestSuite {
                     scenario: ChaosScenario::FilePermissions,
                     success: false,
                     error_message: Some(format!("Failed to reopen database: {}", e)),
-                    recovery_time: None,
+                    _recovery_time: None,
                     data_integrity: false,
                 };
             }
@@ -320,7 +317,7 @@ impl ChaosTestSuite {
             } else {
                 None
             },
-            recovery_time: None,
+            _recovery_time: None,
             data_integrity: read_errors == 0,
         }
     }
@@ -360,7 +357,7 @@ impl ChaosTestSuite {
             } else {
                 None
             },
-            recovery_time: None,
+            _recovery_time: None,
             data_integrity: read_errors == 0,
         }
     }
@@ -372,7 +369,7 @@ impl ChaosTestSuite {
             scenario: ChaosScenario::CorruptedData,
             success: true,
             error_message: None,
-            recovery_time: None,
+            _recovery_time: None,
             data_integrity: true,
         }
     }
@@ -383,7 +380,7 @@ impl ChaosTestSuite {
             scenario: ChaosScenario::ClockSkew,
             success: true,
             error_message: None,
-            recovery_time: None,
+            _recovery_time: None,
             data_integrity: true,
         }
     }
@@ -394,7 +391,7 @@ impl ChaosTestSuite {
             scenario: ChaosScenario::ConcurrentStress,
             success: true,
             error_message: None,
-            recovery_time: None,
+            _recovery_time: None,
             data_integrity: true,
         }
     }
@@ -405,7 +402,7 @@ impl ChaosTestSuite {
             scenario: ChaosScenario::RandomFailures,
             success: true,
             error_message: None,
-            recovery_time: None,
+            _recovery_time: None,
             data_integrity: true,
         }
     }

@@ -94,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let barrier_clone = Arc::clone(&barrier);
             
             let handle = thread::spawn(move || {
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 barrier_clone.wait();
                 
                 let mut reads = 0;
@@ -102,12 +102,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut updates = 0;
                 
                 for _ in 0..ops_per_thread {
-                    let op = rng.gen_range(0..100);
+                    let op = rng.random_range(0..100);
                     
                     if op < 70 {
                         // 70% reads
-                        let thread_id = rng.gen_range(0..8);
-                        let key_id = rng.gen_range(0..10_000);
+                        let thread_id = rng.random_range(0..8);
+                        let key_id = rng.random_range(0..10_000);
                         let key = format!("thread_{}_key_{:06}", thread_id, key_id);
                         
                         let _ = db_clone.get(key.as_bytes());
@@ -120,8 +120,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         writes += 1;
                     } else {
                         // 10% updates
-                        let thread_id = rng.gen_range(0..8);
-                        let key_id = rng.gen_range(0..10_000);
+                        let thread_id = rng.random_range(0..8);
+                        let key_id = rng.random_range(0..10_000);
                         let key = format!("thread_{}_key_{:06}", thread_id, key_id);
                         let value = format!("updated_value_{}", updates);
                         let _ = db_clone.put(key.as_bytes(), value.as_bytes());
@@ -318,11 +318,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         
         // Read back with cache pressure
         let start = Instant::now();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut hits = 0;
         
         for _ in 0..1000 {
-            let i = rng.gen_range(0..num_values);
+            let i = rng.random_range(0..num_values);
             let key = format!("memory_test_key_{:04}", i);
             
             if let Some(value) = db.get(key.as_bytes())? {

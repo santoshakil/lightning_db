@@ -1,6 +1,5 @@
 use crate::btree::{BPlusTree, BTreeNode, NodeType, MIN_KEYS_PER_NODE};
 use crate::error::{Error, Result};
-use std::cmp::Ordering;
 
 impl BPlusTree {
     /// Complete B+Tree deletion with underflow handling, borrowing, and merging
@@ -55,14 +54,19 @@ impl BPlusTree {
     fn find_child_for_deletion(&self, node: &BTreeNode, key: &[u8]) -> Result<(u32, usize)> {
         match node.node_type {
             NodeType::Internal => {
+                // Find the correct child by comparing key with entries
                 let mut child_index = 0;
                 
                 for (i, entry) in node.entries.iter().enumerate() {
-                    match key.cmp(&entry.key) {
-                        Ordering::Less => break,
-                        Ordering::Equal | Ordering::Greater => child_index = i + 1,
+                    if key < entry.key.as_slice() {
+                        child_index = i;
+                        break;
                     }
+                    child_index = i + 1;
                 }
+                
+                // Ensure child_index is within bounds
+                child_index = child_index.min(node.children.len().saturating_sub(1));
                 
                 if child_index < node.children.len() {
                     Ok((node.children[child_index], child_index))

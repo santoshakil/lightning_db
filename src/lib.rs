@@ -132,7 +132,7 @@ use std::collections::HashMap;
 use storage::{PageManager, PAGE_SIZE};
 use transaction::{
     OptimizedTransactionManager, TransactionManager, TransactionStatistics, VersionStore,
-    version_cleanup::{VersionCleanupThread, TransactionCleanup},
+    version_cleanup::VersionCleanupThread,
 };
 use wal::{WriteAheadLog, BasicWriteAheadLog};
 use wal_improved::{ImprovedWriteAheadLog, TransactionRecoveryState};
@@ -217,7 +217,7 @@ pub struct Database {
     index_manager: Arc<IndexManager>,
     query_planner: Arc<RwLock<query_planner::QueryPlanner>>,
     production_monitor: Arc<monitoring::production_hooks::ProductionMonitor>,
-    version_cleanup_thread: Option<Arc<VersionCleanupThread>>,
+    _version_cleanup_thread: Option<Arc<VersionCleanupThread>>,
     _config: LightningDbConfig,
 }
 
@@ -379,6 +379,14 @@ impl Database {
             None
         };
 
+        // Start version cleanup thread to prevent memory leaks
+        let version_cleanup_thread = Arc::new(VersionCleanupThread::new(
+            version_store.clone(),
+            Duration::from_secs(30), // cleanup every 30 seconds
+            Duration::from_secs(300), // keep versions for 5 minutes
+        ));
+        let _cleanup_handle = version_cleanup_thread.clone().start();
+
         Ok(Self {
             page_manager: page_manager_wrapper,
             _page_manager_arc: page_manager_arc,
@@ -398,7 +406,7 @@ impl Database {
             index_manager,
             query_planner,
             production_monitor: Arc::new(monitoring::production_hooks::ProductionMonitor::new()),
-            version_cleanup_thread: None, // Will be started after creation
+            _version_cleanup_thread: Some(version_cleanup_thread),
             _config: config,
         })
     }
@@ -659,6 +667,14 @@ impl Database {
                 None
             };
 
+            // Start version cleanup thread to prevent memory leaks
+            let version_cleanup_thread = Arc::new(VersionCleanupThread::new(
+                version_store.clone(),
+                Duration::from_secs(30), // cleanup every 30 seconds
+                Duration::from_secs(300), // keep versions for 5 minutes
+            ));
+            let _cleanup_handle = version_cleanup_thread.clone().start();
+
             Ok(Self {
                 page_manager: page_manager_wrapper,
                 _page_manager_arc: page_manager_arc,
@@ -678,7 +694,7 @@ impl Database {
                 index_manager,
                 query_planner,
                 production_monitor: Arc::new(monitoring::production_hooks::ProductionMonitor::new()),
-                version_cleanup_thread: None, // Will be started after creation
+                _version_cleanup_thread: Some(version_cleanup_thread),
                 _config: config,
             })
         } else {
@@ -2011,6 +2027,11 @@ impl Drop for Database {
         // Flush write buffer if present
         if let Some(ref write_buffer) = self.btree_write_buffer {
             let _ = write_buffer.flush();
+        }
+        
+        // Stop version cleanup thread to prevent memory leaks
+        if let Some(ref cleanup_thread) = self._version_cleanup_thread {
+            cleanup_thread.stop();
         }
         
         // Sync any pending writes

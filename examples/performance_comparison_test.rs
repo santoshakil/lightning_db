@@ -53,7 +53,7 @@ fn benchmark_lightning_db(num_operations: usize) -> Result<BenchmarkResults, Box
     
     let db = LightningDB::create(db_path, config)?;
     let mut results = BenchmarkResults::default();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     
     // Sequential write
     let start = Instant::now();
@@ -67,7 +67,7 @@ fn benchmark_lightning_db(num_operations: usize) -> Result<BenchmarkResults, Box
     // Random write
     let start = Instant::now();
     for i in 0..num_operations {
-        let key = format!("rnd_key_{:08}", rng.gen_range(0..num_operations * 2));
+        let key = format!("rnd_key_{:08}", rng.random_range(0..num_operations * 2));
         let value = format!("value_{:08}", i);
         db.put(key.as_bytes(), value.as_bytes())?;
     }
@@ -84,7 +84,7 @@ fn benchmark_lightning_db(num_operations: usize) -> Result<BenchmarkResults, Box
     // Random read
     let start = Instant::now();
     for _ in 0..num_operations {
-        let key = format!("seq_key_{:08}", rng.gen_range(0..num_operations));
+        let key = format!("seq_key_{:08}", rng.random_range(0..num_operations));
         let _ = db.get(key.as_bytes())?;
     }
     results.random_read = start.elapsed();
@@ -92,10 +92,10 @@ fn benchmark_lightning_db(num_operations: usize) -> Result<BenchmarkResults, Box
     // Mixed workload (70% read, 20% write, 10% delete)
     let start = Instant::now();
     for i in 0..num_operations {
-        let op = rng.gen_range(0..100);
+        let op = rng.random_range(0..100);
         if op < 70 {
             // Read
-            let key = format!("seq_key_{:08}", rng.gen_range(0..num_operations));
+            let key = format!("seq_key_{:08}", rng.random_range(0..num_operations));
             let _ = db.get(key.as_bytes())?;
         } else if op < 90 {
             // Write
@@ -104,7 +104,7 @@ fn benchmark_lightning_db(num_operations: usize) -> Result<BenchmarkResults, Box
             db.put(key.as_bytes(), value.as_bytes())?;
         } else {
             // Delete
-            let key = format!("seq_key_{:08}", rng.gen_range(0..num_operations));
+            let key = format!("seq_key_{:08}", rng.random_range(0..num_operations));
             let _ = db.delete(key.as_bytes());
         }
     }

@@ -65,12 +65,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Random reads
         println!("  Performing random reads...");
         use rand::Rng;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let start = Instant::now();
         let mut hits = 0;
         
         for _ in 0..1000 {
-            let key_id = rng.gen_range(0..num_values);
+            let key_id = rng.random_range(0..num_values);
             let key = format!("memory_key_{:04}", key_id);
             if db.get(key.as_bytes())?.is_some() {
                 hits += 1;
@@ -180,10 +180,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         
         // Random read (cache unfriendly)
         use rand::Rng;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let start = Instant::now();
         for _ in 0..num_keys {
-            let i = rng.gen_range(0..num_keys);
+            let i = rng.random_range(0..num_keys);
             let key = format!("cache_key_{:04}", i);
             let _ = db.get(key.as_bytes())?;
         }

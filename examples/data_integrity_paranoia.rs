@@ -295,7 +295,7 @@ impl IntegrityChecker {
                     }
                     
                     shadow.keys()
-                        .filter(|_| rng.gen_ratio(1, 10)) // Sample 10%
+                        .filter(|_| rng.random_ratio(1, 10)) // Sample 10%
                         .take(100)
                         .cloned()
                         .collect()
@@ -411,12 +411,20 @@ fn main() {
     
     println!("   Checked items: {}", integrity_report.checked_items);
     println!("   Critical errors: {}", integrity_report.errors.len());
+    println!("   Warnings: {}", integrity_report.warnings.len());
     println!("   Scan duration: {:?}", integrity_report.duration);
     
     if !integrity_report.errors.is_empty() {
         println!("\n   Critical errors found:");
         for error in &integrity_report.errors {
             println!("      - {}", error);
+        }
+    }
+    
+    if !integrity_report.warnings.is_empty() {
+        println!("\n   Warnings found:");
+        for warning in &integrity_report.warnings {
+            println!("      - {}", warning);
         }
     }
     

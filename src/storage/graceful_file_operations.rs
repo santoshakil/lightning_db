@@ -239,7 +239,6 @@ pub fn is_path_read_only<P: AsRef<Path>>(path: P) -> Result<bool> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    use std::io::Write;
     
     #[test]
     fn test_normal_file_operations() {

@@ -215,7 +215,7 @@ fn test_mixed_workload(db: &Arc<Database>, enforcer: &Arc<ResourceEnforcer>) {
         let stats = stats.clone();
         
         let handle = thread::spawn(move || {
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let mut local_stats = WorkloadStats::default();
             
             while start_time.elapsed() < test_duration {
@@ -230,11 +230,11 @@ fn test_mixed_workload(db: &Arc<Database>, enforcer: &Arc<ResourceEnforcer>) {
                 };
                 
                 // Random operation type
-                match rng.gen_range(0..100) {
+                match rng.random_range(0..100) {
                     0..=60 => {
                         // Write operation
-                        let key = format!("mixed_key_{}_{}", thread_id, rng.gen::<u32>());
-                        let value_size = rng.gen_range(1024..10240);
+                        let key = format!("mixed_key_{}_{}", thread_id, rng.random::<u32>());
+                        let value_size = rng.random_range(1024..10240);
                         let value = vec![0u8; value_size];
                         
                         match enforcer.check_write(value_size as u64) {
@@ -253,7 +253,7 @@ fn test_mixed_workload(db: &Arc<Database>, enforcer: &Arc<ResourceEnforcer>) {
                     }
                     _ => {
                         // Read operation
-                        let key = format!("mixed_key_{}_{}", thread_id, rng.gen::<u32>());
+                        let key = format!("mixed_key_{}_{}", thread_id, rng.random::<u32>());
                         
                         match enforcer.check_read(1024) {
                             Ok(_) => {
