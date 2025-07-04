@@ -77,6 +77,8 @@ pub mod storage;
 pub mod thread_local_cache;
 pub mod transaction;
 pub mod wal;
+pub mod simple_http_admin;
+pub mod integrity_checker;
 pub mod wal_improved;
 pub mod lock_free;
 pub mod simd;
