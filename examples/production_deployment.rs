@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 /// - Error handling and recovery
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Lightning DB Production Deployment Example");
-    println!("=".repeat(50));
+    println!("{}", "=".repeat(50));
     
     // Production-optimized configuration
     let config = LightningDbConfig {
@@ -85,8 +85,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Total operations: {}", operation_count.load(Ordering::Relaxed));
     println!("  Total errors: {}", error_count.load(Ordering::Relaxed));
     
-    let stats = db.get_statistics()?;
-    println!("  Active transactions: {}", stats.active_transactions);
+    if let Some(stats) = db.get_transaction_statistics() {
+        println!("  Active transactions: {}", stats.active_transactions);
+    }
     
     println!("\n✅ Production deployment example completed successfully!");
     println!("🎯 Ready for production deployment with proper configuration");
@@ -239,7 +240,7 @@ fn run_production_workload(
                         match run_transaction(&db_worker, &key, &value) {
                             Ok(_) => op_count.fetch_add(3, Ordering::Relaxed), // Count as 3 ops
                             Err(_) => err_count.fetch_add(1, Ordering::Relaxed),
-                        }
+                        };
                     }
                     _ => unreachable!(),
                 }
@@ -309,9 +310,10 @@ fn run_health_checks(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
     
     // Resource usage check
     print!("  • Resource usage... ");
-    let stats = db.get_statistics()?;
-    if stats.active_transactions > 1000 {
-        return Err("Too many active transactions".into());
+    if let Some(stats) = db.get_transaction_statistics() {
+        if stats.active_transactions > 1000 {
+            return Err("Too many active transactions".into());
+        }
     }
     println!("✅");
     
@@ -361,7 +363,7 @@ fn test_performance_sanity(db: &Database) -> Result<(), Box<dyn std::error::Erro
 }
 
 /// Create a backup
-fn create_backup(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
+fn create_backup(_db: &Database) -> Result<(), Box<dyn std::error::Error>> {
     use lightning_db::backup::{BackupManager, BackupConfig};
     
     let backup_config = BackupConfig {

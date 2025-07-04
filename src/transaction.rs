@@ -321,10 +321,10 @@ impl TransactionManager {
         );
 
         #[cfg(debug_assertions)]
-        if cleaned_versions > 0 {
+        if _cleaned_versions > 0 {
             println!(
                 "Transaction cleanup: removed {} old versions before timestamp {}",
-                cleaned_versions, safe_cleanup_threshold
+                _cleaned_versions, safe_cleanup_threshold
             );
         }
     }
@@ -354,7 +354,7 @@ impl TransactionManager {
         println!(
             "Active transactions count: {}, max retained committed: {}",
             self.active_transactions.len(),
-            max_retained
+            _max_retained
         );
     }
 

@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
-use std::collections::HashMap;
 
 /// Comprehensive monitoring and alerting setup for Lightning DB
 /// 
@@ -16,7 +15,7 @@ use std::collections::HashMap;
 /// - Prometheus-style metrics export
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("📊 Lightning DB Monitoring & Alerting Setup");
-    println!("=".repeat(50));
+    println!("{}", "=".repeat(50));
     
     // Create database
     let config = LightningDbConfig {
@@ -48,17 +47,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Display monitoring dashboard
     println!("\n📊 MONITORING DASHBOARD");
-    println!("=".repeat(50));
+    println!("{}", "=".repeat(50));
     display_dashboard(&monitor);
     
     // Export Prometheus metrics
     println!("\n📈 PROMETHEUS METRICS EXPORT");
-    println!("=".repeat(30));
+    println!("{}", "=".repeat(30));
     export_prometheus_metrics(&monitor);
     
     // Check alerts
     println!("\n🚨 ACTIVE ALERTS");
-    println!("=".repeat(20));
+    println!("{}", "=".repeat(20));
     display_alerts(&monitor);
     
     // Graceful shutdown
@@ -219,14 +218,17 @@ fn start_metrics_collection(
                 let ops_per_sec = ((current_ops - last_ops) as f64 / duration.as_secs_f64()) as u64;
                 
                 // Get database statistics
-                if let Ok(stats) = db.get_statistics() {
-                    // Simulate cache hit rate (in real implementation, this would come from actual cache stats)
-                    let cache_hit_rate = 0.85; // 85% hit rate
-                    let active_txns = stats.active_transactions as u64;
-                    let memory_mb = 128; // Simulated memory usage
-                    
-                    monitor.update_performance_metrics(ops_per_sec, cache_hit_rate, active_txns, memory_mb);
-                }
+                let active_txns = if let Some(stats) = db.get_transaction_statistics() {
+                    stats.active_transactions as u64
+                } else {
+                    0
+                };
+                
+                // Simulate cache hit rate (in real implementation, this would come from actual cache stats)
+                let cache_hit_rate = 0.85; // 85% hit rate
+                let memory_mb = 128; // Simulated memory usage
+                
+                monitor.update_performance_metrics(ops_per_sec, cache_hit_rate, active_txns, memory_mb);
                 
                 last_ops = current_ops;
                 last_time = current_time;
