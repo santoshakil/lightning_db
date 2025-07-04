@@ -36,6 +36,7 @@ prometheus = "0.13"
 lazy_static = "1.5"
 rand = "0.9"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "json"] }
+clap = { version = "4.5", features = ["derive"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -67,6 +68,14 @@ monitoring = []
 [lib]
 name = "lightning_db"
 crate-type = ["rlib"]
+
+[[bin]]
+name = "lightning-cli"
+path = "src/bin/lightning-cli.rs"
+
+[[bin]]
+name = "lightning-admin-server"
+path = "src/bin/lightning-admin-server.rs"
 
 [profile.release]
 lto = true
