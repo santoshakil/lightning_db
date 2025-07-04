@@ -1,0 +1,128 @@
+version: '3.8'
+
+services:
+  lightning-db:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.production
+    container_name: lightning-db
+    ports:
+      - "8080:8080"
+    volumes:
+      - lightning-data:/data/db
+      - lightning-backups:/data/backups
+      - lightning-logs:/data/logs
+      - ./config/production.toml:/etc/lightning-db/production.toml:ro
+    environment:
+      - LIGHTNING_DB_CACHE_SIZE=512MB
+      - LIGHTNING_DB_LOG_LEVEL=info
+      - RUST_LOG=lightning_db=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+
+  # Prometheus monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: lightning-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  # Grafana dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: lightning-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # Log aggregation
+  loki:
+    image: grafana/loki:latest
+    container_name: lightning-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki-data:/loki
+      - ./monitoring/loki.yml:/etc/loki/local-config.yaml:ro
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
+  # Log shipping
+  promtail:
+    image: grafana/promtail:latest
+    container_name: lightning-promtail
+    volumes:
+      - lightning-logs:/var/log/lightning-db:ro
+      - ./monitoring/promtail.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    restart: unless-stopped
+    depends_on:
+      - loki
+
+  # Backup service
+  backup:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backup
+    container_name: lightning-backup
+    volumes:
+      - lightning-data:/data/db:ro
+      - lightning-backups:/data/backups
+      - ./config/backup.toml:/etc/lightning-db/backup.toml:ro
+    environment:
+      - BACKUP_SCHEDULE=0 2 * * *  # Daily at 2 AM
+      - BACKUP_RETENTION_DAYS=30
+    restart: unless-stopped
+    depends_on:
+      - lightning-db
+
+volumes:
+  lightning-data:
+    driver: local
+  lightning-backups:
+    driver: local
+  lightning-logs:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  loki-data:
+    driver: local
+
+networks:
+  default:
+    name: lightning-db-network

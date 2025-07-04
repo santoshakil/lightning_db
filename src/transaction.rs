@@ -315,7 +315,7 @@ impl TransactionManager {
         let safe_cleanup_threshold = std::cmp::min(cleanup_before_timestamp, min_active_timestamp);
 
         // Cleanup old versions in the version store
-        let cleaned_versions = self.version_store.cleanup_old_versions(
+        let _cleaned_versions = self.version_store.cleanup_old_versions(
             safe_cleanup_threshold,
             min_versions_per_key,
         );
@@ -345,7 +345,7 @@ impl TransactionManager {
 
     /// Cleanup old committed transaction metadata
     /// This integrates with the TransactionCleanup for committed transaction maps
-    pub fn cleanup_committed_transactions(&self, max_retained: usize) {
+    pub fn cleanup_committed_transactions(&self, _max_retained: usize) {
         // This would integrate with a committed transactions tracking system
         // For now, we focus on the active transactions cleanup
         // The committed transaction cleanup is handled by TransactionCleanup in version_cleanup.rs
