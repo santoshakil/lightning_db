@@ -30,7 +30,7 @@ impl KillPoint {
         for op in &operations {
             for timing in &timings {
                 points.push(KillPoint {
-                    name: &format!("{}_{}_{}", "kill", op, timing).leak(),
+                    name: "kill_test",
                     operation: op,
                     timing,
                 });
@@ -91,7 +91,7 @@ impl KillRecoveryHarness {
                 
                 // Verify recovery
                 let recovery_start = Instant::now();
-                let (success, data_after, error) = self.verify_recovery(&db_path, &data_written);
+                let (success, data_after, error) = self.verify_recovery(&db_path, &data_written, &kill_point);
                 let recovery_time = recovery_start.elapsed();
                 
                 KillTestResult {
@@ -132,7 +132,7 @@ impl KillRecoveryHarness {
         db_path: &std::path::Path,
         marker_file: &std::path::Path,
         kill_point: &KillPoint,
-        test_data: &HashMap<String, String>,
+        _test_data: &HashMap<String, String>,
     ) -> Result<(u32, HashMap<String, String>), Box<dyn std::error::Error>> {
         // Create a test program that will be killed
         let test_program = format!(
@@ -339,6 +339,7 @@ fn main() {{
         &self,
         db_path: &std::path::Path,
         expected_data: &HashMap<String, String>,
+        kill_point: &KillPoint,
     ) -> (bool, HashMap<String, String>, Option<String>) {
         // Try to open the database
         let config = LightningDbConfig::default();
@@ -441,9 +442,9 @@ fn main() {{
 
     /// Generate comprehensive test report
     fn generate_report(&self, passed: usize, failed: usize) {
-        println!("\n" + "=".repeat(80));
+        println!("\n{}", "=".repeat(80));
         println!("📊 KILL -9 RECOVERY TEST REPORT");
-        println!("=".repeat(80));
+        println!("{}", "=".repeat(80));
         
         let results = self.results.lock().unwrap();
         
@@ -511,13 +512,13 @@ fn main() {{
         println!("\n🏁 VERDICT:");
         if failed == 0 {
             println!("  ✅ ALL TESTS PASSED - Database is resilient to kill -9!");
-        } else if failed as f64 / (passed + failed) as f64 < 0.05 {
+        } else if (failed as f64 / (passed + failed) as f64) < 0.05 {
             println!("  ⚠️  MOSTLY PASSED - {} minor issues need attention", failed);
         } else {
             println!("  ❌ CRITICAL ISSUES - {} tests failed, immediate attention required!", failed);
         }
         
-        println!("\n" + "=".repeat(80));
+        println!("\n{}", "=".repeat(80));
     }
 }
 
