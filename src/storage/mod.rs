@@ -5,6 +5,7 @@ pub mod optimized_page_manager;
 pub mod page_manager_trait;
 pub mod page_manager_wrapper;
 pub mod page_cache_adapter_wrapper;
+pub mod graceful_file_operations;
 
 pub use page::*;
 pub use page_cache_adapter::PageCacheAdapter;

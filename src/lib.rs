@@ -130,6 +130,7 @@ use std::collections::HashMap;
 use storage::{PageManager, PAGE_SIZE};
 use transaction::{
     OptimizedTransactionManager, TransactionManager, TransactionStatistics, VersionStore,
+    version_cleanup::{VersionCleanupThread, TransactionCleanup},
 };
 use wal::{WriteAheadLog, BasicWriteAheadLog};
 use wal_improved::{ImprovedWriteAheadLog, TransactionRecoveryState};
@@ -214,6 +215,7 @@ pub struct Database {
     index_manager: Arc<IndexManager>,
     query_planner: Arc<RwLock<query_planner::QueryPlanner>>,
     production_monitor: Arc<monitoring::production_hooks::ProductionMonitor>,
+    version_cleanup_thread: Option<Arc<VersionCleanupThread>>,
     _config: LightningDbConfig,
 }
 
@@ -394,6 +396,7 @@ impl Database {
             index_manager,
             query_planner,
             production_monitor: Arc::new(monitoring::production_hooks::ProductionMonitor::new()),
+            version_cleanup_thread: None, // Will be started after creation
             _config: config,
         })
     }
@@ -673,11 +676,31 @@ impl Database {
                 index_manager,
                 query_planner,
                 production_monitor: Arc::new(monitoring::production_hooks::ProductionMonitor::new()),
+                version_cleanup_thread: None, // Will be started after creation
                 _config: config,
             })
         } else {
             Self::create(path, config)
         }
+    }
+
+    /// Start the version cleanup thread for automatic garbage collection
+    pub fn start_version_cleanup(db: Arc<Self>) -> Arc<Self> {
+        // Create and start the version cleanup thread
+        let cleanup_thread = Arc::new(VersionCleanupThread::new(
+            db.version_store.clone(),
+            Duration::from_secs(30), // Cleanup every 30 seconds
+            Duration::from_secs(300), // Keep versions for 5 minutes
+        ));
+        
+        // Start the cleanup thread
+        let _handle = cleanup_thread.clone().start();
+        
+        // Store the thread reference (we can't modify self, so this is a limitation)
+        // In a real implementation, we'd need to refactor to allow mutable updates
+        // For now, the thread will run until process exit
+        
+        db
     }
 
     pub fn enable_write_batching(db: Arc<Self>) -> Arc<Self> {

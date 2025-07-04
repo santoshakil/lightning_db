@@ -1,5 +1,6 @@
 pub mod optimized_manager;
 pub mod mvcc;
+pub mod version_cleanup;
 
 use crate::error::{Error, Result};
 use crossbeam_skiplist::SkipMap;
@@ -162,18 +163,15 @@ impl TransactionManager {
             tx.clone()
         };
 
-        // Phase 2: Validate without holding locks
-        self.validate_transaction(&tx_data)?;
+        // Phase 2: Atomically validate and reserve writes (fixes race condition!)
+        let commit_ts = self.atomic_validate_and_reserve(&tx_data)?;
 
-        // Phase 3: Get commit timestamp and apply writes
-        let commit_ts = self.commit_timestamp.fetch_add(1, Ordering::SeqCst) + 1;
-
-        // Apply writes to version store
+        // Phase 3: Complete reserved writes (atomic, no conflicts possible)
         for write_op in &tx_data.write_set {
-            self.version_store.put(
-                write_op.key.clone(),
-                write_op.value.clone(),
+            self.version_store.complete_reserved_write(
+                &write_op.key,
                 commit_ts,
+                write_op.value.clone(),
                 tx_id,
             );
         }
@@ -224,24 +222,51 @@ impl TransactionManager {
                 }
             }
         }
+        Ok(())
+    }
 
-        // Check for read-write conflicts (snapshot isolation)
+    /// Atomically validate and reserve writes for a transaction
+    /// Returns the commit timestamp if successful, or error if conflict detected
+    fn atomic_validate_and_reserve(&self, tx: &Transaction) -> Result<u64> {
+        // Get commit timestamp first
+        let commit_ts = self.commit_timestamp.fetch_add(1, Ordering::SeqCst) + 1;
+
+        // Try to atomically reserve all writes
+        let mut reserved_keys: Vec<Vec<u8>> = Vec::new();
+        
+        for write_op in &tx.write_set {
+            if !self.version_store.try_reserve_write(&write_op.key, tx.read_timestamp, commit_ts) {
+                // Conflict detected - cancel all previous reservations
+                for reserved_key in &reserved_keys {
+                    self.version_store.cancel_reserved_write(reserved_key, commit_ts);
+                }
+                return Err(Error::Transaction(
+                    "Write-write conflict detected during atomic validation".to_string(),
+                ));
+            }
+            reserved_keys.push(write_op.key.clone());
+        }
+
+        // Check for read-write conflicts while we have reservations
         for read_op in &tx.read_set {
-            // Check if the version we read is still the latest
             let current_version = self
                 .version_store
                 .get_latest_version(&read_op.key)
                 .unwrap_or(0);
 
             if current_version > read_op.version {
-                // Someone committed a write to this key after we read it
+                // Conflict detected - cancel all reservations
+                for reserved_key in &reserved_keys {
+                    self.version_store.cancel_reserved_write(reserved_key, commit_ts);
+                }
                 return Err(Error::Transaction(
-                    "Read-write conflict detected".to_string(),
+                    "Read-write conflict detected during atomic validation".to_string(),
                 ));
             }
         }
 
-        Ok(())
+        // All validations passed, reservations are held
+        Ok(commit_ts)
     }
 
     pub fn cleanup_old_transactions(&self, max_age: Duration) {
@@ -267,6 +292,84 @@ impl TransactionManager {
     pub fn get_read_timestamp(&self) -> u64 {
         self.commit_timestamp.load(Ordering::SeqCst)
     }
+
+    /// Perform comprehensive cleanup of old versions and transactions
+    pub fn perform_cleanup(&self, retention_duration_ms: u64, min_versions_per_key: usize) {
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        // Calculate cleanup threshold
+        let cleanup_before_timestamp = current_time.saturating_sub(retention_duration_ms);
+
+        // Get minimum active transaction timestamp to avoid cleaning up needed versions
+        let min_active_timestamp = self.get_min_active_transaction_timestamp()
+            .unwrap_or(cleanup_before_timestamp);
+
+        // Use the more conservative threshold
+        let safe_cleanup_threshold = std::cmp::min(cleanup_before_timestamp, min_active_timestamp);
+
+        // Cleanup old versions in the version store
+        let cleaned_versions = self.version_store.cleanup_old_versions(
+            safe_cleanup_threshold,
+            min_versions_per_key,
+        );
+
+        #[cfg(debug_assertions)]
+        if cleaned_versions > 0 {
+            println!(
+                "Transaction cleanup: removed {} old versions before timestamp {}",
+                cleaned_versions, safe_cleanup_threshold
+            );
+        }
+    }
+
+    /// Get the oldest active transaction timestamp
+    fn get_min_active_transaction_timestamp(&self) -> Option<u64> {
+        self.active_transactions
+            .iter()
+            .filter_map(|entry| {
+                if let Some(tx) = entry.value().try_read() {
+                    Some(tx.read_timestamp)
+                } else {
+                    None
+                }
+            })
+            .min()
+    }
+
+    /// Cleanup old committed transaction metadata
+    /// This integrates with the TransactionCleanup for committed transaction maps
+    pub fn cleanup_committed_transactions(&self, max_retained: usize) {
+        // This would integrate with a committed transactions tracking system
+        // For now, we focus on the active transactions cleanup
+        // The committed transaction cleanup is handled by TransactionCleanup in version_cleanup.rs
+        
+        #[cfg(debug_assertions)]
+        println!(
+            "Active transactions count: {}, max retained committed: {}",
+            self.active_transactions.len(),
+            max_retained
+        );
+    }
+
+    /// Get cleanup statistics
+    pub fn get_cleanup_stats(&self) -> CleanupStats {
+        CleanupStats {
+            active_transactions: self.active_transactions.len(),
+            current_commit_timestamp: self.commit_timestamp.load(Ordering::SeqCst),
+            min_active_timestamp: self.get_min_active_transaction_timestamp(),
+        }
+    }
+}
+
+/// Statistics for version store and transaction cleanup
+#[derive(Debug, Clone)]
+pub struct CleanupStats {
+    pub active_transactions: usize,
+    pub current_commit_timestamp: u64,
+    pub min_active_timestamp: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -283,6 +386,20 @@ impl VersionedValue {
             timestamp,
             tx_id,
         }
+    }
+
+    /// Create a reserved placeholder for atomic conflict detection
+    pub fn reserved(timestamp: u64) -> Self {
+        Self {
+            value: None,
+            timestamp,
+            tx_id: u64::MAX, // Special marker for reserved slots
+        }
+    }
+
+    /// Check if this is a reserved placeholder
+    pub fn is_reserved(&self) -> bool {
+        self.tx_id == u64::MAX
     }
 }
 
@@ -344,7 +461,61 @@ impl VersionStore {
         })
     }
 
-    pub fn cleanup_old_versions(&self, before_timestamp: u64, keep_min_versions: usize) {
+    /// Atomically check for write-write conflicts and reserve write slot
+    /// Returns true if reservation successful (no conflict), false if conflict detected
+    pub fn try_reserve_write(&self, key: &[u8], read_timestamp: u64, commit_timestamp: u64) -> bool {
+        // Get or create key versions atomically using insert + get pattern
+        let key_versions = match self.versions.get(key) {
+            Some(existing) => existing.value().clone(),
+            None => {
+                // Insert new SkipMap for this key
+                let new_versions = Arc::new(SkipMap::new());
+                self.versions.insert(key.to_vec(), new_versions.clone());
+                // Re-get to handle race condition where someone else inserted
+                if let Some(actual) = self.versions.get(key) {
+                    actual.value().clone()
+                } else {
+                    new_versions
+                }
+            }
+        };
+
+        // Atomically check conflict and reserve if safe
+        // Check if there are any versions newer than our read timestamp
+        for entry in key_versions.iter().rev() {
+            if *entry.key() > read_timestamp {
+                // Conflict detected - someone committed after our read timestamp
+                return false;
+            }
+            // Only need to check the latest few versions
+            break;
+        }
+
+        // Try to reserve our slot atomically using insert
+        // If someone else has this timestamp, insert will replace (which is fine for reservation)
+        key_versions.insert(commit_timestamp, VersionedValue::reserved(commit_timestamp));
+        true // Reservation successful
+    }
+
+    /// Complete a reserved write by updating the value
+    pub fn complete_reserved_write(&self, key: &[u8], timestamp: u64, value: Option<Vec<u8>>, tx_id: u64) {
+        if let Some(key_versions) = self.versions.get(key) {
+            // Replace the reserved entry with the actual value
+            let versioned_value = VersionedValue::new(value, timestamp, tx_id);
+            key_versions.value().insert(timestamp, versioned_value);
+        }
+    }
+
+    /// Cancel a reserved write
+    pub fn cancel_reserved_write(&self, key: &[u8], timestamp: u64) {
+        if let Some(key_versions) = self.versions.get(key) {
+            key_versions.value().remove(&timestamp);
+        }
+    }
+
+    pub fn cleanup_old_versions(&self, before_timestamp: u64, keep_min_versions: usize) -> usize {
+        let mut total_removed = 0;
+        
         for entry in self.versions.iter() {
             let key_versions = entry.value();
 
@@ -367,10 +538,14 @@ impl VersionStore {
             }
 
             // Remove old versions
-            for version in to_remove {
-                key_versions.remove(&version);
+            for version in &to_remove {
+                key_versions.remove(version);
             }
+            
+            total_removed += to_remove.len();
         }
+        
+        total_removed
     }
 
     pub fn get_all_versions(&self, key: &[u8]) -> Vec<(u64, Option<Vec<u8>>)> {

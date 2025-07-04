@@ -38,6 +38,17 @@ struct _CoalescedWrite {
 }
 
 impl AsyncPageManager {
+    /// Helper to acquire semaphore permit with proper error handling
+    async fn acquire_io_permit(&self) -> Result<tokio::sync::SemaphorePermit<'_>> {
+        match timeout(Duration::from_secs(30), self.io_semaphore.acquire()).await {
+            Ok(Ok(permit)) => Ok(permit),
+            Ok(Err(_)) => Err(Error::InvalidOperation {
+                reason: "I/O semaphore closed".to_string(),
+            }),
+            Err(_) => Err(Error::Timeout("I/O semaphore acquisition timed out".to_string())),
+        }
+    }
+
     /// Create a new async page manager
     pub async fn create<P: AsRef<Path>>(
         path: P,
@@ -216,7 +227,7 @@ impl AsyncPageManager {
 #[async_trait]
 impl AsyncStorage for AsyncPageManager {
     async fn allocate_page(&self) -> Result<u32> {
-        let _permit = self.io_semaphore.acquire().await.unwrap();
+        let _permit = self.acquire_io_permit().await?;
         
         let mut free_pages = self.free_pages.write().await;
         if let Some(page_id) = free_pages.pop_front() {
@@ -239,7 +250,7 @@ impl AsyncStorage for AsyncPageManager {
     }
     
     async fn free_page(&self, page_id: u32) -> Result<()> {
-        let _permit = self.io_semaphore.acquire().await.unwrap();
+        let _permit = self.acquire_io_permit().await?;
         
         let mut free_pages = self.free_pages.write().await;
         free_pages.push_back(page_id);
@@ -247,7 +258,7 @@ impl AsyncStorage for AsyncPageManager {
     }
     
     async fn read_page(&self, page_id: u32) -> Result<Page> {
-        let _permit = self.io_semaphore.acquire().await.unwrap();
+        let _permit = self.acquire_io_permit().await?;
         let start = Instant::now();
         
         let mut data = vec![0u8; PAGE_SIZE];
@@ -293,7 +304,7 @@ impl AsyncStorage for AsyncPageManager {
                 Error::Generic("Write response channel closed".to_string()))?
         } else {
             // Direct write
-            let _permit = self.io_semaphore.acquire().await.unwrap();
+            let _permit = self.acquire_io_permit().await?;
             let start = Instant::now();
             
             let offset = page.id as u64 * PAGE_SIZE as u64;
@@ -322,7 +333,7 @@ impl AsyncStorage for AsyncPageManager {
     }
     
     async fn sync(&self) -> Result<()> {
-        let _permit = self.io_semaphore.acquire().await.unwrap();
+        let _permit = self.acquire_io_permit().await?;
         let start = Instant::now();
         
         {
