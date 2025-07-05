@@ -1400,8 +1400,12 @@ impl Database {
                 Error::Transaction("Failed to acquire transaction lock".to_string())
             })?;
 
-            let version = self.version_store.get_latest_version(key).unwrap_or(0);
-            tx.add_read(key.to_vec(), version);
+            // Record read with the version that was actually read (at read_timestamp)
+            // This is critical for correct conflict detection
+            let actual_read_version = self.version_store.get_versioned(key, read_timestamp)
+                .map(|v| v.timestamp)
+                .unwrap_or(0);
+            tx.add_read(key.to_vec(), actual_read_version);
         }
 
         Ok(value)
