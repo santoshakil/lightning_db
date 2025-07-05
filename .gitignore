@@ -33,7 +33,30 @@ lightning_db.h
 .dart_tool/
 pubspec.lock
 
-# Test databases
+# Test databases and data files
 **/test_db*/
 **/dart_test_db/
 **/*_test_db/
+**/*_db/
+**/demo_*/
+**/edge_test_*/
+**/perf_test_*/
+**/quick_test_*/
+**/stress_test_*/
+**/cache_test_*/
+**/memory_test_*/
+
+# Database files
+*.db
+*.sst
+*.seg
+*.legacy
+*.log
+**/btree.db
+**/wal.log
+**/lsm/
+**/wal/
+
+# Test output
+test_output.*
+unwrap_removal_progress.csv
