@@ -271,6 +271,10 @@ impl SegmentedLockFreeCache {
         }
         self.stats.reset();
     }
+    
+    pub fn total_capacity(&self) -> usize {
+        self.total_capacity
+    }
 }
 
 #[cfg(test)]

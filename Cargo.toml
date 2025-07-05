@@ -65,6 +65,7 @@ opentelemetry = []
 compression = []
 async = []
 monitoring = []
+testing = []
 
 [lib]
 name = "lightning_db"
