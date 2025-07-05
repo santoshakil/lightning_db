@@ -255,6 +255,7 @@ impl TransactionManager {
                 .unwrap_or(0);
 
             if current_version > read_op.version {
+                
                 // Conflict detected - cancel all reservations
                 for reserved_key in &reserved_keys {
                     self.version_store.cancel_reserved_write(reserved_key, commit_ts);
@@ -457,11 +458,13 @@ impl VersionStore {
 
     pub fn get_latest_version(&self, key: &[u8]) -> Option<u64> {
         self.versions.get(key).and_then(|key_versions| {
-            key_versions
-                .value()
-                .iter()
-                .next_back()
-                .map(|entry| *entry.key())
+            // Find latest non-reserved version (skip reserved entries)
+            for entry in key_versions.value().iter().rev() {
+                if !entry.value().is_reserved() {
+                    return Some(*entry.key());
+                }
+            }
+            None
         })
     }
 
