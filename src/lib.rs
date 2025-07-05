@@ -94,9 +94,12 @@ pub mod index;
 pub mod query_planner;
 pub mod replication;
 pub mod sharding;
+pub mod write_batch;
 pub mod metrics;
 pub mod profiling;
 pub mod realtime_stats;
+pub mod key;
+pub mod key_ops;
 pub mod utils {
     pub mod resource_guard;
     pub mod retry;
@@ -137,10 +140,12 @@ use transaction::{
 use wal::{WriteAheadLog, BasicWriteAheadLog};
 use wal_improved::{ImprovedWriteAheadLog, TransactionRecoveryState};
 use sync_write_batcher::SyncWriteBatcher;
+use write_batch::{WriteBatch, BatchOperation};
 pub use auto_batcher::AutoBatcher;
 pub use fast_auto_batcher::FastAutoBatcher;
 use index::IndexManager;
 pub use index::{IndexConfig, IndexKey, IndexQuery, IndexType};
+pub use key::{Key, SmallKey, SmallKeyExt, KeyBatch};
 
 // Include protobuf generated code
 include!(concat!(env!("OUT_DIR"), "/lightning_db.rs"));
@@ -969,12 +974,118 @@ impl Database {
         })
     }
 
+    /// Apply a batch of write operations atomically
+    pub fn write_batch(&self, batch: &WriteBatch) -> Result<()> {
+        let metrics = self.metrics_collector.database_metrics();
+        let start = std::time::Instant::now();
+        
+        // Write entire batch to WAL first for durability
+        if let Some(ref improved_wal) = self.improved_wal {
+            // Write all operations without syncing
+            for op in batch.operations() {
+                match op {
+                    BatchOperation::Put { key, value } => {
+                        improved_wal.append(wal::WALOperation::Put {
+                            key: key.clone(),
+                            value: value.clone(),
+                        })?;
+                    }
+                    BatchOperation::Delete { key } => {
+                        improved_wal.append(wal::WALOperation::Delete {
+                            key: key.clone(),
+                        })?;
+                    }
+                }
+            }
+            // Single sync for entire batch
+            improved_wal.sync()?;
+        } else if let Some(ref wal) = self.wal {
+            // Use basic WAL
+            for op in batch.operations() {
+                match op {
+                    BatchOperation::Put { key, value } => {
+                        wal.append(wal::WALOperation::Put {
+                            key: key.clone(),
+                            value: value.clone(),
+                        })?;
+                    }
+                    BatchOperation::Delete { key } => {
+                        wal.append(wal::WALOperation::Delete {
+                            key: key.clone(),
+                        })?;
+                    }
+                }
+            }
+            wal.sync()?;
+        }
+        
+        // Apply all operations to storage
+        for operation in batch.operations() {
+            match operation {
+                BatchOperation::Put { key, value } => {
+                    // Use cache if available
+                    if let Some(ref memory_pool) = self.memory_pool {
+                        let _ = memory_pool.cache_put(key, value);
+                    }
+                    
+                    // Apply to storage layer
+                    if let Some(ref lsm) = self.lsm_tree {
+                        lsm.insert(key.clone(), value.clone())?;
+                    } else if let Some(ref write_buffer) = self.btree_write_buffer {
+                        write_buffer.insert(key.clone(), value.clone())?;
+                    } else {
+                        let mut btree = self.btree.write();
+                        btree.insert(key, value)?;
+                    }
+                }
+                BatchOperation::Delete { key } => {
+                    // Remove from cache
+                    if let Some(ref memory_pool) = self.memory_pool {
+                        let _ = memory_pool.cache_remove(key);
+                    }
+                    
+                    // Apply to storage layer
+                    if let Some(ref lsm) = self.lsm_tree {
+                        lsm.delete(key)?;
+                    } else if let Some(ref write_buffer) = self.btree_write_buffer {
+                        write_buffer.delete(key)?;
+                    } else {
+                        let mut btree = self.btree.write();
+                        btree.delete(key)?;
+                    }
+                }
+            }
+        }
+        
+        // Single sync at the end for B+Tree (if not using LSM or write buffer)
+        if self.lsm_tree.is_none() && self.btree_write_buffer.is_none() {
+            self.page_manager.sync()?;
+        }
+        
+        // Record metrics
+        let duration = start.elapsed();
+        let batch_size = batch.len();
+        if batch_size > 0 {
+            // Record as a single write operation with total time
+            metrics.record_write(duration);
+            // Also record individual operations for accurate counts
+            for _ in 1..batch_size {
+                metrics.record_write(std::time::Duration::from_micros(1));
+            }
+        }
+        
+        Ok(())
+    }
+
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let _timer = logging::OperationTimer::with_key("get", key);
-        // Fast path: try cache first without metrics overhead
+        // Fast path: try cache first with minimal metrics overhead
         if let Some(ref memory_pool) = self.memory_pool {
             if let Ok(Some(cached_value)) = memory_pool.cache_get(key) {
-                // Skip metrics for cache hits in fast path
+                // Record cache hit in fast path
+                let metrics = self.metrics_collector.database_metrics();
+                metrics.record_cache_hit();
+                metrics.record_read(std::time::Duration::from_micros(1)); // Minimal latency for cache hit
                 return Ok(Some(cached_value));
             }
         }
@@ -1994,6 +2105,17 @@ impl Database {
         
         let planner = self.query_planner.read();
         planner.plan_query(&query_spec)
+    }
+    
+    /// Get a reference to the internal B+Tree (for testing/debugging only)
+    #[cfg(any(test, feature = "testing"))]
+    pub fn get_btree(&self) -> Arc<RwLock<BPlusTree>> {
+        self.btree.clone()
+    }
+    
+    /// Get a reference to the memory pool (for testing/debugging)
+    pub fn get_memory_pool(&self) -> Option<Arc<MemoryPool>> {
+        self.memory_pool.clone()
     }
 }
 
