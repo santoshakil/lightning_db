@@ -5,6 +5,7 @@ pub mod memtable;
 pub mod sstable;
 pub mod parallel_compaction;
 mod iterator;
+mod iterator_fixed;
 
 use crate::compression::CompressionType;
 use crate::error::Result;
@@ -22,6 +23,7 @@ pub use delta_compression::{
 pub use memtable::MemTable;
 pub use sstable::{SSTable, SSTableBuilder, SSTableReader};
 pub use iterator::{LSMFullIterator, LSMMemTableIterator};
+pub use iterator_fixed::LSMFullIteratorFixed;
 pub use parallel_compaction::{ParallelCompactionCoordinator, CompactionScheduler, CompactionStats, ParallelCompactionStats, CompactionState};
 
 #[derive(Debug, Clone)]
@@ -116,9 +118,18 @@ impl LSMTree {
     pub fn get_memtable(&self) -> Arc<RwLock<MemTable>> {
         Arc::clone(&self.memtable)
     }
+    
+    pub fn get_immutable_memtables(&self) -> Arc<RwLock<Vec<Arc<MemTable>>>> {
+        Arc::clone(&self.immutable_memtables)
+    }
+    
+    pub fn get_levels(&self) -> Arc<RwLock<Vec<Level>>> {
+        Arc::clone(&self.levels)
+    }
+    
     const TOMBSTONE_MARKER: &'static [u8] = &[0xFF, 0xFF, 0xFF, 0xFF];
 
-    fn is_tombstone(value: &[u8]) -> bool {
+    pub fn is_tombstone(value: &[u8]) -> bool {
         value == Self::TOMBSTONE_MARKER
     }
 

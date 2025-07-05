@@ -123,7 +123,7 @@ impl RangeIterator {
         Ok(())
     }
 
-    pub fn attach_lsm(&mut self, lsm: &LSMTree) -> Result<()> {
+    pub fn attach_lsm(&mut self, lsm: &Arc<LSMTree>) -> Result<()> {
         self.lsm_iterator = Some(LSMIterator::new(
             lsm,
             self.current_key.clone(),
@@ -375,13 +375,13 @@ impl BTreeIterator {
 
 /// LSM Tree iterator implementation
 struct LSMIterator {
-    lsm_iter: crate::lsm::LSMMemTableIterator,
+    lsm_iter: crate::lsm::LSMFullIteratorFixed,
     read_timestamp: u64,
 }
 
 impl LSMIterator {
     fn new(
-        lsm: &LSMTree,
+        lsm: &Arc<LSMTree>,
         start_key: Option<Vec<u8>>,
         end_key: Option<Vec<u8>>,
         direction: ScanDirection,
@@ -392,14 +392,13 @@ impl LSMIterator {
             ScanDirection::Backward => false,
         };
         
-        // Get the memtable and create iterator
-        let memtable = lsm.get_memtable();
-        let lsm_iter = crate::lsm::LSMMemTableIterator::new(
-            &memtable,
-            start_key.as_deref(),
-            end_key.as_deref(),
+        // Create the fixed iterator that includes all data sources
+        let lsm_iter = crate::lsm::LSMFullIteratorFixed::new(
+            lsm,
+            start_key,
+            end_key,
             forward,
-        );
+        )?;
 
         Ok(Self {
             lsm_iter,
@@ -408,13 +407,18 @@ impl LSMIterator {
     }
 
     fn next(&mut self) -> Result<Option<IteratorEntry>> {
-        if let Some((key, value)) = self.lsm_iter.next() {
-            Ok(Some(IteratorEntry {
-                key,
-                value: Some(value),
-                source: IteratorSource::LSM,
-                timestamp: self.read_timestamp,
-            }))
+        if let Some((key, value_opt, _ts)) = self.lsm_iter.next() {
+            if let Some(value) = value_opt {
+                Ok(Some(IteratorEntry {
+                    key,
+                    value: Some(value),
+                    source: IteratorSource::LSM,
+                    timestamp: self.read_timestamp,
+                }))
+            } else {
+                // Skip tombstones
+                self.next()
+            }
         } else {
             Ok(None)
         }

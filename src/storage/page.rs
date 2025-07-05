@@ -154,6 +154,11 @@ impl PageManager {
     }
 
     fn init_header_page(&mut self) -> Result<()> {
+        // Ensure mmap has enough space
+        if self.mmap.len() < PAGE_SIZE {
+            return Err(Error::Memory);
+        }
+        
         let header_data = &mut self.mmap[0..PAGE_SIZE];
 
         // Write magic number
@@ -176,6 +181,15 @@ impl PageManager {
     }
 
     fn load_header_page(&mut self) -> Result<()> {
+        // Check if file has enough data for header page
+        if self.mmap.len() < PAGE_SIZE {
+            return Err(Error::CorruptedDatabase(format!(
+                "Database file too small: {} bytes, expected at least {} bytes",
+                self.mmap.len(),
+                PAGE_SIZE
+            )));
+        }
+        
         let header_data = &self.mmap[0..PAGE_SIZE];
 
         // Verify magic number

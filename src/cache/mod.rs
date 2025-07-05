@@ -2,6 +2,7 @@ pub mod arc_cache;
 pub mod memory_pool;
 pub mod optimized_arc;
 pub mod batch_eviction;
+pub mod lock_free_cache;
 
 use crate::storage::Page;
 use dashmap::DashMap;
@@ -11,6 +12,7 @@ use std::sync::Arc;
 pub use arc_cache::ArcCache;
 pub use memory_pool::MemoryPool;
 pub use batch_eviction::{BatchEvictingArcCache, BatchEvictionConfig, BatchEvictionStats};
+pub use lock_free_cache::{LockFreeCache, SegmentedLockFreeCache};
 
 #[derive(Debug, Clone)]
 pub struct MemoryConfig {

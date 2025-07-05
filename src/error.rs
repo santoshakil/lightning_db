@@ -12,6 +12,9 @@ pub enum Error {
 
     #[error("Corrupted page")]
     CorruptedPage,
+    
+    #[error("Corrupted database: {0}")]
+    CorruptedDatabase(String),
 
     #[error("Invalid page ID")]
     InvalidPageId,
@@ -143,6 +146,7 @@ impl Error {
             Error::Io(_) => -1,
             Error::InvalidDatabase => -2,
             Error::CorruptedPage => -3,
+            Error::CorruptedDatabase(_) => -38,
             Error::InvalidPageId => -4,
             Error::PageNotFound => -5,
             Error::KeyNotFound => -6,
@@ -199,6 +203,7 @@ impl Error {
     pub fn is_corruption(&self) -> bool {
         match self {
             Error::CorruptedPage
+            | Error::CorruptedDatabase(_)
             | Error::ChecksumMismatch { .. }
             | Error::WalCorruption { .. }
             | Error::InvalidDatabase => true,
