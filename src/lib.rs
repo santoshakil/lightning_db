@@ -1374,10 +1374,27 @@ impl Database {
             tx.read_timestamp
         };
 
-        let value = self.version_store.get(key, read_timestamp);
+        let mut value = self.version_store.get(key, read_timestamp);
 
-        // Record read for conflict detection
-        if value.is_some() {
+        // If not found in version store, read from main database (like regular get() does)
+        if value.is_none() {
+            // Check LSM tree first if available
+            if let Some(ref lsm) = self.lsm_tree {
+                value = lsm.get(key)?;
+            } else if !self._config.use_optimized_transactions {
+                // When LSM is disabled, check write buffer first, then B+Tree
+                if let Some(ref write_buffer) = self.btree_write_buffer {
+                    value = write_buffer.get(key)?;
+                } else {
+                    let btree = self.btree.read();
+                    value = btree.get(key)?;
+                }
+            }
+        }
+
+        // Record read for conflict detection only if the value came from version store
+        // Data from main database (LSM/B+Tree) doesn't participate in MVCC versioning
+        if value.is_some() && self.version_store.get_latest_version(key).is_some() {
             let timeout = std::time::Duration::from_millis(100);
             let mut tx = tx_arc.try_write_for(timeout).ok_or_else(|| {
                 Error::Transaction("Failed to acquire transaction lock".to_string())
