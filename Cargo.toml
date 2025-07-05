@@ -91,6 +91,18 @@ path = "examples/demo.rs"
 name = "zero_copy_key_test"
 path = "examples/zero_copy_key_test.rs"
 
+[[example]]
+name = "production_readiness_test"
+path = "examples/production_readiness_test.rs"
+
+[[example]]
+name = "critical_production_test"
+path = "examples/critical_production_test.rs"
+
+[[example]]
+name = "debug_transaction_issue"
+path = "examples/debug_transaction_issue.rs"
+
 [[bench]]
 name = "mmap_benchmark"
 harness = false
