@@ -13,7 +13,7 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 
@@ -318,7 +318,7 @@ fn test_concurrent_safety() -> Result<bool, Box<dyn std::error::Error>> {
                 let operation_start = Instant::now();
                 
                 // Random mix of operations
-                let result = match rng.gen_range(0..10) {
+                let result = match rng.random_range(0..10) {
                     0..=5 => db_clone.put(key.as_bytes(), value.as_bytes()),
                     6..=8 => { let _ = db_clone.get(key.as_bytes()); Ok(()) }
                     9 => { let _ = db_clone.delete(key.as_bytes()); Ok(()) }
@@ -431,12 +431,12 @@ fn test_transaction_consistency() -> Result<bool, Box<dyn std::error::Error>> {
     
     // Perform transfers
     for _ in 0..num_transfers {
-        let from = rng.gen_range(0..num_accounts);
-        let mut to = rng.gen_range(0..num_accounts);
+        let from = rng.random_range(0..num_accounts);
+        let mut to = rng.random_range(0..num_accounts);
         while to == from {
-            to = rng.gen_range(0..num_accounts);
+            to = rng.random_range(0..num_accounts);
         }
-        let amount = rng.gen_range(1..50);
+        let amount = rng.random_range(1..50);
         
         if let Err(_) = transfer_money(&db, from, to, amount) {
             transfer_errors += 1;
@@ -500,7 +500,7 @@ fn test_large_dataset() -> Result<bool, Box<dyn std::error::Error>> {
     let mut read_errors = 0;
     
     for _ in 0..read_count {
-        let random_idx = rng.gen_range(0..num_records);
+        let random_idx = rng.random_range(0..num_records);
         let key = format!("large_test_{:08}", random_idx);
         
         match db.get(key.as_bytes())? {
