@@ -247,6 +247,36 @@ if !health.is_healthy {
 }
 ```
 
+### Dart SDK Performance Monitoring
+
+The Dart SDK includes comprehensive performance monitoring and diagnostics:
+
+```dart
+// Monitor database performance
+final monitoredDb = MonitoredLightningDb(rawDb);
+
+// Access real-time metrics
+final metrics = monitoredDb.monitor.metrics;
+print('Total reads: ${metrics.totalReads}');
+print('Cache hit rate: ${metrics.cacheHitRate}');
+print('Reads per second: ${metrics.readsPerSecond}');
+
+// Generate performance report
+final report = await monitoredDb.monitor.generateReport();
+print('Average read latency: ${report.metrics.averageReadLatency}');
+
+// Real-time diagnostics screen (Flutter)
+Navigator.push(context, 
+  MaterialPageRoute(builder: (_) => DiagnosticsScreen()));
+```
+
+Features include:
+- **Real-time performance tracking** with latency and throughput metrics
+- **Interactive diagnostics screen** with live charts and load testing
+- **Performance recommendations** based on usage patterns
+- **Event timeline** showing recent operations and their performance
+- **Load testing tools** for stress testing database performance
+
 ## Building from Source
 
 ```bash
