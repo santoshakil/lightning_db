@@ -60,3 +60,6 @@ pubspec.lock
 # Test output
 test_output.*
 unwrap_removal_progress.csv
+
+# Reference projects
+reference_projects/
