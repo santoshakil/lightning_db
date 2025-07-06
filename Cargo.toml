@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "lightning-db-ffi", "lightning_db_ffi"]
+members = [".", "lightning_db_ffi"]
 resolver = "2"
 
 [package]
