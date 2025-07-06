@@ -1,12 +1,12 @@
 import 'dart:ffi' as ffi;
 import 'dart:typed_data';
-import '../lightning_db_bindings_generated.dart';
+import '../lightning_db_bindings_generated.dart' as bindings;
 import 'lightning_db.dart';
 
 /// Database iterator for range scans
 class DbIterator {
   final int _handle;
-  final LightningDbBindings _bindings;
+  final bindings.LightningDbBindings _bindings;
   bool _isClosed = false;
 
   DbIterator(this._handle, this._bindings);
@@ -20,22 +20,22 @@ class DbIterator {
     final result = _bindings.lightning_db_iterator_next(_handle);
     
     // Check if iterator is exhausted
-    if (result.error_code == 0 && result.key == ffi.nullptr) {
-      await close();
+    if (result.ERROR_CODE == 0 && result.KEY == ffi.nullptr) {
+      _isClosed = true;
       return null;
     }
     
-    if (result.error_code != 0) {
-      throw LightningDbException._fromErrorCode(result.error_code);
+    if (result.ERROR_CODE != 0) {
+      throw LightningDbException.fromErrorCode(result.ERROR_CODE);
     }
     
     try {
       // Copy the data before freeing
       final key = Uint8List.fromList(
-        result.key.asTypedList(result.key_len),
+        result.KEY.asTypedList(result.KEY_LEN),
       );
       final value = Uint8List.fromList(
-        result.value.asTypedList(result.value_len),
+        result.VALUE.asTypedList(result.VALUE_LEN),
       );
       
       return (key, value);
@@ -51,7 +51,7 @@ class DbIterator {
     
     final result = _bindings.lightning_db_iterator_close(_handle);
     if (result != 0) {
-      throw LightningDbException._fromErrorCode(result);
+      throw LightningDbException.fromErrorCode(result);
     }
     
     _isClosed = true;

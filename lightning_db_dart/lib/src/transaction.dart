@@ -1,13 +1,13 @@
 import 'dart:ffi' as ffi;
 import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
-import '../lightning_db_bindings_generated.dart';
+import '../lightning_db_bindings_generated.dart' as bindings;
 import 'lightning_db.dart';
 
 /// A database transaction
 class Transaction {
   final int _handle;
-  final LightningDbBindings _bindings;
+  final bindings.LightningDbBindings _bindings;
   bool _isCommitted = false;
   bool _isRolledBack = false;
 
@@ -30,7 +30,7 @@ class Transaction {
       );
       
       if (result != 0) {
-        throw LightningDbException._fromErrorCode(result);
+        throw LightningDbException.fromErrorCode(result);
       }
     } finally {
       calloc.free(keyPtr);
@@ -47,25 +47,25 @@ class Transaction {
     try {
       final result = _bindings.lightning_db_get_tx(_handle, keyPtr, key.length);
       
-      if (result.error_code == ErrorCode.KeyNotFound) {
+      if (result.ERROR_CODE == ErrorCode.KeyNotFound) {
         return null;
       }
       
-      if (result.error_code != 0) {
-        throw LightningDbException._fromErrorCode(result.error_code);
+      if (result.ERROR_CODE != 0) {
+        throw LightningDbException.fromErrorCode(result.ERROR_CODE);
       }
       
-      if (result.data == ffi.nullptr || result.len == 0) {
+      if (result.DATA == ffi.nullptr || result.LEN == 0) {
         return null;
       }
       
       // Copy the data before freeing
       final data = Uint8List.fromList(
-        result.data.asTypedList(result.len),
+        result.DATA.asTypedList(result.LEN),
       );
       
       // Free the result
-      _bindings.lightning_db_free_bytes(result.data, result.len);
+      _bindings.lightning_db_free_bytes(result.DATA, result.LEN);
       
       return data;
     } finally {
@@ -83,7 +83,7 @@ class Transaction {
       final result = _bindings.lightning_db_delete_tx(_handle, keyPtr, key.length);
       
       if (result < 0) {
-        throw LightningDbException._fromErrorCode(-result);
+        throw LightningDbException.fromErrorCode(-result);
       }
       
       return result == 0; // 0 = deleted, 1 = not found
@@ -98,7 +98,7 @@ class Transaction {
     
     final result = _bindings.lightning_db_commit_transaction(_handle);
     if (result != 0) {
-      throw LightningDbException._fromErrorCode(result);
+      throw LightningDbException.fromErrorCode(result);
     }
     
     _isCommitted = true;
@@ -108,9 +108,9 @@ class Transaction {
   Future<void> rollback() async {
     _checkValid();
     
-    final result = _bindings.lightning_db_rollback_transaction(_handle);
+    final result = _bindings.lightning_db_abort_transaction(_handle);
     if (result != 0) {
-      throw LightningDbException._fromErrorCode(result);
+      throw LightningDbException.fromErrorCode(result);
     }
     
     _isRolledBack = true;
