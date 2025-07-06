@@ -26,12 +26,7 @@ Dart FFI bindings for Lightning DB - a high-performance embedded database
   }
   s.swift_version = '5.0'
 
-  s.script_phase = {
-    :name => 'Build Rust library',
-    :script => 'sh "$PODS_TARGET_SRCROOT/../cargokit/build_pod.sh" ../../lightning_db_ffi lightning_db_ffi',
-    :execution_position => :before_compile,
-    :output_files => ['${BUILT_PRODUCTS_DIR}/liblightning_db_ffi.a'],
-    :shell_path => '/bin/sh'
-  }
+  # For now, just link the pre-built library
+  s.vendored_libraries = 'liblightning_db_ffi.a'
   
 end
