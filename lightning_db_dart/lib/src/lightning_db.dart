@@ -344,7 +344,13 @@ class LightningDb {
 
   static ffi.DynamicLibrary _loadLibrary() {
     if (Platform.isMacOS) {
-      return ffi.DynamicLibrary.open('liblightning_db_ffi.dylib');
+      // Try to load from the current directory first (for development)
+      try {
+        return ffi.DynamicLibrary.open('../../liblightning_db_ffi.dylib');
+      } catch (e) {
+        // Fall back to system search path
+        return ffi.DynamicLibrary.open('liblightning_db_ffi.dylib');
+      }
     } else if (Platform.isLinux) {
       return ffi.DynamicLibrary.open('liblightning_db_ffi.so');
     } else if (Platform.isWindows) {
