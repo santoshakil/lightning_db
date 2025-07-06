@@ -1,0 +1,4 @@
+module LightningDB {
+    header "lightning_db_ffi.h"
+    export *
+}

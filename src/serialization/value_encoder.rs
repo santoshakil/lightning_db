@@ -49,8 +49,15 @@ impl ValueEncoder for CompressionValueEncoder {
         match compress(value, self.compression_type) {
             Ok(compressed) => {
                 if compressed.len() < value.len() {
-                    // Add header to indicate compression
-                    let mut result = vec![self.compression_type as u8];
+                    // Add header to indicate compression with fixed encoding
+                    let compression_byte = match self.compression_type {
+                        CompressionType::None => 0u8,
+                        #[cfg(feature = "zstd-compression")]
+                        CompressionType::Zstd => 1u8,
+                        CompressionType::Lz4 => 2u8,
+                        CompressionType::Snappy => 3u8,
+                    };
+                    let mut result = vec![compression_byte];
                     result.extend_from_slice(&compressed);
                     Cow::Owned(result)
                 } else {
@@ -68,18 +75,21 @@ impl ValueEncoder for CompressionValueEncoder {
         
         // Check if value is compressed
         let first_byte = encoded[0];
-        if first_byte <= CompressionType::Lz4 as u8 {
-            let compression_type = match first_byte {
-                0 => CompressionType::None,
-                1 => CompressionType::Zstd,
-                2 => CompressionType::Lz4,
-                _ => return Cow::Borrowed(encoded),
-            };
-            
-            if compression_type != CompressionType::None {
-                if let Ok(decompressed) = decompress(&encoded[1..], compression_type) {
-                    return Cow::Owned(decompressed);
-                }
+        // Fixed encoding values for backward compatibility
+        let compression_type = match first_byte {
+            0 => CompressionType::None,
+            #[cfg(feature = "zstd-compression")]
+            1 => CompressionType::Zstd,
+            #[cfg(not(feature = "zstd-compression"))]
+            1 => return Cow::Borrowed(encoded), // Zstd not available
+            2 => CompressionType::Lz4,
+            3 => CompressionType::Snappy,
+            _ => return Cow::Borrowed(encoded),
+        };
+        
+        if compression_type != CompressionType::None {
+            if let Ok(decompressed) = decompress(&encoded[1..], compression_type) {
+                return Cow::Owned(decompressed);
             }
         }
         
@@ -129,7 +139,7 @@ mod tests {
     
     #[test]
     fn test_compression_encoder() {
-        let encoder = CompressionValueEncoder::new(CompressionType::Zstd, 10);
+        let encoder = CompressionValueEncoder::new(CompressionType::Lz4, 10);
         
         // Small value (not compressed)
         let small_value = b"small";
