@@ -1,0 +1,31 @@
+name: lightning_db_dart
+version: 0.1.0
+description: Lightning DB native bindings for Dart - Core FFI implementation
+homepage: https://github.com/santoshakil/lightning_db
+repository: https://github.com/santoshakil/lightning_db
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  ffi: ^2.1.0
+  path: ^1.9.0
+  meta: ^1.11.0
+  logging: ^1.2.0
+  args: ^2.4.2
+  http: ^1.1.0
+  archive: ^3.4.0
+
+dev_dependencies:
+  ffigen: ^11.0.0
+  test: ^1.24.0
+  lints: ^3.0.0
+  build_runner: ^2.4.0
+  build_test: ^2.2.0
+
+executables:
+  install:
+
+ffigen:
+  # This tells ffigen where to find the config
+  config_file: ffigen.yaml

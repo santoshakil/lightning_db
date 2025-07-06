@@ -1,0 +1,89 @@
+group 'com.lightningdb.flutter'
+version '1.0'
+
+buildscript {
+    ext.kotlin_version = '1.9.0'
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    compileSdkVersion 33
+    namespace 'com.lightningdb.flutter'
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = '11'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    defaultConfig {
+        minSdkVersion 21
+    }
+
+    dependencies {
+        implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    }
+
+    testOptions {
+        unitTests.all {
+            useJUnitPlatform()
+        }
+    }
+}
+
+// Task to download native libraries
+task downloadNativeLibraries {
+    doLast {
+        def flutterRoot = localProperties.getProperty('flutter.sdk')
+        if (flutterRoot == null) {
+            throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
+        }
+
+        def dartExecutable = "${flutterRoot}/bin/dart"
+        
+        exec {
+            commandLine dartExecutable, 'run', 
+                'lightning_db_dart:install', 
+                '--target-os-type', 'android'
+            workingDir project.rootDir.parentFile.parentFile
+        }
+        
+        // Copy libraries to JNI directory
+        copy {
+            from "${project.rootDir}/../../packages/lightning_db_dart/android"
+            into "src/main/jniLibs"
+            include "**/*.so"
+        }
+    }
+}
+
+// Make sure native libraries are downloaded before building
+preBuild.dependsOn downloadNativeLibraries
