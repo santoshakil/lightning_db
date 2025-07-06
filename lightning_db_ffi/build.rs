@@ -6,6 +6,7 @@ fn main() {
     let target_dir = PathBuf::from(&crate_dir)
         .parent()
         .unwrap()
+        .join("packages")
         .join("lightning_db_dart")
         .join("src");
 

@@ -2,7 +2,51 @@
 
 ## Overview
 
-This document provides a comprehensive step-by-step guide for creating a production-ready Dart/Flutter SDK for Lightning DB, following the architecture patterns established by Realm Dart SDK.
+This document provides a comprehensive step-by-step guide for creating a production-ready Dart/Flutter SDK for Lightning DB, following the architecture patterns established by Realm Dart SDK with significant improvements, including full support for Freezed - the most popular immutable data class generator in the Dart ecosystem.
+
+## Key Differentiators from Realm
+
+1. **Full Freezed Support**: Unlike Realm which requires extending RealmObject, Lightning DB works seamlessly with Freezed immutable classes
+2. **Immutable Data Models**: Support for truly immutable data structures with copyWith, unions, and deep equality
+3. **Better Developer Experience**: Works with existing Dart patterns and popular packages
+4. **Type-Safe Serialization**: Automatic JSON serialization with Freezed's built-in support
+5. **Union Types**: Support for sealed classes and pattern matching
+
+## Why Freezed Support Matters
+
+Freezed is the de facto standard for data modeling in modern Flutter applications, with over 5,000 likes on pub.dev. Realm's incompatibility with Freezed forces developers to choose between:
+
+1. **Using Realm**: Lose Freezed benefits (immutability, copyWith, unions, code generation)
+2. **Using Freezed**: Lose Realm's database capabilities
+
+Lightning DB eliminates this tradeoff by providing first-class Freezed support:
+
+```dart
+// With Realm (doesn't work with Freezed)
+class User extends RealmObject {
+  @PrimaryKey()
+  late String id;
+  late String name; // Mutable fields required
+}
+
+// With Lightning DB (works perfectly with Freezed)
+@freezed
+class User with _$User {
+  const factory User({
+    required String id,
+    required String name,
+    @Default(true) bool isActive,
+  }) = _User;
+  
+  factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);
+}
+```
+
+This allows developers to:
+- Keep their existing Freezed models
+- Maintain immutability throughout the app
+- Use advanced features like union types and sealed classes
+- Leverage the entire Freezed ecosystem
 
 ## Architecture Overview
 
@@ -12,7 +56,8 @@ lightning_db/
 │   ├── lightning_db_dart/             # Core Dart package with FFI bindings
 │   ├── lightning_db/                  # Flutter plugin wrapper
 │   ├── lightning_db_common/           # Shared types and interfaces
-│   └── lightning_db_generator/        # Code generation for models
+│   ├── lightning_db_generator/        # Code generation for models
+│   └── lightning_db_freezed/          # Freezed integration and adapters
 ├── melos.yaml                         # Monorepo configuration
 └── scripts/                           # Build and release scripts
 ```
@@ -23,7 +68,7 @@ lightning_db/
 
 1.1. Create the packages directory structure:
 ```bash
-mkdir -p packages/{lightning_db_dart,lightning_db,lightning_db_common,lightning_db_generator}
+mkdir -p packages/{lightning_db_dart,lightning_db,lightning_db_common,lightning_db_generator,lightning_db_freezed}
 ```
 
 1.2. Create melos.yaml for monorepo management:
@@ -810,7 +855,325 @@ cd ..
 echo "iOS build complete!"
 ```
 
-### Step 9: Testing Infrastructure
+### Step 9: Freezed Integration Package
+
+9.1. Create packages/lightning_db_freezed/pubspec.yaml:
+```yaml
+name: lightning_db_freezed
+version: 1.0.0
+description: Freezed integration for Lightning DB
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  freezed_annotation: ^2.4.0
+  json_annotation: ^4.8.0
+  lightning_db_dart: ^1.0.0
+  lightning_db_common: ^1.0.0
+  meta: ^1.9.0
+
+dev_dependencies:
+  build_runner: ^2.4.0
+  freezed: ^2.4.0
+  json_serializable: ^6.7.0
+  test: ^1.24.0
+  lints: ^3.0.0
+```
+
+9.2. Create lib/src/freezed_adapter.dart:
+```dart
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:lightning_db_dart/lightning_db_dart.dart';
+
+/// Base adapter for Freezed models
+abstract class FreezedAdapter<T> {
+  /// Serialize Freezed object to bytes for storage
+  Uint8List serialize(T object);
+  
+  /// Deserialize bytes back to Freezed object
+  T deserialize(Uint8List bytes);
+  
+  /// Get unique key for the object
+  String getKey(T object);
+}
+
+/// JSON-based adapter for Freezed models
+class JsonFreezedAdapter<T> extends FreezedAdapter<T> {
+  final Map<String, dynamic> Function(T) toJson;
+  final T Function(Map<String, dynamic>) fromJson;
+  final String Function(T) keyExtractor;
+  
+  JsonFreezedAdapter({
+    required this.toJson,
+    required this.fromJson,
+    required this.keyExtractor,
+  });
+  
+  @override
+  Uint8List serialize(T object) {
+    final json = toJson(object);
+    final jsonString = jsonEncode(json);
+    return Uint8List.fromList(utf8.encode(jsonString));
+  }
+  
+  @override
+  T deserialize(Uint8List bytes) {
+    final jsonString = utf8.decode(bytes);
+    final json = jsonDecode(jsonString) as Map<String, dynamic>;
+    return fromJson(json);
+  }
+  
+  @override
+  String getKey(T object) => keyExtractor(object);
+}
+
+/// Collection wrapper for Freezed models
+class FreezedCollection<T> {
+  final LightningDb _db;
+  final String _prefix;
+  final FreezedAdapter<T> _adapter;
+  
+  FreezedCollection({
+    required LightningDb db,
+    required String collectionName,
+    required FreezedAdapter<T> adapter,
+  }) : _db = db,
+       _prefix = '$collectionName:',
+       _adapter = adapter;
+  
+  /// Insert a Freezed object
+  Future<void> insert(T object) async {
+    final key = _prefix + _adapter.getKey(object);
+    final bytes = _adapter.serialize(object);
+    await _db.put(key, bytes);
+  }
+  
+  /// Update a Freezed object
+  Future<void> update(T object) => insert(object);
+  
+  /// Find by ID
+  Future<T?> findById(String id) async {
+    final key = _prefix + id;
+    final bytes = await _db.get(key);
+    if (bytes == null) return null;
+    return _adapter.deserialize(bytes);
+  }
+  
+  /// Delete by ID
+  Future<void> deleteById(String id) async {
+    final key = _prefix + id;
+    await _db.delete(key);
+  }
+  
+  /// Query with prefix scan
+  Stream<T> query({String? startKey, String? endKey}) async* {
+    final start = _prefix + (startKey ?? '');
+    final end = endKey != null ? _prefix + endKey : null;
+    
+    await for (final entry in _db.scan(prefix: start, endKey: end)) {
+      if (entry.key.startsWith(_prefix)) {
+        yield _adapter.deserialize(entry.value);
+      }
+    }
+  }
+  
+  /// Get all objects
+  Future<List<T>> getAll() async {
+    final results = <T>[];
+    await for (final object in query()) {
+      results.add(object);
+    }
+    return results;
+  }
+  
+  /// Batch operations
+  Future<void> insertMany(List<T> objects) async {
+    final batch = _db.batch();
+    for (final object in objects) {
+      final key = _prefix + _adapter.getKey(object);
+      final bytes = _adapter.serialize(object);
+      batch.put(key, bytes);
+    }
+    await batch.commit();
+  }
+  
+  /// Watch changes (reactive)
+  Stream<CollectionChange<T>> watch() {
+    return _db.watchPrefix(_prefix).map((change) {
+      return CollectionChange<T>(
+        type: change.type,
+        key: change.key.substring(_prefix.length),
+        oldValue: change.oldValue != null 
+            ? _adapter.deserialize(change.oldValue!) 
+            : null,
+        newValue: change.newValue != null 
+            ? _adapter.deserialize(change.newValue!) 
+            : null,
+      );
+    });
+  }
+}
+
+/// Change event for collections
+class CollectionChange<T> {
+  final ChangeType type;
+  final String key;
+  final T? oldValue;
+  final T? newValue;
+  
+  CollectionChange({
+    required this.type,
+    required this.key,
+    this.oldValue,
+    this.newValue,
+  });
+}
+
+enum ChangeType { insert, update, delete }
+```
+
+9.3. Create lib/src/freezed_extensions.dart:
+```dart
+import 'package:lightning_db_dart/lightning_db_dart.dart';
+import 'freezed_adapter.dart';
+
+/// Extension to easily create collections from LightningDb
+extension FreezedDbExtension on LightningDb {
+  /// Create a type-safe collection for Freezed models
+  FreezedCollection<T> collection<T>({
+    required String name,
+    required FreezedAdapter<T> adapter,
+  }) {
+    return FreezedCollection<T>(
+      db: this,
+      collectionName: name,
+      adapter: adapter,
+    );
+  }
+  
+  /// Create a JSON-based collection for Freezed models
+  FreezedCollection<T> jsonCollection<T>({
+    required String name,
+    required Map<String, dynamic> Function(T) toJson,
+    required T Function(Map<String, dynamic>) fromJson,
+    required String Function(T) keyExtractor,
+  }) {
+    return collection<T>(
+      name: name,
+      adapter: JsonFreezedAdapter<T>(
+        toJson: toJson,
+        fromJson: fromJson,
+        keyExtractor: keyExtractor,
+      ),
+    );
+  }
+}
+
+/// Mixin for Freezed models to add Lightning DB capabilities
+mixin LightningDbModel {
+  /// Override to provide the unique key for this model
+  String get dbKey;
+  
+  /// Override to provide the collection name
+  String get collectionName;
+}
+```
+
+9.4. Create example Freezed model usage:
+```dart
+// user_model.dart
+import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:lightning_db_freezed/lightning_db_freezed.dart';
+
+part 'user_model.freezed.dart';
+part 'user_model.g.dart';
+
+@freezed
+class User with _$User, LightningDbModel {
+  const User._(); // Private constructor for adding custom getters
+  
+  const factory User({
+    required String id,
+    required String name,
+    required String email,
+    required int age,
+    @Default(false) bool isActive,
+    required DateTime createdAt,
+    DateTime? updatedAt,
+  }) = _User;
+  
+  factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);
+  
+  @override
+  String get dbKey => id;
+  
+  @override
+  String get collectionName => 'users';
+}
+
+// Usage example
+void example() async {
+  final db = await LightningDb.open('myapp.db');
+  
+  // Create a collection for User models
+  final users = db.jsonCollection<User>(
+    name: 'users',
+    toJson: (user) => user.toJson(),
+    fromJson: User.fromJson,
+    keyExtractor: (user) => user.id,
+  );
+  
+  // Create a new user
+  final user = User(
+    id: '123',
+    name: 'Alice',
+    email: 'alice@example.com',
+    age: 30,
+    createdAt: DateTime.now(),
+  );
+  
+  // Insert the user
+  await users.insert(user);
+  
+  // Update the user with copyWith
+  final updatedUser = user.copyWith(
+    name: 'Alice Smith',
+    updatedAt: DateTime.now(),
+  );
+  await users.update(updatedUser);
+  
+  // Query users
+  final allUsers = await users.getAll();
+  
+  // Watch for changes
+  users.watch().listen((change) {
+    print('User ${change.key} was ${change.type}');
+  });
+  
+  // Use pattern matching with union types
+  @freezed
+  class UserState with _$UserState {
+    const factory UserState.loading() = Loading;
+    const factory UserState.loaded(List<User> users) = Loaded;
+    const factory UserState.error(String message) = Error;
+  }
+  
+  // Store union types
+  final stateCollection = db.jsonCollection<UserState>(
+    name: 'user_states',
+    toJson: (state) => state.toJson(),
+    fromJson: UserState.fromJson,
+    keyExtractor: (_) => 'current',
+  );
+  
+  await stateCollection.insert(UserState.loaded(allUsers));
+}
+```
+
+### Step 10: Testing Infrastructure
 
 9.1. Create packages/lightning_db_dart/test/integration_test.dart:
 ```dart
@@ -1043,6 +1406,14 @@ Add to your `pubspec.yaml`:
 ```yaml
 dependencies:
   lightning_db: ^1.0.0
+  lightning_db_freezed: ^1.0.0  # For Freezed support
+  freezed_annotation: ^2.4.0
+  json_annotation: ^4.8.0
+
+dev_dependencies:
+  build_runner: ^2.4.0
+  freezed: ^2.4.0
+  json_serializable: ^6.7.0
 ```
 
 Run:
@@ -1089,26 +1460,29 @@ try {
 }
 ```
 
-### Type-Safe Models
+### Type-Safe Models with Freezed
 
-Define your models:
+Define your models using Freezed:
 
 ```dart
-import 'package:lightning_db_common/lightning_db_common.dart';
+import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:lightning_db_freezed/lightning_db_freezed.dart';
 
-@collection
-class User {
-  final String id;
-  final String name;
-  final int age;
-  final DateTime createdAt;
+part 'user.freezed.dart';
+part 'user.g.dart';
+
+@freezed
+class User with _$User {
+  const factory User({
+    required String id,
+    required String name,
+    required int age,
+    @Default(true) bool isActive,
+    required DateTime createdAt,
+    DateTime? updatedAt,
+  }) = _User;
   
-  User({
-    required this.id,
-    required this.name,
-    required this.age,
-    required this.createdAt,
-  });
+  factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);
 }
 ```
 
@@ -1120,8 +1494,14 @@ dart run build_runner build
 Use type-safe collections:
 
 ```dart
-final users = db.collection<User>();
+final users = db.jsonCollection<User>(
+  name: 'users',
+  toJson: (user) => user.toJson(),
+  fromJson: User.fromJson,
+  keyExtractor: (user) => user.id,
+);
 
+// Insert with immutable data
 await users.insert(User(
   id: '1',
   name: 'Alice',
@@ -1129,7 +1509,33 @@ await users.insert(User(
   createdAt: DateTime.now(),
 ));
 
+// Update with copyWith
 final user = await users.findById('1');
+if (user != null) {
+  await users.update(user.copyWith(
+    name: 'Alice Smith',
+    updatedAt: DateTime.now(),
+  ));
+}
+
+// Pattern matching with union types
+@freezed
+class Result<T> with _$Result<T> {
+  const factory Result.success(T data) = Success<T>;
+  const factory Result.error(String message) = Error<T>;
+}
+
+final result = await users.findById('1');
+final response = result != null 
+    ? Result.success(result)
+    : Result.error('User not found');
+
+switch (response) {
+  case Success(:final data):
+    print('Found user: ${data.name}');
+  case Error(:final message):
+    print('Error: $message');
+}
 ```
 
 ## Platform-Specific Setup
@@ -1203,9 +1609,31 @@ This comprehensive guide provides a production-ready architecture for the Lightn
 8. **CI/CD Integration**: Automated builds and releases
 
 The key innovations over Realm's approach:
-- Option to build from source using CMake (not just download binaries)
-- Simpler FFI integration without complex platform channels
-- Better error messages for version mismatches
-- More flexible deployment options
 
-This architecture ensures Lightning DB can be used as easily as adding a line to pubspec.yaml while maintaining the performance characteristics of the native implementation.
+1. **Full Freezed Support**: 
+   - Works with immutable Freezed data classes
+   - No need to extend special base classes like RealmObject
+   - Support for copyWith, unions, and pattern matching
+   - Compatible with existing Dart/Flutter patterns
+
+2. **Better Developer Experience**:
+   - Works with popular Dart packages (Freezed, json_serializable)
+   - True immutability with compile-time safety
+   - No runtime code generation or reflection
+   - Type-safe JSON serialization out of the box
+
+3. **Technical Improvements**:
+   - Option to build from source using CMake (not just download binaries)
+   - Simpler FFI integration without complex platform channels
+   - Better error messages for version mismatches
+   - More flexible deployment options
+   - Checksum verification for downloaded binaries
+   - Offline fallback capabilities
+
+4. **Modern Dart Features**:
+   - Support for sealed classes and exhaustive pattern matching
+   - Works with null safety and sound type system
+   - Compatible with functional programming patterns
+   - Stream-based reactive APIs
+
+This architecture ensures Lightning DB can be used as easily as adding a line to pubspec.yaml while providing a superior developer experience compared to Realm, especially for teams already using Freezed for their data models.

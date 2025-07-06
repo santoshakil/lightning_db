@@ -38,6 +38,7 @@ pubspec.lock
 **/dart_test_db/
 **/*_test_db/
 **/*_db/
+!packages/lightning_db/
 **/demo_*/
 **/edge_test_*/
 **/perf_test_*/
