@@ -2,7 +2,7 @@ use lightning_db::{Database, LightningDbConfig};
 use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use std::thread;
 use std::time::{Duration, Instant};
-use rand::{Rng, thread_rng};
+use rand::Rng;
 
 #[derive(Debug)]
 struct PerformanceResult {
@@ -70,10 +70,10 @@ fn test_write_patterns() -> Result<PerformanceResult, Box<dyn std::error::Error>
     let seq_ops = 50000.0 / seq_duration.as_secs_f64();
     
     // Random writes
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
     let start = Instant::now();
     for _ in 0..50000 {
-        let key = format!("{:08}", rng.gen::<u32>() % 100000000);
+        let key = format!("{:08}", rng.random::<u32>() % 100000000);
         let value = vec![0u8; 100];
         db.put(key.as_bytes(), &value)?;
     }
@@ -132,10 +132,10 @@ fn test_cache_effectiveness() -> Result<PerformanceResult, Box<dyn std::error::E
     
     // Test cold data (cache misses)
     let mut cold_latencies = Vec::new();
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
     let start = Instant::now();
     for _ in 0..10000 {
-        let key = format!("cache_key_{:06}", 50000 + rng.gen::<u32>() % 50000);
+        let key = format!("cache_key_{:06}", 50000 + rng.random::<u32>() % 50000);
         let op_start = Instant::now();
         let _ = db.get(key.as_bytes())?;
         cold_latencies.push(op_start.elapsed().as_micros() as f64);
@@ -335,15 +335,15 @@ fn test_concurrent_patterns() -> Result<PerformanceResult, Box<dyn std::error::E
         let counter = ops_counter.clone();
         
         handles.push(thread::spawn(move || {
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             let mut local_ops = 0u64;
             let thread_start = Instant::now();
             
             while thread_start.elapsed() < Duration::from_secs(2) {
-                let key_id = rng.gen::<u32>() % 10000;
+                let key_id = rng.random::<u32>() % 10000;
                 let key = format!("concurrent_{}", key_id);
                 
-                if rng.gen::<u8>() % 100 < 95 {
+                if rng.random::<u8>() % 100 < 95 {
                     // Read
                     let _ = db_clone.get(key.as_bytes());
                 } else {
@@ -580,12 +580,12 @@ fn test_memory_pressure() -> Result<PerformanceResult, Box<dyn std::error::Error
     let write_duration = start.elapsed();
     
     // Force reads to trigger cache eviction
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
     let mut cache_misses = 0;
     let mut latencies = Vec::new();
     
     for _ in 0..10000 {
-        let key_id = rng.gen::<u32>() as usize % num_entries;
+        let key_id = rng.random::<u32>() as usize % num_entries;
         let key = format!("mem_test_{:06}", key_id);
         
         let op_start = Instant::now();

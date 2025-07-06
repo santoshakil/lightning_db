@@ -1,0 +1,33 @@
+[package]
+name = "lightning_db_ffi"
+version = "0.1.0"
+edition = "2021"
+authors = ["Lightning DB Team"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/santoshakil/lightning_db"
+rust-version = "1.70"
+
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+cbindgen = "0.26"
+
+[dependencies]
+lightning_db = { path = ".." }
+tokio = { version = "1.35", features = ["rt", "macros"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+lazy_static = "1.4"
+parking_lot = "0.12"
+thiserror = "1.0"
+
+[dev-dependencies]
+tempfile = "3.8"
+
+# Platform-specific dependencies
+[target.'cfg(target_os = "ios")'.dependencies]
+# iOS-specific dependencies if needed
+
+[target.'cfg(target_os = "android")'.dependencies]
+# Android-specific dependencies if needed
