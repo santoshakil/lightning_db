@@ -9,3 +9,6 @@ export 'package:lightning_db_dart/lightning_db_dart.dart';
 
 // Re-export Freezed integration
 export 'package:lightning_db_freezed/lightning_db_freezed.dart';
+
+// Flutter-specific extensions
+export 'src/encryption.dart';

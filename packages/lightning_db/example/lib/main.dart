@@ -4,6 +4,7 @@ import 'screens/query_builder_screen.dart';
 import 'screens/error_handling_screen.dart';
 import 'screens/benchmark_screen.dart';
 import 'screens/migration_screen.dart';
+import 'screens/encryption_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -90,6 +91,17 @@ class HomePage extends StatelessWidget {
             () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const MigrationScreen()),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildDemoCard(
+            context,
+            'Data Encryption',
+            'End-to-end encryption for sensitive data',
+            Icons.security,
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const EncryptionScreen()),
             ),
           ),
           const SizedBox(height: 32),
