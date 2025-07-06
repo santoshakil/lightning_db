@@ -122,8 +122,8 @@ use btree::BPlusTree;
 use cache::{MemoryConfig, MemoryPool};
 use compression::CompressionType as CompType;
 use consistency::ConsistencyManager;
-use error::{Error, Result};
-use iterator::{IteratorBuilder, RangeIterator, ScanDirection, TransactionIterator};
+pub use error::{Error, Result};
+pub use iterator::{IteratorBuilder, RangeIterator, ScanDirection, TransactionIterator};
 use lsm::{DeltaCompressionStats, LSMConfig, LSMTree};
 use parking_lot::RwLock;
 use prefetch::{PrefetchConfig, PrefetchManager};
@@ -770,6 +770,15 @@ impl Database {
     }
     
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        // Validate key is not empty
+        if key.is_empty() {
+            return Err(Error::InvalidKeySize { 
+                size: 0, 
+                min: 1, 
+                max: usize::MAX 
+            });
+        }
+        
         let _timer = logging::OperationTimer::with_key("put", key);
         // Check if we have a write batcher
         if let Some(ref batcher) = self.write_batcher {
@@ -924,6 +933,15 @@ impl Database {
     }
     
     pub fn put_with_consistency(&self, key: &[u8], value: &[u8], level: ConsistencyLevel) -> Result<()> {
+        // Validate key is not empty
+        if key.is_empty() {
+            return Err(Error::InvalidKeySize { 
+                size: 0, 
+                min: 1, 
+                max: usize::MAX 
+            });
+        }
+        
         let metrics = self.metrics_collector.database_metrics();
         
         metrics.record_operation(OperationType::Write, || {
@@ -1309,6 +1327,14 @@ impl Database {
     }
 
     pub fn put_tx(&self, tx_id: u64, key: &[u8], value: &[u8]) -> Result<()> {
+        // Validate key is not empty
+        if key.is_empty() {
+            return Err(Error::InvalidKeySize { 
+                size: 0, 
+                min: 1, 
+                max: usize::MAX 
+            });
+        }
         if let Some(ref opt_manager) = self.optimized_transaction_manager {
             // Use optimized transaction manager with explicit locking
             opt_manager.acquire_write_lock(tx_id, key)?;
