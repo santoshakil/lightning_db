@@ -11,3 +11,6 @@ export 'src/query.dart';
 export 'src/reactive.dart';
 export 'src/serialization.dart';
 export 'src/error_handling.dart';
+export 'src/query_builder.dart';
+export 'src/query_api.dart';
+export 'src/migration.dart';

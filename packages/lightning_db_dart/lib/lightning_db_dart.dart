@@ -14,3 +14,4 @@ export 'src/errors.dart';
 export 'src/types.dart';
 export 'src/batch.dart';
 export 'src/recovery.dart';
+export 'src/migration.dart';

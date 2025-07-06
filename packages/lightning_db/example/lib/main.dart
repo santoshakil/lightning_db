@@ -3,6 +3,7 @@ import 'screens/todo_screen.dart';
 import 'screens/query_builder_screen.dart';
 import 'screens/error_handling_screen.dart';
 import 'screens/benchmark_screen.dart';
+import 'screens/migration_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -78,6 +79,17 @@ class HomePage extends StatelessWidget {
             () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const BenchmarkScreen()),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildDemoCard(
+            context,
+            'Schema Migrations',
+            'Database versioning and schema evolution',
+            Icons.schema,
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MigrationScreen()),
             ),
           ),
           const SizedBox(height: 32),
