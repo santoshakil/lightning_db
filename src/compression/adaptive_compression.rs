@@ -113,12 +113,14 @@ pub struct AdaptiveCompressionEngine {
 impl AdaptiveCompressionEngine {
     pub fn new(config: AdaptiveCompressionConfig) -> Self {
         let stats = Arc::new(DashMap::new());
-        for comp_type in &[
+        let comp_types = vec![
             CompressionType::None,
             CompressionType::Lz4,
             CompressionType::Snappy,
+            #[cfg(feature = "zstd-compression")]
             CompressionType::Zstd,
-        ] {
+        ];
+        for comp_type in &comp_types {
             stats.insert(*comp_type, CompressionTypeStats::default());
         }
         
@@ -280,19 +282,28 @@ impl AdaptiveCompressionEngine {
             DataPattern::Json | DataPattern::Xml => {
                 // Structured text compresses well with Zstd
                 if data.len() > 10240 {
-                    CompressionType::Zstd
+                    #[cfg(feature = "zstd-compression")]
+                    { CompressionType::Zstd }
+                    #[cfg(not(feature = "zstd-compression"))]
+                    { CompressionType::Snappy }
                 } else {
                     CompressionType::Snappy
                 }
             }
             DataPattern::LogData => {
                 // Logs have repetitive patterns
-                CompressionType::Zstd
+                #[cfg(feature = "zstd-compression")]
+                { CompressionType::Zstd }
+                #[cfg(not(feature = "zstd-compression"))]
+                { CompressionType::Snappy }
             }
             DataPattern::TimeSeries | DataPattern::Numeric => {
                 // Numeric data with patterns
                 if entropy < 4.0 {
-                    CompressionType::Zstd
+                    #[cfg(feature = "zstd-compression")]
+                    { CompressionType::Zstd }
+                    #[cfg(not(feature = "zstd-compression"))]
+                    { CompressionType::Snappy }
                 } else {
                     CompressionType::Lz4
                 }
@@ -316,7 +327,10 @@ impl AdaptiveCompressionEngine {
             DataPattern::Unknown => {
                 // Fallback to entropy-based selection
                 if entropy < 3.0 {
-                    CompressionType::Zstd
+                    #[cfg(feature = "zstd-compression")]
+                    { CompressionType::Zstd }
+                    #[cfg(not(feature = "zstd-compression"))]
+                    { CompressionType::Snappy }
                 } else if entropy < 6.0 {
                     CompressionType::Lz4
                 } else {
@@ -537,11 +551,21 @@ mod tests {
         let engine = AdaptiveCompressionEngine::new(AdaptiveCompressionConfig::default());
         
         // Test with different data types
-        let test_cases = vec![
+        let mut test_cases = vec![
             (b"Small text".to_vec(), CompressionType::None), // Too small
-            (br#"{"key": "value"}"#.repeat(100), CompressionType::Zstd), // JSON
-            (b"AAAAAAAAAA".repeat(100), CompressionType::Zstd), // Repetitive
         ];
+        
+        #[cfg(feature = "zstd-compression")]
+        {
+            test_cases.push((br#"{"key": "value"}"#.repeat(100), CompressionType::Zstd)); // JSON
+            test_cases.push((b"AAAAAAAAAA".repeat(100), CompressionType::Zstd)); // Repetitive
+        }
+        
+        #[cfg(not(feature = "zstd-compression"))]
+        {
+            test_cases.push((br#"{"key": "value"}"#.repeat(100), CompressionType::Snappy)); // JSON
+            test_cases.push((b"AAAAAAAAAA".repeat(100), CompressionType::Snappy)); // Repetitive
+        }
         
         for (data, _expected) in test_cases {
             let result = engine.compress(&data);

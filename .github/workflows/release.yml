@@ -1,0 +1,210 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-apple-darwin,x86_64-apple-darwin
+    
+    - name: Build for macOS
+      run: |
+        cargo build --release --target aarch64-apple-darwin -p lightning_db_ffi
+        cargo build --release --target x86_64-apple-darwin -p lightning_db_ffi
+        
+        # Create universal binary
+        mkdir -p build/macos
+        lipo -create \
+          target/aarch64-apple-darwin/release/liblightning_db_ffi.dylib \
+          target/x86_64-apple-darwin/release/liblightning_db_ffi.dylib \
+          -output build/macos/liblightning_db.dylib
+        
+        # Create release archive
+        cd build
+        zip -r lightning_db-macos.zip macos
+    
+    - name: Upload macOS artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-binary
+        path: build/lightning_db-macos.zip
+
+  build-ios:
+    name: Build iOS
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim
+    
+    - name: Build for iOS
+      run: |
+        # Build without zstd for iOS
+        cargo build --release --target aarch64-apple-ios -p lightning_db_ffi --no-default-features --features ios
+        cargo build --release --target x86_64-apple-ios -p lightning_db_ffi --no-default-features --features ios
+        cargo build --release --target aarch64-apple-ios-sim -p lightning_db_ffi --no-default-features --features ios
+        
+        # Create directories
+        mkdir -p build/ios/device
+        mkdir -p build/ios/simulator
+        
+        # Copy device library
+        cp target/aarch64-apple-ios/release/liblightning_db_ffi.a build/ios/device/
+        
+        # Create fat library for simulators
+        lipo -create \
+          target/x86_64-apple-ios/release/liblightning_db_ffi.a \
+          target/aarch64-apple-ios-sim/release/liblightning_db_ffi.a \
+          -output build/ios/simulator/liblightning_db_ffi.a
+        
+        # Create XCFramework
+        xcodebuild -create-xcframework \
+          -library build/ios/device/liblightning_db_ffi.a \
+          -library build/ios/simulator/liblightning_db_ffi.a \
+          -output build/ios/LightningDB.xcframework
+        
+        # Copy header
+        cp packages/lightning_db_dart/src/lightning_db_ffi.h build/ios/
+        
+        # Create release archive
+        cd build
+        zip -r lightning_db-ios-xcframework.zip ios
+    
+    - name: Upload iOS artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ios-xcframework
+        path: build/lightning_db-ios-xcframework.zip
+
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+    
+    - name: Install cargo-ndk
+      run: cargo install cargo-ndk
+    
+    - name: Setup Android NDK
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r26d
+        add-to-path: true
+    
+    - name: Build for Android
+      run: |
+        cargo ndk \
+          -t arm64-v8a \
+          -t armeabi-v7a \
+          -t x86 \
+          -t x86_64 \
+          -o build/android \
+          build --release -p lightning_db_ffi --no-default-features
+        
+        # Create release archive
+        cd build
+        zip -r lightning_db-android.zip android
+    
+    - name: Upload Android artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-libraries
+        path: build/lightning_db-android.zip
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Build for Linux
+      run: |
+        cargo build --release -p lightning_db_ffi
+        
+        mkdir -p build/linux
+        cp target/release/liblightning_db_ffi.so build/linux/
+        
+        # Create release archive
+        cd build
+        zip -r lightning_db-linux-x64.zip linux
+    
+    - name: Upload Linux artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-binary
+        path: build/lightning_db-linux-x64.zip
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Build for Windows
+      run: |
+        cargo build --release -p lightning_db_ffi
+        
+        mkdir -p build/windows
+        cp target/release/lightning_db_ffi.dll build/windows/lightning_db.dll
+        
+        # Create release archive
+        cd build
+        Compress-Archive -Path windows -DestinationPath lightning_db-windows-x64.zip
+    
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-binary
+        path: build/lightning_db-windows-x64.zip
+
+  create-release:
+    name: Create Release
+    needs: [build-macos, build-ios, build-android, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          artifacts/macos-binary/lightning_db-macos.zip
+          artifacts/ios-xcframework/lightning_db-ios-xcframework.zip
+          artifacts/android-libraries/lightning_db-android.zip
+          artifacts/linux-binary/lightning_db-linux-x64.zip
+          artifacts/windows-binary/lightning_db-windows-x64.zip
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

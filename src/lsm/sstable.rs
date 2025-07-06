@@ -562,6 +562,7 @@ impl CompressionType {
     fn to_u8(&self) -> u8 {
         match self {
             CompressionType::None => 0,
+            #[cfg(feature = "zstd-compression")]
             CompressionType::Zstd => 1,
             CompressionType::Lz4 => 2,
             CompressionType::Snappy => 3,
@@ -571,7 +572,10 @@ impl CompressionType {
     fn from_u8(val: u8) -> Self {
         match val {
             0 => CompressionType::None,
+            #[cfg(feature = "zstd-compression")]
             1 => CompressionType::Zstd,
+            #[cfg(not(feature = "zstd-compression"))]
+            1 => CompressionType::Snappy, // Fallback for Zstd
             2 => CompressionType::Lz4,
             3 => CompressionType::Snappy,
             _ => CompressionType::None,

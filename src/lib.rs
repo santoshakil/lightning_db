@@ -281,9 +281,13 @@ impl Database {
             let lsm_config = LSMConfig {
                 compression_type: match config.compression_type {
                     0 => CompType::None,
+                    #[cfg(feature = "zstd-compression")]
                     1 => CompType::Zstd,
+                    #[cfg(not(feature = "zstd-compression"))]
+                    1 => CompType::Snappy,
                     2 => CompType::Lz4,
-                    _ => CompType::Zstd,
+                    3 => CompType::Snappy,
+                    _ => CompType::Lz4,
                 },
                 ..Default::default()
             };
@@ -467,9 +471,13 @@ impl Database {
                 let lsm_config = LSMConfig {
                     compression_type: match config.compression_type {
                         0 => CompType::None,
+                        #[cfg(feature = "zstd-compression")]
                         1 => CompType::Zstd,
+                        #[cfg(not(feature = "zstd-compression"))]
+                        1 => CompType::Snappy,
                         2 => CompType::Lz4,
-                        _ => CompType::Zstd,
+                        3 => CompType::Snappy,
+                        _ => CompType::Lz4,
                     },
                     ..Default::default()
                 };

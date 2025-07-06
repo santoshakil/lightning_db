@@ -289,7 +289,10 @@ impl ParallelCompactionCoordinator {
                 let mut builder = SSTableBuilder::new(
                     &table_path,
                     4096,  // block size
+                    #[cfg(feature = "zstd-compression")]
                     crate::compression::CompressionType::Zstd,
+                    #[cfg(not(feature = "zstd-compression"))]
+                    crate::compression::CompressionType::Snappy,
                     10,    // bloom filter bits per key
                 )?;
                 

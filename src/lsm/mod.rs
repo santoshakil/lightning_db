@@ -46,7 +46,10 @@ impl Default for LSMConfig {
             max_levels: 7,
             level_size_multiplier: 10,
             bloom_filter_bits_per_key: 10,
+            #[cfg(feature = "zstd-compression")]
             compression_type: CompressionType::Zstd,
+            #[cfg(not(feature = "zstd-compression"))]
+            compression_type: CompressionType::Snappy,
             block_size: 4096,
             delta_compression_config: DeltaCompressionConfig::default(),
         }

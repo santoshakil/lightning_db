@@ -9,6 +9,9 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[cfg(feature = "zstd-compression")]
+use zstd;
+
 /// Backup configuration
 #[derive(Debug, Clone)]
 pub struct BackupConfig {
@@ -710,15 +713,23 @@ impl BackupManager {
         hasher.update(&temp_data);
         
         if self.config.compress {
-            // Compress with zstd
-            let compressed = zstd::encode_all(temp_data.as_slice(), 3)
-                .map_err(|e| Error::Compression(e.to_string()))?;
+            #[cfg(feature = "zstd-compression")]
+            {
+                // Compress with zstd
+                let compressed = zstd::encode_all(temp_data.as_slice(), 3)
+                    .map_err(|e| Error::Compression(e.to_string()))?;
+                
+                let dest_path = PathBuf::from(format!("{}.zst", dest.display()));
+                let mut dest_file = File::create(&dest_path)?;
+                dest_file.write_all(&compressed)?;
+                
+                Ok(compressed.len() as u64)
+            }
             
-            let dest_path = PathBuf::from(format!("{}.zst", dest.display()));
-            let mut dest_file = File::create(&dest_path)?;
-            dest_file.write_all(&compressed)?;
-            
-            Ok(compressed.len() as u64)
+            #[cfg(not(feature = "zstd-compression"))]
+            {
+                return Err(Error::Compression("Zstd compression not available in this build".to_string()));
+            }
         } else {
             let mut dest_file = File::create(dest)?;
             dest_file.write_all(&temp_data)?;
@@ -741,15 +752,23 @@ impl BackupManager {
         hasher.update(&buffer);
         
         if self.config.compress {
-            // Compress with zstd
-            let compressed = zstd::encode_all(buffer.as_slice(), 3)
-                .map_err(|e| Error::Compression(e.to_string()))?;
+            #[cfg(feature = "zstd-compression")]
+            {
+                // Compress with zstd
+                let compressed = zstd::encode_all(buffer.as_slice(), 3)
+                    .map_err(|e| Error::Compression(e.to_string()))?;
+                
+                let dest_path = PathBuf::from(format!("{}.zst", dest.display()));
+                let mut dest_file = File::create(&dest_path)?;
+                dest_file.write_all(&compressed)?;
+                
+                Ok(compressed.len() as u64)
+            }
             
-            let dest_path = PathBuf::from(format!("{}.zst", dest.display()));
-            let mut dest_file = File::create(&dest_path)?;
-            dest_file.write_all(&compressed)?;
-            
-            Ok(compressed.len() as u64)
+            #[cfg(not(feature = "zstd-compression"))]
+            {
+                return Err(Error::Compression("Zstd compression not available in this build".to_string()));
+            }
         } else {
             let mut dest_file = File::create(dest)?;
             dest_file.write_all(&buffer)?;
@@ -894,14 +913,22 @@ impl BackupManager {
             if path.is_file() {
                 // Check if it's compressed
                 if metadata.compressed && path.extension().and_then(|s| s.to_str()) == Some("zst") {
-                    // Decompress file
-                    let compressed_data = fs::read(&path)?;
-                    let decompressed = zstd::decode_all(compressed_data.as_slice())
-                        .map_err(|e| Error::Decompression(e.to_string()))?;
+                    #[cfg(feature = "zstd-compression")]
+                    {
+                        // Decompress file
+                        let compressed_data = fs::read(&path)?;
+                        let decompressed = zstd::decode_all(compressed_data.as_slice())
+                            .map_err(|e| Error::Decompression(e.to_string()))?;
+                        
+                        // Remove .zst extension
+                        let actual_dest = dest_path.with_extension("");
+                        fs::write(&actual_dest, decompressed)?;
+                    }
                     
-                    // Remove .zst extension
-                    let actual_dest = dest_path.with_extension("");
-                    fs::write(&actual_dest, decompressed)?;
+                    #[cfg(not(feature = "zstd-compression"))]
+                    {
+                        return Err(Error::Decompression("Zstd decompression not available in this build".to_string()));
+                    }
                 } else {
                     // Direct copy
                     fs::copy(&path, &dest_path)?;
