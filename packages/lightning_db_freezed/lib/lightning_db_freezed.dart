@@ -10,3 +10,4 @@ export 'src/extensions.dart';
 export 'src/query.dart';
 export 'src/reactive.dart';
 export 'src/serialization.dart';
+export 'src/error_handling.dart';

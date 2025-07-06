@@ -5,9 +5,10 @@ import 'package:meta/meta.dart';
 import 'adapter.dart';
 import 'query.dart';
 import 'reactive.dart';
+import 'error_handling.dart';
 
 /// A type-safe collection for Freezed models
-class FreezedCollection<T> {
+class FreezedCollection<T> with CollectionErrorHandlingMixin {
   final LightningDb _db;
   final String _collectionName;
   final FreezedAdapter<T> adapter;
@@ -24,6 +25,9 @@ class FreezedCollection<T> {
   /// The collection name
   String get name => _collectionName;
   
+  @override
+  String get collectionName => _collectionName;
+  
   /// Stream of changes to this collection
   Stream<CollectionChange<T>> get changes => _changeController.stream;
   
@@ -32,16 +36,36 @@ class FreezedCollection<T> {
   
   /// Insert a new object
   Future<void> insert(T object) async {
-    final key = _createKey(adapter.getKey(object));
-    final bytes = adapter.serialize(object);
-    
-    await _db.put(key, bytes);
-    
-    _changeController.add(CollectionChange<T>(
-      type: ChangeType.insert,
-      key: adapter.getKey(object),
-      newValue: object,
-    ));
+    await wrapOperation(
+      operation: () async {
+        final id = adapter.getKey(object);
+        final key = _createKey(id);
+        
+        // Check if already exists
+        if (await _db.exists(key)) {
+          throw DuplicateIdException(
+            collectionName: collectionName,
+            id: id,
+          );
+        }
+        
+        final bytes = errorHandler.wrapSerialization(
+          operation: () => adapter.serialize(object),
+          modelType: T,
+          data: object,
+        );
+        
+        await _db.put(key, bytes);
+        
+        _changeController.add(CollectionChange<T>(
+          type: ChangeType.insert,
+          key: id,
+          newValue: object,
+        ));
+      },
+      operationName: 'insert',
+      context: {'id': adapter.getKey(object)},
+    );
   }
   
   /// Insert multiple objects

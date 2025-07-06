@@ -301,7 +301,7 @@ class LightningDb {
   
   void checkNotClosed() {
     if (_closed) {
-      throw StateError('Database is closed');
+      throw DatabaseClosedException();
     }
   }
   
