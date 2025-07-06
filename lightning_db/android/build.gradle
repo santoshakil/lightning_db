@@ -1,0 +1,89 @@
+group = "com.example.lightning_db"
+version = "1.0-SNAPSHOT"
+
+buildscript {
+    ext.kotlin_version = "2.1.0"
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.7.3")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+android {
+    namespace = "com.example.lightning_db"
+
+    compileSdk = 35
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_11
+    }
+
+    sourceSets {
+        main.java.srcDirs += "src/main/kotlin"
+        test.java.srcDirs += "src/test/kotlin"
+        main.jniLibs.srcDirs = ["src/main/jniLibs"]
+    }
+
+    defaultConfig {
+        minSdk = 21
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
+    }
+
+    dependencies {
+        testImplementation("org.jetbrains.kotlin:kotlin-test")
+        testImplementation("org.mockito:mockito-core:5.0.0")
+    }
+
+    testOptions {
+        unitTests.all {
+            useJUnitPlatform()
+
+            testLogging {
+               events "passed", "skipped", "failed", "standardOut", "standardError"
+               outputs.upToDateWhen {false}
+               showStandardStreams = true
+            }
+        }
+    }
+}
+
+// Build task for Rust library using cargokit
+def cargoBuildDir = "$projectDir/../cargokit/build_tool"
+
+tasks.register('buildRustLibrary', Exec) {
+    workingDir cargoBuildDir
+    commandLine 'dart', 'run', 'build_tool', 'build-android'
+    
+    doLast {
+        // Copy the built libraries to jniLibs
+        copy {
+            from "$projectDir/../target/android"
+            into "$projectDir/src/main/jniLibs"
+            include '**/*.so'
+        }
+    }
+}
+
+preBuild.dependsOn buildRustLibrary
