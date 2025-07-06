@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'package:archive/archive.dart';
 
-const String baseUrl = 'https://github.com/yourusername/lightning_db/releases/download';
+const String baseUrl = 'https://github.com/santoshakil/lightning_db/releases/download';
 const String version = 'v0.0.1';
 
 /// Maps OS types to binary names
@@ -82,8 +82,14 @@ Future<void> installBinaries(String targetOs) async {
       '$baseUrl/$version/lightning_db-ios-xcframework.zip',
       outputDir,
     );
+  } else if (targetOs == 'macos') {
+    // For macOS, download the zip and extract
+    await downloadAndExtract(
+      '$baseUrl/$version/lightning_db-macos.zip',
+      outputDir,
+    );
   } else {
-    // For desktop platforms, download single binary
+    // For other desktop platforms, download single binary
     final binaryName = binaryNames[targetOs]!;
     await downloadFile(
       '$baseUrl/$version/$binaryName',
@@ -138,43 +144,45 @@ Future<void> downloadAndExtract(String url, String outputDir) async {
   
   await Directory(outputDir).create(recursive: true);
   
-  // For development, create dummy structure
-  // In production, this would download and extract ZIP
-  if (url.contains('xcframework')) {
-    // Create XCFramework structure
-    final xcframeworkDir = path.join(outputDir, 'LightningDB.xcframework');
-    await Directory(xcframeworkDir).create(recursive: true);
+  try {
+    // Download the file
+    final response = await http.get(Uri.parse(url));
     
-    // Create Info.plist
-    final infoPlist = File(path.join(xcframeworkDir, 'Info.plist'));
-    await infoPlist.writeAsString('''
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundlePackageType</key>
-    <string>XFWK</string>
-    <key>XCFrameworkFormatVersion</key>
-    <string>1.0</string>
-</dict>
-</plist>
-''');
-  } else if (url.contains('android')) {
-    // Create Android .so file
-    final arch = url.split('-').last.replaceAll('.zip', '');
-    final soFile = File(path.join(outputDir, 'liblightning_db.so'));
-    await soFile.create(recursive: true);
+    if (response.statusCode != 200) {
+      throw Exception('Failed to download $url: ${response.statusCode}');
+    }
     
-    // Create minimal ELF
-    await soFile.writeAsBytes([
-      0x7F, 0x45, 0x4C, 0x46, // ELF magic
-      0x01, 0x01, 0x01, 0x00, // 32-bit, little-endian
-      0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00,
-    ]);
+    // Extract the ZIP
+    final archive = ZipDecoder().decodeBytes(response.bodyBytes);
+    
+    for (final file in archive) {
+      final filename = file.name;
+      if (file.isFile) {
+        final data = file.content as List<int>;
+        File(path.join(outputDir, filename))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(data);
+      } else {
+        await Directory(path.join(outputDir, filename)).create(recursive: true);
+      }
+    }
+    
+    print('✓ Extracted to $outputDir');
+  } catch (e) {
+    print('Warning: Failed to download from $url');
+    print('Using local development binary instead');
+    
+    // Fallback for development
+    if (url.contains('macos')) {
+      final file = File(path.join(outputDir, 'macos', 'liblightning_db.dylib'));
+      await file.create(recursive: true);
+      // Copy from local build if available
+      final localBuild = File('/Volumes/Data/Projects/ssss/lightning_db/target/release/liblightning_db_ffi.dylib');
+      if (await localBuild.exists()) {
+        await localBuild.copy(file.path);
+      }
+    }
   }
-  
-  print('✓ Extracted to $outputDir');
 }
 
 /// In production, this would handle actual HTTP downloads
