@@ -1,0 +1,19 @@
+name: LightningDbBindings
+description: Bindings for Lightning DB FFI.
+output: 'lib/lightning_db_bindings_generated.dart'
+headers:
+  entry-points:
+    - 'src/lightning_db_ffi.h'
+  include-directives:
+    - 'src/lightning_db_ffi.h'
+preamble: |
+  // ignore_for_file: always_specify_types
+  // ignore_for_file: camel_case_types
+  // ignore_for_file: non_constant_identifier_names
+comments:
+  style: any
+  length: full
+enums:
+  member-rename:
+    '(.*)':
+      '$1'
