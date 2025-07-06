@@ -13,3 +13,4 @@ export 'src/iterator.dart';
 export 'src/errors.dart';
 export 'src/types.dart';
 export 'src/batch.dart';
+export 'src/recovery.dart';
