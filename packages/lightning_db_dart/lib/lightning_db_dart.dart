@@ -15,3 +15,4 @@ export 'src/types.dart';
 export 'src/batch.dart';
 export 'src/recovery.dart';
 export 'src/migration.dart';
+export 'src/encryption.dart';
