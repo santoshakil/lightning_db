@@ -30,16 +30,22 @@ build_target() {
     # Add target if not already installed
     rustup target add "$TARGET" 2>/dev/null || true
     
-    # Build
-    cargo build --release --target "$TARGET"
+    # Build the FFI crate which produces dynamic library
+    cargo build --release --target "$TARGET" -p lightning_db_ffi
     
     # Copy output
     if [[ "$TARGET" == *"windows"* ]]; then
-        cp "$PROJECT_ROOT/target/$TARGET/release/lightning_db.dll" "$OUTPUT_DIR/$OUTPUT_NAME"
+        cp "$PROJECT_ROOT/target/$TARGET/release/lightning_db_ffi.dll" "$OUTPUT_DIR/$OUTPUT_NAME"
     elif [[ "$TARGET" == *"darwin"* ]]; then
-        cp "$PROJECT_ROOT/target/$TARGET/release/liblightning_db.dylib" "$OUTPUT_DIR/$OUTPUT_NAME"
+        # macOS desktop uses dylib
+        if [[ "$OUTPUT_NAME" == *.dylib ]]; then
+            cp "$PROJECT_ROOT/target/$TARGET/release/liblightning_db_ffi.dylib" "$OUTPUT_DIR/$OUTPUT_NAME"
+        else
+            # iOS uses static library
+            cp "$PROJECT_ROOT/target/$TARGET/release/liblightning_db_ffi.a" "$OUTPUT_DIR/$OUTPUT_NAME"
+        fi
     else
-        cp "$PROJECT_ROOT/target/$TARGET/release/liblightning_db.so" "$OUTPUT_DIR/$OUTPUT_NAME"
+        cp "$PROJECT_ROOT/target/$TARGET/release/liblightning_db_ffi.so" "$OUTPUT_DIR/$OUTPUT_NAME"
     fi
     
     echo "✓ Built $TARGET"
@@ -80,7 +86,7 @@ if command -v cargo-ndk &> /dev/null; then
     # Build for each Android architecture
     cargo ndk -t armeabi-v7a -t arm64-v8a -t x86 -t x86_64 \
         -o "$BUILD_DIR/android" \
-        build --release
+        build --release -p lightning_db_ffi
     
     echo "✓ Built Android libraries"
 else
