@@ -2,18 +2,18 @@ import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
-import '../lightning_db_bindings_generated.dart';
+import '../lightning_db_bindings_generated.dart' as bindings;
 import 'transaction.dart';
 import 'iterator.dart';
-import 'consistency_level.dart';
-import 'compression_type.dart';
-import 'wal_sync_mode.dart';
+import 'consistency_level.dart' as ldb;
+import 'compression_type.dart' as ldb;
+import 'wal_sync_mode.dart' as ldb;
 
 /// Lightning DB database instance
 class LightningDb {
-  static LightningDbBindings? _bindings;
-  static LightningDbBindings get bindings {
-    _bindings ??= LightningDbBindings(_loadLibrary());
+  static bindings.LightningDbBindings? _bindings;
+  static bindings.LightningDbBindings get _b {
+    _bindings ??= bindings.LightningDbBindings(_loadLibrary());
     return _bindings!;
   }
 
@@ -28,9 +28,9 @@ class LightningDb {
     final handlePtr = calloc<ffi.Uint64>();
     
     try {
-      final result = bindings.lightning_db_create(pathPtr.cast(), handlePtr);
+      final result = _b.lightning_db_create(pathPtr.cast(), handlePtr);
       if (result != 0) {
-        throw LightningDbException._fromErrorCode(result);
+        throw LightningDbException.fromErrorCode(result);
       }
       
       return LightningDb._(handlePtr.value);
@@ -46,9 +46,9 @@ class LightningDb {
     final handlePtr = calloc<ffi.Uint64>();
     
     try {
-      final result = bindings.lightning_db_open(pathPtr.cast(), handlePtr);
+      final result = _b.lightning_db_open(pathPtr.cast(), handlePtr);
       if (result != 0) {
-        throw LightningDbException._fromErrorCode(result);
+        throw LightningDbException.fromErrorCode(result);
       }
       
       return LightningDb._(handlePtr.value);
@@ -62,23 +62,23 @@ class LightningDb {
   static Future<LightningDb> createWithConfig({
     required String path,
     int? cacheSize,
-    CompressionType? compressionType,
-    WalSyncMode? walSyncMode,
+    ldb.CompressionType? compressionType,
+    ldb.WalSyncMode? walSyncMode,
   }) async {
     final pathPtr = path.toNativeUtf8();
     final handlePtr = calloc<ffi.Uint64>();
     
     try {
-      final result = bindings.lightning_db_create_with_config(
+      final result = _b.lightning_db_create_with_config(
         pathPtr.cast(),
         cacheSize ?? 67108864, // 64MB default
-        compressionType?.value ?? CompressionType.none.value,
-        walSyncMode?.value ?? WalSyncMode.periodic.value,
+        _mapCompressionType(compressionType),
+        _mapWalSyncMode(walSyncMode),
         handlePtr,
       );
       
       if (result != 0) {
-        throw LightningDbException._fromErrorCode(result);
+        throw LightningDbException.fromErrorCode(result);
       }
       
       return LightningDb._(handlePtr.value);
@@ -96,7 +96,7 @@ class LightningDb {
     final valuePtr = _allocateBytes(value);
     
     try {
-      final result = bindings.lightning_db_put(
+      final result = _b.lightning_db_put(
         _handle,
         keyPtr,
         key.length,
@@ -105,7 +105,7 @@ class LightningDb {
       );
       
       if (result != 0) {
-        throw LightningDbException._fromErrorCode(result);
+        throw LightningDbException.fromErrorCode(result);
       }
     } finally {
       calloc.free(keyPtr);
@@ -117,7 +117,7 @@ class LightningDb {
   Future<void> putWithConsistency(
     Uint8List key,
     Uint8List value,
-    ConsistencyLevel consistency,
+    ldb.ConsistencyLevel consistency,
   ) async {
     _checkNotClosed();
     
@@ -125,17 +125,17 @@ class LightningDb {
     final valuePtr = _allocateBytes(value);
     
     try {
-      final result = bindings.lightning_db_put_with_consistency(
+      final result = _b.lightning_db_put_with_consistency(
         _handle,
         keyPtr,
         key.length,
         valuePtr,
         value.length,
-        consistency.value,
+        _mapConsistencyLevel(consistency),
       );
       
       if (result != 0) {
-        throw LightningDbException._fromErrorCode(result);
+        throw LightningDbException.fromErrorCode(result);
       }
     } finally {
       calloc.free(keyPtr);
@@ -150,27 +150,27 @@ class LightningDb {
     final keyPtr = _allocateBytes(key);
     
     try {
-      final result = bindings.lightning_db_get(_handle, keyPtr, key.length);
+      final result = _b.lightning_db_get(_handle, keyPtr, key.length);
       
-      if (result.error_code == ErrorCode.KeyNotFound) {
+      if (result.ERROR_CODE == ErrorCode.KeyNotFound) {
         return null;
       }
       
-      if (result.error_code != 0) {
-        throw LightningDbException._fromErrorCode(result.error_code);
+      if (result.ERROR_CODE != 0) {
+        throw LightningDbException.fromErrorCode(result.ERROR_CODE);
       }
       
-      if (result.data == ffi.nullptr || result.len == 0) {
+      if (result.DATA == ffi.nullptr || result.LEN == 0) {
         return null;
       }
       
       // Copy the data before freeing
       final data = Uint8List.fromList(
-        result.data.asTypedList(result.len),
+        result.DATA.asTypedList(result.LEN),
       );
       
       // Free the result
-      bindings.lightning_db_free_bytes(result.data, result.len);
+      _b.lightning_db_free_bytes(result.DATA, result.LEN);
       
       return data;
     } finally {
@@ -181,39 +181,39 @@ class LightningDb {
   /// Get with consistency level
   Future<Uint8List?> getWithConsistency(
     Uint8List key,
-    ConsistencyLevel consistency,
+    ldb.ConsistencyLevel consistency,
   ) async {
     _checkNotClosed();
     
     final keyPtr = _allocateBytes(key);
     
     try {
-      final result = bindings.lightning_db_get_with_consistency(
+      final result = _b.lightning_db_get_with_consistency(
         _handle,
         keyPtr,
         key.length,
-        consistency.value,
+        _mapConsistencyLevel(consistency),
       );
       
-      if (result.error_code == ErrorCode.KeyNotFound) {
+      if (result.ERROR_CODE == ErrorCode.KeyNotFound) {
         return null;
       }
       
-      if (result.error_code != 0) {
-        throw LightningDbException._fromErrorCode(result.error_code);
+      if (result.ERROR_CODE != 0) {
+        throw LightningDbException.fromErrorCode(result.ERROR_CODE);
       }
       
-      if (result.data == ffi.nullptr || result.len == 0) {
+      if (result.DATA == ffi.nullptr || result.LEN == 0) {
         return null;
       }
       
       // Copy the data before freeing
       final data = Uint8List.fromList(
-        result.data.asTypedList(result.len),
+        result.DATA.asTypedList(result.LEN),
       );
       
       // Free the result
-      bindings.lightning_db_free_bytes(result.data, result.len);
+      _b.lightning_db_free_bytes(result.DATA, result.LEN);
       
       return data;
     } finally {
@@ -228,10 +228,10 @@ class LightningDb {
     final keyPtr = _allocateBytes(key);
     
     try {
-      final result = bindings.lightning_db_delete(_handle, keyPtr, key.length);
+      final result = _b.lightning_db_delete(_handle, keyPtr, key.length);
       
       if (result < 0) {
-        throw LightningDbException._fromErrorCode(-result);
+        throw LightningDbException.fromErrorCode(-result);
       }
       
       return result == 0; // 0 = deleted, 1 = not found
@@ -247,13 +247,13 @@ class LightningDb {
     final handlePtr = calloc<ffi.Uint64>();
     
     try {
-      final result = bindings.lightning_db_begin_transaction(_handle, handlePtr);
+      final result = _b.lightning_db_begin_transaction(_handle, handlePtr);
       
       if (result != 0) {
-        throw LightningDbException._fromErrorCode(result);
+        throw LightningDbException.fromErrorCode(result);
       }
       
-      return Transaction(handlePtr.value, bindings);
+      return Transaction(handlePtr.value, _b);
     } finally {
       calloc.free(handlePtr);
     }
@@ -275,7 +275,7 @@ class LightningDb {
         endPtr = _allocateBytes(end);
       }
       
-      final result = bindings.lightning_db_scan(
+      final result = _b.lightning_db_scan(
         _handle,
         startPtr ?? ffi.nullptr,
         start?.length ?? 0,
@@ -285,10 +285,10 @@ class LightningDb {
       );
       
       if (result != 0) {
-        throw LightningDbException._fromErrorCode(result);
+        throw LightningDbException.fromErrorCode(result);
       }
       
-      return DbIterator(handlePtr.value, bindings);
+      return DbIterator(handlePtr.value, _b);
     } finally {
       calloc.free(handlePtr);
       if (startPtr != null) calloc.free(startPtr);
@@ -300,9 +300,9 @@ class LightningDb {
   Future<void> sync() async {
     _checkNotClosed();
     
-    final result = bindings.lightning_db_sync(_handle);
+    final result = _b.lightning_db_sync(_handle);
     if (result != 0) {
-      throw LightningDbException._fromErrorCode(result);
+      throw LightningDbException.fromErrorCode(result);
     }
   }
 
@@ -310,9 +310,9 @@ class LightningDb {
   Future<void> checkpoint() async {
     _checkNotClosed();
     
-    final result = bindings.lightning_db_checkpoint(_handle);
+    final result = _b.lightning_db_checkpoint(_handle);
     if (result != 0) {
-      throw LightningDbException._fromErrorCode(result);
+      throw LightningDbException.fromErrorCode(result);
     }
   }
 
@@ -320,9 +320,9 @@ class LightningDb {
   Future<void> close() async {
     if (_isClosed) return;
     
-    final result = bindings.lightning_db_close(_handle);
+    final result = _b.lightning_db_close(_handle);
     if (result != 0) {
-      throw LightningDbException._fromErrorCode(result);
+      throw LightningDbException.fromErrorCode(result);
     }
     
     _isClosed = true;
@@ -366,12 +366,16 @@ class LightningDbException implements Exception {
 
   LightningDbException(this.message, {this.errorCode});
 
-  factory LightningDbException._fromErrorCode(int code) {
-    final errorMsg = LightningDb.bindings.lightning_db_get_last_error();
+  factory LightningDbException.fromErrorCode(int code) {
+    final errorMsg = LightningDb._b.lightning_db_get_last_error();
     String message;
     
     if (errorMsg != ffi.nullptr) {
-      message = errorMsg.cast<Utf8>().toDartString();
+      try {
+        message = errorMsg.cast<Utf8>().toDartString();
+      } catch (e) {
+        message = _getErrorMessage(code);
+      }
     } else {
       message = _getErrorMessage(code);
     }
@@ -406,6 +410,42 @@ class LightningDbException implements Exception {
 
   @override
   String toString() => 'LightningDbException: $message';
+}
+
+// Helper functions to map between custom and generated enums
+bindings.CompressionType _mapCompressionType(ldb.CompressionType? type) {
+  if (type == null) return bindings.CompressionType.CompressionTypeNone;
+  switch (type) {
+    case ldb.CompressionType.none:
+      return bindings.CompressionType.CompressionTypeNone;
+    case ldb.CompressionType.zstd:
+      return bindings.CompressionType.CompressionTypeZstd;
+    case ldb.CompressionType.lz4:
+      return bindings.CompressionType.CompressionTypeLz4;
+    case ldb.CompressionType.snappy:
+      return bindings.CompressionType.CompressionTypeSnappy;
+  }
+}
+
+bindings.WalSyncMode _mapWalSyncMode(ldb.WalSyncMode? mode) {
+  if (mode == null) return bindings.WalSyncMode.WalSyncModePeriodic;
+  switch (mode) {
+    case ldb.WalSyncMode.sync:
+      return bindings.WalSyncMode.WalSyncModeSync;
+    case ldb.WalSyncMode.periodic:
+      return bindings.WalSyncMode.WalSyncModePeriodic;
+    case ldb.WalSyncMode.async:
+      return bindings.WalSyncMode.WalSyncModeAsync;
+  }
+}
+
+bindings.ConsistencyLevel _mapConsistencyLevel(ldb.ConsistencyLevel level) {
+  switch (level) {
+    case ldb.ConsistencyLevel.eventual:
+      return bindings.ConsistencyLevel.ConsistencyLevelEventual;
+    case ldb.ConsistencyLevel.strong:
+      return bindings.ConsistencyLevel.ConsistencyLevelStrong;
+  }
 }
 
 class ErrorCode {
