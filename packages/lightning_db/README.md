@@ -1,114 +1,374 @@
 # Lightning DB Flutter Plugin
 
-A high-performance embedded database for Flutter applications with full support for Freezed immutable data models.
+A high-performance embedded database for Flutter applications with full Freezed support.
 
 ## Features
 
-- 🚀 High performance (20M+ reads/sec, 1M+ writes/sec)
-- 🔄 Full ACID compliance with MVCC transactions
-- 📦 Zero-configuration setup
-- 🎯 Type-safe collections with Freezed support
-- 🔍 Reactive queries with RxDart integration
-- 📱 Cross-platform support (iOS, Android, macOS, Windows, Linux)
-- 🗜️ Built-in compression (Zstd/LZ4/Snappy)
-- 💾 Memory-efficient with configurable cache
+- ⚡ **Blazing Fast**: 20M+ reads/sec, 1M+ writes/sec
+- 🧊 **Freezed Support**: First-class support for Freezed models
+- 🔄 **Reactive**: Built-in streams for real-time updates
+- 📱 **Cross-Platform**: iOS, Android, macOS, Linux, Windows
+- 🔒 **ACID Compliant**: Full transaction support
+- 🗜️ **Compression**: Automatic adaptive compression
+- 🔍 **Powerful Queries**: Rich query API with indexing
 
 ## Installation
 
-Add to your `pubspec.yaml`:
+Add Lightning DB to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  lightning_db: ^0.0.1
+  lightning_db: ^0.1.0
 ```
 
-## Usage
+For Freezed support, also add:
 
-### Basic Setup
+```yaml
+dependencies:
+  lightning_db_freezed: ^0.1.0
+```
+
+## Quick Start
+
+### Basic Usage
 
 ```dart
 import 'package:lightning_db/lightning_db.dart';
 
-// Initialize database
-final db = await LightningDb.create('myapp.db');
+// Open database
+final db = await LightningDb.open('path/to/database');
 
-// Create a collection
-final users = FreezedCollection<User>(
-  db,
-  'users',
-  FreezedAdapter<User>(
-    fromJson: User.fromJson,
-    toJson: (user) => user.toJson(),
-  ),
-);
+// Store data
+await db.put('key', 'value');
+await db.putJson('user:1', {'name': 'John', 'age': 30});
 
-// Add data
-await users.add(User(id: '1', name: 'John Doe'));
+// Retrieve data
+final value = await db.get('key');
+final user = await db.getJson('user:1');
 
-// Query data
-final user = await users.get('1');
-final allUsers = await users.getAll();
+// Delete data
+await db.delete('key');
 
-// Watch for changes
-users.watch().listen((users) {
-  print('Users updated: ${users.length}');
-});
+// Close database
+await db.close();
 ```
 
-### With Freezed Models
+### Freezed Integration
 
 ```dart
+import 'package:lightning_db/lightning_db.dart';
+import 'package:freezed_annotation/freezed_annotation.dart';
+
+part 'user.freezed.dart';
+part 'user.g.dart';
+
 @freezed
-sealed class User with _$User {
+class User with _$User {
   const factory User({
     required String id,
     required String name,
-    required String email,
+    required int age,
+    DateTime? createdAt,
   }) = _User;
 
   factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);
 }
+
+// Using Freezed collections
+final db = await LightningDb.open('path/to/database');
+final users = db.freezedCollection<User>('users');
+
+// Add user
+final user = User(
+  id: 'user_1',
+  name: 'John Doe',
+  age: 30,
+  createdAt: DateTime.now(),
+);
+await users.add(user);
+
+// Query users
+final adults = await users.query()
+  .where('age', isGreaterThan: 18)
+  .orderBy('name')
+  .findAll();
+
+// Listen to changes
+users.changes.listen((change) {
+  print('User ${change.document.id} was ${change.type}');
+});
 ```
+
+## Platform Setup
+
+### iOS
+
+Add to your `ios/Podfile`:
+
+```ruby
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '11.0'
+    end
+  end
+end
+```
+
+### Android
+
+Minimum SDK version 21 is required. Add to `android/app/build.gradle`:
+
+```gradle
+android {
+    defaultConfig {
+        minSdkVersion 21
+    }
+}
+```
+
+### macOS
+
+Enable network access if using the binary installer. Add to `macos/Runner/DebugProfile.entitlements`:
+
+```xml
+<key>com.apple.security.network.client</key>
+<true/>
+```
+
+## Advanced Usage
 
 ### Transactions
 
 ```dart
 await db.transaction((tx) async {
-  await tx.put('users', 'user1', user1.toJson());
-  await tx.put('users', 'user2', user2.toJson());
-  // All operations succeed or fail together
+  final users = tx.freezedCollection<User>('users');
+  final posts = tx.freezedCollection<Post>('posts');
+  
+  await users.add(user);
+  await posts.add(post);
+  
+  // All operations are atomic
 });
 ```
 
-### Configuration
+### Complex Queries
 
 ```dart
-final db = await LightningDb.create(
-  'myapp.db',
-  DatabaseConfig(
-    pageSize: 4096,
-    cacheSize: 50 * 1024 * 1024, // 50MB
-    syncMode: SyncMode.normal,
-    compression: CompressionType.zstd,
-  ),
+final results = await users.query()
+  .where('age', isGreaterThan: 25)
+  .where('metadata.active', isEqualTo: true)
+  .where('tags', contains: 'premium')
+  .orderBy('createdAt', descending: true)
+  .limit(10)
+  .offset(20)
+  .findAll();
+```
+
+### Batch Operations
+
+```dart
+// Batch writes
+await users.addAll([user1, user2, user3]);
+
+// Batch updates
+await users.updateAll([
+  user1.copyWith(age: 31),
+  user2.copyWith(name: 'Jane'),
+]);
+
+// Batch deletes
+await users.deleteAll(['id1', 'id2', 'id3']);
+```
+
+### Custom Adapters
+
+```dart
+class CustomUserAdapter extends FreezedAdapter<User> {
+  @override
+  Map<String, dynamic> toJson(User model) {
+    // Custom serialization logic
+    return model.toJson();
+  }
+
+  @override
+  User fromJson(Map<String, dynamic> json) {
+    // Custom deserialization logic
+    return User.fromJson(json);
+  }
+
+  @override
+  String getId(User model) => model.id;
+}
+
+final users = db.freezedCollection<User>(
+  'users',
+  adapter: CustomUserAdapter(),
 );
 ```
 
-## Platform Support
+### Performance Configuration
 
-| Platform | Status |
-|----------|--------|
-| Android  | ✅     |
-| iOS      | ✅     |
-| macOS    | ✅     |
-| Windows  | ✅     |
-| Linux    | ✅     |
-| Web      | ❌     |
+```dart
+final config = DatabaseConfig(
+  pageSize: 8192, // Larger pages for desktop
+  cacheSize: 100 * 1024 * 1024, // 100MB cache
+  syncMode: SyncMode.normal,
+  journalMode: JournalMode.wal,
+  enableCompression: true,
+  compressionType: CompressionType.lz4,
+);
 
-## Example
+final db = await LightningDb.open('path/to/db', config: config);
+```
 
-See the [example](example) directory for a complete sample application.
+## API Reference
+
+### LightningDb
+
+#### Methods
+
+- `static Future<LightningDb> open(String path, [DatabaseConfig? config])` - Opens a database
+- `Future<void> close()` - Closes the database
+- `Future<void> put(String key, String value)` - Stores a string value
+- `Future<void> putBytes(String key, Uint8List value)` - Stores binary data
+- `Future<void> putJson(String key, Map<String, dynamic> value)` - Stores JSON data
+- `Future<String?> get(String key)` - Retrieves a string value
+- `Future<Uint8List?> getBytes(String key)` - Retrieves binary data
+- `Future<Map<String, dynamic>?> getJson(String key)` - Retrieves JSON data
+- `Future<void> delete(String key)` - Deletes a key
+- `Future<bool> contains(String key)` - Checks if key exists
+- `FreezedCollection<T> freezedCollection<T>(String name)` - Creates a typed collection
+- `Future<R> transaction<R>(TransactionCallback<R> callback)` - Runs a transaction
+- `Future<DatabaseStatistics> getStatistics()` - Gets database statistics
+- `Future<void> compact()` - Compacts the database
+- `Future<void> backup(String path)` - Creates a backup
+
+#### Properties
+
+- `bool isOpen` - Whether the database is open
+- `String path` - Database file path
+
+### FreezedCollection<T>
+
+#### Methods
+
+- `Future<void> add(T model, [String? id])` - Adds a document
+- `Future<void> addAll(List<T> models)` - Adds multiple documents
+- `Future<T?> get(String id)` - Gets a document by ID
+- `Future<List<T>> getAll()` - Gets all documents
+- `Future<void> update(T model)` - Updates a document
+- `Future<void> updateAll(List<T> models)` - Updates multiple documents
+- `Future<void> delete(String id)` - Deletes a document
+- `Future<void> deleteAll(List<String> ids)` - Deletes multiple documents
+- `CollectionQuery<T> query()` - Creates a query
+- `Stream<CollectionChange<T>> get changes` - Stream of changes
+
+### CollectionQuery<T>
+
+#### Methods
+
+- `CollectionQuery<T> where(String field, {dynamic isEqualTo, dynamic isGreaterThan, dynamic isLessThan, dynamic contains})` - Adds a condition
+- `CollectionQuery<T> orderBy(String field, {bool descending = false})` - Orders results
+- `CollectionQuery<T> limit(int count)` - Limits results
+- `CollectionQuery<T> offset(int count)` - Skips results
+- `Future<List<T>> findAll()` - Executes query
+- `Future<T?> findFirst()` - Gets first result
+- `Stream<List<T>> snapshots()` - Real-time query results
+
+## Error Handling
+
+```dart
+try {
+  await db.put('key', 'value');
+} on LightningDbException catch (e) {
+  switch (e.code) {
+    case ErrorCode.databaseClosed:
+      print('Database is closed');
+      break;
+    case ErrorCode.transactionConflict:
+      print('Transaction conflict, retry');
+      break;
+    case ErrorCode.diskFull:
+      print('Disk is full');
+      break;
+    default:
+      print('Database error: ${e.message}');
+  }
+}
+```
+
+## Best Practices
+
+1. **Use Freezed Collections**: Type-safe and automatic serialization
+2. **Batch Operations**: Use `addAll`, `updateAll` for better performance
+3. **Transactions**: Group related operations for consistency
+4. **Indexing**: Create indexes for frequently queried fields
+5. **Compression**: Enable for large datasets
+6. **Close Databases**: Always close when done to free resources
+
+## Migration from Other Databases
+
+### From SQLite
+
+```dart
+// SQLite
+final db = await openDatabase('app.db');
+await db.insert('users', {'name': 'John', 'age': 30});
+final users = await db.query('users', where: 'age > ?', whereArgs: [25]);
+
+// Lightning DB
+final db = await LightningDb.open('app.db');
+final users = db.freezedCollection<User>('users');
+await users.add(User(name: 'John', age: 30));
+final results = await users.query().where('age', isGreaterThan: 25).findAll();
+```
+
+### From Realm
+
+```dart
+// Realm
+final realm = Realm(Configuration.local([User.schema]));
+realm.write(() {
+  realm.add(User('John', 30));
+});
+final users = realm.all<User>().query('age > 25');
+
+// Lightning DB
+final db = await LightningDb.open('app.db');
+final users = db.freezedCollection<User>('users');
+await users.add(User(name: 'John', age: 30));
+final results = await users.query().where('age', isGreaterThan: 25).findAll();
+```
+
+## Performance Tips
+
+1. **Use appropriate page size**: 4KB for mobile, 8KB for desktop
+2. **Configure cache size**: Based on available memory
+3. **Enable compression**: For large text/JSON data
+4. **Use transactions**: For multiple related operations
+5. **Create indexes**: For frequently queried fields
+6. **Use binary format**: For large data blobs
+
+## Troubleshooting
+
+### Database locked error
+- Ensure only one instance is open
+- Check for proper cleanup in tests
+
+### Performance issues
+- Increase cache size
+- Enable WAL mode
+- Use batch operations
+
+### iOS build issues
+- Check minimum deployment target (iOS 11+)
+- Ensure XCFramework is properly linked
+
+### Android build issues
+- Check minimum SDK version (21+)
+- Verify NDK installation
 
 ## License
 
-Apache License 2.0
+MIT License - see LICENSE file for details.
