@@ -208,7 +208,7 @@ where
     pub fn get(&self, key: &K) -> Option<V> {
         // TODO: Implement actual thread-local caching
         // type LocalCacheType = std::cell::RefCell<Option<dashmap::DashMap<Vec<u8>, (Vec<u8>, Instant)>>>;
-        // 
+        //
         // thread_local! {
         //     static LOCAL_CACHE: LocalCacheType = const { std::cell::RefCell::new(None) };
         // }

@@ -9,11 +9,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create absolutely minimal config
     let config = LightningDbConfig {
-        cache_size: 0, // No cache
-        compression_enabled: false, // No LSM tree
-        prefetch_enabled: false, // No prefetch
+        cache_size: 0,                     // No cache
+        compression_enabled: false,        // No LSM tree
+        prefetch_enabled: false,           // No prefetch
         use_optimized_transactions: false, // No optimized tx manager
-        use_improved_wal: false, // Use standard WAL
+        use_improved_wal: false,           // Use standard WAL
         use_optimized_page_manager: false, // Use standard page manager
         mmap_config: None,
         ..Default::default()

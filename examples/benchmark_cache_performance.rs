@@ -53,7 +53,7 @@ fn main() {
     let test_pages: Arc<Vec<_>> = Arc::new(
         (0..10000)
             .map(|i| (i as u32, Page::new(i as u32)))
-            .collect()
+            .collect(),
     );
 
     for &threads in &num_threads {

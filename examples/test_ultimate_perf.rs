@@ -14,9 +14,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Test 1: Optimized for pure write speed");
         let config = LightningDbConfig {
             wal_sync_mode: WalSyncMode::Async,
-            write_batch_size: 5000, // Larger batches
+            write_batch_size: 5000,       // Larger batches
             cache_size: 50 * 1024 * 1024, // 50MB cache
-            prefetch_enabled: false, // No prefetch overhead
+            prefetch_enabled: false,      // No prefetch overhead
             ..Default::default()
         };
 
