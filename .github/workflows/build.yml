@@ -166,21 +166,41 @@ jobs:
     - name: Build library (native)
       if: "!matrix.cross"
       run: |
+        # Build main library
         if [ "${{ matrix.features }}" != "" ]; then
           cargo build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
         else
           cargo build --release --target ${{ matrix.target }}
         fi
+        
+        # Build FFI wrapper
+        cd lightning_db_ffi
+        if [ "${{ matrix.features }}" != "" ]; then
+          cargo build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
+        else
+          cargo build --release --target ${{ matrix.target }}
+        fi
+        cd ..
       shell: bash
     
     - name: Build library (cross)
       if: matrix.cross
       run: |
+        # Build main library
         if [ "${{ matrix.features }}" != "" ]; then
           cross build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
         else
           cross build --release --target ${{ matrix.target }}
         fi
+        
+        # Build FFI wrapper
+        cd lightning_db_ffi
+        if [ "${{ matrix.features }}" != "" ]; then
+          cross build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
+        else
+          cross build --release --target ${{ matrix.target }}
+        fi
+        cd ..
       shell: bash
     
     - name: Create iOS universal library
@@ -219,7 +239,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.asset_name }}
-        path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+        path: |
+          target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          lightning_db_ffi/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
         retention-days: 5
     
     - name: Upload iOS universal artifact
