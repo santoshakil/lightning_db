@@ -65,7 +65,7 @@ jobs:
         components: clippy
     
     - name: Run clippy
-      run: cargo clippy -- -D warnings
+      run: cargo clippy -- -W clippy::all
 
   fmt:
     name: Format

@@ -2,7 +2,6 @@
 /// 
 /// This module provides file operations that gracefully degrade to read-only mode
 /// when write permissions are not available, rather than failing completely.
-
 use crate::error::{Error, Result};
 use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read, Seek, Write};

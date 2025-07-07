@@ -1,0 +1,281 @@
+name: Build Binaries
+
+on:
+  push:
+    branches: [ master, main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master, main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-native:
+    name: Build Native Libraries
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux targets
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: liblightning_db.so
+            asset_name: liblightning_db-linux-x64.so
+          - os: ubuntu-latest  
+            target: aarch64-unknown-linux-gnu
+            artifact_name: liblightning_db.so
+            asset_name: liblightning_db-linux-arm64.so
+            cross: true
+          
+          # macOS targets
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: liblightning_db.dylib
+            asset_name: liblightning_db-macos-x64.dylib
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: liblightning_db.dylib
+            asset_name: liblightning_db-macos-arm64.dylib
+          
+          # iOS targets
+          - os: macos-latest
+            target: aarch64-apple-ios
+            artifact_name: liblightning_db.a
+            asset_name: liblightning_db-ios-arm64.a
+            features: ios
+          - os: macos-latest
+            target: aarch64-apple-ios-sim
+            artifact_name: liblightning_db.a
+            asset_name: liblightning_db-ios-sim-arm64.a
+            features: ios
+          - os: macos-latest
+            target: x86_64-apple-ios
+            artifact_name: liblightning_db.a
+            asset_name: liblightning_db-ios-sim-x64.a
+            features: ios
+          
+          # Windows targets
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: lightning_db.dll
+            asset_name: lightning_db-windows-x64.dll
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            artifact_name: lightning_db.dll
+            asset_name: lightning_db-windows-arm64.dll
+          
+          # Android targets
+          - os: ubuntu-latest
+            target: aarch64-linux-android
+            artifact_name: liblightning_db.so
+            asset_name: liblightning_db-android-arm64.so
+            cross: true
+          - os: ubuntu-latest
+            target: armv7-linux-androideabi
+            artifact_name: liblightning_db.so
+            asset_name: liblightning_db-android-armv7.so
+            cross: true
+          - os: ubuntu-latest
+            target: x86_64-linux-android
+            artifact_name: liblightning_db.so
+            asset_name: liblightning_db-android-x64.so
+            cross: true
+          - os: ubuntu-latest
+            target: i686-linux-android
+            artifact_name: liblightning_db.so
+            asset_name: liblightning_db-android-x86.so
+            cross: true
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+    
+    - name: Install cross-compilation tools
+      if: matrix.cross
+      run: |
+        cargo install cross --git https://github.com/cross-rs/cross
+    
+    - name: Setup Android NDK
+      if: contains(matrix.target, 'android')
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r25c
+        add-to-path: false
+    
+    - name: Configure Android environment
+      if: contains(matrix.target, 'android')
+      run: |
+        echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+        echo "CC_aarch64_linux_android=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang" >> $GITHUB_ENV
+        echo "CC_armv7_linux_androideabi=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang" >> $GITHUB_ENV
+        echo "CC_x86_64_linux_android=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang" >> $GITHUB_ENV
+        echo "CC_i686_linux_android=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/i686-linux-android21-clang" >> $GITHUB_ENV
+        echo "AR_aarch64_linux_android=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar" >> $GITHUB_ENV
+        echo "AR_armv7_linux_androideabi=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar" >> $GITHUB_ENV
+        echo "AR_x86_64_linux_android=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar" >> $GITHUB_ENV
+        echo "AR_i686_linux_android=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar" >> $GITHUB_ENV
+    
+    - name: Setup GCC for aarch64-linux
+      if: matrix.target == 'aarch64-unknown-linux-gnu'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu
+        echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+        echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> $GITHUB_ENV
+    
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-${{ matrix.target }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-${{ matrix.target }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-${{ matrix.target }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Build library (native)
+      if: "!matrix.cross"
+      run: |
+        if [ "${{ matrix.features }}" != "" ]; then
+          cargo build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
+        else
+          cargo build --release --target ${{ matrix.target }}
+        fi
+      shell: bash
+    
+    - name: Build library (cross)
+      if: matrix.cross
+      run: |
+        if [ "${{ matrix.features }}" != "" ]; then
+          cross build --release --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
+        else
+          cross build --release --target ${{ matrix.target }}
+        fi
+      shell: bash
+    
+    - name: Create iOS universal library
+      if: contains(matrix.target, 'ios') && matrix.target == 'aarch64-apple-ios'
+      run: |
+        # Build for all iOS targets first
+        cargo build --release --target aarch64-apple-ios --no-default-features --features ios
+        cargo build --release --target aarch64-apple-ios-sim --no-default-features --features ios  
+        cargo build --release --target x86_64-apple-ios --no-default-features --features ios
+        
+        # Create universal library
+        mkdir -p target/universal-ios
+        lipo -create \
+          target/aarch64-apple-ios/release/liblightning_db.a \
+          target/aarch64-apple-ios-sim/release/liblightning_db.a \
+          target/x86_64-apple-ios/release/liblightning_db.a \
+          -output target/universal-ios/liblightning_db.a
+    
+    - name: Create Android universal libraries
+      if: contains(matrix.target, 'android') && matrix.target == 'aarch64-linux-android'
+      run: |
+        # Build for all Android targets
+        cross build --release --target aarch64-linux-android
+        cross build --release --target armv7-linux-androideabi
+        cross build --release --target x86_64-linux-android
+        cross build --release --target i686-linux-android
+        
+        # Create JNI libs directory structure
+        mkdir -p target/android-libs/{arm64-v8a,armeabi-v7a,x86_64,x86}
+        cp target/aarch64-linux-android/release/liblightning_db.so target/android-libs/arm64-v8a/
+        cp target/armv7-linux-androideabi/release/liblightning_db.so target/android-libs/armeabi-v7a/
+        cp target/x86_64-linux-android/release/liblightning_db.so target/android-libs/x86_64/
+        cp target/i686-linux-android/release/liblightning_db.so target/android-libs/x86/
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.asset_name }}
+        path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+        retention-days: 5
+    
+    - name: Upload iOS universal artifact
+      if: contains(matrix.target, 'ios') && matrix.target == 'aarch64-apple-ios'
+      uses: actions/upload-artifact@v4
+      with:
+        name: liblightning_db-ios-universal.a
+        path: target/universal-ios/liblightning_db.a
+        retention-days: 5
+    
+    - name: Upload Android universal artifacts
+      if: contains(matrix.target, 'android') && matrix.target == 'aarch64-linux-android'
+      uses: actions/upload-artifact@v4
+      with:
+        name: lightning_db-android-all.tar.gz
+        path: target/android-libs/
+        retention-days: 5
+
+  create-release:
+    name: Create Release
+    needs: build-native
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+    
+    - name: Create release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: artifacts/**
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-dart-binaries:
+    name: Update Dart Binary Download URLs
+    needs: build-native
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+    
+    - name: Update install.dart with latest URLs
+      run: |
+        # Update the binary download URLs in install.dart to point to latest CI artifacts
+        # This will be implemented to update the URLs dynamically
+        echo "Binary artifacts built and ready for distribution"
+        ls -la artifacts/
+    
+    - name: Commit updated binary URLs
+      if: github.ref == 'refs/heads/master'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        if git diff --quiet; then
+          echo "No changes to commit"
+        else
+          git add .
+          git commit -m "Update binary download URLs [skip ci]" || exit 0
+          git push
+        fi

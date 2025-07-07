@@ -188,10 +188,8 @@ impl AsyncPageManager {
                     }
                 }
                 
-                if success {
-                    if file.sync_data().await.is_err() {
-                        success = false;
-                    }
+                if success && file.sync_data().await.is_err() {
+                    success = false;
                 }
                 
                 if success { Ok(()) } else { Err(Error::Io("Write failed".to_string())) }

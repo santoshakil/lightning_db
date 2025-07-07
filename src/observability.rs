@@ -506,37 +506,37 @@ impl Metrics {
         let mut output = String::new();
         
         // Operation metrics
-        output.push_str(&format!("# TYPE lightning_db_operations_total counter\n"));
+        output.push_str("# TYPE lightning_db_operations_total counter\n");
         output.push_str(&format!("lightning_db_operations_total{{type=\"read\"}} {}\n", snapshot.operations.reads));
         output.push_str(&format!("lightning_db_operations_total{{type=\"write\"}} {}\n", snapshot.operations.writes));
         output.push_str(&format!("lightning_db_operations_total{{type=\"delete\"}} {}\n", snapshot.operations.deletes));
         
         // Latency metrics
-        output.push_str(&format!("# TYPE lightning_db_latency_seconds summary\n"));
+        output.push_str("# TYPE lightning_db_latency_seconds summary\n");
         output.push_str(&format!("lightning_db_latency_seconds{{quantile=\"0.5\"}} {:.6}\n", snapshot.performance.latency_p50.as_secs_f64()));
         output.push_str(&format!("lightning_db_latency_seconds{{quantile=\"0.95\"}} {:.6}\n", snapshot.performance.latency_p95.as_secs_f64()));
         output.push_str(&format!("lightning_db_latency_seconds{{quantile=\"0.99\"}} {:.6}\n", snapshot.performance.latency_p99.as_secs_f64()));
         
         // Cache metrics
-        output.push_str(&format!("# TYPE lightning_db_cache_hit_rate gauge\n"));
+        output.push_str("# TYPE lightning_db_cache_hit_rate gauge\n");
         output.push_str(&format!("lightning_db_cache_hit_rate {:.4}\n", snapshot.cache.hit_rate_percent / 100.0));
         
         // Resource metrics
-        output.push_str(&format!("# TYPE lightning_db_memory_bytes gauge\n"));
+        output.push_str("# TYPE lightning_db_memory_bytes gauge\n");
         output.push_str(&format!("lightning_db_memory_bytes {}\n", snapshot.resources.memory_usage_bytes));
         
         // Error metrics
-        output.push_str(&format!("# TYPE lightning_db_errors_total counter\n"));
+        output.push_str("# TYPE lightning_db_errors_total counter\n");
         output.push_str(&format!("lightning_db_errors_total{{type=\"io\"}} {}\n", snapshot.errors.io_errors));
         output.push_str(&format!("lightning_db_errors_total{{type=\"corruption\"}} {}\n", snapshot.errors.corruption_errors));
         
         // Transaction metrics
-        output.push_str(&format!("# TYPE lightning_db_transactions_total counter\n"));
+        output.push_str("# TYPE lightning_db_transactions_total counter\n");
         output.push_str(&format!("lightning_db_transactions_total{{result=\"committed\"}} {}\n", snapshot.transactions.committed));
         output.push_str(&format!("lightning_db_transactions_total{{result=\"aborted\"}} {}\n", snapshot.transactions.aborted));
         
         // Health metric
-        output.push_str(&format!("# TYPE lightning_db_up gauge\n"));
+        output.push_str("# TYPE lightning_db_up gauge\n");
         let up = match snapshot.health.status {
             HealthStatus::Healthy => 1,
             _ => 0,

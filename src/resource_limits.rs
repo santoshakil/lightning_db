@@ -199,7 +199,7 @@ impl ResourceEnforcer {
             
             // Calculate throttle duration
             let excess = current_throughput + bytes - self.limits.max_write_throughput_bytes_per_sec;
-            let throttle_ms = (excess * 1000 / self.limits.max_write_throughput_bytes_per_sec) as u64;
+            let throttle_ms = excess * 1000 / self.limits.max_write_throughput_bytes_per_sec;
             
             return Err(Error::Throttled(Duration::from_millis(throttle_ms)));
         }
@@ -223,7 +223,7 @@ impl ResourceEnforcer {
             
             // Calculate throttle duration
             let excess = current_throughput + bytes - self.limits.max_read_throughput_bytes_per_sec;
-            let throttle_ms = (excess * 1000 / self.limits.max_read_throughput_bytes_per_sec) as u64;
+            let throttle_ms = excess * 1000 / self.limits.max_read_throughput_bytes_per_sec;
             
             return Err(Error::Throttled(Duration::from_millis(throttle_ms)));
         }
