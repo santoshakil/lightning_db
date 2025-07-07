@@ -144,7 +144,7 @@ mod tests {
                 format!("key_{}", i).into_bytes(),
                 Some(format!("value_{}", i).into_bytes()),
                 now + i,
-                i as u64,
+                i,
             );
         }
 

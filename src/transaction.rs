@@ -339,11 +339,7 @@ impl TransactionManager {
         self.active_transactions
             .iter()
             .filter_map(|entry| {
-                if let Some(tx) = entry.value().try_read() {
-                    Some(tx.read_timestamp)
-                } else {
-                    None
-                }
+                entry.value().try_read().map(|tx| tx.read_timestamp)
             })
             .min()
     }
@@ -498,13 +494,11 @@ impl VersionStore {
 
         // Atomically check conflict and reserve if safe
         // Check if there are any versions newer than our read timestamp
-        for entry in key_versions.iter().rev() {
+        if let Some(entry) = key_versions.iter().next_back() {
             if *entry.key() > read_timestamp {
                 // Conflict detected - someone committed after our read timestamp
                 return false;
             }
-            // Only need to check the latest few versions
-            break;
         }
 
         // Try to reserve our slot atomically using insert

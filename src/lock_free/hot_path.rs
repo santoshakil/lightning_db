@@ -135,8 +135,8 @@ pub struct WaitFreeReadBuffer<T: Clone> {
     epoch: AtomicU64,
 }
 
-impl<T: Clone> WaitFreeReadBuffer<T> {
-    pub fn new() -> Self {
+impl<T: Clone> Default for WaitFreeReadBuffer<T> {
+    fn default() -> Self {
         Self {
             buffers: [
                 AtomicPtr::new(Box::into_raw(Box::new(Vec::new()))),
@@ -145,6 +145,12 @@ impl<T: Clone> WaitFreeReadBuffer<T> {
             active_buffer: AtomicUsize::new(0),
             epoch: AtomicU64::new(0),
         }
+    }
+}
+
+impl<T: Clone> WaitFreeReadBuffer<T> {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Wait-free read of the buffer

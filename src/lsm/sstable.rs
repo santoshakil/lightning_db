@@ -553,7 +553,7 @@ impl SSTableReader {
 }
 
 impl CompressionType {
-    fn to_u8(&self) -> u8 {
+    fn to_u8(self) -> u8 {
         match self {
             CompressionType::None => 0,
             #[cfg(feature = "zstd-compression")]

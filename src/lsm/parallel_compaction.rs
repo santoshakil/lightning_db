@@ -4,7 +4,7 @@ use crate::lsm::{Level, SSTable, SSTableBuilder};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use rayon::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -185,7 +185,7 @@ impl ParallelCompactionCoordinator {
     fn parallel_compact(
         &self,
         input_tables: &[Arc<SSTable>],
-        output_path: &PathBuf,
+        output_path: &Path,
         output_level: usize,
         progress: &CompactionProgress,
     ) -> Result<CompactionStats> {
@@ -261,7 +261,7 @@ impl ParallelCompactionCoordinator {
     fn parallel_write(
         &self,
         entries: Vec<(Vec<u8>, Vec<u8>)>,
-        output_path: &PathBuf,
+        output_path: &Path,
         level: usize,
         progress: &CompactionProgress,
     ) -> Result<CompactionStats> {

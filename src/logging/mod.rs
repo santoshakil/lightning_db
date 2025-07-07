@@ -13,7 +13,7 @@ pub fn init_logging(level: Level, json_output: bool) {
         // JSON format for production environments
         let fmt_layer = fmt::layer()
             .json()
-            .with_timer(SystemTime::default())
+            .with_timer(SystemTime)
             .with_target(true)
             .with_file(true)
             .with_line_number(true)
@@ -24,7 +24,7 @@ pub fn init_logging(level: Level, json_output: bool) {
     } else {
         // Human-readable format for development
         let fmt_layer = fmt::layer()
-            .with_timer(SystemTime::default())
+            .with_timer(SystemTime)
             .with_target(true)
             .with_file(true)
             .with_line_number(true)

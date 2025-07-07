@@ -249,10 +249,8 @@ impl MetricsEndpoint {
         tracing::info!("Metrics endpoint listening on :{}", self.port);
 
         std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                if let Ok(mut stream) = stream {
-                    let _ = handle_metrics_request(&mut stream);
-                }
+            for mut stream in listener.incoming().flatten() {
+                let _ = handle_metrics_request(&mut stream);
             }
         });
 

@@ -144,7 +144,7 @@ impl LSMFullIteratorFixed {
         // 1. Get entries from active memtable
         let memtable = lsm.get_memtable();
         let memtable_guard = memtable.read();
-        self.memtable_entries = self.collect_memtable_entries(&*memtable_guard);
+        self.memtable_entries = self.collect_memtable_entries(&memtable_guard);
         drop(memtable_guard);
 
         // 2. Get entries from immutable memtables
@@ -265,7 +265,7 @@ impl LSMFullIteratorFixed {
         }
     }
 
-    pub fn next(&mut self) -> Option<(Vec<u8>, Option<Vec<u8>>, u64)> {
+    pub fn advance(&mut self) -> Option<(Vec<u8>, Option<Vec<u8>>, u64)> {
         while let Some(Reverse(entry)) = self.merge_heap.pop() {
             // Check if this is a tombstone
             if LSMTree::is_tombstone(&entry.value) {
