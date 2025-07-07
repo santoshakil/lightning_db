@@ -16,7 +16,7 @@ impl MemTable {
     }
     
     fn is_tombstone(value: &[u8]) -> bool {
-        value == &[0xFF, 0xFF, 0xFF, 0xFF]
+        value == [0xFF, 0xFF, 0xFF, 0xFF]
     }
     
     /// Get iterator over all entries
@@ -111,7 +111,7 @@ impl MemTableEntry {
     }
 
     pub fn is_tombstone(&self) -> bool {
-        self.value == &[0xFF, 0xFF, 0xFF, 0xFF]
+        self.value == [0xFF, 0xFF, 0xFF, 0xFF]
     }
 }
 
