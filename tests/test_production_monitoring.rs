@@ -71,7 +71,7 @@ fn test_monitoring_hooks() {
     println!("Recorded {} monitoring events", events.len());
 
     // Verify we got some events
-    assert!(events.len() > 0, "Should have recorded monitoring events");
+    assert!(!events.is_empty(), "Should have recorded monitoring events");
 
     // Check for slow operation events
     let slow_ops: Vec<_> = events
@@ -244,7 +244,7 @@ fn test_concurrent_monitoring() {
 
     // Should have recorded many events
     assert!(
-        events.len() > 0,
+        !events.is_empty(),
         "Should have recorded events during concurrent operations"
     );
 

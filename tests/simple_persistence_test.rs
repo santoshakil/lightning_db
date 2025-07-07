@@ -10,8 +10,10 @@ fn test_simple_persistence() {
 
     // Write data
     {
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
 
         let db = Database::open(db_path, config).unwrap();
         db.put(b"test_key", b"test_value").unwrap();
@@ -54,8 +56,10 @@ fn test_persistence_without_checkpoint() {
 
     // Write data without checkpoint
     {
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
 
         let db = Database::open(db_path, config).unwrap();
         db.put(b"test_key2", b"test_value2").unwrap();

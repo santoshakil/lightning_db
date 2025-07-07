@@ -9,12 +9,14 @@ fn test_consistency_levels() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().join("consistency_db");
 
-    let mut config = LightningDbConfig::default();
-    config.consistency_config = ConsistencyConfig {
-        default_level: ConsistencyLevel::Strong,
-        consistency_timeout: Duration::from_millis(100),
-        enable_read_repair: true,
-        max_clock_skew: Duration::from_millis(10),
+    let config = LightningDbConfig {
+        consistency_config: ConsistencyConfig {
+            default_level: ConsistencyLevel::Strong,
+            consistency_timeout: Duration::from_millis(100),
+            enable_read_repair: true,
+            max_clock_skew: Duration::from_millis(10),
+        },
+        ..Default::default()
     };
 
     let db = Database::create(&db_path, config).unwrap();

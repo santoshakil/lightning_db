@@ -6,10 +6,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⚡ Lightning DB Best Practices Guide\n");
 
     // Best Practice 1: Use optimized configuration
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Async; // Much faster than Sync
-    config.compression_enabled = false; // Disable for pure B+Tree performance
-    config.cache_size = 200 * 1024 * 1024; // 200MB cache for better performance
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async, // Much faster than Sync
+        compression_enabled: false, // Disable for pure B+Tree performance
+        cache_size: 200 * 1024 * 1024, // 200MB cache for better performance
+        ..Default::default()
+    };
 
     let db = Arc::new(Database::create("./test_db", config)?);
 

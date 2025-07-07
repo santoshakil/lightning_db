@@ -27,9 +27,11 @@ fn benchmark_wal_optimizations(
 
     // Test with old WAL (sleep-based)
     {
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = false;
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            use_improved_wal: false,
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
 
         let db = Arc::new(Database::create(dir.path().join("wal_old.db"), config)?);
         let batcher = Database::create_auto_batcher(db.clone());
@@ -50,9 +52,11 @@ fn benchmark_wal_optimizations(
 
     // Test with improved WAL (condition variable)
     {
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
 
         let db = Arc::new(Database::create(dir.path().join("wal_new.db"), config)?);
         let batcher = Database::create_auto_batcher(db.clone());
@@ -184,8 +188,10 @@ fn benchmark_memory_optimizations(
 
     // Test with standard page manager
     {
-        let mut config = LightningDbConfig::default();
-        config.use_optimized_page_manager = false;
+        let config = LightningDbConfig {
+            use_optimized_page_manager: false,
+            ..Default::default()
+        };
 
         let db = Arc::new(Database::create(dir.path().join("standard_pm.db"), config)?);
         let count = 1000;
@@ -210,8 +216,10 @@ fn benchmark_memory_optimizations(
 
     // Test with optimized page manager
     {
-        let mut config = LightningDbConfig::default();
-        config.use_optimized_page_manager = true;
+        let config = LightningDbConfig {
+            use_optimized_page_manager: true,
+            ..Default::default()
+        };
 
         let db = Arc::new(Database::create(
             dir.path().join("optimized_pm.db"),

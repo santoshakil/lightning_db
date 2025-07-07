@@ -11,8 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Creating database...");
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 10 * 1024 * 1024; // 10MB
+    let config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024, // 10MB
+        ..Default::default()
+    };
     let db = Arc::new(Database::create(temp_dir.path(), config)?);
 
     println!("Starting single thread test...");

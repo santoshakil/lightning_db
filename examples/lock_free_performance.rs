@@ -208,8 +208,8 @@ fn test_page_tracking_performance() {
             }
 
             // Free half
-            for i in 0..allocations_per_thread / 2 {
-                tracker.free(pages[i]);
+            for page_id in pages.iter().take(allocations_per_thread / 2) {
+                tracker.free(*page_id);
             }
         });
         handles.push(handle);
@@ -244,9 +244,9 @@ fn test_page_tracking_performance() {
             }
 
             // Free half
-            for i in 0..allocations_per_thread / 2 {
+            for page_id in pages.iter().take(allocations_per_thread / 2) {
                 let mut guard = tracker.write();
-                guard.0.remove(&pages[i]);
+                guard.0.remove(page_id);
             }
         });
         handles.push(handle);

@@ -44,8 +44,10 @@ fn test_btree_delete_with_reopen() {
 
     // Create and populate database
     {
-        let mut config = LightningDbConfig::default();
-        config.compression_enabled = false; // Use B+Tree only for this test
+        let config = LightningDbConfig {
+            compression_enabled: false, // Use B+Tree only for this test
+            ..Default::default()
+        };
         let db = Database::create(dir.path(), config).unwrap();
 
         for i in 0..50 {
@@ -66,8 +68,10 @@ fn test_btree_delete_with_reopen() {
 
     // Reopen and verify
     {
-        let mut config = LightningDbConfig::default();
-        config.compression_enabled = false; // Use B+Tree only for this test
+        let config = LightningDbConfig {
+            compression_enabled: false, // Use B+Tree only for this test
+            ..Default::default()
+        };
         let db = Database::open(dir.path(), config).unwrap();
 
         for i in 0..50 {

@@ -12,12 +12,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 1: Optimized configuration for maximum write speed
     {
         println!("Test 1: Optimized for pure write speed");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
-        // Keep most features enabled for stability
-        config.write_batch_size = 5000; // Larger batches
-        config.cache_size = 50 * 1024 * 1024; // 50MB cache
-        config.prefetch_enabled = false; // No prefetch overhead
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            write_batch_size: 5000, // Larger batches
+            cache_size: 50 * 1024 * 1024, // 50MB cache
+            prefetch_enabled: false, // No prefetch overhead
+            ..Default::default()
+        };
 
         let db_path = dir.path().join("optimized.db");
         let db = Arc::new(Database::create(&db_path, config)?);
@@ -48,8 +49,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 2: Use put_batch directly
     {
         println!("\nTest 2: Direct put_batch (no AutoBatcher)");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
 
         let db_path = dir.path().join("batch.db");
         let db = Database::create(&db_path, config)?;
@@ -74,8 +77,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 3: FastAutoBatcher
     {
         println!("\nTest 3: FastAutoBatcher (direct writes)");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
 
         let db_path = dir.path().join("fast.db");
         let db = Arc::new(Database::create(&db_path, config)?);
@@ -98,9 +103,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 4: Memory-only (no WAL)
     {
         println!("\nTest 4: Memory-only mode (no durability)");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
-        config.use_improved_wal = false;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            use_improved_wal: false,
+            ..Default::default()
+        };
 
         // TODO: Add a way to disable WAL completely for memory-only mode
         let db_path = dir.path().join("memory.db");

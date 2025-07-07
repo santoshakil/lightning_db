@@ -124,7 +124,7 @@ impl StabilityTester {
         let fd_count = self.get_fd_count();
 
         // Get database size
-        let disk_usage = self.get_directory_size(db_path);
+        let disk_usage = Self::get_directory_size(db_path);
 
         // Get operation latency (will be updated by workload threads)
         let latency = Duration::from_micros(100); // Placeholder
@@ -155,7 +155,7 @@ impl StabilityTester {
         {
             // Use lsof on macOS
             let output = process::Command::new("lsof")
-                .args(&["-p", &process::id().to_string()])
+                .args(["-p", &process::id().to_string()])
                 .output()
                 .unwrap_or_else(|_| {
                     // Return an output with empty stdout on failure
@@ -179,7 +179,7 @@ impl StabilityTester {
     }
 
     /// Get total size of directory
-    fn get_directory_size(&self, path: &std::path::Path) -> u64 {
+    fn get_directory_size(path: &std::path::Path) -> u64 {
         let mut total_size = 0;
 
         if let Ok(entries) = fs::read_dir(path) {
@@ -188,7 +188,7 @@ impl StabilityTester {
                     if metadata.is_file() {
                         total_size += metadata.len();
                     } else if metadata.is_dir() {
-                        total_size += self.get_directory_size(&entry.path());
+                        total_size += Self::get_directory_size(&entry.path());
                     }
                 }
             }

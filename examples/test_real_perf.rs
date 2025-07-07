@@ -13,8 +13,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("Test 1: AutoBatcher (248K ops/sec achieved previously)");
         let db_path = dir.path().join("auto_batcher.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
         let batcher = Database::create_auto_batcher(db.clone());
 
@@ -48,8 +50,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("\nTest 2: Batch put operation");
         let db_path = dir.path().join("batch.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         let db = Database::create(&db_path, config)?;
 
         let count = 20_000;
@@ -74,9 +78,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("\nTest 3: Read performance");
         let db_path = dir.path().join("read.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
-        config.compression_enabled = false; // Direct B+Tree for read test
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            compression_enabled: false, // Direct B+Tree for read test
+            ..Default::default()
+        };
         let db = Database::create(&db_path, config)?;
 
         // Insert test key

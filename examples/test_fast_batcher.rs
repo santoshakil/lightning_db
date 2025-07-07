@@ -13,8 +13,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("Test 1: FastAutoBatcher (direct writes, no transactions)");
         let db_path = dir.path().join("fast_batcher.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..LightningDbConfig::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
         let batcher = Database::create_fast_auto_batcher(db.clone());
 
@@ -54,8 +56,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("\nTest 2: Regular AutoBatcher (transactional)");
         let db_path = dir.path().join("regular_batcher.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..LightningDbConfig::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
         let batcher = Database::create_auto_batcher(db.clone());
 
@@ -82,8 +86,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\nTest 3: FastAutoBatcher with different batch sizes");
         for &batch_size in &[100, 500, 1000, 5000, 10000] {
             let db_path = dir.path().join(format!("batch_{}.db", batch_size));
-            let mut config = LightningDbConfig::default();
-            config.wal_sync_mode = WalSyncMode::Async;
+            let config = LightningDbConfig {
+                wal_sync_mode: WalSyncMode::Async,
+                ..LightningDbConfig::default()
+            };
             let db = Arc::new(Database::create(&db_path, config)?);
             let batcher = Arc::new(lightning_db::FastAutoBatcher::new(
                 db.clone(),

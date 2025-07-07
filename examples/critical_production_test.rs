@@ -172,9 +172,11 @@ fn test_memory_leaks() -> Result<bool, Box<dyn std::error::Error>> {
 
 fn test_data_corruption() -> Result<bool, Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.use_improved_wal = true;
-    config.compression_enabled = true;
+    let config = LightningDbConfig {
+        use_improved_wal: true,
+        compression_enabled: true,
+        ..Default::default()
+    };
 
     let db = Database::create(temp_dir.path(), config)?;
 
@@ -236,9 +238,11 @@ fn test_data_corruption() -> Result<bool, Box<dyn std::error::Error>> {
 
 fn test_crash_recovery() -> Result<bool, Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.use_improved_wal = true;
-    config.wal_sync_mode = WalSyncMode::Sync; // Ensure durability
+    let config = LightningDbConfig {
+        use_improved_wal: true,
+        wal_sync_mode: WalSyncMode::Sync, // Ensure durability
+        ..Default::default()
+    };
 
     // Phase 1: Write committed data
     {
@@ -381,8 +385,10 @@ fn test_concurrent_safety() -> Result<bool, Box<dyn std::error::Error>> {
 
 fn test_performance_load() -> Result<bool, Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 10 * 1024 * 1024; // 10MB cache
+    let config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024, // 10MB cache
+        ..Default::default()
+    };
 
     let db = Database::create(temp_dir.path(), config)?;
 
@@ -498,8 +504,10 @@ fn test_transaction_consistency() -> Result<bool, Box<dyn std::error::Error>> {
 
 fn test_large_dataset() -> Result<bool, Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 5 * 1024 * 1024; // Small cache relative to data
+    let config = LightningDbConfig {
+        cache_size: 5 * 1024 * 1024, // Small cache relative to data
+        ..Default::default()
+    };
 
     let db = Database::create(temp_dir.path(), config)?;
 

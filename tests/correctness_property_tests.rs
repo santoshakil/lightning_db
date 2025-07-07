@@ -284,8 +284,10 @@ proptest! {
         )
     ) {
         let dir = tempdir().unwrap();
-        let mut config = LightningDbConfig::default();
-        config.cache_size = 1024 * 1024; // 1MB cache
+        let config = LightningDbConfig {
+            cache_size: 1024 * 1024, // 1MB cache
+            ..Default::default()
+        };
 
         let db = Database::open(dir.path(), config).unwrap();
 

@@ -12,40 +12,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test different configurations
     let configs = vec![
         ("Default", LightningDbConfig::default()),
-        ("No LSM", {
-            let mut c = LightningDbConfig::default();
-            c.compression_enabled = false;
-            c
+        ("No LSM", LightningDbConfig {
+            compression_enabled: false,
+            ..Default::default()
         }),
-        ("No Improved WAL", {
-            let mut c = LightningDbConfig::default();
-            c.use_improved_wal = false;
-            c
+        ("No Improved WAL", LightningDbConfig {
+            use_improved_wal: false,
+            ..Default::default()
         }),
-        ("No Optimized Transactions", {
-            let mut c = LightningDbConfig::default();
-            c.use_optimized_transactions = false;
-            c
+        ("No Optimized Transactions", LightningDbConfig {
+            use_optimized_transactions: false,
+            ..Default::default()
         }),
-        ("Minimal", {
-            let mut c = LightningDbConfig::default();
-            c.compression_enabled = false;
-            c.use_improved_wal = false;
-            c.use_optimized_transactions = false;
-            c.cache_size = 0;
-            c.prefetch_enabled = false;
-            c
+        ("Minimal", LightningDbConfig {
+            compression_enabled: false,
+            use_improved_wal: false,
+            use_optimized_transactions: false,
+            cache_size: 0,
+            prefetch_enabled: false,
+            ..Default::default()
         }),
-        ("Large WAL batch", {
-            let mut c = LightningDbConfig::default();
-            c.write_batch_size = 5000;
-            c
+        ("Large WAL batch", LightningDbConfig {
+            write_batch_size: 5000,
+            ..Default::default()
         }),
     ];
 
-    for (name, mut config) in configs {
+    for (name, config) in configs {
         println!("Testing configuration: {}", name);
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..config
+        };
 
         let db_path = dir
             .path()

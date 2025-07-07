@@ -46,7 +46,7 @@ proptest! {
 
         // Verify deleted keys don't exist
         let all_keys: HashSet<_> = operations.iter()
-            .filter_map(|(_, k, _)| Some(k.clone()))
+            .map(|(_, k, _)| k.clone())
             .collect();
 
         for key in all_keys {

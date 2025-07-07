@@ -211,7 +211,7 @@ fn get_fd_count() -> usize {
     {
         // Simplified for quick test
         let output = process::Command::new("lsof")
-            .args(&["-p", &process::id().to_string()])
+            .args(["-p", &process::id().to_string()])
             .output()
             .unwrap_or_else(|_| process::Output {
                 status: Default::default(),

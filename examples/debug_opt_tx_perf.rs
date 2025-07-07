@@ -11,12 +11,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Test 1: Baseline configuration");
         let temp_dir = tempfile::tempdir()?;
 
-        let mut config = LightningDbConfig::default();
-        config.use_optimized_transactions = false;
-        config.use_improved_wal = false;
-        config.compression_enabled = false;
-        config.cache_size = 0;
-        config.prefetch_enabled = false;
+        let config = LightningDbConfig {
+            use_optimized_transactions: false,
+            use_improved_wal: false,
+            compression_enabled: false,
+            cache_size: 0,
+            prefetch_enabled: false,
+            ..Default::default()
+        };
 
         let db = Database::create(temp_dir.path(), config)?;
 
@@ -34,12 +36,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\nTest 2: + Improved WAL");
         let temp_dir = tempfile::tempdir()?;
 
-        let mut config = LightningDbConfig::default();
-        config.use_optimized_transactions = false;
-        config.use_improved_wal = true;
-        config.compression_enabled = false;
-        config.cache_size = 0;
-        config.prefetch_enabled = false;
+        let config = LightningDbConfig {
+            use_optimized_transactions: false,
+            use_improved_wal: true,
+            compression_enabled: false,
+            cache_size: 0,
+            prefetch_enabled: false,
+            ..Default::default()
+        };
 
         let db = Database::create(temp_dir.path(), config)?;
 
@@ -57,12 +61,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\nTest 3: + Optimized Transactions");
         let temp_dir = tempfile::tempdir()?;
 
-        let mut config = LightningDbConfig::default();
-        config.use_optimized_transactions = true;
-        config.use_improved_wal = true;
-        config.compression_enabled = false;
-        config.cache_size = 0;
-        config.prefetch_enabled = false;
+        let config = LightningDbConfig {
+            use_optimized_transactions: true,
+            use_improved_wal: true,
+            compression_enabled: false,
+            cache_size: 0,
+            prefetch_enabled: false,
+            ..Default::default()
+        };
 
         let db = Database::create(temp_dir.path(), config)?;
 

@@ -1,9 +1,8 @@
 use lightning_db::cache::{ArcCache, LockFreeCache, SegmentedLockFreeCache};
 use lightning_db::storage::Page;
-use parking_lot::RwLock;
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 fn benchmark_cache<F>(name: &str, cache_fn: F, num_threads: usize, operations: usize)
 where
@@ -51,9 +50,11 @@ fn main() {
     let operations = 1_000_000;
 
     // Pre-populate test pages
-    let test_pages: Vec<_> = (0..10000)
-        .map(|i| (i as u32, Page::new(i as u32)))
-        .collect();
+    let test_pages: Arc<Vec<_>> = Arc::new(
+        (0..10000)
+            .map(|i| (i as u32, Page::new(i as u32)))
+            .collect()
+    );
 
     for &threads in &num_threads {
         println!("Testing with {} threads:", threads);
@@ -68,6 +69,7 @@ fn main() {
             }
 
             let cache = arc_cache.clone();
+            let pages = test_pages.clone();
             benchmark_cache(
                 "  ArcCache",
                 move |key| {
@@ -76,7 +78,7 @@ fn main() {
                         cache.get(key).map(|_| ())
                     } else {
                         // 20% writes
-                        let _ = cache.insert(key, test_pages[key as usize].1.clone());
+                        let _ = cache.insert(key, pages[key as usize].1.clone());
                         Some(())
                     }
                 },
@@ -95,6 +97,7 @@ fn main() {
             }
 
             let cache = lock_free_cache.clone();
+            let pages = test_pages.clone();
             benchmark_cache(
                 "  LockFreeCache",
                 move |key| {
@@ -103,7 +106,7 @@ fn main() {
                         cache.get(key).map(|_| ())
                     } else {
                         // 20% writes
-                        let _ = cache.insert(key, test_pages[key as usize].1.clone());
+                        let _ = cache.insert(key, pages[key as usize].1.clone());
                         Some(())
                     }
                 },
@@ -122,6 +125,7 @@ fn main() {
             }
 
             let cache = segmented_cache.clone();
+            let pages = test_pages.clone();
             benchmark_cache(
                 "  SegmentedCache",
                 move |key| {
@@ -130,7 +134,7 @@ fn main() {
                         cache.get(key).map(|_| ())
                     } else {
                         // 20% writes
-                        let _ = cache.insert(key, test_pages[key as usize].1.clone());
+                        let _ = cache.insert(key, pages[key as usize].1.clone());
                         Some(())
                     }
                 },

@@ -62,7 +62,7 @@ fn test_ecommerce_workload() -> Result<(), Box<dyn std::error::Error>> {
     let num_categories = 100;
 
     // Insert products
-    for i in 0..num_products {
+    for i in 0u32..num_products {
         let product_key = format!("product:{}", i);
         let category = i % num_categories;
         let product_data = format!(
@@ -122,9 +122,11 @@ fn test_ecommerce_workload() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!("   Read throughput: {:.0} ops/sec", read_throughput);
 
-    // Check memory usage
+    // Check database stats
     let stats = db.stats();
-    println!("   Cache hit rate: {:.1}%", stats.cache_hit_rate * 100.0);
+    println!("   Page count: {}", stats.page_count);
+    println!("   Free pages: {}", stats.free_page_count);
+    println!("   Tree height: {}", stats.tree_height);
 
     Ok(())
 }
@@ -133,7 +135,7 @@ fn test_timeseries_workload() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
     let mut config = LightningDbConfig::default();
     config.compression_enabled = true; // Enable compression for time series
-    config.enable_hot_key_optimization = true;
+    config.prefetch_enabled = true; // Enable prefetching for better read performance
 
     let db = Database::create(temp_dir.path(), config)?;
 
@@ -210,7 +212,7 @@ fn test_timeseries_workload() -> Result<(), Box<dyn std::error::Error>> {
 fn test_session_store() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
     let mut config = LightningDbConfig::default();
-    config.sync_mode = WalSyncMode::Async; // Sessions can tolerate some data loss
+    config.wal_sync_mode = WalSyncMode::Async; // Sessions can tolerate some data loss
 
     let db = Arc::new(Database::create(temp_dir.path(), config)?);
 
@@ -232,7 +234,7 @@ fn test_session_store() -> Result<(), Box<dyn std::error::Error>> {
             let mut rng = StdRng::seed_from_u64(thread_id as u64);
             barrier_clone.wait();
 
-            for i in 0..sessions_per_thread {
+            for i in 0u32..sessions_per_thread {
                 let session_id = format!("session:{}:{}", thread_id, i);
                 let user_id = rng.gen_range(1..10000);
 
@@ -279,7 +281,7 @@ fn test_session_store() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let duration = start.elapsed();
-    let total_ops = num_threads * sessions_per_thread;
+    let total_ops = num_threads * sessions_per_thread as usize;
     let throughput = total_ops as f64 / duration.as_secs_f64();
     let error_count = *errors.lock().unwrap();
 
@@ -345,7 +347,7 @@ fn test_analytics_counters() -> Result<(), Box<dyn std::error::Error>> {
 fn test_hot_keys() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
     let mut config = LightningDbConfig::default();
-    config.enable_hot_key_optimization = true;
+    config.cache_size = 100 * 1024 * 1024; // 100MB cache for hot keys
 
     let db = Database::create(temp_dir.path(), config)?;
 
@@ -386,7 +388,7 @@ fn test_hot_keys() -> Result<(), Box<dyn std::error::Error>> {
         "   Operations: {}, Throughput: {:.0} ops/sec",
         operations, throughput
     );
-    println!("   Cache hit rate: {:.1}%", stats.cache_hit_rate * 100.0);
+    println!("   Active transactions: {}", stats.active_transactions);
     println!(
         "   Avg latency: {:.2}μs",
         duration.as_micros() as f64 / operations as f64
@@ -485,7 +487,7 @@ fn test_memory_pressure() -> Result<(), Box<dyn std::error::Error>> {
         "   Read throughput: {:.0} ops/sec",
         num_reads as f64 / read_time.as_secs_f64()
     );
-    println!("   Cache hit rate: {:.1}%", stats.cache_hit_rate * 100.0);
+    println!("   Active transactions: {}", stats.active_transactions);
 
     Ok(())
 }
