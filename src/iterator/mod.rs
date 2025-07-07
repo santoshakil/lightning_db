@@ -47,7 +47,7 @@ struct IteratorEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum IteratorSource {
     BTree,
-    LSM,
+    Lsm,
     VersionStore,
 }
 
@@ -259,7 +259,7 @@ impl Iterator for RangeIterator {
                             }
                         }
                     }
-                    IteratorSource::LSM => {
+                    IteratorSource::Lsm => {
                         if let Some(ref mut lsm_iter) = self.lsm_iterator {
                             if let Ok(Some(new_entry)) = lsm_iter.next() {
                                 self.merge_heap.push(new_entry);
@@ -285,7 +285,7 @@ impl Iterator for RangeIterator {
                         }
                     }
                 }
-                IteratorSource::LSM => {
+                IteratorSource::Lsm => {
                     if let Some(ref mut lsm_iter) = self.lsm_iterator {
                         if let Ok(Some(new_entry)) = lsm_iter.next() {
                             self.merge_heap.push(new_entry);
@@ -396,12 +396,12 @@ impl LSMIterator {
     }
 
     fn next(&mut self) -> Result<Option<IteratorEntry>> {
-        if let Some((key, value_opt, _ts)) = self.lsm_iter.next() {
+        if let Some((key, value_opt, _ts)) = self.lsm_iter.advance() {
             if let Some(value) = value_opt {
                 Ok(Some(IteratorEntry {
                     key,
                     value: Some(value),
-                    source: IteratorSource::LSM,
+                    source: IteratorSource::Lsm,
                     timestamp: self.read_timestamp,
                 }))
             } else {
@@ -601,7 +601,7 @@ mod tests {
         let entry2 = IteratorEntry {
             key: b"key1".to_vec(),
             value: Some(b"value2".to_vec()),
-            source: IteratorSource::LSM,
+            source: IteratorSource::Lsm,
             timestamp: 200,
         };
 

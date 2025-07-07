@@ -127,6 +127,7 @@ pub use error::{Error, Result};
 pub use fast_auto_batcher::FastAutoBatcher;
 use index::IndexManager;
 pub use index::{IndexConfig, IndexKey, IndexQuery, IndexType};
+pub use index::{IndexableRecord, JoinQuery, JoinResult, JoinType, MultiIndexQuery, SimpleRecord};
 pub use iterator::{IteratorBuilder, RangeIterator, ScanDirection, TransactionIterator};
 pub use key::{Key, KeyBatch, SmallKey, SmallKeyExt};
 use lsm::{DeltaCompressionStats, LSMConfig, LSMTree};
@@ -145,10 +146,26 @@ use transaction::{
 };
 use wal::{BasicWriteAheadLog, WriteAheadLog};
 use wal_improved::{ImprovedWriteAheadLog, TransactionRecoveryState};
-use write_batch::{BatchOperation, WriteBatch};
+use write_batch::BatchOperation;
+pub use write_batch::WriteBatch;
 
 // Include protobuf generated code
 include!(concat!(env!("OUT_DIR"), "/lightning_db.rs"));
+
+/// Parameters for range-based join operations
+#[derive(Debug, Clone)]
+pub struct RangeJoinParams {
+    /// Left index name
+    pub left_index: String,
+    /// Range for left index
+    pub left_range: (IndexKey, IndexKey),
+    /// Right index name  
+    pub right_index: String,
+    /// Range for right index
+    pub right_range: (IndexKey, IndexKey),
+    /// Join type
+    pub join_type: JoinType,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WalSyncMode {
@@ -2110,19 +2127,14 @@ impl Database {
     }
 
     /// Convenience method for range-based join between two indexes
-    pub fn range_join(
-        &self,
-        left_index: &str,
-        left_start: IndexKey,
-        left_end: IndexKey,
-        right_index: &str,
-        right_start: IndexKey,
-        right_end: IndexKey,
-        join_type: JoinType,
-    ) -> Result<Vec<JoinResult>> {
-        let join = JoinQuery::new(left_index.to_string(), right_index.to_string(), join_type)
-            .left_range(left_start, left_end)
-            .right_range(right_start, right_end);
+    pub fn range_join(&self, params: RangeJoinParams) -> Result<Vec<JoinResult>> {
+        let join = JoinQuery::new(
+            params.left_index, 
+            params.right_index, 
+            params.join_type
+        )
+        .left_range(params.left_range.0, params.left_range.1)
+        .right_range(params.right_range.0, params.right_range.1);
 
         self.join_indexes(join)
     }
@@ -2317,7 +2329,6 @@ pub use backup::{BackupConfig, BackupManager, BackupMetadata};
 pub use btree::KeyEntry;
 pub use consistency::{ConsistencyConfig, ConsistencyLevel};
 pub use error::ErrorContext;
-pub use index::{IndexableRecord, JoinQuery, JoinResult, JoinType, MultiIndexQuery, SimpleRecord};
 pub use query_planner::{ExecutionPlan, QueryCondition, QueryCost, QueryJoin, QuerySpec};
 pub use storage::Page;
 pub use transaction::Transaction;

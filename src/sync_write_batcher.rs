@@ -106,12 +106,14 @@ impl SyncWriteBatcher {
     }
 }
 
+type PendingWriteEntry = (Vec<u8>, Vec<u8>, Sender<Result<()>>);
+
 struct BatchWorker {
     db: Arc<Database>,
     receiver: Receiver<BatchCommand>,
     batch_size: usize,
     max_delay: Duration,
-    pending: Vec<(Vec<u8>, Vec<u8>, Sender<Result<()>>)>,
+    pending: Vec<PendingWriteEntry>,
     last_flush: Instant,
     shutdown: Arc<AtomicBool>,
     stats: Arc<BatcherStats>,

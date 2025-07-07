@@ -122,7 +122,7 @@ impl BackupManager {
         // LSM tree directory
         let lsm_dir = source_path.join("lsm");
         if lsm_dir.exists() {
-            self.collect_directory_files(&lsm_dir, "lsm", &mut files_to_backup)?;
+            Self::collect_directory_files(&lsm_dir, "lsm", &mut files_to_backup)?;
         }
 
         // WAL directory or file
@@ -131,7 +131,7 @@ impl BackupManager {
             if wal_path.exists() {
                 if wal_path.is_dir() {
                     // WAL is a directory, collect all files in it
-                    self.collect_directory_files(&wal_path, "wal", &mut files_to_backup)?;
+                    Self::collect_directory_files(&wal_path, "wal", &mut files_to_backup)?;
                 } else {
                     // WAL is a file
                     files_to_backup.push(("wal".to_string(), wal_path));
@@ -491,7 +491,7 @@ impl BackupManager {
         }
 
         // Restore base backup
-        self.restore_directory(backup_dir, restore_dir, &metadata)?;
+        Self::restore_directory(backup_dir, restore_dir, &metadata)?;
 
         // Open database and replay WAL to target timestamp
         let config = LightningDbConfig::default();
@@ -559,7 +559,7 @@ impl BackupManager {
         fs::create_dir_all(restore_dir)?;
 
         // Restore all files
-        self.restore_directory(backup_dir, restore_dir, &metadata)?;
+        Self::restore_directory(backup_dir, restore_dir, &metadata)?;
 
         Ok(())
     }
@@ -614,7 +614,7 @@ impl BackupManager {
         // LSM tree directory
         let lsm_dir = source_path.join("lsm");
         if lsm_dir.exists() {
-            self.collect_directory_files(&lsm_dir, "lsm", files)?;
+            Self::collect_directory_files(&lsm_dir, "lsm", files)?;
         }
 
         // WAL directory or file
@@ -622,7 +622,7 @@ impl BackupManager {
             let wal_path = source_path.join("wal");
             if wal_path.exists() {
                 if wal_path.is_dir() {
-                    self.collect_directory_files(&wal_path, "wal", files)?;
+                    Self::collect_directory_files(&wal_path, "wal", files)?;
                 } else {
                     files.push(("wal".to_string(), wal_path));
                 }
@@ -638,7 +638,6 @@ impl BackupManager {
     }
 
     fn collect_directory_files(
-        &self,
         dir: &Path,
         prefix: &str,
         files: &mut Vec<(String, PathBuf)>,
@@ -651,7 +650,7 @@ impl BackupManager {
             if path.is_file() {
                 files.push((relative, path));
             } else if path.is_dir() {
-                self.collect_directory_files(&path, &relative, files)?;
+                Self::collect_directory_files(&path, &relative, files)?;
             }
         }
         Ok(())
@@ -836,7 +835,7 @@ impl BackupManager {
         // Check LSM directory
         let lsm_dir = dir.join("lsm");
         if lsm_dir.exists() {
-            self.find_modified_in_directory(&lsm_dir, since, dir, files)?;
+            Self::find_modified_in_directory(&lsm_dir, since, dir, files)?;
         }
 
         // Check WAL
@@ -844,7 +843,7 @@ impl BackupManager {
             let wal_path = dir.join("wal");
             if wal_path.exists() {
                 if wal_path.is_dir() {
-                    self.find_modified_in_directory(&wal_path, since, dir, files)?;
+                    Self::find_modified_in_directory(&wal_path, since, dir, files)?;
                 } else {
                     check_file(&wal_path, since, dir, files)?;
                 }
@@ -860,7 +859,6 @@ impl BackupManager {
     }
 
     fn find_modified_in_directory(
-        &self,
         dir: &Path,
         since: SystemTime,
         base_dir: &Path,
@@ -883,14 +881,13 @@ impl BackupManager {
                     }
                 }
             } else if path.is_dir() {
-                self.find_modified_in_directory(&path, since, base_dir, files)?;
+                Self::find_modified_in_directory(&path, since, base_dir, files)?;
             }
         }
         Ok(())
     }
 
     fn restore_directory(
-        &self,
         backup_dir: &Path,
         restore_dir: &Path,
         metadata: &BackupMetadata,
@@ -935,7 +932,7 @@ impl BackupManager {
             } else if path.is_dir() {
                 // Recursively restore directory
                 fs::create_dir_all(&dest_path)?;
-                self.restore_directory(&path, &dest_path, metadata)?;
+                Self::restore_directory(&path, &dest_path, metadata)?;
             }
         }
 
@@ -950,7 +947,7 @@ impl BackupManager {
 
         // Verify file count
         let mut file_count = 0;
-        self.count_files(backup_dir, &mut file_count)?;
+        Self::count_files(backup_dir, &mut file_count)?;
 
         // Subtract metadata file
         file_count -= 1;
@@ -971,7 +968,7 @@ impl BackupManager {
         Ok(())
     }
 
-    fn count_files(&self, dir: &Path, count: &mut usize) -> Result<()> {
+    fn count_files(dir: &Path, count: &mut usize) -> Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -979,7 +976,7 @@ impl BackupManager {
             if path.is_file() {
                 *count += 1;
             } else if path.is_dir() {
-                self.count_files(&path, count)?;
+                Self::count_files(&path, count)?;
             }
         }
         Ok(())

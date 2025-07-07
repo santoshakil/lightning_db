@@ -432,8 +432,8 @@ mod tests {
     fn test_adaptive_compression_random_data() {
         // High entropy data (pseudo-random)
         let mut random_data = vec![0u8; 1024];
-        for i in 0..random_data.len() {
-            random_data[i] = ((i * 7 + 13) % 256) as u8;
+        for (i, byte) in random_data.iter_mut().enumerate() {
+            *byte = ((i * 7 + 13) % 256) as u8;
         }
         let best = CompressionBenchmark::find_best_compressor(&random_data);
         // Random data might not compress well, could be None or any compressor
@@ -461,8 +461,8 @@ mod tests {
 
         // High entropy (all different bytes)
         let mut high_entropy = vec![0u8; 256];
-        for i in 0..256 {
-            high_entropy[i] = i as u8;
+        for (index, byte) in high_entropy.iter_mut().enumerate().take(256) {
+            *byte = index as u8;
         }
         let entropy = CompressionBenchmark::estimate_entropy(&high_entropy);
         assert!(entropy > 7.9 && entropy <= 8.0);

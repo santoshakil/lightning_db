@@ -16,7 +16,6 @@ use std::time::Instant;
 /// - Health checks
 /// - Cache management
 /// - Compaction control
-
 fn main() {
     let matches = create_cli().get_matches();
 
@@ -319,9 +318,11 @@ fn cmd_create(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
         * 1024;
     let compression = matches.get_flag("compression");
 
-    let mut config = LightningDbConfig::default();
-    config.cache_size = cache_size;
-    config.compression_enabled = compression;
+    let config = LightningDbConfig {
+        cache_size,
+        compression_enabled: compression,
+        ..Default::default()
+    };
 
     println!("Creating database at: {}", path);
     let _db = Database::create(path, config)?;

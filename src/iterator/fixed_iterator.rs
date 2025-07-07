@@ -191,7 +191,7 @@ impl FixedRangeIterator {
                         key,
                         value,
                         timestamp,
-                        source: IteratorSource::LSM,
+                        source: IteratorSource::Lsm,
                         direction: self.direction.clone(),
                     });
                 }
@@ -234,7 +234,7 @@ impl FixedRangeIterator {
                     }
                 }
             }
-            IteratorSource::LSM => {
+            IteratorSource::Lsm => {
                 if let Some(ref mut iter) = self.lsm_iterator {
                     if let Some((key, value, timestamp)) = iter.next()? {
                         if self.is_key_in_range(&key) {
@@ -242,7 +242,7 @@ impl FixedRangeIterator {
                                 key,
                                 value,
                                 timestamp,
-                                source: IteratorSource::LSM,
+                                source: IteratorSource::Lsm,
                                 direction: self.direction.clone(),
                             });
                         }
@@ -418,7 +418,7 @@ mod tests {
             key: b"a".to_vec(),
             value: Some(b"value3".to_vec()),
             timestamp: 2,
-            source: IteratorSource::LSM,
+            source: IteratorSource::Lsm,
             direction: ScanDirection::Forward,
         };
 
@@ -451,7 +451,7 @@ mod tests {
             key: b"b".to_vec(),
             value: Some(b"value3".to_vec()),
             timestamp: 2,
-            source: IteratorSource::LSM,
+            source: IteratorSource::Lsm,
             direction: ScanDirection::Backward,
         };
 

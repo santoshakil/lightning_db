@@ -36,6 +36,12 @@ impl BatchOperation {
     }
 }
 
+impl Default for WriteBatch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WriteBatch {
     /// Create a new write batch with default size limit (1MB)
     pub fn new() -> Self {

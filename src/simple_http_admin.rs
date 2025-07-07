@@ -280,7 +280,7 @@ mod tests {
         let mut status_line = String::new();
         reader.read_line(&mut status_line)?;
 
-        let parts: Vec<&str> = status_line.trim().split_whitespace().collect();
+        let parts: Vec<&str> = status_line.split_whitespace().collect();
         let status_code = parts[1].parse::<u16>()?;
 
         // Read headers

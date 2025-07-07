@@ -6,7 +6,6 @@ use std::sync::Arc;
 /// Lightning DB HTTP Admin Server
 ///
 /// Provides HTTP endpoints for database administration
-
 fn main() {
     let matches = Command::new("lightning-admin-server")
         .about("Lightning DB HTTP Admin Server")

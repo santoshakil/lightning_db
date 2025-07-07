@@ -45,7 +45,7 @@ impl LSMMemTableIterator {
         }
     }
 
-    pub fn next(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
+    pub fn advance(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
         if self.current < self.entries.len() {
             let entry = self.entries[self.current].clone();
             self.current += 1;
@@ -81,10 +81,10 @@ impl LSMFullIterator {
         Ok(Self { memtable_iter })
     }
 
-    pub fn next(&mut self) -> Option<(Vec<u8>, Option<Vec<u8>>, u64)> {
+    pub fn advance(&mut self) -> Option<(Vec<u8>, Option<Vec<u8>>, u64)> {
         // For now, just return from memtable
         if let Some(ref mut memtable_iter) = self.memtable_iter {
-            if let Some((key, value)) = memtable_iter.next() {
+            if let Some((key, value)) = memtable_iter.advance() {
                 return Some((key, Some(value), 0)); // timestamp 0 for now
             }
         }

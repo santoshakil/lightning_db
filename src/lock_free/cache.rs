@@ -206,14 +206,14 @@ where
     }
 
     pub fn get(&self, key: &K) -> Option<V> {
-        thread_local! {
-            static LOCAL_CACHE: std::cell::RefCell<
-                Option<dashmap::DashMap<Vec<u8>, (Vec<u8>, Instant)>>
-            > = const { std::cell::RefCell::new(None) };
-        }
+        // TODO: Implement actual thread-local caching
+        // type LocalCacheType = std::cell::RefCell<Option<dashmap::DashMap<Vec<u8>, (Vec<u8>, Instant)>>>;
+        // 
+        // thread_local! {
+        //     static LOCAL_CACHE: LocalCacheType = const { std::cell::RefCell::new(None) };
+        // }
 
         // For now, just use shared cache
-        // TODO: Implement actual thread-local caching
         self.shared.get(key)
     }
 

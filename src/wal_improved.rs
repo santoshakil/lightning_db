@@ -269,9 +269,12 @@ impl Drop for WALSegment {
     }
 }
 
+/// Type alias for commit queue entry
+type CommitQueueEntry = (WALEntry, Arc<Mutex<Option<Result<u64>>>>);
+
 /// Group commit batch
 struct CommitBatch {
-    entries: Vec<(WALEntry, Arc<Mutex<Option<Result<u64>>>>)>,
+    entries: Vec<CommitQueueEntry>,
     total_size: usize,
 }
 
@@ -285,7 +288,7 @@ pub struct ImprovedWriteAheadLog {
     last_checkpoint_lsn: AtomicU64,
 
     // Group commit
-    commit_queue: Arc<Mutex<VecDeque<(WALEntry, Arc<Mutex<Option<Result<u64>>>>)>>>,
+    commit_queue: Arc<Mutex<VecDeque<CommitQueueEntry>>>,
     commit_condvar: Arc<Condvar>,
     shutdown: Arc<AtomicBool>,
 

@@ -316,9 +316,9 @@ mod tests {
                 }
 
                 // Free half of them
-                for i in 0..pages_per_thread / 2 {
-                    tracker_clone.free(allocated[i]);
-                    freed.push(allocated[i]);
+                for &page_id in allocated.iter().take(pages_per_thread / 2) {
+                    tracker_clone.free(page_id);
+                    freed.push(page_id);
                 }
 
                 // Return both allocated and freed pages

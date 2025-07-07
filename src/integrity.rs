@@ -394,10 +394,10 @@ impl IntegrityRepairer {
         for error in &report.errors {
             match error.error_type {
                 ErrorType::InvalidChecksum => {
-                    self.repair_checksum(&error, &mut repair_report)?;
+                    self.repair_checksum(error, &mut repair_report)?;
                 }
                 ErrorType::OrphanedPage => {
-                    self.reclaim_orphaned_pages(&error, &mut repair_report)?;
+                    self.reclaim_orphaned_pages(error, &mut repair_report)?;
                 }
                 _ => {
                     repair_report.unfixable_errors.push(error.clone());
