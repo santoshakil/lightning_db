@@ -4,12 +4,10 @@ pub mod handle_registry;
 pub mod utils;
 
 // Re-export FFI functions
-pub use ffi::{
-    database_ffi::*, error_ffi::*, iterator_ffi::*, transaction_ffi::*,
-};
+pub use ffi::{database_ffi::*, error_ffi::*, iterator_ffi::*, transaction_ffi::*};
 
 // Re-export utils types
-pub use utils::{ByteResult, lightning_db_free_bytes, lightning_db_free_string};
+pub use utils::{lightning_db_free_bytes, lightning_db_free_string, ByteResult};
 
 // Define FFI-compatible enums
 #[repr(C)]

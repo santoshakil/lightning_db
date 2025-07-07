@@ -1,11 +1,11 @@
-use crate::compression::{CompressionType, compress, decompress};
+use crate::compression::{compress, decompress, CompressionType};
 use std::borrow::Cow;
 
 /// Trait for efficient value encoding/decoding
 pub trait ValueEncoder: Send + Sync {
     /// Encode a value for storage
     fn encode<'a>(&self, value: &'a [u8]) -> Cow<'a, [u8]>;
-    
+
     /// Decode a value from storage
     fn decode<'a>(&self, encoded: &'a [u8]) -> Cow<'a, [u8]>;
 }
@@ -18,7 +18,7 @@ impl ValueEncoder for IdentityValueEncoder {
     fn encode<'a>(&self, value: &'a [u8]) -> Cow<'a, [u8]> {
         Cow::Borrowed(value)
     }
-    
+
     fn decode<'a>(&self, encoded: &'a [u8]) -> Cow<'a, [u8]> {
         Cow::Borrowed(encoded)
     }
@@ -45,7 +45,7 @@ impl ValueEncoder for CompressionValueEncoder {
         if value.len() < self.min_size {
             return Cow::Borrowed(value);
         }
-        
+
         match compress(value, self.compression_type) {
             Ok(compressed) => {
                 if compressed.len() < value.len() {
@@ -67,12 +67,12 @@ impl ValueEncoder for CompressionValueEncoder {
             Err(_) => Cow::Borrowed(value),
         }
     }
-    
+
     fn decode<'a>(&self, encoded: &'a [u8]) -> Cow<'a, [u8]> {
         if encoded.is_empty() {
             return Cow::Borrowed(encoded);
         }
-        
+
         // Check if value is compressed
         let first_byte = encoded[0];
         // Fixed encoding values for backward compatibility
@@ -86,13 +86,13 @@ impl ValueEncoder for CompressionValueEncoder {
             3 => CompressionType::Snappy,
             _ => return Cow::Borrowed(encoded),
         };
-        
+
         if compression_type != CompressionType::None {
             if let Ok(decompressed) = decompress(&encoded[1..], compression_type) {
                 return Cow::Owned(decompressed);
             }
         }
-        
+
         Cow::Borrowed(encoded)
     }
 }
@@ -114,7 +114,7 @@ impl ValueEncoder for EncryptionValueEncoder {
         // TODO: Implement encryption
         Cow::Borrowed(value)
     }
-    
+
     fn decode<'a>(&self, encoded: &'a [u8]) -> Cow<'a, [u8]> {
         // TODO: Implement decryption
         Cow::Borrowed(encoded)
@@ -124,33 +124,33 @@ impl ValueEncoder for EncryptionValueEncoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_identity_encoder() {
         let encoder = IdentityValueEncoder;
         let value = b"test value";
-        
+
         let encoded = encoder.encode(value);
         assert_eq!(&*encoded, value);
-        
+
         let decoded = encoder.decode(&encoded);
         assert_eq!(&*decoded, value);
     }
-    
+
     #[test]
     fn test_compression_encoder() {
         let encoder = CompressionValueEncoder::new(CompressionType::Lz4, 10);
-        
+
         // Small value (not compressed)
         let small_value = b"small";
         let encoded = encoder.encode(small_value);
         assert_eq!(&*encoded, small_value);
-        
+
         // Large repetitive value (should compress)
         let large_value = b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         let encoded = encoder.encode(large_value);
         assert!(encoded.len() < large_value.len());
-        
+
         let decoded = encoder.decode(&encoded);
         assert_eq!(&*decoded, large_value);
     }

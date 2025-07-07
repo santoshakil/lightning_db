@@ -279,7 +279,9 @@ impl PrefetchManager {
             pattern.record_access(page_id);
 
             // Check if we should trigger prefetch
-            if pattern.should_prefetch(self.sequential_threshold) && (!self.config.prefetch_on_miss_only || !was_cache_hit) {
+            if pattern.should_prefetch(self.sequential_threshold)
+                && (!self.config.prefetch_on_miss_only || !was_cache_hit)
+            {
                 self.trigger_prefetch(table_id, page_id, pattern);
             }
         }
@@ -423,11 +425,11 @@ impl PrefetchManager {
             debug!("Prefetch cleanup thread started");
 
             let mut last_cleanup = Instant::now();
-            
+
             while running.load(Ordering::SeqCst) {
                 // Sleep in smaller increments to be more responsive to shutdown
                 thread::sleep(Duration::from_millis(100));
-                
+
                 // Only do cleanup every 30 seconds
                 if last_cleanup.elapsed() >= Duration::from_secs(30) {
                     // Clean up old access patterns

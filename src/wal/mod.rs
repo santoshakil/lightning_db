@@ -4,7 +4,7 @@ pub use recovery_fixes::WALRecoveryContext;
 
 use crate::error::{Error, Result};
 use bincode::{Decode, Encode};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// WAL operation types
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
@@ -35,7 +35,7 @@ impl WALEntry {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
-        
+
         Self {
             lsn,
             timestamp,
@@ -43,13 +43,13 @@ impl WALEntry {
             checksum: 0, // Will be calculated before writing
         }
     }
-    
+
     pub fn calculate_checksum(&mut self) {
         // Simple checksum calculation
         let mut hasher = crc32fast::Hasher::new();
         hasher.update(&self.lsn.to_le_bytes());
         hasher.update(&self.timestamp.to_le_bytes());
-        
+
         // Hash operation data
         match &self.operation {
             WALOperation::Put { key, value } => {
@@ -90,10 +90,10 @@ impl WALEntry {
                 hasher.update(&lsn.to_le_bytes());
             }
         }
-        
+
         self.checksum = hasher.finalize();
     }
-    
+
     pub fn verify_checksum(&self) -> bool {
         let mut copy = self.clone();
         copy.checksum = 0;
@@ -120,7 +120,7 @@ pub struct BasicWriteAheadLog {
 impl BasicWriteAheadLog {
     pub fn create(path: &std::path::Path) -> Result<Self> {
         use std::fs::OpenOptions;
-        
+
         let file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -128,23 +128,23 @@ impl BasicWriteAheadLog {
             .truncate(true)
             .open(path)
             .map_err(|e| crate::error::Error::Io(e.to_string()))?;
-            
+
         Ok(Self {
             file: std::sync::Mutex::new(file),
             next_lsn: std::sync::atomic::AtomicU64::new(1),
         })
     }
-    
+
     pub fn open(path: &std::path::Path) -> Result<Self> {
         use std::fs::OpenOptions;
-        
+
         let file = OpenOptions::new()
             .create(false)
             .write(true)
             .read(true)
             .open(path)
             .map_err(|e| crate::error::Error::Io(e.to_string()))?;
-            
+
         // TODO: Read existing entries to set next_lsn correctly
         Ok(Self {
             file: std::sync::Mutex::new(file),
@@ -157,64 +157,67 @@ impl WriteAheadLog for BasicWriteAheadLog {
     fn append(&self, operation: WALOperation) -> Result<u64> {
         use std::io::Write;
         use std::sync::atomic::Ordering;
-        
+
         let lsn = self.next_lsn.fetch_add(1, Ordering::SeqCst);
         let mut entry = WALEntry::new(lsn, operation);
         entry.calculate_checksum();
-        
-        let mut file = self.file.lock()
-            .map_err(|_| Error::LockFailed { resource: "WAL file mutex".to_string() })?;
-        
+
+        let mut file = self.file.lock().map_err(|_| Error::LockFailed {
+            resource: "WAL file mutex".to_string(),
+        })?;
+
         // Simple format: length + bincode serialized data
         let data = bincode::encode_to_vec(&entry, bincode::config::standard())
             .map_err(|_| crate::error::Error::Serialization)?;
-        
+
         file.write_all(&(data.len() as u32).to_le_bytes())
             .map_err(|e| crate::error::Error::Io(e.to_string()))?;
         file.write_all(&data)
             .map_err(|e| crate::error::Error::Io(e.to_string()))?;
         file.sync_all()
             .map_err(|e| crate::error::Error::Io(e.to_string()))?;
-            
+
         Ok(lsn)
     }
-    
+
     fn sync(&self) -> Result<()> {
-        let file = self.file.lock()
-            .map_err(|_| Error::LockFailed { resource: "WAL file mutex".to_string() })?;
+        let file = self.file.lock().map_err(|_| Error::LockFailed {
+            resource: "WAL file mutex".to_string(),
+        })?;
         file.sync_all()
             .map_err(|e| crate::error::Error::Io(e.to_string()))?;
         Ok(())
     }
-    
+
     fn replay(&self) -> Result<Vec<WALOperation>> {
         use std::io::{Read, Seek, SeekFrom};
-        
-        let mut file = self.file.lock()
-            .map_err(|_| Error::LockFailed { resource: "WAL file mutex".to_string() })?;
+
+        let mut file = self.file.lock().map_err(|_| Error::LockFailed {
+            resource: "WAL file mutex".to_string(),
+        })?;
         file.seek(SeekFrom::Start(0))
             .map_err(|e| crate::error::Error::Io(e.to_string()))?;
-            
+
         let mut operations = Vec::new();
         let mut length_buf = [0u8; 4];
-        
+
         loop {
             match file.read_exact(&mut length_buf) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(crate::error::Error::Io(e.to_string())),
             }
-            
+
             let length = u32::from_le_bytes(length_buf) as usize;
             if length == 0 || length > 1024 * 1024 {
                 // Invalid length, stop reading
                 break;
             }
-            
+
             let mut data = vec![0u8; length];
             file.read_exact(&mut data)
                 .map_err(|e| crate::error::Error::Io(e.to_string()))?;
-                
+
             match bincode::decode_from_slice::<WALEntry, _>(&data, bincode::config::standard()) {
                 Ok((entry, _)) => {
                     if entry.verify_checksum() {
@@ -227,15 +230,15 @@ impl WriteAheadLog for BasicWriteAheadLog {
                 }
             }
         }
-        
+
         Ok(operations)
     }
-    
+
     fn truncate(&self, _lsn: u64) -> Result<()> {
         // For simplicity, this basic implementation doesn't support truncation
         Ok(())
     }
-    
+
     fn checkpoint(&self) -> Result<()> {
         // Basic checkpoint just syncs the file
         self.sync()

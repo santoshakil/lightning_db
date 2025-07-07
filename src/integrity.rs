@@ -1,16 +1,16 @@
 use crate::btree::{BTreeNode, NodeType};
 use crate::error::Result;
 use crate::storage::page_manager_wrapper::PageManagerWrapper;
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tracing::info;
 
 #[cfg(test)]
 use crate::storage::PageManager;
 #[cfg(test)]
-use std::sync::Arc;
-#[cfg(test)]
 use parking_lot::RwLock;
+#[cfg(test)]
+use std::sync::Arc;
 
 /// Data integrity verification report
 #[derive(Debug, Clone)]
@@ -42,10 +42,10 @@ pub enum ErrorType {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Severity {
-    Critical,  // Data loss or corruption
-    High,      // Structural issues
-    Medium,    // Performance impact
-    Low,       // Minor issues
+    Critical, // Data loss or corruption
+    High,     // Structural issues
+    Medium,   // Performance impact
+    Low,      // Minor issues
 }
 
 #[derive(Debug, Clone, Default)]
@@ -140,10 +140,12 @@ impl IntegrityVerifier {
         // For now, just set some basic statistics
         // Real implementation would query the page manager for stats
         report.statistics.total_pages = 100; // Placeholder
-        report.statistics.valid_pages = 80;  // Placeholder
-        
+        report.statistics.valid_pages = 80; // Placeholder
+
         // TODO: Add proper page manager statistics when available
-        report.warnings.push("Page manager statistics not fully implemented".to_string());
+        report
+            .warnings
+            .push("Page manager statistics not fully implemented".to_string());
 
         Ok(())
     }
@@ -152,19 +154,13 @@ impl IntegrityVerifier {
     fn verify_btree_structure(&self, report: &mut IntegrityReport) -> Result<()> {
         // Get root page ID from page manager metadata
         let root_page_id = 1; // Usually the first page after header
-        
+
         // Track visited pages to detect cycles
         let mut visited = HashSet::new();
         let mut page_references = HashMap::new();
-        
+
         // Perform depth-first traversal
-        self.verify_btree_node(
-            root_page_id,
-            &mut visited,
-            &mut page_references,
-            report,
-            0,
-        )?;
+        self.verify_btree_node(root_page_id, &mut visited, &mut page_references, report, 0)?;
 
         // Update statistics
         if let Some(height) = visited.iter().map(|&(_, level)| level).max() {
@@ -216,7 +212,7 @@ impl IntegrityVerifier {
                 description: "Page checksum verification failed".to_string(),
                 severity: Severity::Critical,
             });
-            
+
             if !self.config.repair_mode {
                 return Ok(());
             }
@@ -266,13 +262,7 @@ impl IntegrityVerifier {
             // Recursively verify children
             for &child_id in &node.children {
                 page_references.entry(page_id).or_default().push(child_id);
-                self.verify_btree_node(
-                    child_id,
-                    visited,
-                    page_references,
-                    report,
-                    level + 1,
-                )?;
+                self.verify_btree_node(child_id, visited, page_references, report, level + 1)?;
             }
         }
 
@@ -282,17 +272,14 @@ impl IntegrityVerifier {
     /// Verify key ordering within a node
     fn verify_key_order(&self, node: &BTreeNode, page_id: u32, report: &mut IntegrityReport) {
         let mut prev_key: Option<&[u8]> = None;
-        
+
         for (i, entry) in node.entries.iter().enumerate() {
             if let Some(prev) = prev_key {
                 if prev >= &entry.key[..] {
                     report.errors.push(IntegrityError {
                         error_type: ErrorType::KeyOrderViolation,
                         location: format!("Page {}, entry {}", page_id, i),
-                        description: format!(
-                            "Key order violation: {:?} >= {:?}",
-                            prev, &entry.key
-                        ),
+                        description: format!("Key order violation: {:?} >= {:?}", prev, &entry.key),
                         severity: Severity::High,
                     });
                 }
@@ -306,20 +293,20 @@ impl IntegrityVerifier {
         // Get page statistics
         let total_pages = self.page_manager.page_count();
         let _free_pages = self.page_manager.free_page_count();
-        
+
         // Build set of all referenced pages
         let mut referenced_pages = HashSet::new();
         referenced_pages.insert(0); // Header page
         referenced_pages.insert(1); // Root page
-        
+
         // Add all pages referenced in the B+Tree
         // This would be populated during verify_btree_structure
-        
+
         // Since we can't directly check if a page is free,
         // we'll try to read pages and check if they're valid
         let mut orphaned_count = 0;
         let mut checked_pages = 0;
-        
+
         for page_id in 2..total_pages {
             if !referenced_pages.contains(&page_id) {
                 // Try to read the page to see if it contains valid data
@@ -328,12 +315,14 @@ impl IntegrityVerifier {
                         // Check if page has valid magic number (not empty)
                         let data = page.get_data();
                         let magic = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-                        
+
                         if magic == crate::storage::MAGIC {
                             orphaned_count += 1;
-                            
+
                             if orphaned_count <= 10 {
-                                report.warnings.push(format!("Orphaned page found: {}", page_id));
+                                report
+                                    .warnings
+                                    .push(format!("Orphaned page found: {}", page_id));
                             }
                         }
                     }
@@ -341,16 +330,18 @@ impl IntegrityVerifier {
                         // Page read failed, likely invalid
                     }
                 }
-                
+
                 checked_pages += 1;
                 if checked_pages > 1000 {
                     // Limit checking to avoid performance impact
-                    report.warnings.push("Orphaned page check limited to first 1000 pages".to_string());
+                    report
+                        .warnings
+                        .push("Orphaned page check limited to first 1000 pages".to_string());
                     break;
                 }
             }
         }
-        
+
         if orphaned_count > 0 {
             report.statistics.orphaned_pages = orphaned_count;
             report.errors.push(IntegrityError {
@@ -360,10 +351,10 @@ impl IntegrityVerifier {
                 severity: Severity::Medium,
             });
         }
-        
+
         // Update statistics
         report.statistics.total_pages = total_pages as usize;
-        
+
         Ok(())
     }
 
@@ -371,17 +362,17 @@ impl IntegrityVerifier {
     fn verify_data_consistency(&self, report: &mut IntegrityReport) -> Result<()> {
         // Calculate fill factor
         if report.statistics.total_pages > 0 {
-            report.statistics.fill_factor = 
+            report.statistics.fill_factor =
                 report.statistics.valid_pages as f64 / report.statistics.total_pages as f64;
         }
-        
+
         // Check for reasonable fill factor
         if report.statistics.fill_factor < 0.1 {
-            report.warnings.push(
-                "Very low fill factor detected. Consider compaction.".to_string()
-            );
+            report
+                .warnings
+                .push("Very low fill factor detected. Consider compaction.".to_string());
         }
-        
+
         Ok(())
     }
 }
@@ -399,7 +390,7 @@ impl IntegrityRepairer {
     /// Attempt to repair detected issues
     pub fn repair(&self, report: &IntegrityReport) -> Result<RepairReport> {
         let mut repair_report = RepairReport::default();
-        
+
         for error in &report.errors {
             match error.error_type {
                 ErrorType::InvalidChecksum => {
@@ -413,31 +404,39 @@ impl IntegrityRepairer {
                 }
             }
         }
-        
+
         Ok(repair_report)
     }
 
     fn repair_checksum(&self, error: &IntegrityError, report: &mut RepairReport) -> Result<()> {
         // Extract page ID from error location
-        if let Some(page_id) = error.location.strip_prefix("Page ").and_then(|s| s.parse::<u32>().ok()) {
+        if let Some(page_id) = error
+            .location
+            .strip_prefix("Page ")
+            .and_then(|s| s.parse::<u32>().ok())
+        {
             // Re-read page and recalculate checksum
             if let Ok(mut page) = self.page_manager.get_page(page_id) {
                 // Recalculate checksum by updating the page data
                 let checksum = page.calculate_checksum();
                 let data = page.get_mut_data();
                 data[12..16].copy_from_slice(&checksum.to_le_bytes());
-                
+
                 if self.page_manager.write_page(&page).is_ok() {
                     report.repaired_checksums += 1;
                     info!("Repaired checksum for page {}", page_id);
                 }
             }
         }
-        
+
         Ok(())
     }
 
-    fn reclaim_orphaned_pages(&self, _error: &IntegrityError, report: &mut RepairReport) -> Result<()> {
+    fn reclaim_orphaned_pages(
+        &self,
+        _error: &IntegrityError,
+        report: &mut RepairReport,
+    ) -> Result<()> {
         // This would mark orphaned pages as free
         // Implementation depends on page manager internals
         report.reclaimed_pages += 1;
@@ -456,7 +455,7 @@ pub struct RepairReport {
 pub fn verify_database_integrity<P: AsRef<Path>>(db_path: P) -> Result<IntegrityReport> {
     use crate::Database;
     use crate::LightningDbConfig;
-    
+
     // Open database with minimal configuration for verification
     let config = LightningDbConfig {
         cache_size: 10 * 1024 * 1024, // 10MB cache for verification
@@ -464,9 +463,9 @@ pub fn verify_database_integrity<P: AsRef<Path>>(db_path: P) -> Result<Integrity
         use_optimized_transactions: false,
         ..Default::default()
     };
-    
+
     let db = Database::open(db_path, config)?;
-    
+
     // Create verifier and run checks
     let verifier = IntegrityVerifier::new(db.page_manager.clone());
     verifier.verify()
@@ -481,14 +480,18 @@ mod tests {
     fn test_integrity_verifier() {
         let dir = tempdir().unwrap();
         let page_manager = PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap();
-        let page_manager_wrapper = PageManagerWrapper::standard(Arc::new(RwLock::new(page_manager)));
-        
+        let page_manager_wrapper =
+            PageManagerWrapper::standard(Arc::new(RwLock::new(page_manager)));
+
         let verifier = IntegrityVerifier::new(page_manager_wrapper);
         let report = verifier.verify().unwrap();
-        
+
         // Empty database might have initialization errors, so we just check that verification runs
         // Total pages is u64, so it's always >= 0
         assert!(report.statistics.total_pages > 0);
-        println!("Integrity verification completed with {} errors", report.errors.len());
+        println!(
+            "Integrity verification completed with {} errors",
+            report.errors.len()
+        );
     }
 }

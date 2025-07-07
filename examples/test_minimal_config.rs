@@ -5,34 +5,34 @@ use tempfile::tempdir;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⚡ Minimal Config Test");
     println!("=====================\n");
-    
+
     let dir = tempdir()?;
-    
+
     // Test with most features disabled
     let mut config = LightningDbConfig::default();
-    config.compression_enabled = false;  // Disable LSM
-    config.cache_size = 0;              // Disable cache
-    config.use_improved_wal = false;    // Use old WAL
-    config.prefetch_enabled = false;    // Disable prefetch
+    config.compression_enabled = false; // Disable LSM
+    config.cache_size = 0; // Disable cache
+    config.use_improved_wal = false; // Use old WAL
+    config.prefetch_enabled = false; // Disable prefetch
     config.use_optimized_transactions = false; // Disable optimized transactions
-    
+
     println!("Creating database with minimal config...");
     let start = Instant::now();
     let db = Database::create(dir.path().join("minimal.db"), config)?;
     println!("  Created in: {:.3}s", start.elapsed().as_secs_f64());
-    
+
     println!("Doing basic operations...");
     let start = Instant::now();
     db.put(b"key", b"value")?;
     let _result = db.get(b"key")?;
     println!("  Work in: {:.3}s", start.elapsed().as_secs_f64());
-    
+
     println!("Dropping database...");
     let start = Instant::now();
     drop(db);
     let drop_time = start.elapsed().as_secs_f64();
     println!("  Dropped in: {:.3}s", drop_time);
-    
+
     if drop_time < 0.1 {
         println!("  🚀 Very fast cleanup!");
     } else if drop_time < 0.5 {
@@ -40,6 +40,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         println!("  ⚠️  Still slow!");
     }
-    
+
     Ok(())
 }

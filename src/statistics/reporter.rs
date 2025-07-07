@@ -1,4 +1,4 @@
-use crate::statistics::{MetricsSnapshot, WindowMetrics, MetricsCollector};
+use crate::statistics::{MetricsCollector, MetricsSnapshot, WindowMetrics};
 use std::fmt;
 use std::io::Write;
 use std::sync::Arc;
@@ -12,32 +12,38 @@ impl MetricsReporter {
     pub fn new(collector: Arc<MetricsCollector>) -> Self {
         Self { collector }
     }
-    
+
     /// Generate a text report of current metrics
     pub fn text_report(&self) -> String {
         let snapshot = self.collector.get_current_snapshot();
         let mut report = String::new();
-        
+
         report.push_str(&format!("{}", TextReport(&snapshot)));
-        
+
         // Add window metrics if available
-        if let Some(window_1m) = self.collector.get_window_metrics(std::time::Duration::from_secs(60)) {
+        if let Some(window_1m) = self
+            .collector
+            .get_window_metrics(std::time::Duration::from_secs(60))
+        {
             report.push_str("\n\n## 1-Minute Window Metrics\n");
             report.push_str(&format!("{}", WindowTextReport(&window_1m)));
         }
-        
-        if let Some(window_5m) = self.collector.get_window_metrics(std::time::Duration::from_secs(300)) {
+
+        if let Some(window_5m) = self
+            .collector
+            .get_window_metrics(std::time::Duration::from_secs(300))
+        {
             report.push_str("\n\n## 5-Minute Window Metrics\n");
             report.push_str(&format!("{}", WindowTextReport(&window_5m)));
         }
-        
+
         report
     }
-    
+
     /// Generate a JSON report of current metrics
     pub fn json_report(&self) -> serde_json::Value {
         let snapshot = self.collector.get_current_snapshot();
-        
+
         serde_json::json!({
             "timestamp": std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -83,14 +89,14 @@ impl MetricsReporter {
             "active_transactions": snapshot.active_transactions
         })
     }
-    
+
     /// Write metrics to a writer in CSV format
     pub fn csv_report<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         let snapshot = self.collector.get_current_snapshot();
-        
+
         // Write header if needed
         writeln!(writer, "timestamp,reads,writes,deletes,transactions,avg_read_latency_us,avg_write_latency_us,cache_hit_rate,pages_read,pages_written,compactions,errors,database_size_bytes")?;
-        
+
         // Write data row
         writeln!(
             writer,
@@ -112,18 +118,23 @@ impl MetricsReporter {
             snapshot.read_errors + snapshot.write_errors,
             snapshot.database_size_bytes
         )?;
-        
+
         Ok(())
     }
-    
+
     /// Generate a summary report with key metrics
     pub fn summary_report(&self) -> MetricsSummary {
         let snapshot = self.collector.get_current_snapshot();
-        let window_1m = self.collector.get_window_metrics(std::time::Duration::from_secs(60));
-        
+        let window_1m = self
+            .collector
+            .get_window_metrics(std::time::Duration::from_secs(60));
+
         MetricsSummary {
             total_operations: snapshot.reads + snapshot.writes + snapshot.deletes,
-            operations_per_sec: window_1m.as_ref().map(|w| w.reads_per_sec + w.writes_per_sec).unwrap_or(0.0),
+            operations_per_sec: window_1m
+                .as_ref()
+                .map(|w| w.reads_per_sec + w.writes_per_sec)
+                .unwrap_or(0.0),
             cache_hit_rate: snapshot.cache_hit_rate,
             avg_latency_us: (snapshot.avg_read_latency_us + snapshot.avg_write_latency_us) / 2,
             error_rate: window_1m.as_ref().map(|w| w.error_rate).unwrap_or(0.0),
@@ -187,8 +198,16 @@ impl fmt::Display for TextReport<'_> {
         writeln!(f, "  Transaction Aborts: {:>12}", s.transaction_aborts)?;
         writeln!(f)?;
         writeln!(f, "## Database State")?;
-        writeln!(f, "  Database Size: {:>10.2} MB", (s.database_size_bytes as f64) / (1024.0 * 1024.0))?;
-        writeln!(f, "  WAL Size:      {:>10.2} MB", (s.wal_size_bytes as f64) / (1024.0 * 1024.0))?;
+        writeln!(
+            f,
+            "  Database Size: {:>10.2} MB",
+            (s.database_size_bytes as f64) / (1024.0 * 1024.0)
+        )?;
+        writeln!(
+            f,
+            "  WAL Size:      {:>10.2} MB",
+            (s.wal_size_bytes as f64) / (1024.0 * 1024.0)
+        )?;
         writeln!(f, "  Active Txns:   {:>12}", s.active_transactions)?;
         Ok(())
     }

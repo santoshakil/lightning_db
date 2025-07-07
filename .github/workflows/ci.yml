@@ -20,6 +20,22 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install system dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+        
+    - name: Install system dependencies
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install protobuf
+        
+    - name: Install system dependencies
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install protoc
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@master
       with:
@@ -59,13 +75,36 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         components: clippy
     
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+    
     - name: Run clippy
-      run: cargo clippy -- -W clippy::all
+      run: cargo clippy --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format
@@ -87,9 +126,35 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
     - uses: dart-lang/setup-dart@v1
       with:
         sdk: stable
+    
+    - name: Build FFI library
+      run: |
+        cd lightning_db_ffi
+        cargo build --release
+        cd ..
+    
+    - name: Setup native libraries
+      run: |
+        # Copy Linux library
+        mkdir -p packages/lightning_db_dart/linux
+        cp target/release/liblightning_db.so packages/lightning_db_dart/linux/ || true
+        
+        # Create dummy libraries for analysis (not execution)
+        mkdir -p packages/lightning_db_dart/macos
+        mkdir -p packages/lightning_db_dart/windows
+        touch packages/lightning_db_dart/macos/liblightning_db.dylib
+        touch packages/lightning_db_dart/windows/lightning_db.dll
     
     - name: Install dependencies
       run: |
@@ -118,10 +183,55 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install system dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+        
+    - name: Install system dependencies
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install protobuf
+        
+    - name: Install system dependencies
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install protoc
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    
     - uses: subosito/flutter-action@v2
       with:
         flutter-version: '3.22.0'
         channel: 'stable'
+    
+    - name: Build FFI library
+      run: |
+        cd lightning_db_ffi
+        cargo build --release
+        cd ..
+      shell: bash
+    
+    - name: Setup native libraries (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        mkdir -p packages/lightning_db_dart/linux
+        cp target/release/liblightning_db.so packages/lightning_db_dart/linux/
+    
+    - name: Setup native libraries (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        mkdir -p packages/lightning_db_dart/macos
+        cp target/release/liblightning_db.dylib packages/lightning_db_dart/macos/
+    
+    - name: Setup native libraries (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        mkdir -p packages/lightning_db_dart/windows
+        cp target/release/lightning_db.dll packages/lightning_db_dart/windows/
+      shell: bash
     
     - name: Install dependencies
       run: |
@@ -139,8 +249,31 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
+    
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
     
     - name: Run benchmarks
       run: cargo bench --no-run

@@ -1,8 +1,8 @@
 use crate::error::Result;
 use crate::lsm::{LSMTree, MemTable};
-use std::sync::Arc;
-use std::collections::BinaryHeap;
 use std::cmp::{Ordering, Reverse};
+use std::collections::BinaryHeap;
+use std::sync::Arc;
 
 /// Iterator entry with source information for merging
 #[derive(Clone, Debug)]
@@ -46,19 +46,19 @@ pub struct LSMFullIteratorFixed {
     start_key: Option<Vec<u8>>,
     end_key: Option<Vec<u8>>,
     forward: bool,
-    
+
     // Current iterators
     memtable_entries: Vec<(Vec<u8>, Vec<u8>)>,
     memtable_position: usize,
-    
+
     immutable_entries: Vec<Vec<(Vec<u8>, Vec<u8>)>>,
     immutable_positions: Vec<usize>,
-    
+
     sstable_iterators: Vec<Vec<SSTableIterator>>,
-    
+
     // Merge heap for combining sources
     merge_heap: BinaryHeap<Reverse<IteratorEntry>>,
-    
+
     // Track if we've initialized
     initialized: bool,
 }
@@ -69,10 +69,14 @@ struct SSTableIterator {
 }
 
 impl SSTableIterator {
-    fn new(sstable: Arc<crate::lsm::SSTable>, start_key: Option<&[u8]>, end_key: Option<&[u8]>) -> Result<Self> {
+    fn new(
+        sstable: Arc<crate::lsm::SSTable>,
+        start_key: Option<&[u8]>,
+        end_key: Option<&[u8]>,
+    ) -> Result<Self> {
         // Read all entries from SSTable that match the range
         let all_entries = sstable.iter()?;
-        
+
         let mut entries = Vec::new();
         for (key, value) in all_entries {
             // Check range bounds
@@ -88,13 +92,13 @@ impl SSTableIterator {
             }
             entries.push((key, value));
         }
-        
+
         Ok(Self {
             entries,
             position: 0,
         })
     }
-    
+
     fn next(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
         if self.position < self.entries.len() {
             let entry = self.entries[self.position].clone();
@@ -125,24 +129,24 @@ impl LSMFullIteratorFixed {
             merge_heap: BinaryHeap::new(),
             initialized: false,
         };
-        
+
         // Initialize all data sources
         iter.initialize(lsm)?;
-        
+
         Ok(iter)
     }
-    
+
     fn initialize(&mut self, lsm: &LSMTree) -> Result<()> {
         if self.initialized {
             return Ok(());
         }
-        
+
         // 1. Get entries from active memtable
         let memtable = lsm.get_memtable();
         let memtable_guard = memtable.read();
         self.memtable_entries = self.collect_memtable_entries(&*memtable_guard);
         drop(memtable_guard);
-        
+
         // 2. Get entries from immutable memtables
         let immutable_memtables = lsm.get_immutable_memtables();
         let immutable_memtables_guard = immutable_memtables.read();
@@ -152,7 +156,7 @@ impl LSMFullIteratorFixed {
             self.immutable_positions.push(0);
         }
         drop(immutable_memtables_guard);
-        
+
         // 3. Create iterators for all SSTables
         let levels = lsm.get_levels();
         let levels_guard = levels.read();
@@ -169,7 +173,7 @@ impl LSMFullIteratorFixed {
                     (None, Some(end)) => sstable.min_key() < end.as_slice(),
                     (None, None) => true,
                 };
-                
+
                 if should_include {
                     let iter = SSTableIterator::new(
                         sstable.clone(),
@@ -182,14 +186,14 @@ impl LSMFullIteratorFixed {
             self.sstable_iterators.push(level_iterators);
         }
         drop(levels_guard);
-        
+
         // 4. Prime the merge heap with first entry from each source
         self.prime_merge_heap();
-        
+
         self.initialized = true;
         Ok(())
     }
-    
+
     fn collect_memtable_entries(&self, memtable: &MemTable) -> Vec<(Vec<u8>, Vec<u8>)> {
         let mut entries: Vec<_> = memtable
             .entries()
@@ -199,17 +203,17 @@ impl LSMFullIteratorFixed {
             })
             .map(|(k, v)| (k.clone(), v.unwrap().clone()))
             .collect();
-        
+
         // Sort based on direction
         if self.forward {
             entries.sort_by(|a, b| a.0.cmp(&b.0));
         } else {
             entries.sort_by(|a, b| b.0.cmp(&a.0));
         }
-        
+
         entries
     }
-    
+
     fn is_in_range(&self, key: &[u8]) -> bool {
         if let Some(ref start) = self.start_key {
             if key < start.as_slice() {
@@ -223,7 +227,7 @@ impl LSMFullIteratorFixed {
         }
         true
     }
-    
+
     fn prime_merge_heap(&mut self) {
         // Add first entry from active memtable
         if self.memtable_position < self.memtable_entries.len() {
@@ -234,7 +238,7 @@ impl LSMFullIteratorFixed {
                 source_type: SourceType::ActiveMemtable,
             }));
         }
-        
+
         // Add first entry from each immutable memtable
         for (idx, entries) in self.immutable_entries.iter().enumerate() {
             if !entries.is_empty() {
@@ -246,7 +250,7 @@ impl LSMFullIteratorFixed {
                 }));
             }
         }
-        
+
         // Add first entry from each SSTable iterator
         for (level_idx, level_iters) in self.sstable_iterators.iter_mut().enumerate() {
             for (sstable_idx, iter) in level_iters.iter_mut().enumerate() {
@@ -260,7 +264,7 @@ impl LSMFullIteratorFixed {
             }
         }
     }
-    
+
     pub fn next(&mut self) -> Option<(Vec<u8>, Option<Vec<u8>>, u64)> {
         while let Some(Reverse(entry)) = self.merge_heap.pop() {
             // Check if this is a tombstone
@@ -269,10 +273,10 @@ impl LSMFullIteratorFixed {
                 self.refill_from_source(entry.source_type);
                 continue;
             }
-            
+
             // Refill from the source that provided this entry
             self.refill_from_source(entry.source_type);
-            
+
             // Skip duplicate keys (keep the first one we see, which is the newest)
             while let Some(Reverse(next_entry)) = self.merge_heap.peek() {
                 if next_entry.key == entry.key {
@@ -282,13 +286,13 @@ impl LSMFullIteratorFixed {
                     break;
                 }
             }
-            
+
             return Some((entry.key, Some(entry.value), 0)); // timestamp 0 for now
         }
-        
+
         None
     }
-    
+
     fn refill_from_source(&mut self, source_type: SourceType) {
         match source_type {
             SourceType::ActiveMemtable => {
@@ -305,7 +309,8 @@ impl LSMFullIteratorFixed {
             SourceType::ImmutableMemtable(idx) => {
                 self.immutable_positions[idx] += 1;
                 if self.immutable_positions[idx] < self.immutable_entries[idx].len() {
-                    let (key, value) = self.immutable_entries[idx][self.immutable_positions[idx]].clone();
+                    let (key, value) =
+                        self.immutable_entries[idx][self.immutable_positions[idx]].clone();
                     self.merge_heap.push(Reverse(IteratorEntry {
                         key,
                         value,

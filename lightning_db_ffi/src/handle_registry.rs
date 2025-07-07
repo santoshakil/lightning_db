@@ -121,50 +121,56 @@ mod tests {
     #[test]
     fn test_handle_registry() {
         let registry = HandleRegistry::new();
-        
+
         // Test insert
         let handle1 = registry.insert("value1".to_string());
         let handle2 = registry.insert("value2".to_string());
-        
+
         assert_ne!(handle1, handle2);
-        
+
         // Test get
-        assert_eq!(registry.get(handle1).as_ref().map(|v| v.as_str()), Some("value1"));
-        assert_eq!(registry.get(handle2).as_ref().map(|v| v.as_str()), Some("value2"));
+        assert_eq!(
+            registry.get(handle1).as_ref().map(|v| v.as_str()),
+            Some("value1")
+        );
+        assert_eq!(
+            registry.get(handle2).as_ref().map(|v| v.as_str()),
+            Some("value2")
+        );
         assert!(registry.get(999).is_none());
-        
+
         // Test remove
         let removed = registry.remove(handle1);
         assert_eq!(removed.as_ref().map(|v| v.as_str()), Some("value1"));
         assert!(registry.get(handle1).is_none());
-        
+
         // Test clear
         registry.clear();
         assert!(registry.get(handle2).is_none());
     }
-    
+
     #[test]
     fn test_mutable_handle_registry() {
         let registry = MutableHandleRegistry::new();
-        
+
         // Test insert
         let handle = registry.insert(vec![1, 2, 3]);
-        
+
         // Test with_mut
         let result = registry.with_mut(handle, |v| {
             v.push(4);
             v.len()
         });
         assert_eq!(result, Some(4));
-        
+
         // Verify mutation persisted
         let result = registry.with_mut(handle, |v| v.clone());
         assert_eq!(result, Some(vec![1, 2, 3, 4]));
-        
+
         // Test remove
         let removed = registry.remove(handle);
         assert_eq!(removed, Some(vec![1, 2, 3, 4]));
-        
+
         // Verify it's gone
         let result = registry.with_mut(handle, |v| v.len());
         assert_eq!(result, None);

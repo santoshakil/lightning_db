@@ -1,9 +1,9 @@
 use crate::error::Result;
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
-use parking_lot::RwLock;
-use serde::{Serialize, Deserialize};
 
 /// Production monitoring event types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +21,7 @@ pub enum MonitoringEvent {
         success: bool,
         error: Option<String>,
     },
-    
+
     /// Performance events
     SlowOperation {
         operation_type: OperationType,
@@ -33,7 +33,7 @@ pub enum MonitoringEvent {
         cache_size: usize,
         reason: String,
     },
-    
+
     /// Resource events
     MemoryUsage {
         total_bytes: usize,
@@ -47,7 +47,7 @@ pub enum MonitoringEvent {
         wal_bytes: u64,
         free_space_bytes: u64,
     },
-    
+
     /// Health events
     HealthCheck {
         status: HealthStatus,
@@ -59,7 +59,7 @@ pub enum MonitoringEvent {
         wal_size_before: u64,
         wal_size_after: u64,
     },
-    
+
     /// Error events
     ErrorOccurred {
         error_type: String,
@@ -97,10 +97,10 @@ pub enum HealthStatus {
 pub trait MonitoringHook: Send + Sync {
     /// Called when a monitoring event occurs
     fn on_event(&self, event: &MonitoringEvent);
-    
+
     /// Called periodically to collect metrics
     fn collect_metrics(&self) -> HashMap<String, f64>;
-    
+
     /// Called to check if the hook is healthy
     fn is_healthy(&self) -> bool {
         true
@@ -113,7 +113,12 @@ pub struct LoggingMonitoringHook;
 impl MonitoringHook for LoggingMonitoringHook {
     fn on_event(&self, event: &MonitoringEvent) {
         match event {
-            MonitoringEvent::OperationCompleted { operation_type, duration_ms, success, .. } => {
+            MonitoringEvent::OperationCompleted {
+                operation_type,
+                duration_ms,
+                success,
+                ..
+            } => {
                 if *success {
                     tracing::debug!(
                         operation = ?operation_type,
@@ -128,7 +133,11 @@ impl MonitoringHook for LoggingMonitoringHook {
                     );
                 }
             }
-            MonitoringEvent::SlowOperation { operation_type, duration_ms, threshold_ms } => {
+            MonitoringEvent::SlowOperation {
+                operation_type,
+                duration_ms,
+                threshold_ms,
+            } => {
                 tracing::warn!(
                     operation = ?operation_type,
                     duration_ms = duration_ms,
@@ -136,14 +145,18 @@ impl MonitoringHook for LoggingMonitoringHook {
                     "Slow operation detected"
                 );
             }
-            MonitoringEvent::ErrorOccurred { error_type, message, .. } => {
-                tracing::error!(
-                    error_type = error_type,
-                    message = message,
-                    "Error occurred"
-                );
+            MonitoringEvent::ErrorOccurred {
+                error_type,
+                message,
+                ..
+            } => {
+                tracing::error!(error_type = error_type, message = message, "Error occurred");
             }
-            MonitoringEvent::CorruptionDetected { location, severity, details } => {
+            MonitoringEvent::CorruptionDetected {
+                location,
+                severity,
+                details,
+            } => {
                 tracing::error!(
                     location = location,
                     severity = severity,
@@ -156,7 +169,7 @@ impl MonitoringHook for LoggingMonitoringHook {
             }
         }
     }
-    
+
     fn collect_metrics(&self) -> HashMap<String, f64> {
         HashMap::new()
     }
@@ -177,24 +190,26 @@ impl ProductionMonitor {
         thresholds.insert(OperationType::Write, Duration::from_millis(50));
         thresholds.insert(OperationType::Transaction, Duration::from_millis(100));
         thresholds.insert(OperationType::Checkpoint, Duration::from_secs(1));
-        
+
         Self {
             hooks: Arc::new(RwLock::new(vec![Arc::new(LoggingMonitoringHook)])),
             operation_thresholds: Arc::new(RwLock::new(thresholds)),
             metrics_collector: Arc::new(RwLock::new(MetricsCollector::new())),
         }
     }
-    
+
     /// Register a monitoring hook
     pub fn register_hook(&self, hook: Arc<dyn MonitoringHook>) {
         self.hooks.write().push(hook);
     }
-    
+
     /// Set operation threshold
     pub fn set_threshold(&self, operation: OperationType, threshold: Duration) {
-        self.operation_thresholds.write().insert(operation, threshold);
+        self.operation_thresholds
+            .write()
+            .insert(operation, threshold);
     }
-    
+
     /// Record an operation
     pub fn record_operation<F, R>(
         &self,
@@ -206,7 +221,7 @@ impl ProductionMonitor {
         F: FnOnce() -> Result<R>,
     {
         let start = Instant::now();
-        
+
         // Notify start
         self.emit_event(MonitoringEvent::OperationStarted {
             operation_id: operation_id.clone(),
@@ -216,14 +231,16 @@ impl ProductionMonitor {
                 .unwrap()
                 .as_millis() as u64,
         });
-        
+
         // Execute operation
         let result = operation();
         let duration = start.elapsed();
-        
+
         // Update metrics
-        self.metrics_collector.write().record_operation(operation_type, duration, result.is_ok());
-        
+        self.metrics_collector
+            .write()
+            .record_operation(operation_type, duration, result.is_ok());
+
         // Check for slow operation
         if let Some(threshold) = self.operation_thresholds.read().get(&operation_type) {
             if duration > *threshold {
@@ -234,7 +251,7 @@ impl ProductionMonitor {
                 });
             }
         }
-        
+
         // Notify completion
         self.emit_event(MonitoringEvent::OperationCompleted {
             operation_id,
@@ -243,10 +260,10 @@ impl ProductionMonitor {
             success: result.is_ok(),
             error: result.as_ref().err().map(|e| e.to_string()),
         });
-        
+
         result
     }
-    
+
     /// Emit a monitoring event
     pub fn emit_event(&self, event: MonitoringEvent) {
         let hooks = self.hooks.read();
@@ -254,28 +271,28 @@ impl ProductionMonitor {
             hook.on_event(&event);
         }
     }
-    
+
     /// Collect all metrics
     pub fn collect_metrics(&self) -> HashMap<String, f64> {
         let mut all_metrics = HashMap::new();
-        
+
         // Collect from metrics collector
         all_metrics.extend(self.metrics_collector.read().get_metrics());
-        
+
         // Collect from hooks
         let hooks = self.hooks.read();
         for hook in hooks.iter() {
             all_metrics.extend(hook.collect_metrics());
         }
-        
+
         all_metrics
     }
-    
+
     /// Perform health check
     pub fn health_check(&self) -> HealthStatus {
         let hooks = self.hooks.read();
         let unhealthy_hooks = hooks.iter().filter(|h| !h.is_healthy()).count();
-        
+
         if unhealthy_hooks == 0 {
             HealthStatus::Healthy
         } else if unhealthy_hooks < hooks.len() / 2 {
@@ -303,29 +320,32 @@ impl MetricsCollector {
             start_time: Instant::now(),
         }
     }
-    
+
     fn record_operation(&mut self, op_type: OperationType, duration: Duration, success: bool) {
         *self.operation_counts.entry(op_type).or_insert(0) += 1;
-        *self.operation_times.entry(op_type).or_insert(Duration::ZERO) += duration;
-        
+        *self
+            .operation_times
+            .entry(op_type)
+            .or_insert(Duration::ZERO) += duration;
+
         if !success {
             *self.operation_errors.entry(op_type).or_insert(0) += 1;
         }
     }
-    
+
     fn get_metrics(&self) -> HashMap<String, f64> {
         let mut metrics = HashMap::new();
         let uptime_secs = self.start_time.elapsed().as_secs_f64();
-        
+
         for (op_type, count) in &self.operation_counts {
             let op_name = format!("{:?}", op_type).to_lowercase();
-            
+
             // Operation rate
             metrics.insert(
                 format!("{}_ops_per_sec", op_name),
                 *count as f64 / uptime_secs,
             );
-            
+
             // Average latency
             if let Some(total_time) = self.operation_times.get(op_type) {
                 metrics.insert(
@@ -333,7 +353,7 @@ impl MetricsCollector {
                     total_time.as_millis() as f64 / *count as f64,
                 );
             }
-            
+
             // Error rate
             let errors = self.operation_errors.get(op_type).copied().unwrap_or(0);
             metrics.insert(
@@ -341,7 +361,7 @@ impl MetricsCollector {
                 errors as f64 / *count as f64,
             );
         }
-        
+
         metrics
     }
 }
@@ -349,14 +369,14 @@ impl MetricsCollector {
 /// Prometheus metrics hook implementation
 /// Available in all builds - use existing prometheus dependency
 pub struct PrometheusMonitoringHook {
-    _registry: (),  // Placeholder until prometheus integration is complete
+    _registry: (), // Placeholder until prometheus integration is complete
 }
 
 impl MonitoringHook for PrometheusMonitoringHook {
     fn on_event(&self, _event: &MonitoringEvent) {
         // Prometheus integration placeholder
     }
-    
+
     fn collect_metrics(&self) -> HashMap<String, f64> {
         HashMap::new()
     }
@@ -366,7 +386,7 @@ impl MonitoringHook for PrometheusMonitoringHook {
 /// Enable with --features="opentelemetry"
 #[cfg(feature = "opentelemetry")]
 pub struct OpenTelemetryMonitoringHook {
-    _placeholder: (),  // Placeholder until opentelemetry integration is complete
+    _placeholder: (), // Placeholder until opentelemetry integration is complete
 }
 
 #[cfg(feature = "opentelemetry")]
@@ -374,7 +394,7 @@ impl MonitoringHook for OpenTelemetryMonitoringHook {
     fn on_event(&self, _event: &MonitoringEvent) {
         // OpenTelemetry integration placeholder
     }
-    
+
     fn collect_metrics(&self) -> HashMap<String, f64> {
         HashMap::new()
     }

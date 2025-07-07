@@ -85,6 +85,14 @@ path = "src/bin/lightning-admin-server.rs"
 lto = true
 codegen-units = 1
 opt-level = 3
+strip = true
+
+# Mobile-optimized profile
+[profile.mobile]
+inherits = "release"
+opt-level = "z"  # Optimize for size
+lto = true
+strip = true
 
 [[example]]
 name = "demo"

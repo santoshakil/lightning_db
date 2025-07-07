@@ -66,13 +66,15 @@ impl ChaosTestSuite {
             if result.success {
                 println!("\n   ✅ PASSED");
             } else {
-                println!("\n   ❌ FAILED: {}", 
-                         result.error_message.as_deref().unwrap_or("Unknown error"));
+                println!(
+                    "\n   ❌ FAILED: {}",
+                    result.error_message.as_deref().unwrap_or("Unknown error")
+                );
             }
 
             self.results.push(result);
         }
-        
+
         self.print_summary();
     }
 
@@ -80,24 +82,26 @@ impl ChaosTestSuite {
     fn test_disk_full_enhanced(&self) -> ChaosResult {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("disk_full_db");
-        
+
         // Create database with small cache to force more disk I/O
         let config = LightningDbConfig {
             cache_size: 1024 * 1024, // 1MB only
             ..Default::default()
         };
-        
+
         let db = match Database::create(&db_path, config) {
             Ok(db) => db,
-            Err(e) => return ChaosResult {
-                scenario: ChaosScenario::DiskFull,
-                success: false,
-                error_message: Some(format!("Failed to create database: {}", e)),
-                _recovery_time: None,
-                data_integrity: false,
-            },
+            Err(e) => {
+                return ChaosResult {
+                    scenario: ChaosScenario::DiskFull,
+                    success: false,
+                    error_message: Some(format!("Failed to create database: {}", e)),
+                    _recovery_time: None,
+                    data_integrity: false,
+                }
+            }
         };
-        
+
         // Write initial data with larger values to use more space
         let mut written_keys = Vec::new();
         for i in 0..50 {
@@ -111,12 +115,13 @@ impl ChaosTestSuite {
         // Create multiple large files to fill disk more aggressively
         let mut fill_files = Vec::new();
         let _target_fill_size = 100 * 1024 * 1024; // Try to fill 100MB
-        
+
         for i in 0..10 {
             let fill_path = temp_dir.path().join(format!("filler_{}.dat", i));
             if let Ok(mut file) = fs::File::create(&fill_path) {
                 let chunk = vec![0u8; 1024 * 1024]; // 1MB chunks
-                for _ in 0..10 { // 10MB per file
+                for _ in 0..10 {
+                    // 10MB per file
                     if file.write_all(&chunk).is_err() {
                         break; // Disk full
                     }
@@ -129,7 +134,7 @@ impl ChaosTestSuite {
         // Try to write large amounts of data to trigger disk full
         let mut disk_full_errors = 0;
         let large_value = "y".repeat(50000); // 50KB values
-        
+
         for i in 50..150 {
             let key = format!("disk_key_{:06}", i);
             match db.put(key.as_bytes(), large_value.as_bytes()) {
@@ -165,7 +170,10 @@ impl ChaosTestSuite {
             scenario: ChaosScenario::DiskFull,
             success: disk_full_errors > 0 && read_errors == 0,
             error_message: if read_errors > 0 {
-                Some(format!("{} keys became unreadable after disk full", read_errors))
+                Some(format!(
+                    "{} keys became unreadable after disk full",
+                    read_errors
+                ))
             } else if disk_full_errors == 0 {
                 Some("Failed to trigger disk full condition".to_string())
             } else {
@@ -180,28 +188,28 @@ impl ChaosTestSuite {
     fn test_file_permissions_enhanced(&self) -> ChaosResult {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("permissions_db");
-        
+
         let config = LightningDbConfig::default();
         let db = Database::create(&db_path, config).unwrap();
-        
+
         // Write initial data and force sync to disk
         for i in 0..30 {
             let key = format!("perm_key_{:06}", i);
             let value = format!("perm_value_{:06}", i);
             db.put(key.as_bytes(), value.as_bytes()).unwrap();
         }
-        
+
         // Force checkpoint to ensure data is on disk
         let _ = db.checkpoint();
-        
+
         // Close database to release file handles
         drop(db);
-        
+
         // Change ALL files to read-only recursively
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            
+
             fn make_readonly_recursive(path: &std::path::Path) -> std::io::Result<()> {
                 if path.is_dir() {
                     for entry in fs::read_dir(path)? {
@@ -219,7 +227,7 @@ impl ChaosTestSuite {
                 }
                 Ok(())
             }
-            
+
             if let Err(e) = make_readonly_recursive(&db_path) {
                 return ChaosResult {
                     scenario: ChaosScenario::FilePermissions,
@@ -230,7 +238,7 @@ impl ChaosTestSuite {
                 };
             }
         }
-        
+
         // Try to reopen database (should work for reads)
         let db = match Database::open(&db_path, LightningDbConfig::default()) {
             Ok(db) => db,
@@ -248,7 +256,7 @@ impl ChaosTestSuite {
 
         // Try multiple types of write operations (should fail)
         let mut write_errors = 0;
-        
+
         // 1. Try regular puts
         for i in 30..35 {
             let key = format!("perm_key_{:06}", i);
@@ -257,12 +265,12 @@ impl ChaosTestSuite {
                 write_errors += 1;
             }
         }
-        
+
         // 2. Try checkpoint (disk write)
         if db.checkpoint().is_err() {
             write_errors += 1;
         }
-        
+
         // 3. Try transaction commit
         if let Ok(tx_id) = db.begin_transaction() {
             let _ = db.put_tx(tx_id, b"tx_key", b"tx_value");
@@ -279,19 +287,19 @@ impl ChaosTestSuite {
                 read_errors += 1;
             }
         }
-        
+
         // Restore permissions for cleanup
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            
+
             fn restore_permissions_recursive(path: &std::path::Path) -> std::io::Result<()> {
                 if path.is_dir() {
                     // Restore directory permissions first
                     let mut perms = fs::metadata(path)?.permissions();
                     perms.set_mode(0o755);
                     fs::set_permissions(path, perms)?;
-                    
+
                     for entry in fs::read_dir(path)? {
                         let entry = entry?;
                         restore_permissions_recursive(&entry.path())?;
@@ -303,7 +311,7 @@ impl ChaosTestSuite {
                 }
                 Ok(())
             }
-            
+
             let _ = restore_permissions_recursive(&db_path);
         }
 
@@ -311,9 +319,15 @@ impl ChaosTestSuite {
             scenario: ChaosScenario::FilePermissions,
             success: write_errors >= 2 && read_errors == 0, // Expect multiple write failures
             error_message: if read_errors > 0 {
-                Some(format!("{} reads failed with read-only permissions", read_errors))
+                Some(format!(
+                    "{} reads failed with read-only permissions",
+                    read_errors
+                ))
             } else if write_errors < 2 {
-                Some(format!("Only {} write operations failed (expected ≥2)", write_errors))
+                Some(format!(
+                    "Only {} write operations failed (expected ≥2)",
+                    write_errors
+                ))
             } else {
                 None
             },
@@ -326,20 +340,20 @@ impl ChaosTestSuite {
     fn test_memory_pressure(&self) -> ChaosResult {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("memory_pressure_db");
-        
+
         let config = LightningDbConfig {
             cache_size: 1024 * 1024, // Very small cache
             ..Default::default()
         };
         let db = Database::create(&db_path, config).unwrap();
-        
+
         // Write a lot of data to pressure memory
         let large_value = "x".repeat(10000); // 10KB per value
         for i in 0..1000 {
             let key = format!("mem_key_{:06}", i);
             db.put(key.as_bytes(), large_value.as_bytes()).unwrap();
         }
-        
+
         // Verify data integrity under memory pressure
         let mut read_errors = 0;
         for i in 0..1000 {
@@ -348,7 +362,7 @@ impl ChaosTestSuite {
                 read_errors += 1;
             }
         }
-        
+
         ChaosResult {
             scenario: ChaosScenario::MemoryPressure,
             success: read_errors == 0,
@@ -417,24 +431,39 @@ impl ChaosTestSuite {
 
         println!("\n📈 Results:");
         println!("   Total scenarios: {}", self.results.len());
-        println!("   ✅ Passed: {} ({:.1}%)", passed, passed as f64 / self.results.len() as f64 * 100.0);
-        println!("   ❌ Failed: {} ({:.1}%)", failed, failed as f64 / self.results.len() as f64 * 100.0);
+        println!(
+            "   ✅ Passed: {} ({:.1}%)",
+            passed,
+            passed as f64 / self.results.len() as f64 * 100.0
+        );
+        println!(
+            "   ❌ Failed: {} ({:.1}%)",
+            failed,
+            failed as f64 / self.results.len() as f64 * 100.0
+        );
 
         if failed > 0 {
             println!("\n❌ Failed Scenarios:");
             for result in &self.results {
                 if !result.success {
-                    println!("   - {:?}: {}", 
-                             result.scenario, 
-                             result.error_message.as_deref().unwrap_or("Unknown error"));
+                    println!(
+                        "   - {:?}: {}",
+                        result.scenario,
+                        result.error_message.as_deref().unwrap_or("Unknown error")
+                    );
                 }
             }
         }
 
         let integrity_preserved = self.results.iter().all(|r| r.data_integrity);
-        println!("\n✅ DATA INTEGRITY: {}", 
-                 if integrity_preserved { "All scenarios preserved data integrity" } 
-                 else { "⚠️  Some scenarios had data integrity issues" });
+        println!(
+            "\n✅ DATA INTEGRITY: {}",
+            if integrity_preserved {
+                "All scenarios preserved data integrity"
+            } else {
+                "⚠️  Some scenarios had data integrity issues"
+            }
+        );
 
         println!("\n🏁 VERDICT:");
         if passed == self.results.len() {

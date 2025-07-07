@@ -1,8 +1,8 @@
 use crate::btree::KeyEntry;
 use crate::error::{Error, Result};
-use crate::storage::{Page, PAGE_SIZE};
 #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
 use crate::simd::key_compare::simd_compare_keys;
+use crate::storage::{Page, PAGE_SIZE};
 use bytes::{Buf, BufMut, BytesMut};
 use std::io::{Cursor, Read};
 
@@ -110,13 +110,13 @@ impl BTreeNode {
 
     pub fn deserialize_from_page(page: &Page) -> Result<Self> {
         let data = page.get_data();
-        
+
         // Check if page is empty (all zeros) - this can happen with newly allocated pages
         if data.iter().all(|&b| b == 0) {
             // Return an empty leaf node for empty pages
             return Ok(Self::new_leaf(page.id));
         }
-        
+
         let mut cursor = Cursor::new(data);
 
         // Read page header
@@ -218,7 +218,7 @@ impl BTreeNode {
                 return self.find_key_position_simd(key);
             }
         }
-        
+
         // Fallback to regular comparison
         for (i, entry) in self.entries.iter().enumerate() {
             match key.cmp(&entry.key) {
@@ -229,13 +229,13 @@ impl BTreeNode {
         }
         (false, self.entries.len())
     }
-    
+
     #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
     fn find_key_position_simd(&self, key: &[u8]) -> (bool, usize) {
         // Binary search using SIMD comparisons
         let mut left = 0;
         let mut right = self.entries.len();
-        
+
         while left < right {
             let mid = left + (right - left) / 2;
             match simd_compare_keys(key, &self.entries[mid].key) {
@@ -244,7 +244,7 @@ impl BTreeNode {
                 std::cmp::Ordering::Greater => left = mid + 1,
             }
         }
-        
+
         (false, left)
     }
 

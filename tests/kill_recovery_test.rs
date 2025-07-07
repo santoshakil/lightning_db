@@ -1,11 +1,11 @@
 use lightning_db::{Database, LightningDbConfig};
+use std::collections::HashMap;
+use std::fs;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
-use std::fs;
-use std::collections::HashMap;
 
 /// Kill -9 recovery test suite
 /// Tests database recovery after process termination at every critical point
@@ -19,13 +19,24 @@ struct KillPoint {
 impl KillPoint {
     fn all() -> Vec<Self> {
         let operations = vec![
-            "put", "get", "delete", "begin_transaction", "commit_transaction",
-            "checkpoint", "compaction", "cache_eviction", "wal_write", "page_write",
-            "btree_split", "btree_merge", "lsm_flush", "wal_rotation"
+            "put",
+            "get",
+            "delete",
+            "begin_transaction",
+            "commit_transaction",
+            "checkpoint",
+            "compaction",
+            "cache_eviction",
+            "wal_write",
+            "page_write",
+            "btree_split",
+            "btree_merge",
+            "lsm_flush",
+            "wal_rotation",
         ];
-        
+
         let timings = vec!["before", "during", "after"];
-        
+
         let mut points = Vec::new();
         for op in &operations {
             for timing in &timings {
@@ -67,33 +78,34 @@ impl KillRecoveryHarness {
 
     /// Run kill test for a specific point
     fn test_kill_point(&self, kill_point: KillPoint) -> KillTestResult {
-        println!("\n🔪 Testing kill -9 at: {} {} {}", 
-                 kill_point.operation, kill_point.timing, kill_point.name);
-        
+        println!(
+            "\n🔪 Testing kill -9 at: {} {} {}",
+            kill_point.operation, kill_point.timing, kill_point.name
+        );
+
         let db_path = self.test_dir.path().join(format!("db_{}", kill_point.name));
-        let marker_file = self.test_dir.path().join(format!("marker_{}", kill_point.name));
-        
+        let marker_file = self
+            .test_dir
+            .path()
+            .join(format!("marker_{}", kill_point.name));
+
         // Prepare test data
         let test_data = self.prepare_test_data(100);
-        
+
         // Spawn child process to run database operations
-        let child_result = self.spawn_test_process(
-            &db_path,
-            &marker_file,
-            &kill_point,
-            &test_data,
-        );
-        
+        let child_result = self.spawn_test_process(&db_path, &marker_file, &kill_point, &test_data);
+
         match child_result {
             Ok((pid, data_written)) => {
                 // Kill process at specified point
                 self.kill_process(pid, &kill_point, &marker_file);
-                
+
                 // Verify recovery
                 let recovery_start = Instant::now();
-                let (success, data_after, error) = self.verify_recovery(&db_path, &data_written, &kill_point);
+                let (success, data_after, error) =
+                    self.verify_recovery(&db_path, &data_written, &kill_point);
                 let recovery_time = recovery_start.elapsed();
-                
+
                 KillTestResult {
                     kill_point,
                     _data_before: data_written,
@@ -110,7 +122,7 @@ impl KillRecoveryHarness {
                 recovery_time: Duration::ZERO,
                 success: false,
                 error: Some(format!("Failed to spawn process: {}", e)),
-            }
+            },
         }
     }
 
@@ -266,43 +278,63 @@ fn main() {{
         );
 
         // Write and compile test program
-        let test_file = self.test_dir.path().join(format!("{}_test.rs", kill_point.name));
+        let test_file = self
+            .test_dir
+            .path()
+            .join(format!("{}_test.rs", kill_point.name));
         fs::write(&test_file, test_program)?;
-        
+
         // Compile the test program
         let output = Command::new("rustc")
             .args(&[
-                "--edition", "2021",
-                "-L", "target/debug/deps",
-                "--extern", "lightning_db=target/debug/liblightning_db.rlib",
-                "--extern", "serde_json",
-                "-o", &format!("{}/{}_test", self.test_dir.path().to_str().unwrap(), kill_point.name),
+                "--edition",
+                "2021",
+                "-L",
+                "target/debug/deps",
+                "--extern",
+                "lightning_db=target/debug/liblightning_db.rlib",
+                "--extern",
+                "serde_json",
+                "-o",
+                &format!(
+                    "{}/{}_test",
+                    self.test_dir.path().to_str().unwrap(),
+                    kill_point.name
+                ),
                 test_file.to_str().unwrap(),
             ])
             .output()?;
-        
+
         if !output.status.success() {
-            return Err(format!("Compilation failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+            return Err(format!(
+                "Compilation failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )
+            .into());
         }
-        
+
         // Spawn the test process
-        let child = Command::new(format!("{}/{}_test", self.test_dir.path().to_str().unwrap(), kill_point.name))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
-        
+        let child = Command::new(format!(
+            "{}/{}_test",
+            self.test_dir.path().to_str().unwrap(),
+            kill_point.name
+        ))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+
         let pid = child.id();
-        
+
         // Wait for marker file
         let start = Instant::now();
         while !marker_file.exists() && start.elapsed() < Duration::from_secs(5) {
             thread::sleep(Duration::from_millis(10));
         }
-        
+
         if !marker_file.exists() {
             return Err("Marker file not created - process failed to reach kill point".into());
         }
-        
+
         // Read what was written
         let written_file = format!("{}.written", db_path.to_str().unwrap());
         let written_data = if std::path::Path::new(&written_file).exists() {
@@ -311,7 +343,7 @@ fn main() {{
         } else {
             HashMap::new()
         };
-        
+
         Ok((pid, written_data))
     }
 
@@ -321,15 +353,15 @@ fn main() {{
         if kill_point.timing == "during" {
             thread::sleep(Duration::from_millis(10));
         }
-        
+
         // Kill -9 the process
         let _ = Command::new("kill")
             .args(&["-9", &pid.to_string()])
             .output();
-        
+
         // Clean up marker file
         let _ = fs::remove_file(marker_file);
-        
+
         // Wait a bit to ensure process is dead
         thread::sleep(Duration::from_millis(100));
     }
@@ -343,13 +375,13 @@ fn main() {{
     ) -> (bool, HashMap<String, String>, Option<String>) {
         // Try to open the database
         let config = LightningDbConfig::default();
-        
+
         match Database::open(db_path, config) {
             Ok(db) => {
                 let mut found_data = HashMap::new();
                 let mut missing_keys = Vec::new();
                 let mut corrupted_values = Vec::new();
-                
+
                 // Verify all expected data
                 for (key, expected_value) in expected_data {
                     match db.get(key.as_bytes()) {
@@ -358,51 +390,73 @@ fn main() {{
                             if value_str == *expected_value {
                                 found_data.insert(key.clone(), value_str);
                             } else {
-                                corrupted_values.push((key.clone(), expected_value.clone(), value_str));
+                                corrupted_values.push((
+                                    key.clone(),
+                                    expected_value.clone(),
+                                    value_str,
+                                ));
                             }
                         }
                         Ok(None) => {
                             missing_keys.push(key.clone());
                         }
                         Err(e) => {
-                            return (false, found_data, Some(format!("Error reading key {}: {}", key, e)));
+                            return (
+                                false,
+                                found_data,
+                                Some(format!("Error reading key {}: {}", key, e)),
+                            );
                         }
                     }
                 }
-                
+
                 // Check for data integrity
                 if !corrupted_values.is_empty() {
-                    return (false, found_data, Some(format!("Corrupted values: {:?}", corrupted_values)));
+                    return (
+                        false,
+                        found_data,
+                        Some(format!("Corrupted values: {:?}", corrupted_values)),
+                    );
                 }
-                
+
                 // Some missing keys might be acceptable depending on kill timing
                 let acceptable_loss = match kill_point.timing {
-                    "before" => 0,  // No data loss before operation
-                    "during" => 1,  // At most one operation lost
-                    "after" => 0,   // No data loss after operation
+                    "before" => 0, // No data loss before operation
+                    "during" => 1, // At most one operation lost
+                    "after" => 0,  // No data loss after operation
                     _ => 0,
                 };
-                
+
                 if missing_keys.len() > acceptable_loss {
-                    return (false, found_data, Some(format!("Missing keys: {:?}", missing_keys)));
+                    return (
+                        false,
+                        found_data,
+                        Some(format!("Missing keys: {:?}", missing_keys)),
+                    );
                 }
-                
+
                 // Verify database is functional
                 match db.put(b"recovery_test_key", b"recovery_test_value") {
-                    Ok(_) => {
-                        match db.get(b"recovery_test_key") {
-                            Ok(Some(v)) if v == b"recovery_test_value" => {
-                                (true, found_data, None)
-                            }
-                            _ => (false, found_data, Some("Post-recovery operations failed".to_string()))
-                        }
-                    }
-                    Err(e) => (false, found_data, Some(format!("Post-recovery write failed: {}", e)))
+                    Ok(_) => match db.get(b"recovery_test_key") {
+                        Ok(Some(v)) if v == b"recovery_test_value" => (true, found_data, None),
+                        _ => (
+                            false,
+                            found_data,
+                            Some("Post-recovery operations failed".to_string()),
+                        ),
+                    },
+                    Err(e) => (
+                        false,
+                        found_data,
+                        Some(format!("Post-recovery write failed: {}", e)),
+                    ),
                 }
             }
-            Err(e) => {
-                (false, HashMap::new(), Some(format!("Failed to open database after kill: {}", e)))
-            }
+            Err(e) => (
+                false,
+                HashMap::new(),
+                Some(format!("Failed to open database after kill: {}", e)),
+            ),
         }
     }
 
@@ -410,21 +464,27 @@ fn main() {{
     fn run_all_tests(&self) {
         let kill_points = KillPoint::all();
         let total = kill_points.len();
-        
+
         println!("🧪 Starting Kill -9 Recovery Test Suite");
         println!("📊 Total test points: {}", total);
         println!("⏱️  Estimated time: {} minutes", total * 2 / 60);
         println!("");
-        
+
         let mut passed = 0;
         let mut failed = 0;
-        
+
         for (i, kill_point) in kill_points.into_iter().enumerate() {
-            println!("\n[{}/{}] Testing: {} {} {}", 
-                     i + 1, total, kill_point.operation, kill_point.timing, kill_point.name);
-            
+            println!(
+                "\n[{}/{}] Testing: {} {} {}",
+                i + 1,
+                total,
+                kill_point.operation,
+                kill_point.timing,
+                kill_point.name
+            );
+
             let result = self.test_kill_point(kill_point.clone());
-            
+
             if result.success {
                 println!("✅ PASSED - Recovery time: {:?}", result.recovery_time);
                 passed += 1;
@@ -432,10 +492,10 @@ fn main() {{
                 println!("❌ FAILED - Error: {:?}", result.error);
                 failed += 1;
             }
-            
+
             self.results.lock().unwrap().push(result);
         }
-        
+
         // Generate report
         self.generate_report(passed, failed);
     }
@@ -445,79 +505,107 @@ fn main() {{
         println!("\n{}", "=".repeat(80));
         println!("📊 KILL -9 RECOVERY TEST REPORT");
         println!("{}", "=".repeat(80));
-        
+
         let results = self.results.lock().unwrap();
-        
+
         // Summary
         println!("\n📈 SUMMARY:");
         println!("  Total tests: {}", passed + failed);
-        println!("  ✅ Passed: {} ({:.1}%)", passed, passed as f64 / (passed + failed) as f64 * 100.0);
-        println!("  ❌ Failed: {} ({:.1}%)", failed, failed as f64 / (passed + failed) as f64 * 100.0);
-        
+        println!(
+            "  ✅ Passed: {} ({:.1}%)",
+            passed,
+            passed as f64 / (passed + failed) as f64 * 100.0
+        );
+        println!(
+            "  ❌ Failed: {} ({:.1}%)",
+            failed,
+            failed as f64 / (passed + failed) as f64 * 100.0
+        );
+
         // Recovery time statistics
-        let recovery_times: Vec<_> = results.iter()
+        let recovery_times: Vec<_> = results
+            .iter()
             .filter(|r| r.success)
             .map(|r| r.recovery_time)
             .collect();
-        
+
         if !recovery_times.is_empty() {
-            let avg_recovery = recovery_times.iter().sum::<Duration>() / recovery_times.len() as u32;
+            let avg_recovery =
+                recovery_times.iter().sum::<Duration>() / recovery_times.len() as u32;
             let max_recovery = recovery_times.iter().max().unwrap();
             let min_recovery = recovery_times.iter().min().unwrap();
-            
+
             println!("\n⏱️  RECOVERY TIME STATISTICS:");
             println!("  Average: {:?}", avg_recovery);
             println!("  Maximum: {:?}", max_recovery);
             println!("  Minimum: {:?}", min_recovery);
         }
-        
+
         // Failed test details
         if failed > 0 {
             println!("\n❌ FAILED TESTS:");
             for result in results.iter().filter(|r| !r.success) {
-                println!("  - {} {} {}: {}", 
-                         result.kill_point.operation,
-                         result.kill_point.timing,
-                         result.kill_point.name,
-                         result.error.as_ref().unwrap_or(&"Unknown error".to_string()));
+                println!(
+                    "  - {} {} {}: {}",
+                    result.kill_point.operation,
+                    result.kill_point.timing,
+                    result.kill_point.name,
+                    result
+                        .error
+                        .as_ref()
+                        .unwrap_or(&"Unknown error".to_string())
+                );
             }
         }
-        
+
         // Critical findings
         println!("\n🔍 CRITICAL FINDINGS:");
-        
+
         // Check for data loss
-        let data_loss_tests = results.iter()
-            .filter(|r| !r.success && r.error.as_ref().map_or(false, |e| e.contains("Missing keys")))
+        let data_loss_tests = results
+            .iter()
+            .filter(|r| {
+                !r.success
+                    && r.error
+                        .as_ref()
+                        .map_or(false, |e| e.contains("Missing keys"))
+            })
             .count();
-        
+
         if data_loss_tests > 0 {
             println!("  ⚠️  DATA LOSS detected in {} tests!", data_loss_tests);
         } else {
             println!("  ✅ No data loss detected");
         }
-        
+
         // Check for corruption
-        let corruption_tests = results.iter()
+        let corruption_tests = results
+            .iter()
             .filter(|r| !r.success && r.error.as_ref().map_or(false, |e| e.contains("Corrupted")))
             .count();
-        
+
         if corruption_tests > 0 {
             println!("  ⚠️  CORRUPTION detected in {} tests!", corruption_tests);
         } else {
             println!("  ✅ No corruption detected");
         }
-        
+
         // Overall verdict
         println!("\n🏁 VERDICT:");
         if failed == 0 {
             println!("  ✅ ALL TESTS PASSED - Database is resilient to kill -9!");
         } else if (failed as f64 / (passed + failed) as f64) < 0.05 {
-            println!("  ⚠️  MOSTLY PASSED - {} minor issues need attention", failed);
+            println!(
+                "  ⚠️  MOSTLY PASSED - {} minor issues need attention",
+                failed
+            );
         } else {
-            println!("  ❌ CRITICAL ISSUES - {} tests failed, immediate attention required!", failed);
+            println!(
+                "  ❌ CRITICAL ISSUES - {} tests failed, immediate attention required!",
+                failed
+            );
         }
-        
+
         println!("\n{}", "=".repeat(80));
     }
 }
@@ -533,15 +621,31 @@ fn test_kill_recovery_comprehensive() {
 fn test_kill_recovery_critical_points() {
     // Test only the most critical kill points
     let harness = KillRecoveryHarness::new();
-    
+
     let critical_points = vec![
-        KillPoint { name: "kill_commit_during", operation: "commit_transaction", timing: "during" },
-        KillPoint { name: "kill_checkpoint_during", operation: "checkpoint", timing: "during" },
-        KillPoint { name: "kill_put_during", operation: "put", timing: "during" },
+        KillPoint {
+            name: "kill_commit_during",
+            operation: "commit_transaction",
+            timing: "during",
+        },
+        KillPoint {
+            name: "kill_checkpoint_during",
+            operation: "checkpoint",
+            timing: "during",
+        },
+        KillPoint {
+            name: "kill_put_during",
+            operation: "put",
+            timing: "during",
+        },
     ];
-    
+
     for point in critical_points {
         let result = harness.test_kill_point(point);
-        assert!(result.success, "Critical kill point failed: {:?}", result.error);
+        assert!(
+            result.success,
+            "Critical kill point failed: {:?}",
+            result.error
+        );
     }
 }

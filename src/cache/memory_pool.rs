@@ -103,7 +103,7 @@ impl MemoryPool {
                             arc_cache.mark_clean(*page_id);
                             continue;
                         }
-                        
+
                         match page_mgr.write_page(&cached_page.page) {
                             Ok(_) => arc_cache.mark_clean(*page_id),
                             Err(e) => {
@@ -232,7 +232,7 @@ impl MemoryPool {
                 self.arc_cache.mark_clean(page_id);
                 continue;
             }
-            
+
             page_mgr.write_page(&cached_page.page)?;
             self.arc_cache.mark_clean(page_id);
         }
@@ -450,7 +450,6 @@ impl MemoryPool {
         page.set_data(&new_data)?;
         Ok(())
     }
-
 
     pub fn shutdown(&mut self) {
         // Signal shutdown

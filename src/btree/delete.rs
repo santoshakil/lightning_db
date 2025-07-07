@@ -12,12 +12,12 @@ impl BPlusTree {
 
         // Delete from leaf and handle underflow
         let deleted = self.delete_and_rebalance(key, &path)?;
-        
+
         // Check if root needs to be adjusted (height decrease)
         if deleted {
             self.check_root_adjustment()?;
         }
-        
+
         Ok(deleted)
     }
 
@@ -36,14 +36,14 @@ impl BPlusTree {
         while level > 1 {
             let page = self.page_manager.get_page(current_page_id)?;
             let node = BTreeNode::deserialize_from_page(&page)?;
-            
+
             let (child_page_id, child_index) = self.find_child_for_deletion(&node, key)?;
             path.push((current_page_id, child_index));
-            
+
             current_page_id = child_page_id;
             level -= 1;
         }
-        
+
         // Add the leaf page
         path.push((current_page_id, 0));
 
@@ -56,7 +56,7 @@ impl BPlusTree {
             NodeType::Internal => {
                 // Find the correct child by comparing key with entries
                 let mut child_index = 0;
-                
+
                 for (i, entry) in node.entries.iter().enumerate() {
                     if key < entry.key.as_slice() {
                         child_index = i;
@@ -64,10 +64,10 @@ impl BPlusTree {
                     }
                     child_index = i + 1;
                 }
-                
+
                 // Ensure child_index is within bounds
                 child_index = child_index.min(node.children.len().saturating_sub(1));
-                
+
                 if child_index < node.children.len() {
                     Ok((node.children[child_index], child_index))
                 } else {
@@ -92,7 +92,7 @@ impl BPlusTree {
         // Find and remove the key
         let initial_size = leaf_node.entries.len();
         leaf_node.entries.retain(|entry| entry.key != key);
-        
+
         if leaf_node.entries.len() == initial_size {
             return Ok(false); // Key not found
         }
@@ -115,14 +115,19 @@ impl BPlusTree {
         // Get parent information
         let parent_index = path.len() - 2;
         let (parent_page_id, child_index) = path[parent_index];
-        
+
         let parent_page = self.page_manager.get_page(parent_page_id)?;
         let parent_node = BTreeNode::deserialize_from_page(&parent_page)?;
 
         // Try to borrow from left sibling
         if child_index > 0 {
             let left_sibling_id = parent_node.children[child_index - 1];
-            if self.try_borrow_from_left(underflow_page_id, left_sibling_id, parent_page_id, child_index - 1)? {
+            if self.try_borrow_from_left(
+                underflow_page_id,
+                left_sibling_id,
+                parent_page_id,
+                child_index - 1,
+            )? {
                 return Ok(());
             }
         }
@@ -130,7 +135,12 @@ impl BPlusTree {
         // Try to borrow from right sibling
         if child_index < parent_node.children.len() - 1 {
             let right_sibling_id = parent_node.children[child_index + 1];
-            if self.try_borrow_from_right(underflow_page_id, right_sibling_id, parent_page_id, child_index)? {
+            if self.try_borrow_from_right(
+                underflow_page_id,
+                right_sibling_id,
+                parent_page_id,
+                child_index,
+            )? {
                 return Ok(());
             }
         }
@@ -139,18 +149,28 @@ impl BPlusTree {
         if child_index > 0 {
             // Merge with left sibling
             let left_sibling_id = parent_node.children[child_index - 1];
-            self.merge_nodes(left_sibling_id, underflow_page_id, parent_page_id, child_index - 1)?;
+            self.merge_nodes(
+                left_sibling_id,
+                underflow_page_id,
+                parent_page_id,
+                child_index - 1,
+            )?;
         } else if child_index < parent_node.children.len() - 1 {
             // Merge with right sibling
             let right_sibling_id = parent_node.children[child_index + 1];
-            self.merge_nodes(underflow_page_id, right_sibling_id, parent_page_id, child_index)?;
+            self.merge_nodes(
+                underflow_page_id,
+                right_sibling_id,
+                parent_page_id,
+                child_index,
+            )?;
         }
 
         // Check if parent now has underflow
         if parent_index > 0 {
             let parent_page = self.page_manager.get_page(parent_page_id)?;
             let parent_node = BTreeNode::deserialize_from_page(&parent_page)?;
-            
+
             if parent_node.entries.len() < MIN_KEYS_PER_NODE {
                 self.handle_underflow(&path[..parent_index + 1], parent_page_id)?;
             }
@@ -184,31 +204,40 @@ impl BPlusTree {
         match underflow_node.node_type {
             NodeType::Leaf => {
                 // For leaf nodes, borrow the last entry from left sibling
-                let borrowed_entry = left_node.entries.pop()
-                    .ok_or_else(|| Error::InvalidOperation { 
-                        reason: "Left sibling has no entries to borrow".to_string() 
-                    })?;
+                let borrowed_entry =
+                    left_node
+                        .entries
+                        .pop()
+                        .ok_or_else(|| Error::InvalidOperation {
+                            reason: "Left sibling has no entries to borrow".to_string(),
+                        })?;
                 underflow_node.entries.insert(0, borrowed_entry.clone());
-                
+
                 // Update parent separator
                 parent_node.entries[separator_index].key = underflow_node.entries[0].key.clone();
             }
             NodeType::Internal => {
                 // For internal nodes, rotate through parent
-                let borrowed_entry = left_node.entries.pop()
-                    .ok_or_else(|| Error::InvalidOperation { 
-                        reason: "Left sibling has no entries to borrow".to_string() 
-                    })?;
-                let borrowed_child = left_node.children.pop()
-                    .ok_or_else(|| Error::InvalidOperation { 
-                        reason: "Left sibling has no children to borrow".to_string() 
-                    })?;
-                
+                let borrowed_entry =
+                    left_node
+                        .entries
+                        .pop()
+                        .ok_or_else(|| Error::InvalidOperation {
+                            reason: "Left sibling has no entries to borrow".to_string(),
+                        })?;
+                let borrowed_child =
+                    left_node
+                        .children
+                        .pop()
+                        .ok_or_else(|| Error::InvalidOperation {
+                            reason: "Left sibling has no children to borrow".to_string(),
+                        })?;
+
                 // Move separator from parent to underflow node
                 let separator = parent_node.entries[separator_index].clone();
                 underflow_node.entries.insert(0, separator);
                 underflow_node.children.insert(0, borrowed_child);
-                
+
                 // Move borrowed entry to parent
                 parent_node.entries[separator_index] = borrowed_entry;
             }
@@ -217,10 +246,10 @@ impl BPlusTree {
         // Write all modified nodes
         left_node.serialize_to_page(&mut left_page)?;
         self.page_manager.write_page(&left_page)?;
-        
+
         underflow_node.serialize_to_page(&mut underflow_page)?;
         self.page_manager.write_page(&underflow_page)?;
-        
+
         parent_node.serialize_to_page(&mut parent_page)?;
         self.page_manager.write_page(&parent_page)?;
 
@@ -254,7 +283,7 @@ impl BPlusTree {
                 // For leaf nodes, borrow the first entry from right sibling
                 let borrowed_entry = right_node.entries.remove(0);
                 underflow_node.entries.push(borrowed_entry);
-                
+
                 // Update parent separator
                 parent_node.entries[separator_index].key = right_node.entries[0].key.clone();
             }
@@ -262,12 +291,12 @@ impl BPlusTree {
                 // For internal nodes, rotate through parent
                 let borrowed_entry = right_node.entries.remove(0);
                 let borrowed_child = right_node.children.remove(0);
-                
+
                 // Move separator from parent to underflow node
                 let separator = parent_node.entries[separator_index].clone();
                 underflow_node.entries.push(separator);
                 underflow_node.children.push(borrowed_child);
-                
+
                 // Move borrowed entry to parent
                 parent_node.entries[separator_index] = borrowed_entry;
             }
@@ -276,10 +305,10 @@ impl BPlusTree {
         // Write all modified nodes
         right_node.serialize_to_page(&mut right_page)?;
         self.page_manager.write_page(&right_page)?;
-        
+
         underflow_node.serialize_to_page(&mut underflow_page)?;
         self.page_manager.write_page(&underflow_page)?;
-        
+
         parent_node.serialize_to_page(&mut parent_page)?;
         self.page_manager.write_page(&parent_page)?;
 
@@ -340,9 +369,10 @@ impl BPlusTree {
         let root_node = BTreeNode::deserialize_from_page(&root_page)?;
 
         // If root is internal and has only one child, make that child the new root
-        if root_node.node_type == NodeType::Internal && 
-           root_node.entries.is_empty() && 
-           root_node.children.len() == 1 {
+        if root_node.node_type == NodeType::Internal
+            && root_node.entries.is_empty()
+            && root_node.children.len() == 1
+        {
             let new_root_id = root_node.children[0];
             self.page_manager.free_page(self.root_page_id);
             self.root_page_id = new_root_id;
@@ -357,15 +387,15 @@ impl BPlusTree {
 mod tests {
     use crate::btree::BPlusTree;
     use crate::storage::page::PageManager;
-    use std::sync::Arc;
     use parking_lot::RwLock;
+    use std::sync::Arc;
     use tempfile::tempdir;
 
     #[test]
     fn test_delete_complete() {
         let dir = tempdir().unwrap();
         let page_manager = Arc::new(RwLock::new(
-            PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap()
+            PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap(),
         ));
         let mut btree = BPlusTree::new(page_manager).unwrap();
 
@@ -398,7 +428,7 @@ mod tests {
     fn test_delete_simple() {
         let dir = tempdir().unwrap();
         let page_manager = Arc::new(RwLock::new(
-            PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap()
+            PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap(),
         ));
         let mut btree = BPlusTree::new(page_manager).unwrap();
 
@@ -412,22 +442,35 @@ mod tests {
         // Verify they exist
         for i in 0..5 {
             let key = format!("key{}", i);
-            assert!(btree.get(key.as_bytes()).unwrap().is_some(), "Key {} should exist", i);
+            assert!(
+                btree.get(key.as_bytes()).unwrap().is_some(),
+                "Key {} should exist",
+                i
+            );
         }
 
         // Delete one key
-        assert!(btree.delete_complete(b"key2").unwrap(), "Should successfully delete key2");
-        
+        assert!(
+            btree.delete_complete(b"key2").unwrap(),
+            "Should successfully delete key2"
+        );
+
         // Verify deletion
-        assert!(btree.get(b"key2").unwrap().is_none(), "key2 should be deleted");
-        assert!(btree.get(b"key1").unwrap().is_some(), "key1 should still exist");
+        assert!(
+            btree.get(b"key2").unwrap().is_none(),
+            "key2 should be deleted"
+        );
+        assert!(
+            btree.get(b"key1").unwrap().is_some(),
+            "key1 should still exist"
+        );
     }
 
     #[test]
     fn test_insertions_work() {
         let dir = tempdir().unwrap();
         let page_manager = Arc::new(RwLock::new(
-            PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap()
+            PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap(),
         ));
         let mut btree = BPlusTree::new(page_manager).unwrap();
 
@@ -436,12 +479,12 @@ mod tests {
             let key = format!("key{:04}", i);
             let value = format!("value{:04}", i);
             btree.insert(key.as_bytes(), value.as_bytes()).unwrap();
-            
+
             // Verify immediately after insertion
             let result = btree.get(key.as_bytes()).unwrap();
             assert!(result.is_some(), "Key {} should exist after insertion", key);
         }
-        
+
         // Verify all keys still exist
         for i in 0..10 {
             let key = format!("key{:04}", i);
@@ -454,7 +497,7 @@ mod tests {
     fn test_delete_with_underflow() {
         let dir = tempdir().unwrap();
         let page_manager = Arc::new(RwLock::new(
-            PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap()
+            PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap(),
         ));
         let mut btree = BPlusTree::new(page_manager).unwrap();
 
@@ -463,11 +506,14 @@ mod tests {
             let key = format!("key{:04}", i);
             let value = format!("value{:04}", i);
             btree.insert(key.as_bytes(), value.as_bytes()).unwrap();
-            
+
             // Verify insertion worked
             let result = btree.get(key.as_bytes()).unwrap();
-            assert!(result.is_some(), 
-                   "Failed to insert key during redistribution: {:?}", key);
+            assert!(
+                result.is_some(),
+                "Failed to insert key during redistribution: {:?}",
+                key
+            );
         }
 
         // Delete many keys to trigger underflow and merging

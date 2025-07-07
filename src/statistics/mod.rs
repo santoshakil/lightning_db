@@ -1,7 +1,7 @@
-pub mod metrics;
 pub mod collector;
+pub mod metrics;
 pub mod reporter;
 
-pub use metrics::*;
 pub use collector::*;
+pub use metrics::*;
 pub use reporter::*;

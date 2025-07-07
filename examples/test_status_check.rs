@@ -4,10 +4,10 @@ use tempfile::tempdir;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⚡ Lightning DB Status Check\n");
-    
+
     let dir = tempdir()?;
     let mut results = Vec::new();
-    
+
     // Test 1: Basic operations
     {
         print!("Test 1: Basic put/get...");
@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             results.push(("Basic operations", false));
         }
     }
-    
+
     // Test 2: Transactions
     {
         print!("Test 2: Transactions...");
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             results.push(("Transactions", false));
         }
     }
-    
+
     // Test 3: Delete operations
     {
         print!("Test 3: Delete operations...");
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             results.push(("Delete operations", false));
         }
     }
-    
+
     // Test 4: LSM tree
     {
         print!("Test 4: LSM tree...");
@@ -72,11 +72,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             results.push(("LSM tree", false));
         }
     }
-    
+
     // Test 5: Auto batcher
     {
         print!("Test 5: Auto batcher...");
-        let db = Arc::new(Database::create(dir.path().join("batch.db"), LightningDbConfig::default())?);
+        let db = Arc::new(Database::create(
+            dir.path().join("batch.db"),
+            LightningDbConfig::default(),
+        )?);
         let batcher = Database::create_auto_batcher(db.clone());
         batcher.put(b"batch_key".to_vec(), b"batch_value".to_vec())?;
         batcher.wait_for_completion()?;
@@ -90,19 +93,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         batcher.shutdown();
     }
-    
+
     // Summary
     println!("\n📊 SUMMARY:");
     let total = results.len();
     let passed = results.iter().filter(|(_, pass)| *pass).count();
     println!("  Total tests: {}", total);
     println!("  Passed: {} ({}%)", passed, passed * 100 / total);
-    println!("  Failed: {} ({}%)", total - passed, (total - passed) * 100 / total);
-    
+    println!(
+        "  Failed: {} ({}%)",
+        total - passed,
+        (total - passed) * 100 / total
+    );
+
     println!("\n🔍 DETAILED RESULTS:");
     for (test, pass) in &results {
         println!("  {} {}", if *pass { "✅" } else { "❌" }, test);
     }
-    
+
     Ok(())
 }

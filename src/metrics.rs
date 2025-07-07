@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
 use prometheus::{
-    register_counter_vec, register_gauge_vec, register_histogram_vec,
-    CounterVec, Encoder, GaugeVec, HistogramOpts, HistogramVec, TextEncoder,
+    register_counter_vec, register_gauge_vec, register_histogram_vec, CounterVec, Encoder,
+    GaugeVec, HistogramOpts, HistogramVec, TextEncoder,
 };
 use std::sync::Arc;
 use std::time::Instant;
@@ -139,9 +139,7 @@ impl MetricsRecorder {
     // Update cache metrics
     pub fn update_cache_metrics(&self, hits: u64, misses: u64, evictions: u64, size: u64) {
         if self.enabled {
-            CACHE_METRICS
-                .with_label_values(&["hits"])
-                .set(hits as f64);
+            CACHE_METRICS.with_label_values(&["hits"]).set(hits as f64);
             CACHE_METRICS
                 .with_label_values(&["misses"])
                 .set(misses as f64);
@@ -151,15 +149,13 @@ impl MetricsRecorder {
             CACHE_METRICS
                 .with_label_values(&["size_bytes"])
                 .set(size as f64);
-            
+
             let hit_rate = if hits + misses > 0 {
                 hits as f64 / (hits + misses) as f64
             } else {
                 0.0
             };
-            CACHE_METRICS
-                .with_label_values(&["hit_rate"])
-                .set(hit_rate);
+            CACHE_METRICS.with_label_values(&["hit_rate"]).set(hit_rate);
         }
     }
 
@@ -258,10 +254,11 @@ impl MetricsRecorder {
         let encoder = TextEncoder::new();
         let metric_families = prometheus::gather();
         let mut buffer = Vec::new();
-        
-        encoder.encode(&metric_families, &mut buffer)
+
+        encoder
+            .encode(&metric_families, &mut buffer)
             .map_err(|e| Error::Generic(format!("Failed to encode metrics: {}", e)))?;
-        
+
         String::from_utf8(buffer)
             .map_err(|e| Error::Generic(format!("Failed to convert metrics to string: {}", e)))
     }
@@ -291,7 +288,7 @@ impl OperationGuard {
             OPERATION_LATENCY
                 .with_label_values(&[&self.operation])
                 .observe(duration);
-            
+
             let status = if success { "success" } else { "failure" };
             OPERATION_COUNTER
                 .with_label_values(&[&self.operation, status])
@@ -308,7 +305,7 @@ impl Drop for OperationGuard {
             OPERATION_LATENCY
                 .with_label_values(&[&self.operation])
                 .observe(duration);
-            
+
             OPERATION_COUNTER
                 .with_label_values(&[&self.operation, "failure"])
                 .inc();
@@ -318,7 +315,7 @@ impl Drop for OperationGuard {
 
 // Global metrics instance
 lazy_static::lazy_static! {
-    pub static ref METRICS: Arc<parking_lot::RwLock<MetricsRecorder>> = 
+    pub static ref METRICS: Arc<parking_lot::RwLock<MetricsRecorder>> =
         Arc::new(parking_lot::RwLock::new(MetricsRecorder::new()));
 }
 
@@ -329,7 +326,7 @@ mod tests {
     #[test]
     fn test_operation_metrics() {
         let recorder = MetricsRecorder::new();
-        
+
         // Record successful operation
         {
             let guard = recorder.record_operation("get");
@@ -337,14 +334,14 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(1));
             guard.complete(true);
         }
-        
+
         // Record failed operation
         {
             let guard = recorder.record_operation("put");
             std::thread::sleep(std::time::Duration::from_millis(1));
             guard.complete(false);
         }
-        
+
         // Export metrics
         let metrics = recorder.export().unwrap();
         assert!(metrics.contains("lightning_db_operations_total"));
@@ -354,9 +351,9 @@ mod tests {
     #[test]
     fn test_cache_metrics() {
         let recorder = MetricsRecorder::new();
-        
+
         recorder.update_cache_metrics(1000, 200, 50, 1024 * 1024);
-        
+
         let metrics = recorder.export().unwrap();
         assert!(metrics.contains("lightning_db_cache_metrics"));
         assert!(metrics.contains("hit_rate"));
@@ -365,26 +362,26 @@ mod tests {
     #[test]
     fn test_disabled_metrics() {
         let mut recorder = MetricsRecorder::new();
-        
+
         // First record something while enabled
         {
             let guard = recorder.record_operation("initial");
             guard.complete(true);
         }
-        
+
         // Now disable and verify new operations aren't recorded
         recorder.set_enabled(false);
-        
+
         let metrics_before = recorder.export().unwrap();
-        
+
         // Operations should not be recorded
         {
             let guard = recorder.record_operation("test");
             guard.complete(true);
         }
-        
+
         let metrics_after = recorder.export().unwrap();
-        
+
         // Metrics should be the same (no new data recorded)
         assert_eq!(metrics_before.len(), metrics_after.len());
     }

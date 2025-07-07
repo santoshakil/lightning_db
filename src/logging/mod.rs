@@ -1,15 +1,13 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{info, warn, error, trace, Level};
-use tracing_subscriber::{EnvFilter, fmt, prelude::*, Registry};
+use tracing::{error, info, trace, warn, Level};
 use tracing_subscriber::fmt::time::SystemTime;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
 
 /// Initialize production logging with configurable settings
 pub fn init_logging(level: Level, json_output: bool) {
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| {
-            EnvFilter::new(format!("lightning_db={},warn", level))
-        });
+        .unwrap_or_else(|_| EnvFilter::new(format!("lightning_db={},warn", level)));
 
     if json_output {
         // JSON format for production environments
@@ -22,10 +20,7 @@ pub fn init_logging(level: Level, json_output: bool) {
             .with_thread_ids(true)
             .with_thread_names(true);
 
-        Registry::default()
-            .with(env_filter)
-            .with(fmt_layer)
-            .init();
+        Registry::default().with(env_filter).with(fmt_layer).init();
     } else {
         // Human-readable format for development
         let fmt_layer = fmt::layer()
@@ -36,10 +31,7 @@ pub fn init_logging(level: Level, json_output: bool) {
             .with_thread_ids(false)
             .with_thread_names(true);
 
-        Registry::default()
-            .with(env_filter)
-            .with(fmt_layer)
-            .init();
+        Registry::default().with(env_filter).with(fmt_layer).init();
     }
 }
 
@@ -143,7 +135,7 @@ impl OperationTimer {
 
     pub fn complete<T>(self, result: &Result<T, crate::error::Error>) {
         let duration = self.start.elapsed();
-        
+
         match result {
             Ok(_) => {
                 if duration > Duration::from_millis(100) {
@@ -193,7 +185,7 @@ impl DatabaseMonitor {
 
     pub fn start(self) -> Arc<std::sync::atomic::AtomicBool> {
         let shutdown = Arc::clone(&self.shutdown);
-        
+
         std::thread::spawn(move || {
             while !self.shutdown.load(std::sync::atomic::Ordering::Relaxed) {
                 self.collect_metrics();
@@ -225,10 +217,7 @@ impl DatabaseMonitor {
                     if line.starts_with("VmRSS:") {
                         if let Some(rss) = line.split_whitespace().nth(1) {
                             if let Ok(rss_kb) = rss.parse::<u64>() {
-                                info!(
-                                    memory_rss_mb = rss_kb / 1024,
-                                    "Process memory usage"
-                                );
+                                info!(memory_rss_mb = rss_kb / 1024, "Process memory usage");
                             }
                         }
                     }
@@ -240,11 +229,11 @@ impl DatabaseMonitor {
 
 fn calculate_dir_size(path: &str) -> std::io::Result<u64> {
     let mut total_size = 0;
-    
+
     for entry in std::fs::read_dir(path)? {
         let entry = entry?;
         let metadata = entry.metadata()?;
-        
+
         if metadata.is_file() {
             total_size += metadata.len();
         } else if metadata.is_dir() {
@@ -253,7 +242,7 @@ fn calculate_dir_size(path: &str) -> std::io::Result<u64> {
             }
         }
     }
-    
+
     Ok(total_size)
 }
 
@@ -270,7 +259,13 @@ mod tests {
 
     #[test]
     fn test_logging_macros() {
-        log_operation!(Level::DEBUG, "put", b"key1", Duration::from_micros(100), Ok::<(), String>(()));
+        log_operation!(
+            Level::DEBUG,
+            "put",
+            b"key1",
+            Duration::from_micros(100),
+            Ok::<(), String>(())
+        );
         log_transaction!("commit", 123, Duration::from_millis(50));
         log_cache_event!("get", b"key1", true);
         log_compaction!(0, 10, 3, Duration::from_secs(2));

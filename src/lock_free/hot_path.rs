@@ -1,6 +1,6 @@
-use std::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 use crossbeam_epoch::{self as epoch, Atomic, Owned, Shared};
 use std::ptr;
+use std::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 
 /// Lock-free hot path cache optimized for maximum performance
 pub struct HotPathCache<K: Clone + Eq + std::hash::Hash, V: Clone> {
@@ -23,12 +23,12 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> HotPathCache<K, V> {
     pub fn new(capacity: usize) -> Self {
         // Round up to power of 2 for fast modulo
         let capacity = capacity.next_power_of_two();
-        
+
         let mut slots = Vec::with_capacity(capacity);
         for _ in 0..capacity {
             slots.push(AtomicPtr::new(ptr::null_mut()));
         }
-        
+
         Self {
             slots: slots.into_boxed_slice(),
             capacity,
@@ -42,13 +42,13 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> HotPathCache<K, V> {
     pub fn get(&self, key: &K) -> Option<V> {
         let hash = self.hash_key(key);
         let index = self.index_for(hash);
-        
+
         let ptr = self.slots[index].load(Ordering::Acquire);
         if ptr.is_null() {
             self.misses.fetch_add(1, Ordering::Relaxed);
             return None;
         }
-        
+
         unsafe {
             let entry = &*ptr;
             if entry.hash == hash && entry.key == *key {
@@ -66,16 +66,16 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> HotPathCache<K, V> {
     pub fn insert(&self, key: K, value: V) {
         let hash = self.hash_key(&key);
         let index = self.index_for(hash);
-        
+
         let new_entry = Box::into_raw(Box::new(CacheEntry {
             key,
             value,
             hash,
             access_count: AtomicU64::new(1),
         }));
-        
+
         let old_ptr = self.slots[index].swap(new_entry, Ordering::Release);
-        
+
         if old_ptr.is_null() {
             self.size.fetch_add(1, Ordering::Relaxed);
         } else {
@@ -88,9 +88,9 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> HotPathCache<K, V> {
 
     #[inline(always)]
     fn hash_key(&self, key: &K) -> u64 {
-        use std::hash::Hasher;
         use std::collections::hash_map::DefaultHasher;
-        
+        use std::hash::Hasher;
+
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
         hasher.finish()
@@ -155,7 +155,7 @@ impl<T: Clone> WaitFreeReadBuffer<T> {
     {
         let buffer_idx = self.active_buffer.load(Ordering::Acquire);
         let buffer_ptr = self.buffers[buffer_idx].load(Ordering::Acquire);
-        
+
         unsafe {
             let buffer = &*buffer_ptr;
             f(buffer)
@@ -166,17 +166,15 @@ impl<T: Clone> WaitFreeReadBuffer<T> {
     pub fn update(&self, new_data: Vec<T>) {
         let current_idx = self.active_buffer.load(Ordering::Acquire);
         let next_idx = 1 - current_idx;
-        
+
         // Update the inactive buffer
-        let old_ptr = self.buffers[next_idx].swap(
-            Box::into_raw(Box::new(new_data)),
-            Ordering::Release
-        );
-        
+        let old_ptr =
+            self.buffers[next_idx].swap(Box::into_raw(Box::new(new_data)), Ordering::Release);
+
         // Switch active buffer atomically
         self.active_buffer.store(next_idx, Ordering::Release);
         self.epoch.fetch_add(1, Ordering::Release);
-        
+
         // Clean up old buffer after ensuring no readers
         std::thread::yield_now(); // Give readers time to finish
         unsafe {
@@ -206,10 +204,10 @@ impl<K: Clone + Send, V: Clone + Send> WriteCombiningBuffer<K, V> {
 
     pub fn add_write(&self, key: K, value: V) -> Option<Vec<(K, V)>> {
         let guard = &epoch::pin();
-        
+
         loop {
             let current = self.pending.load(Ordering::Acquire, guard);
-            
+
             let batch = if current.is_null() {
                 WriteBatch {
                     writes: vec![(key.clone(), value.clone())],
@@ -222,14 +220,14 @@ impl<K: Clone + Send, V: Clone + Send> WriteCombiningBuffer<K, V> {
                     batch
                 }
             };
-            
+
             if batch.writes.len() >= self.threshold {
                 // Batch is full, try to claim it
                 let owned = Owned::new(WriteBatch {
                     writes: Vec::new(),
                     _next: None,
                 });
-                
+
                 match self.pending.compare_exchange(
                     current,
                     owned,
@@ -250,7 +248,7 @@ impl<K: Clone + Send, V: Clone + Send> WriteCombiningBuffer<K, V> {
             } else {
                 // Add to batch
                 let owned = Owned::new(batch);
-                
+
                 match self.pending.compare_exchange(
                     current,
                     owned,
@@ -274,9 +272,9 @@ impl<K: Clone + Send, V: Clone + Send> WriteCombiningBuffer<K, V> {
 
     pub fn flush(&self) -> Option<Vec<(K, V)>> {
         let guard = &epoch::pin();
-        
+
         let current = self.pending.swap(Shared::null(), Ordering::AcqRel, guard);
-        
+
         if current.is_null() {
             None
         } else {
@@ -308,12 +306,12 @@ mod tests {
     fn test_hot_path_cache() {
         // Use String types for dynamic keys/values
         let cache = Arc::new(HotPathCache::<String, String>::new(1024));
-        
+
         // Test basic operations
         cache.insert("key1".to_string(), "value1".to_string());
         assert_eq!(cache.get(&"key1".to_string()), Some("value1".to_string()));
         assert_eq!(cache.get(&"key2".to_string()), None);
-        
+
         // Test concurrent access
         let cache_clone = Arc::clone(&cache);
         let handle = thread::spawn(move || {
@@ -323,26 +321,30 @@ mod tests {
                 cache_clone.insert(key, value);
             }
         });
-        
+
         for i in 0..1000 {
             let key = format!("key{}", i);
             let _ = cache.get(&key);
         }
-        
+
         handle.join().unwrap();
-        
+
         let (hits, misses, hit_rate) = cache.stats();
-        println!("Cache stats - Hits: {}, Misses: {}, Hit rate: {:.2}%", 
-                 hits, misses, hit_rate * 100.0);
+        println!(
+            "Cache stats - Hits: {}, Misses: {}, Hit rate: {:.2}%",
+            hits,
+            misses,
+            hit_rate * 100.0
+        );
     }
 
     #[test]
     fn test_wait_free_read_buffer() {
         let buffer = Arc::new(WaitFreeReadBuffer::new());
-        
+
         // Update buffer
         buffer.update(vec![1, 2, 3, 4, 5]);
-        
+
         // Concurrent reads
         let mut handles = vec![];
         for _ in 0..10 {
@@ -355,10 +357,10 @@ mod tests {
                 })
             }));
         }
-        
+
         // Update while reading
         buffer.update(vec![10, 20, 30]);
-        
+
         for handle in handles {
             let sum = handle.join().unwrap();
             assert!(sum == 15 || sum == 60); // Either old or new data
@@ -368,17 +370,17 @@ mod tests {
     #[test]
     fn test_write_combining_buffer() {
         let buffer = Arc::new(WriteCombiningBuffer::new(5));
-        
+
         // Add writes
         for i in 0..4 {
             assert!(buffer.add_write(i, i * 10).is_none());
         }
-        
+
         // This should trigger a flush
         if let Some(batch) = buffer.add_write(4, 40) {
             assert_eq!(batch.len(), 5);
         }
-        
+
         // Manual flush
         buffer.add_write(5, 50);
         if let Some(batch) = buffer.flush() {

@@ -1,5 +1,5 @@
 //! FFI bindings for error handling
-//! 
+//!
 //! Re-exports error handling functions from the error module
 
 pub use crate::error::{

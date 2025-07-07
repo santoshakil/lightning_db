@@ -15,35 +15,35 @@ pub struct RealtimeStats {
     pub put_ops: u64,
     pub delete_ops: u64,
     pub range_ops: u64,
-    
+
     // Performance metrics
     pub avg_latency_us: f64,
     pub p99_latency_us: f64,
     pub p95_latency_us: f64,
     pub throughput_ops_sec: f64,
-    
+
     // Size metrics
     pub data_size_bytes: u64,
     pub index_size_bytes: u64,
     pub wal_size_bytes: u64,
     pub cache_size_bytes: u64,
-    
+
     // Cache stats
     pub cache_hit_rate: f64,
     pub cache_hits: u64,
     pub cache_misses: u64,
     pub cache_evictions: u64,
-    
+
     // Transaction stats
     pub active_transactions: u64,
     pub committed_transactions: u64,
     pub aborted_transactions: u64,
-    
+
     // Resource usage
     pub memory_usage_mb: f64,
     pub cpu_usage_percent: f64,
     pub disk_io_mb_sec: f64,
-    
+
     // Time window
     pub window_start: Instant,
     pub window_duration: Duration,
@@ -62,7 +62,7 @@ pub struct RealtimeStatsCollector {
     latency_samples: Arc<RwLock<VecDeque<LatencySample>>>,
     sample_window: Duration,
     update_interval: Duration,
-    
+
     // Atomic counters for high-frequency updates
     get_counter: Arc<AtomicU64>,
     put_counter: Arc<AtomicU64>,
@@ -126,7 +126,7 @@ impl RealtimeStatsCollector {
         let latency_samples = self.latency_samples.clone();
         let update_interval = self.update_interval;
         let sample_window = self.sample_window;
-        
+
         let get_counter = self.get_counter.clone();
         let put_counter = self.put_counter.clone();
         let delete_counter = self.delete_counter.clone();
@@ -135,18 +135,18 @@ impl RealtimeStatsCollector {
         thread::spawn(move || {
             loop {
                 thread::sleep(update_interval);
-                
+
                 // Update counters
                 let get_ops = get_counter.swap(0, Ordering::AcqRel);
                 let put_ops = put_counter.swap(0, Ordering::AcqRel);
                 let delete_ops = delete_counter.swap(0, Ordering::AcqRel);
                 let range_ops = range_counter.swap(0, Ordering::AcqRel);
                 let total_ops = get_ops + put_ops + delete_ops + range_ops;
-                
+
                 // Calculate latency percentiles
                 let mut samples = latency_samples.write();
                 let now = Instant::now();
-                
+
                 // Remove old samples
                 while let Some(front) = samples.front() {
                     if now.duration_since(front.timestamp) > sample_window {
@@ -155,21 +155,21 @@ impl RealtimeStatsCollector {
                         break;
                     }
                 }
-                
+
                 // Calculate percentiles
                 let (avg_latency, p95_latency, p99_latency) = if !samples.is_empty() {
                     let mut latencies: Vec<_> = samples.iter().map(|s| s.latency_us).collect();
                     latencies.sort_unstable();
-                    
+
                     let avg = latencies.iter().sum::<u64>() as f64 / latencies.len() as f64;
                     let p95_idx = (latencies.len() as f64 * 0.95) as usize;
                     let p99_idx = (latencies.len() as f64 * 0.99) as usize;
-                    
+
                     (avg, latencies[p95_idx] as f64, latencies[p99_idx] as f64)
                 } else {
                     (0.0, 0.0, 0.0)
                 };
-                
+
                 // Update stats
                 let mut stats = current_stats.write();
                 stats.get_ops += get_ops;
@@ -177,12 +177,12 @@ impl RealtimeStatsCollector {
                 stats.delete_ops += delete_ops;
                 stats.range_ops += range_ops;
                 stats.total_ops += total_ops;
-                
+
                 stats.avg_latency_us = avg_latency;
                 stats.p95_latency_us = p95_latency;
                 stats.p99_latency_us = p99_latency;
                 stats.throughput_ops_sec = total_ops as f64 / update_interval.as_secs_f64();
-                
+
                 // Update metrics
                 METRICS.read().update_database_size(
                     stats.data_size_bytes,
@@ -282,7 +282,7 @@ impl RealtimeStatsCollector {
         stats.put_ops = 0;
         stats.delete_ops = 0;
         stats.range_ops = 0;
-        
+
         self.latency_samples.write().clear();
     }
 
@@ -294,35 +294,43 @@ impl RealtimeStatsCollector {
 impl RealtimeStats {
     pub fn print_summary(&self) {
         println!("\n=== Real-time Database Statistics ===");
-        println!("Window: {:?} (started {:?} ago)", 
-                 self.window_duration, 
-                 self.window_start.elapsed());
-        
+        println!(
+            "Window: {:?} (started {:?} ago)",
+            self.window_duration,
+            self.window_start.elapsed()
+        );
+
         println!("\nThroughput:");
         println!("  Total: {:.0} ops/sec", self.throughput_ops_sec);
-        println!("  Operations: {} total ({} gets, {} puts, {} deletes, {} ranges)",
-                 self.total_ops, self.get_ops, self.put_ops, self.delete_ops, self.range_ops);
-        
+        println!(
+            "  Operations: {} total ({} gets, {} puts, {} deletes, {} ranges)",
+            self.total_ops, self.get_ops, self.put_ops, self.delete_ops, self.range_ops
+        );
+
         println!("\nLatency:");
         println!("  Average: {:.1} μs", self.avg_latency_us);
         println!("  P95: {:.1} μs", self.p95_latency_us);
         println!("  P99: {:.1} μs", self.p99_latency_us);
-        
+
         println!("\nCache Performance:");
         println!("  Hit Rate: {:.1}%", self.cache_hit_rate * 100.0);
-        println!("  Hits: {} | Misses: {} | Evictions: {}", 
-                 self.cache_hits, self.cache_misses, self.cache_evictions);
-        
+        println!(
+            "  Hits: {} | Misses: {} | Evictions: {}",
+            self.cache_hits, self.cache_misses, self.cache_evictions
+        );
+
         println!("\nDatabase Size:");
         println!("  Data: {} MB", self.data_size_bytes / 1024 / 1024);
         println!("  Index: {} MB", self.index_size_bytes / 1024 / 1024);
         println!("  WAL: {} MB", self.wal_size_bytes / 1024 / 1024);
         println!("  Cache: {} MB", self.cache_size_bytes / 1024 / 1024);
-        
+
         println!("\nTransactions:");
-        println!("  Active: {} | Committed: {} | Aborted: {}",
-                 self.active_transactions, self.committed_transactions, self.aborted_transactions);
-        
+        println!(
+            "  Active: {} | Committed: {} | Aborted: {}",
+            self.active_transactions, self.committed_transactions, self.aborted_transactions
+        );
+
         println!("\nResource Usage:");
         println!("  Memory: {:.1} MB", self.memory_usage_mb);
         println!("  CPU: {:.1}%", self.cpu_usage_percent);
@@ -332,7 +340,7 @@ impl RealtimeStats {
 
 // Global realtime stats collector
 lazy_static::lazy_static! {
-    pub static ref REALTIME_STATS: Arc<RwLock<RealtimeStatsCollector>> = 
+    pub static ref REALTIME_STATS: Arc<RwLock<RealtimeStatsCollector>> =
         Arc::new(RwLock::new(RealtimeStatsCollector::new()));
 }
 
@@ -343,35 +351,37 @@ mod tests {
     #[test]
     fn test_stats_collection() {
         let collector = RealtimeStatsCollector::new();
-        
+
         // Record some operations
         collector.record_operation("get", Duration::from_micros(100));
         collector.record_operation("put", Duration::from_micros(200));
         collector.record_operation("get", Duration::from_micros(150));
-        
+
         // Wait a bit for counters to be read
         thread::sleep(Duration::from_millis(10));
-        
+
         // Check that operations were recorded
-        assert!(collector.get_counter.load(Ordering::Relaxed) > 0 || 
-                collector.put_counter.load(Ordering::Relaxed) > 0);
+        assert!(
+            collector.get_counter.load(Ordering::Relaxed) > 0
+                || collector.put_counter.load(Ordering::Relaxed) > 0
+        );
     }
 
     #[test]
     fn test_cache_stats_update() {
         use std::sync::atomic::AtomicUsize;
-        
+
         let collector = RealtimeStatsCollector::new();
-        
+
         let cache_stats = CacheStats {
             hits: AtomicUsize::new(1000),
             misses: AtomicUsize::new(200),
             evictions: AtomicUsize::new(50),
             prefetch_hits: AtomicUsize::new(10),
         };
-        
+
         collector.update_cache_stats(&cache_stats);
-        
+
         let stats = collector.get_current_stats();
         assert_eq!(stats.cache_hits, 1000);
         assert_eq!(stats.cache_misses, 200);
@@ -382,14 +392,14 @@ mod tests {
     #[test]
     fn test_window_reset() {
         let collector = RealtimeStatsCollector::new();
-        
+
         // Record operations
         collector.record_operation("get", Duration::from_micros(100));
         collector.record_operation("put", Duration::from_micros(200));
-        
+
         // Reset window
         collector.reset_window();
-        
+
         let stats = collector.get_current_stats();
         assert_eq!(stats.total_ops, 0);
         assert_eq!(stats.get_ops, 0);

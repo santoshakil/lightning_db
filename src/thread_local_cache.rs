@@ -3,7 +3,7 @@ use std::cell::RefCell;
 thread_local! {
     // Thread-local key buffer to avoid allocations
     static KEY_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(256));
-    
+
     // Thread-local value buffer
     static VALUE_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(4096));
 }

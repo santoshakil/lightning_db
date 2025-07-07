@@ -1,33 +1,40 @@
-use clap::{Command, Arg};
-use lightning_db::{Database, LightningDbConfig, simple_http_admin::start_admin_server};
-use std::sync::Arc;
+use clap::{Arg, Command};
+use lightning_db::{simple_http_admin::start_admin_server, Database, LightningDbConfig};
 use std::path::Path;
+use std::sync::Arc;
 
 /// Lightning DB HTTP Admin Server
-/// 
+///
 /// Provides HTTP endpoints for database administration
 
 fn main() {
     let matches = Command::new("lightning-admin-server")
         .about("Lightning DB HTTP Admin Server")
         .version(env!("CARGO_PKG_VERSION"))
-        .arg(Arg::new("database")
-            .help("Database path")
-            .required(true)
-            .index(1))
-        .arg(Arg::new("port")
-            .help("Port to listen on")
-            .short('p')
-            .long("port")
-            .default_value("8080"))
-        .arg(Arg::new("create")
-            .help("Create database if it doesn't exist")
-            .long("create")
-            .action(clap::ArgAction::SetTrue))
+        .arg(
+            Arg::new("database")
+                .help("Database path")
+                .required(true)
+                .index(1),
+        )
+        .arg(
+            Arg::new("port")
+                .help("Port to listen on")
+                .short('p')
+                .long("port")
+                .default_value("8080"),
+        )
+        .arg(
+            Arg::new("create")
+                .help("Create database if it doesn't exist")
+                .long("create")
+                .action(clap::ArgAction::SetTrue),
+        )
         .get_matches();
 
     let db_path = matches.get_one::<String>("database").unwrap();
-    let port: u16 = matches.get_one::<String>("port")
+    let port: u16 = matches
+        .get_one::<String>("port")
         .unwrap()
         .parse()
         .expect("Invalid port number");

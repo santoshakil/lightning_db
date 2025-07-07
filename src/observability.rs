@@ -1,35 +1,35 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
-use std::collections::HashMap;
 
 /// Production observability metrics for Lightning DB
 #[derive(Debug, Clone)]
 pub struct Metrics {
     // Operation counters
     pub operations: OperationMetrics,
-    
+
     // Performance metrics
     pub performance: PerformanceMetrics,
-    
+
     // Resource metrics
     pub resources: ResourceMetrics,
-    
+
     // Error metrics
     pub errors: ErrorMetrics,
-    
+
     // Transaction metrics
     pub transactions: TransactionMetrics,
-    
+
     // Cache metrics
     pub cache: CacheMetrics,
-    
+
     // WAL metrics
     pub wal: WalMetrics,
-    
+
     // System health
     pub health: HealthMetrics,
-    
+
     // Start time for uptime calculation
     start_time: Instant,
 }
@@ -138,7 +138,7 @@ impl LatencyHistogram {
             (Duration::from_millis(100), 0),
             (Duration::from_secs(1), 0),
         ];
-        
+
         Self {
             buckets,
             count: 0,
@@ -147,13 +147,13 @@ impl LatencyHistogram {
             max: Duration::ZERO,
         }
     }
-    
+
     fn record(&mut self, latency: Duration) {
         self.count += 1;
         self.sum += latency;
         self.min = self.min.min(latency);
         self.max = self.max.max(latency);
-        
+
         // Update buckets
         for (threshold, count) in &mut self.buckets {
             if latency <= *threshold {
@@ -162,25 +162,25 @@ impl LatencyHistogram {
             }
         }
     }
-    
+
     fn percentile(&self, p: f64) -> Duration {
         if self.count == 0 {
             return Duration::ZERO;
         }
-        
+
         let target = (self.count as f64 * p / 100.0) as u64;
         let mut seen = 0u64;
-        
+
         for (threshold, count) in &self.buckets {
             seen += count;
             if seen >= target {
                 return *threshold;
             }
         }
-        
+
         self.max
     }
-    
+
     fn average(&self) -> Duration {
         if self.count == 0 {
             Duration::ZERO
@@ -204,24 +204,24 @@ impl ThroughputTracker {
             samples: Vec::new(),
         }
     }
-    
+
     fn record(&mut self, count: u64) {
         let now = Instant::now();
         self.samples.push((now, count));
-        
+
         // Remove old samples
         let cutoff = now - self.window;
         self.samples.retain(|(time, _)| *time > cutoff);
     }
-    
+
     fn rate(&self) -> f64 {
         if self.samples.len() < 2 {
             return 0.0;
         }
-        
+
         let total: u64 = self.samples.iter().map(|(_, count)| count).sum();
         let duration = self.samples.last().unwrap().0 - self.samples.first().unwrap().0;
-        
+
         if duration.as_secs_f64() > 0.0 {
             total as f64 / duration.as_secs_f64()
         } else {
@@ -296,93 +296,100 @@ impl Metrics {
             start_time: Instant::now(),
         }
     }
-    
+
     /// Record a read operation
     pub fn record_read(&self, latency: Duration) {
         self.operations.reads.fetch_add(1, Ordering::Relaxed);
         self.record_operation_latency("read", latency);
     }
-    
+
     /// Record a write operation
     pub fn record_write(&self, latency: Duration) {
         self.operations.writes.fetch_add(1, Ordering::Relaxed);
         self.record_operation_latency("write", latency);
     }
-    
+
     /// Record a delete operation
     pub fn record_delete(&self, latency: Duration) {
         self.operations.deletes.fetch_add(1, Ordering::Relaxed);
         self.record_operation_latency("delete", latency);
     }
-    
+
     /// Record an operation latency
     fn record_operation_latency(&self, _op_type: &str, latency: Duration) {
         if let Ok(mut hist) = self.performance.latencies.lock() {
             hist.record(latency);
         }
-        
+
         if let Ok(mut tracker) = self.performance.throughput.lock() {
             tracker.record(1);
         }
     }
-    
+
     /// Record an error
     pub fn record_error(&self, error_type: &str) {
         self.errors.total_errors.fetch_add(1, Ordering::Relaxed);
-        
+
         match error_type {
             "io" => self.errors.io_errors.fetch_add(1, Ordering::Relaxed),
-            "corruption" => self.errors.corruption_errors.fetch_add(1, Ordering::Relaxed),
+            "corruption" => self
+                .errors
+                .corruption_errors
+                .fetch_add(1, Ordering::Relaxed),
             "oom" => self.errors.oom_errors.fetch_add(1, Ordering::Relaxed),
             "timeout" => self.errors.timeout_errors.fetch_add(1, Ordering::Relaxed),
             _ => 0,
         };
-        
+
         if let Ok(mut error_types) = self.errors.error_types.lock() {
             *error_types.entry(error_type.to_string()).or_insert(0) += 1;
         }
-        
+
         if let Ok(mut last_error) = self.health.last_error.lock() {
             *last_error = Some((SystemTime::now(), error_type.to_string()));
         }
     }
-    
+
     /// Record cache hit
     pub fn record_cache_hit(&self) {
         self.cache.hits.fetch_add(1, Ordering::Relaxed);
         self.update_cache_hit_rate();
     }
-    
+
     /// Record cache miss
     pub fn record_cache_miss(&self) {
         self.cache.misses.fetch_add(1, Ordering::Relaxed);
         self.update_cache_hit_rate();
     }
-    
+
     /// Update cache hit rate
     fn update_cache_hit_rate(&self) {
         let hits = self.cache.hits.load(Ordering::Relaxed);
         let misses = self.cache.misses.load(Ordering::Relaxed);
         let total = hits + misses;
-        
+
         if total > 0 {
             if let Ok(mut hit_rate) = self.cache.hit_rate.lock() {
                 *hit_rate = hits as f64 / total as f64;
             }
         }
     }
-    
+
     /// Record transaction commit
     pub fn record_transaction_commit(&self, duration: Duration, operations: usize) {
         self.transactions.committed.fetch_add(1, Ordering::Relaxed);
-        self.transactions.active_transactions.fetch_sub(1, Ordering::Relaxed);
-        
+        self.transactions
+            .active_transactions
+            .fetch_sub(1, Ordering::Relaxed);
+
         // Update average transaction size
         let current_avg = self.transactions.avg_tx_size.load(Ordering::Relaxed);
         let committed = self.transactions.committed.load(Ordering::Relaxed);
         let new_avg = ((current_avg * (committed - 1)) + operations as u64) / committed;
-        self.transactions.avg_tx_size.store(new_avg, Ordering::Relaxed);
-        
+        self.transactions
+            .avg_tx_size
+            .store(new_avg, Ordering::Relaxed);
+
         // Update max transaction duration
         if let Ok(mut max_duration) = self.transactions.max_tx_duration.lock() {
             if duration > *max_duration {
@@ -390,42 +397,48 @@ impl Metrics {
             }
         }
     }
-    
+
     /// Record transaction abort
     pub fn record_transaction_abort(&self) {
         self.transactions.aborted.fetch_add(1, Ordering::Relaxed);
-        self.transactions.active_transactions.fetch_sub(1, Ordering::Relaxed);
+        self.transactions
+            .active_transactions
+            .fetch_sub(1, Ordering::Relaxed);
     }
-    
+
     /// Start a transaction
     pub fn start_transaction(&self) {
-        self.transactions.active_transactions.fetch_add(1, Ordering::Relaxed);
+        self.transactions
+            .active_transactions
+            .fetch_add(1, Ordering::Relaxed);
     }
-    
+
     /// Update resource metrics
     pub fn update_resources(&self, memory: u64, disk: u64, files: usize, threads: usize, cpu: f64) {
         self.resources.memory_usage.store(memory, Ordering::Relaxed);
         self.resources.disk_usage.store(disk, Ordering::Relaxed);
         self.resources.open_files.store(files, Ordering::Relaxed);
-        self.resources.thread_count.store(threads, Ordering::Relaxed);
-        
+        self.resources
+            .thread_count
+            .store(threads, Ordering::Relaxed);
+
         if let Ok(mut cpu_usage) = self.resources.cpu_usage.lock() {
             *cpu_usage = cpu;
         }
     }
-    
+
     /// Update health status
     pub fn update_health(&self, status: HealthStatus) {
         if let Ok(mut health_status) = self.health.status.lock() {
             *health_status = status;
         }
-        
+
         // Update uptime
         if let Ok(mut uptime) = self.health.uptime.lock() {
             *uptime = self.start_time.elapsed();
         }
     }
-    
+
     /// Get a snapshot of all metrics
     pub fn snapshot(&self) -> MetricsSnapshot {
         let latencies = self.performance.latencies.lock().unwrap().clone();
@@ -433,7 +446,7 @@ impl Metrics {
         let cache_hit_rate = *self.cache.hit_rate.lock().unwrap();
         let health_status = self.health.status.lock().unwrap().clone();
         let uptime = self.start_time.elapsed();
-        
+
         MetricsSnapshot {
             timestamp: SystemTime::now(),
             operations: OperationSnapshot {
@@ -470,7 +483,10 @@ impl Metrics {
                 last_error: self.health.last_error.lock().unwrap().clone(),
             },
             transactions: TransactionSnapshot {
-                active: self.transactions.active_transactions.load(Ordering::Relaxed),
+                active: self
+                    .transactions
+                    .active_transactions
+                    .load(Ordering::Relaxed),
                 committed: self.transactions.committed.load(Ordering::Relaxed),
                 aborted: self.transactions.aborted.load(Ordering::Relaxed),
                 conflicts: self.transactions.conflicts.load(Ordering::Relaxed),
@@ -499,42 +515,78 @@ impl Metrics {
             },
         }
     }
-    
+
     /// Export metrics in Prometheus format
     pub fn export_prometheus(&self) -> String {
         let snapshot = self.snapshot();
         let mut output = String::new();
-        
+
         // Operation metrics
         output.push_str("# TYPE lightning_db_operations_total counter\n");
-        output.push_str(&format!("lightning_db_operations_total{{type=\"read\"}} {}\n", snapshot.operations.reads));
-        output.push_str(&format!("lightning_db_operations_total{{type=\"write\"}} {}\n", snapshot.operations.writes));
-        output.push_str(&format!("lightning_db_operations_total{{type=\"delete\"}} {}\n", snapshot.operations.deletes));
-        
+        output.push_str(&format!(
+            "lightning_db_operations_total{{type=\"read\"}} {}\n",
+            snapshot.operations.reads
+        ));
+        output.push_str(&format!(
+            "lightning_db_operations_total{{type=\"write\"}} {}\n",
+            snapshot.operations.writes
+        ));
+        output.push_str(&format!(
+            "lightning_db_operations_total{{type=\"delete\"}} {}\n",
+            snapshot.operations.deletes
+        ));
+
         // Latency metrics
         output.push_str("# TYPE lightning_db_latency_seconds summary\n");
-        output.push_str(&format!("lightning_db_latency_seconds{{quantile=\"0.5\"}} {:.6}\n", snapshot.performance.latency_p50.as_secs_f64()));
-        output.push_str(&format!("lightning_db_latency_seconds{{quantile=\"0.95\"}} {:.6}\n", snapshot.performance.latency_p95.as_secs_f64()));
-        output.push_str(&format!("lightning_db_latency_seconds{{quantile=\"0.99\"}} {:.6}\n", snapshot.performance.latency_p99.as_secs_f64()));
-        
+        output.push_str(&format!(
+            "lightning_db_latency_seconds{{quantile=\"0.5\"}} {:.6}\n",
+            snapshot.performance.latency_p50.as_secs_f64()
+        ));
+        output.push_str(&format!(
+            "lightning_db_latency_seconds{{quantile=\"0.95\"}} {:.6}\n",
+            snapshot.performance.latency_p95.as_secs_f64()
+        ));
+        output.push_str(&format!(
+            "lightning_db_latency_seconds{{quantile=\"0.99\"}} {:.6}\n",
+            snapshot.performance.latency_p99.as_secs_f64()
+        ));
+
         // Cache metrics
         output.push_str("# TYPE lightning_db_cache_hit_rate gauge\n");
-        output.push_str(&format!("lightning_db_cache_hit_rate {:.4}\n", snapshot.cache.hit_rate_percent / 100.0));
-        
+        output.push_str(&format!(
+            "lightning_db_cache_hit_rate {:.4}\n",
+            snapshot.cache.hit_rate_percent / 100.0
+        ));
+
         // Resource metrics
         output.push_str("# TYPE lightning_db_memory_bytes gauge\n");
-        output.push_str(&format!("lightning_db_memory_bytes {}\n", snapshot.resources.memory_usage_bytes));
-        
+        output.push_str(&format!(
+            "lightning_db_memory_bytes {}\n",
+            snapshot.resources.memory_usage_bytes
+        ));
+
         // Error metrics
         output.push_str("# TYPE lightning_db_errors_total counter\n");
-        output.push_str(&format!("lightning_db_errors_total{{type=\"io\"}} {}\n", snapshot.errors.io_errors));
-        output.push_str(&format!("lightning_db_errors_total{{type=\"corruption\"}} {}\n", snapshot.errors.corruption_errors));
-        
+        output.push_str(&format!(
+            "lightning_db_errors_total{{type=\"io\"}} {}\n",
+            snapshot.errors.io_errors
+        ));
+        output.push_str(&format!(
+            "lightning_db_errors_total{{type=\"corruption\"}} {}\n",
+            snapshot.errors.corruption_errors
+        ));
+
         // Transaction metrics
         output.push_str("# TYPE lightning_db_transactions_total counter\n");
-        output.push_str(&format!("lightning_db_transactions_total{{result=\"committed\"}} {}\n", snapshot.transactions.committed));
-        output.push_str(&format!("lightning_db_transactions_total{{result=\"aborted\"}} {}\n", snapshot.transactions.aborted));
-        
+        output.push_str(&format!(
+            "lightning_db_transactions_total{{result=\"committed\"}} {}\n",
+            snapshot.transactions.committed
+        ));
+        output.push_str(&format!(
+            "lightning_db_transactions_total{{result=\"aborted\"}} {}\n",
+            snapshot.transactions.aborted
+        ));
+
         // Health metric
         output.push_str("# TYPE lightning_db_up gauge\n");
         let up = match snapshot.health.status {
@@ -542,7 +594,7 @@ impl Metrics {
             _ => 0,
         };
         output.push_str(&format!("lightning_db_up {}\n", up));
-        
+
         output
     }
 }
@@ -645,22 +697,22 @@ mod tests {
     #[test]
     fn test_metrics_recording() {
         let metrics = Metrics::new();
-        
+
         // Record some operations
         metrics.record_read(Duration::from_micros(100));
         metrics.record_write(Duration::from_micros(200));
         metrics.record_delete(Duration::from_micros(150));
-        
+
         // Check counters
         assert_eq!(metrics.operations.reads.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.operations.writes.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.operations.deletes.load(Ordering::Relaxed), 1);
     }
-    
+
     #[test]
     fn test_cache_hit_rate() {
         let metrics = Metrics::new();
-        
+
         // Record cache operations
         for _ in 0..70 {
             metrics.record_cache_hit();
@@ -668,21 +720,21 @@ mod tests {
         for _ in 0..30 {
             metrics.record_cache_miss();
         }
-        
+
         // Check hit rate
         let hit_rate = *metrics.cache.hit_rate.lock().unwrap();
         assert!((hit_rate - 0.7).abs() < 0.01);
     }
-    
+
     #[test]
     fn test_prometheus_export() {
         let metrics = Metrics::new();
-        
+
         // Record some data
         metrics.record_read(Duration::from_micros(100));
         metrics.record_write(Duration::from_micros(200));
         metrics.record_error("io");
-        
+
         // Export and check format
         let export = metrics.export_prometheus();
         assert!(export.contains("lightning_db_operations_total{type=\"read\"} 1"));

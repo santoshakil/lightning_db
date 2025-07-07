@@ -19,13 +19,15 @@ fn test_iterator_ordering() {
     let results = results.unwrap();
 
     assert_eq!(results.len(), 5);
-    
+
     // Verify keys are in sorted order
     let mut prev_key: Option<Vec<u8>> = None;
     for (key, _) in results {
         if let Some(prev) = prev_key {
-            assert!(key > prev, "Keys not in order: {:?} <= {:?}", 
-                String::from_utf8_lossy(&key), 
+            assert!(
+                key > prev,
+                "Keys not in order: {:?} <= {:?}",
+                String::from_utf8_lossy(&key),
                 String::from_utf8_lossy(&prev)
             );
         }
@@ -43,7 +45,7 @@ fn test_iterator_deduplication() {
         let key = format!("key{}", i);
         let value1 = format!("value{}_v1", i);
         let value2 = format!("value{}_v2", i);
-        
+
         db.put(key.as_bytes(), value1.as_bytes()).unwrap();
         db.put(key.as_bytes(), value2.as_bytes()).unwrap(); // Update
     }
@@ -54,14 +56,16 @@ fn test_iterator_deduplication() {
     let results = results.unwrap();
 
     assert_eq!(results.len(), 5, "Should have exactly 5 unique keys");
-    
+
     // Verify each key appears only once and has the latest value
     let mut seen_keys = HashSet::new();
     for (key, value) in results {
-        assert!(seen_keys.insert(key.clone()), "Duplicate key found: {:?}", 
+        assert!(
+            seen_keys.insert(key.clone()),
+            "Duplicate key found: {:?}",
             String::from_utf8_lossy(&key)
         );
-        
+
         // Verify we got the latest value (v2)
         let value_str = String::from_utf8_lossy(&value);
         assert!(value_str.ends_with("_v2"), "Got old value: {}", value_str);
@@ -80,11 +84,14 @@ fn test_iterator_bounds() {
     }
 
     // Test exclusive bounds
-    let iter = db.scan(Some(b"key02".to_vec()), Some(b"key05".to_vec())).unwrap();
+    let iter = db
+        .scan(Some(b"key02".to_vec()), Some(b"key05".to_vec()))
+        .unwrap();
     let results: Result<Vec<_>, _> = iter.collect();
     let results = results.unwrap();
 
-    let keys: Vec<_> = results.iter()
+    let keys: Vec<_> = results
+        .iter()
         .map(|(k, _)| String::from_utf8_lossy(k).to_string())
         .collect();
 
@@ -113,8 +120,9 @@ fn test_iterator_with_deletes() {
     let results = results.unwrap();
 
     assert_eq!(results.len(), 7);
-    
-    let keys: Vec<_> = results.iter()
+
+    let keys: Vec<_> = results
+        .iter()
         .map(|(k, _)| String::from_utf8_lossy(k).to_string())
         .collect();
 
@@ -141,9 +149,10 @@ fn test_reverse_iterator() {
     let results = results.unwrap();
 
     assert_eq!(results.len(), 5);
-    
+
     // Verify reverse order
-    let result_keys: Vec<_> = results.iter()
+    let result_keys: Vec<_> = results
+        .iter()
         .map(|(k, _)| String::from_utf8_lossy(k).to_string())
         .collect();
 
@@ -167,7 +176,7 @@ fn test_iterator_limit() {
     let results = results.unwrap();
 
     assert_eq!(results.len(), 10);
-    
+
     // Verify we got the first 10 keys
     for i in 0..10 {
         let (key, _) = &results[i];

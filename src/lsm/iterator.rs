@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::lsm::{LSMTree, MemTable};
-use std::sync::Arc;
 use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Iterator for LSM tree memtable
 pub struct LSMMemTableIterator {
@@ -21,7 +21,7 @@ impl LSMMemTableIterator {
             .entries()
             .filter(|(k, v)| {
                 // Filter out tombstones (None values)
-                v.is_some() && 
+                v.is_some() &&
                 // Check start bound
                 (start_key.is_none() || k.as_slice() >= start_key.unwrap()) &&
                 // Check end bound
@@ -78,9 +78,7 @@ impl LSMFullIterator {
             forward,
         ));
 
-        Ok(Self {
-            memtable_iter,
-        })
+        Ok(Self { memtable_iter })
     }
 
     pub fn next(&mut self) -> Option<(Vec<u8>, Option<Vec<u8>>, u64)> {

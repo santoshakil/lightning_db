@@ -1,9 +1,9 @@
 use crate::metrics::METRICS;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::ops::Deref;
 
 #[derive(Debug, Clone)]
 pub struct ProfileData {
@@ -66,7 +66,7 @@ impl PerformanceProfiler {
         if self.enabled {
             let operation = data.operation.clone();
             self.samples.write().push(data);
-            
+
             // Update metrics
             let recorder = METRICS.read();
             let _ = recorder.record_operation(&operation);
@@ -76,11 +76,14 @@ impl PerformanceProfiler {
     // Enter a function for call graph tracking
     pub fn enter_function(&self, name: &str) {
         if self.enabled {
-            self.call_stack.write().push((name.to_string(), Instant::now()));
-            
+            self.call_stack
+                .write()
+                .push((name.to_string(), Instant::now()));
+
             // Record for flame graph
             let stack = self.call_stack.read();
-            let trace = stack.iter()
+            let trace = stack
+                .iter()
                 .map(|(name, _)| name.as_str())
                 .collect::<Vec<_>>()
                 .join(";");
@@ -101,13 +104,15 @@ impl PerformanceProfiler {
         let mut summary: HashMap<String, OperationStats> = HashMap::new();
 
         for sample in samples.iter() {
-            let stats = summary.entry(sample.operation.clone()).or_insert(OperationStats {
-                count: 0,
-                total_time: Duration::ZERO,
-                min_time: Duration::MAX,
-                max_time: Duration::ZERO,
-                avg_time: Duration::ZERO,
-            });
+            let stats = summary
+                .entry(sample.operation.clone())
+                .or_insert(OperationStats {
+                    count: 0,
+                    total_time: Duration::ZERO,
+                    min_time: Duration::MAX,
+                    max_time: Duration::ZERO,
+                    avg_time: Duration::ZERO,
+                });
 
             stats.count += 1;
             stats.total_time += sample.duration;
@@ -128,7 +133,8 @@ impl PerformanceProfiler {
     // Get hot paths (operations taking most time)
     pub fn get_hot_paths(&self, top_n: usize) -> Vec<(String, Duration)> {
         let summary = self.get_summary();
-        let mut paths: Vec<_> = summary.into_iter()
+        let mut paths: Vec<_> = summary
+            .into_iter()
             .map(|(op, stats)| (op, stats.total_time))
             .collect();
 
@@ -182,26 +188,35 @@ impl ProfilingReport {
         println!("=== Performance Profiling Report ===");
         println!("Total samples: {}", self.total_samples);
         println!("\nOperation Summary:");
-        println!("{:<30} {:>10} {:>15} {:>15} {:>15} {:>15}",
-                 "Operation", "Count", "Total (ms)", "Avg (ms)", "Min (μs)", "Max (ms)");
+        println!(
+            "{:<30} {:>10} {:>15} {:>15} {:>15} {:>15}",
+            "Operation", "Count", "Total (ms)", "Avg (ms)", "Min (μs)", "Max (ms)"
+        );
         println!("{}", "-".repeat(100));
 
         let mut operations: Vec<_> = self.summary.iter().collect();
         operations.sort_by(|a, b| b.1.total_time.cmp(&a.1.total_time));
 
         for (op, stats) in operations {
-            println!("{:<30} {:>10} {:>15.2} {:>15.2} {:>15.2} {:>15.2}",
-                     op,
-                     stats.count,
-                     stats.total_time.as_secs_f64() * 1000.0,
-                     stats.avg_time.as_secs_f64() * 1000.0,
-                     stats.min_time.as_secs_f64() * 1_000_000.0,
-                     stats.max_time.as_secs_f64() * 1000.0);
+            println!(
+                "{:<30} {:>10} {:>15.2} {:>15.2} {:>15.2} {:>15.2}",
+                op,
+                stats.count,
+                stats.total_time.as_secs_f64() * 1000.0,
+                stats.avg_time.as_secs_f64() * 1000.0,
+                stats.min_time.as_secs_f64() * 1_000_000.0,
+                stats.max_time.as_secs_f64() * 1000.0
+            );
         }
 
         println!("\nHot Paths (Top 10):");
         for (i, (path, duration)) in self.hot_paths.iter().enumerate() {
-            println!("{}. {} - {:.2}ms", i + 1, path, duration.as_secs_f64() * 1000.0);
+            println!(
+                "{}. {} - {:.2}ms",
+                i + 1,
+                path,
+                duration.as_secs_f64() * 1000.0
+            );
         }
     }
 }
@@ -233,7 +248,7 @@ impl Drop for ProfileGuard<'_> {
     fn drop(&mut self) {
         let duration = self.start.elapsed();
         self.profiler.exit_function();
-        
+
         self.profiler.record_sample(ProfileData {
             operation: self.operation.clone(),
             duration,
@@ -245,7 +260,7 @@ impl Drop for ProfileGuard<'_> {
 
 // Global profiler instance
 lazy_static::lazy_static! {
-    pub static ref PROFILER: Arc<RwLock<PerformanceProfiler>> = 
+    pub static ref PROFILER: Arc<RwLock<PerformanceProfiler>> =
         Arc::new(RwLock::new(PerformanceProfiler::new()));
 }
 
@@ -271,9 +286,8 @@ pub fn profile_operation(operation: &str) -> Option<ProfileGuard<'static>> {
     let profiler_lock = PROFILER.read();
     if profiler_lock.is_enabled() {
         // This is safe because PROFILER is a static and lives for the entire program
-        let profiler_ref: &'static PerformanceProfiler = unsafe {
-            &*(profiler_lock.deref() as *const PerformanceProfiler)
-        };
+        let profiler_ref: &'static PerformanceProfiler =
+            unsafe { &*(profiler_lock.deref() as *const PerformanceProfiler) };
         drop(profiler_lock);
         Some(profiler_ref.start_operation(operation))
     } else {
@@ -318,7 +332,7 @@ mod tests {
         {
             let _guard1 = profiler.start_operation("outer");
             thread::sleep(Duration::from_millis(5));
-            
+
             {
                 let _guard2 = profiler.start_operation("inner");
                 thread::sleep(Duration::from_millis(5));
@@ -342,7 +356,7 @@ mod tests {
 
         let hot_paths = profiler.get_hot_paths(3);
         assert_eq!(hot_paths.len(), 3);
-        
+
         // Should be sorted by duration descending
         assert!(hot_paths[0].1 >= hot_paths[1].1);
         assert!(hot_paths[1].1 >= hot_paths[2].1);
@@ -373,7 +387,7 @@ mod tests {
 
         let report = PROFILER.read().export();
         assert!(report.summary.contains_key("function_test"));
-        
+
         PROFILER.write().clear();
     }
 }

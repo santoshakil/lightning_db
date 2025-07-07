@@ -69,8 +69,6 @@ enum LockPriority {
 
 impl OptimizedTransactionManager {
     pub fn new(max_active_transactions: usize, version_store: Arc<VersionStore>) -> Self {
-        
-
         Self {
             next_tx_id: Arc::new(AtomicU64::new(1)),
             active_transactions: Arc::new(DashMap::with_capacity(max_active_transactions)),

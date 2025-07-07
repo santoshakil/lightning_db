@@ -1,14 +1,14 @@
+use crossbeam::utils::CachePadded;
 use dashmap::DashMap;
+use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use std::hash::Hash;
-use crossbeam::utils::CachePadded;
 
 /// Lock-free LRU-like cache using DashMap and atomic operations
 /// Uses clock algorithm for eviction (approximates LRU without locks)
-pub struct LockFreeCache<K, V> 
-where 
+pub struct LockFreeCache<K, V>
+where
     K: Clone + Hash + Eq,
     V: Clone,
 {
@@ -22,7 +22,7 @@ where
 
 struct CacheEntry<V> {
     value: V,
-    accessed: AtomicU64,  // Use counter instead of bool for better concurrency
+    accessed: AtomicU64, // Use counter instead of bool for better concurrency
     timestamp: Instant,
 }
 
@@ -51,7 +51,7 @@ where
             clock_hand: Arc::new(CachePadded::new(AtomicUsize::new(0))),
         }
     }
-    
+
     /// Get a value from cache (lock-free read path)
     pub fn get(&self, key: &K) -> Option<V> {
         if let Some(entry) = self.map.get(key) {
@@ -64,7 +64,7 @@ where
             None
         }
     }
-    
+
     /// Insert a value into cache (mostly lock-free)
     pub fn insert(&self, key: K, value: V) {
         let entry = CacheEntry {
@@ -72,21 +72,21 @@ where
             accessed: AtomicU64::new(1),
             timestamp: Instant::now(),
         };
-        
+
         // Insert new entry
         let prev_entry = self.map.insert(key, entry);
-        
+
         if prev_entry.is_none() {
             // New entry added, increment size
             let new_size = self.size.fetch_add(1, Ordering::AcqRel) + 1;
-            
+
             // Check if we exceeded capacity and need to evict
             if new_size > self.capacity {
                 // Evict entries until we're back at capacity
                 let excess = new_size - self.capacity;
                 for _ in 0..excess {
                     self.evict_one();
-                    
+
                     // Check if we're at capacity now
                     if self.size.load(Ordering::Acquire) <= self.capacity {
                         break;
@@ -95,7 +95,7 @@ where
             }
         }
     }
-    
+
     /// Remove a value from cache
     pub fn remove(&self, key: &K) -> Option<V> {
         if let Some((_, entry)) = self.map.remove(key) {
@@ -105,28 +105,26 @@ where
             None
         }
     }
-    
+
     /// Evict one entry using clock algorithm
     fn evict_one(&self) {
         let mut attempts = 0;
         let max_attempts = self.capacity * 2;
-        
+
         // Get all keys for clock sweep
-        let keys: Vec<K> = self.map.iter()
-            .map(|entry| entry.key().clone())
-            .collect();
-        
+        let keys: Vec<K> = self.map.iter().map(|entry| entry.key().clone()).collect();
+
         if keys.is_empty() {
             return;
         }
-        
+
         let num_keys = keys.len();
         let mut hand = self.clock_hand.load(Ordering::Relaxed);
-        
+
         while attempts < max_attempts {
             hand = (hand + 1) % num_keys;
             attempts += 1;
-            
+
             if let Some(key) = keys.get(hand) {
                 if let Some(entry) = self.map.get_mut(key) {
                     let accessed = entry.accessed.load(Ordering::Relaxed);
@@ -144,22 +142,22 @@ where
                 }
             }
         }
-        
+
         // If no victim found after max attempts, force evict at current position
         if let Some(key) = keys.get(hand) {
             self.map.remove(key);
             self.size.fetch_sub(1, Ordering::Relaxed);
         }
-        
+
         self.clock_hand.store(hand, Ordering::Relaxed);
     }
-    
+
     /// Get cache statistics
     pub fn stats(&self) -> CacheStats {
         let hits = self.hits.load(Ordering::Relaxed);
         let misses = self.misses.load(Ordering::Relaxed);
         let total = hits + misses;
-        
+
         CacheStats {
             size: self.size.load(Ordering::Relaxed),
             capacity: self.capacity,
@@ -172,7 +170,7 @@ where
             },
         }
     }
-    
+
     /// Clear all entries
     pub fn clear(&self) {
         self.map.clear();
@@ -204,23 +202,21 @@ where
     V: Clone + Send + Sync + 'static,
 {
     pub fn new(shared: Arc<LockFreeCache<K, V>>, _local_capacity: usize) -> Self {
-        Self {
-            shared,
-        }
+        Self { shared }
     }
-    
+
     pub fn get(&self, key: &K) -> Option<V> {
         thread_local! {
             static LOCAL_CACHE: std::cell::RefCell<
                 Option<dashmap::DashMap<Vec<u8>, (Vec<u8>, Instant)>>
             > = const { std::cell::RefCell::new(None) };
         }
-        
+
         // For now, just use shared cache
         // TODO: Implement actual thread-local caching
         self.shared.get(key)
     }
-    
+
     pub fn insert(&self, key: K, value: V) {
         self.shared.insert(key, value)
     }
@@ -244,17 +240,17 @@ where
     pub fn new(total_capacity: usize, shard_count: usize) -> Self {
         let capacity_per_shard = total_capacity / shard_count;
         let mut shards = Vec::with_capacity(shard_count);
-        
+
         for _ in 0..shard_count {
             shards.push(Arc::new(LockFreeCache::new(capacity_per_shard)));
         }
-        
+
         Self {
             shards,
             shard_count,
         }
     }
-    
+
     fn get_shard(&self, key: &K) -> &Arc<LockFreeCache<K, V>> {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         key.hash(&mut hasher);
@@ -262,19 +258,19 @@ where
         let shard_idx = (hash as usize) % self.shard_count;
         &self.shards[shard_idx]
     }
-    
+
     pub fn get(&self, key: &K) -> Option<V> {
         self.get_shard(key).get(key)
     }
-    
+
     pub fn insert(&self, key: K, value: V) {
         self.get_shard(&key).insert(key, value);
     }
-    
+
     pub fn remove(&self, key: &K) -> Option<V> {
         self.get_shard(key).remove(key)
     }
-    
+
     pub fn stats(&self) -> CacheStats {
         let mut total_stats = CacheStats {
             size: 0,
@@ -283,7 +279,7 @@ where
             misses: 0,
             hit_rate: 0.0,
         };
-        
+
         for shard in &self.shards {
             let stats = shard.stats();
             total_stats.size += stats.size;
@@ -291,14 +287,14 @@ where
             total_stats.hits += stats.hits;
             total_stats.misses += stats.misses;
         }
-        
+
         let total = total_stats.hits + total_stats.misses;
         total_stats.hit_rate = if total > 0 {
             total_stats.hits as f64 / total as f64
         } else {
             0.0
         };
-        
+
         total_stats
     }
 }
@@ -307,19 +303,19 @@ where
 mod tests {
     use super::*;
     use std::thread;
-    
+
     #[test]
     fn test_lock_free_cache() {
         let cache = Arc::new(LockFreeCache::<String, String>::new(100));
-        
+
         // Test basic operations
         cache.insert("key1".to_string(), "value1".to_string());
         assert_eq!(cache.get(&"key1".to_string()), Some("value1".to_string()));
         assert_eq!(cache.get(&"key2".to_string()), None);
-        
+
         // Test concurrent access
         let mut handles = vec![];
-        
+
         for i in 0..4 {
             let cache_clone = Arc::clone(&cache);
             let handle = thread::spawn(move || {
@@ -327,7 +323,7 @@ mod tests {
                     let key = format!("thread{}key{}", i, j);
                     let value = format!("thread{}value{}", i, j);
                     cache_clone.insert(key.clone(), value.clone());
-                    
+
                     // Don't assert on immediate read-back as the value might be evicted
                     // in a capacity-limited cache with concurrent access
                     let _ = cache_clone.get(&key);
@@ -335,51 +331,53 @@ mod tests {
             });
             handles.push(handle);
         }
-        
+
         for handle in handles {
             handle.join().unwrap();
         }
-        
+
         let stats = cache.stats();
         assert!(stats.size <= 100); // Should respect capacity
         assert!(stats.hits > 0);
     }
-    
+
     #[test]
     fn test_cache_eviction() {
         let cache = LockFreeCache::new(3);
-        
+
         // Fill cache
         cache.insert("a", 1);
         cache.insert("b", 2);
         cache.insert("c", 3);
-        
+
         // Access 'a' and 'b' to mark them as recently used
         cache.get(&"a");
         cache.get(&"b");
-        
+
         // Insert new item, should evict 'c'
         cache.insert("d", 4);
-        
+
         assert_eq!(cache.stats().size, 3);
-        assert!(cache.get(&"a").is_some() || cache.get(&"b").is_some() || cache.get(&"d").is_some());
+        assert!(
+            cache.get(&"a").is_some() || cache.get(&"b").is_some() || cache.get(&"d").is_some()
+        );
     }
-    
+
     #[test]
     fn test_sharded_cache() {
         let cache = ShardedCache::new(1000, 16);
-        
+
         // Test operations across shards
         for i in 0..1000 {
             cache.insert(i, i * 2);
         }
-        
+
         for i in 0..1000 {
             if let Some(v) = cache.get(&i) {
                 assert_eq!(v, i * 2);
             }
         }
-        
+
         let stats = cache.stats();
         assert!(stats.size > 0);
         assert!(stats.size <= 1000);

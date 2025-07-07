@@ -1,8 +1,8 @@
-use crate::error::Result;
 #[cfg(test)]
 use crate::error::Error;
-use std::time::Duration;
+use crate::error::Result;
 use std::thread;
+use std::time::Duration;
 use tracing::warn;
 
 /// Retry policy for operations
@@ -38,28 +38,28 @@ impl RetryPolicy {
 
         loop {
             attempt += 1;
-            
+
             match operation() {
                 Ok(result) => return Ok(result),
                 Err(err) => {
                     if !err.is_recoverable() || attempt >= self.max_attempts {
                         return Err(err);
                     }
-                    
+
                     warn!(
                         "Operation failed (attempt {}/{}): {}, retrying in {:?}",
                         attempt, self.max_attempts, err, delay
                     );
-                    
+
                     thread::sleep(delay);
-                    
+
                     // Calculate next delay with exponential backoff
                     delay = self.calculate_next_delay(delay, attempt);
                 }
             }
         }
     }
-    
+
     /// Execute async operation with retry logic
     pub async fn execute_async<F, T, Fut>(&self, mut operation: F) -> Result<T>
     where
@@ -71,33 +71,33 @@ impl RetryPolicy {
 
         loop {
             attempt += 1;
-            
+
             match operation().await {
                 Ok(result) => return Ok(result),
                 Err(err) => {
                     if !err.is_recoverable() || attempt >= self.max_attempts {
                         return Err(err);
                     }
-                    
+
                     warn!(
                         "Async operation failed (attempt {}/{}): {}, retrying in {:?}",
                         attempt, self.max_attempts, err, delay
                     );
-                    
+
                     tokio::time::sleep(delay).await;
-                    
+
                     // Calculate next delay with exponential backoff
                     delay = self.calculate_next_delay(delay, attempt);
                 }
             }
         }
     }
-    
+
     fn calculate_next_delay(&self, current_delay: Duration, attempt: u32) -> Duration {
         let mut next_delay = Duration::from_secs_f64(
-            current_delay.as_secs_f64() * self.exponential_base.powf(attempt as f64 - 1.0)
+            current_delay.as_secs_f64() * self.exponential_base.powf(attempt as f64 - 1.0),
         );
-        
+
         // Apply jitter if enabled
         if self.jitter {
             use rand::Rng;
@@ -105,12 +105,12 @@ impl RetryPolicy {
             let jitter_factor = rng.random_range(0.5..1.5);
             next_delay = Duration::from_secs_f64(next_delay.as_secs_f64() * jitter_factor);
         }
-        
+
         // Cap at max delay
         if next_delay > self.max_delay {
             next_delay = self.max_delay;
         }
-        
+
         next_delay
     }
 }
@@ -131,7 +131,7 @@ impl RetryableOperations {
         };
         policy.execute(operation)
     }
-    
+
     /// Retry network operations
     pub fn network_operation<F, T>(operation: F) -> Result<T>
     where
@@ -145,7 +145,7 @@ impl RetryableOperations {
         };
         policy.execute(operation)
     }
-    
+
     /// Retry lock acquisition
     pub fn lock_operation<F, T>(operation: F) -> Result<T>
     where
@@ -166,7 +166,7 @@ impl RetryableOperations {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
-    
+
     #[test]
     fn test_retry_success() {
         let counter = AtomicU32::new(0);
@@ -175,7 +175,7 @@ mod tests {
             initial_delay: Duration::from_millis(10),
             ..Default::default()
         };
-        
+
         let result = policy.execute(|| {
             let count = counter.fetch_add(1, Ordering::SeqCst);
             if count < 2 {
@@ -184,11 +184,11 @@ mod tests {
                 Ok(42)
             }
         });
-        
+
         assert_eq!(result.unwrap(), 42);
         assert_eq!(counter.load(Ordering::SeqCst), 3);
     }
-    
+
     #[test]
     fn test_retry_exhausted() {
         let policy = RetryPolicy {
@@ -196,22 +196,18 @@ mod tests {
             initial_delay: Duration::from_millis(10),
             ..Default::default()
         };
-        
-        let result: Result<()> = policy.execute(|| {
-            Err(Error::Timeout("Always fails".to_string()))
-        });
-        
+
+        let result: Result<()> = policy.execute(|| Err(Error::Timeout("Always fails".to_string())));
+
         assert!(result.is_err());
     }
-    
+
     #[test]
     fn test_non_recoverable_error() {
         let policy = RetryPolicy::default();
-        
-        let result: Result<()> = policy.execute(|| {
-            Err(Error::CorruptedPage)
-        });
-        
+
+        let result: Result<()> = policy.execute(|| Err(Error::CorruptedPage));
+
         assert!(result.is_err());
     }
 }

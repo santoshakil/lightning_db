@@ -387,7 +387,8 @@ mod tests {
 
     #[test]
     fn test_compaction_task_priority_ordering() {
-        let mut tasks = [CompactionTask {
+        let mut tasks = [
+            CompactionTask {
                 level: 0,
                 files: Vec::new(),
                 priority: CompactionPriority::Low,
@@ -404,7 +405,8 @@ mod tests {
                 files: Vec::new(),
                 priority: CompactionPriority::Normal,
                 created_at: Instant::now(),
-            }];
+            },
+        ];
 
         tasks.sort_by(|a, b| b.priority.cmp(&a.priority));
 

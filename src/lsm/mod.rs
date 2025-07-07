@@ -1,11 +1,11 @@
 pub mod background_compaction;
 pub mod compaction;
 pub mod delta_compression;
-pub mod memtable;
-pub mod sstable;
-pub mod parallel_compaction;
 mod iterator;
 mod iterator_fixed;
+pub mod memtable;
+pub mod parallel_compaction;
+pub mod sstable;
 
 use crate::compression::CompressionType;
 use crate::error::Result;
@@ -20,11 +20,14 @@ pub use compaction::{CompactionStrategy, Compactor, LeveledCompaction};
 pub use delta_compression::{
     CompressionLevel, DeltaCompressedData, DeltaCompressionConfig, DeltaCompressor, DeltaType,
 };
-pub use memtable::MemTable;
-pub use sstable::{SSTable, SSTableBuilder, SSTableReader};
 pub use iterator::{LSMFullIterator, LSMMemTableIterator};
 pub use iterator_fixed::LSMFullIteratorFixed;
-pub use parallel_compaction::{ParallelCompactionCoordinator, CompactionScheduler, CompactionStats, ParallelCompactionStats, CompactionState};
+pub use memtable::MemTable;
+pub use parallel_compaction::{
+    CompactionScheduler, CompactionState, CompactionStats, ParallelCompactionCoordinator,
+    ParallelCompactionStats,
+};
+pub use sstable::{SSTable, SSTableBuilder, SSTableReader};
 
 #[derive(Debug, Clone)]
 pub struct LSMConfig {
@@ -89,11 +92,11 @@ impl Level {
             max_size_bytes,
         }
     }
-    
+
     pub fn total_size(&self) -> u64 {
         self.size_bytes as u64
     }
-    
+
     pub fn tables(&self) -> &[Arc<SSTable>] {
         &self.sstables
     }
@@ -104,8 +107,6 @@ impl Level {
         // Keep sorted by min key
         self.sstables.sort_by(|a, b| a.min_key().cmp(b.min_key()));
     }
-
-
 
     fn overlapping_sstables(&self, min_key: &[u8], max_key: &[u8]) -> Vec<Arc<SSTable>> {
         self.sstables
@@ -121,15 +122,15 @@ impl LSMTree {
     pub fn get_memtable(&self) -> Arc<RwLock<MemTable>> {
         Arc::clone(&self.memtable)
     }
-    
+
     pub fn get_immutable_memtables(&self) -> Arc<RwLock<Vec<Arc<MemTable>>>> {
         Arc::clone(&self.immutable_memtables)
     }
-    
+
     pub fn get_levels(&self) -> Arc<RwLock<Vec<Level>>> {
         Arc::clone(&self.levels)
     }
-    
+
     const TOMBSTONE_MARKER: &'static [u8] = &[0xFF, 0xFF, 0xFF, 0xFF];
 
     pub fn is_tombstone(value: &[u8]) -> bool {
@@ -272,7 +273,10 @@ impl LSMTree {
             // Use bloom filters to skip SSTables
             let mut candidates = Vec::new();
             for sstable in &level.sstables {
-                if key >= sstable.min_key() && key <= sstable.max_key() && sstable.might_contain(key) {
+                if key >= sstable.min_key()
+                    && key <= sstable.max_key()
+                    && sstable.might_contain(key)
+                {
                     candidates.push(sstable.clone());
                 }
             }
@@ -384,7 +388,7 @@ impl LSMTree {
 
                     // Use parallel compaction scheduler
                     let job_ids = scheduler.maybe_schedule_compaction();
-                    
+
                     if !job_ids.is_empty() {
                         tracing::info!("Scheduled {} parallel compaction jobs", job_ids.len());
                     }
@@ -392,7 +396,6 @@ impl LSMTree {
             }));
         }
     }
-
 
     pub fn flush(&self) -> Result<()> {
         // Force flush of current memtable

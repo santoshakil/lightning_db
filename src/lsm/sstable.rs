@@ -133,17 +133,17 @@ impl SSTable {
     pub fn iter(&self) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         // Read all entries - simplified for parallel compaction
         let mut all_entries = Vec::new();
-        
+
         for index_entry in &self.index.entries {
             let block = self.read_block(index_entry.offset, index_entry.size)?;
             for entry in block.entries {
                 all_entries.push((entry.key, entry.value));
             }
         }
-        
+
         Ok(all_entries)
     }
-    
+
     pub fn creation_time(&self) -> std::time::SystemTime {
         self.creation_time
     }
@@ -430,8 +430,7 @@ impl SSTableBuilder {
 
         // Write footer size at the end
         self.writer
-            .write_all(&(footer_data.len() as u32).to_le_bytes())
-            ?;
+            .write_all(&(footer_data.len() as u32).to_le_bytes())?;
 
         self.writer.flush()?;
 
@@ -489,8 +488,7 @@ impl SSTableReader {
         let footer_size = u32::from_le_bytes(footer_size_bytes) as u64;
 
         // Read footer
-        file.seek(SeekFrom::End(-(4 + footer_size as i64)))
-            ?;
+        file.seek(SeekFrom::End(-(4 + footer_size as i64)))?;
         let mut footer_data = vec![0u8; footer_size as usize];
         file.read_exact(&mut footer_data)?;
         let footer: Footer = bincode::decode_from_slice(&footer_data, bincode::config::standard())
@@ -506,26 +504,22 @@ impl SSTableReader {
         }
 
         // Read min/max keys
-        file.seek(SeekFrom::Start(footer.min_key_offset))
-            ?;
+        file.seek(SeekFrom::Start(footer.min_key_offset))?;
         let mut min_key = vec![0u8; footer.min_key_size as usize];
         file.read_exact(&mut min_key)?;
 
-        file.seek(SeekFrom::Start(footer.max_key_offset))
-            ?;
+        file.seek(SeekFrom::Start(footer.max_key_offset))?;
         let mut max_key = vec![0u8; footer.max_key_size as usize];
         file.read_exact(&mut max_key)?;
 
         // Read bloom filter
-        file.seek(SeekFrom::Start(footer.bloom_offset))
-            ?;
+        file.seek(SeekFrom::Start(footer.bloom_offset))?;
         let mut bloom_data = vec![0u8; footer.bloom_size as usize];
         file.read_exact(&mut bloom_data)?;
         let bloom_filter: BloomFilter = Self::deserialize_bloom_filter(&bloom_data)?;
 
         // Read index
-        file.seek(SeekFrom::Start(footer.index_offset))
-            ?;
+        file.seek(SeekFrom::Start(footer.index_offset))?;
         let mut index_data = vec![0u8; footer.index_size as usize];
         file.read_exact(&mut index_data)?;
         let index: Vec<IndexEntry> =
@@ -541,7 +535,8 @@ impl SSTableReader {
             .unwrap_or(0);
 
         // Get creation time from file metadata
-        let creation_time = metadata.created()
+        let creation_time = metadata
+            .created()
             .unwrap_or_else(|_| std::time::SystemTime::now());
 
         Ok(SSTable {
@@ -556,7 +551,6 @@ impl SSTableReader {
         })
     }
 }
-
 
 impl CompressionType {
     fn to_u8(&self) -> u8 {

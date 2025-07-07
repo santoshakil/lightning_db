@@ -54,7 +54,7 @@ impl ConsistencyManager {
             session_manager: Arc::new(SessionManager::new()),
         }
     }
-    
+
     /// Wait for a write to be visible at the given consistency level
     pub fn wait_for_write_visibility(
         &self,
@@ -68,7 +68,8 @@ impl ConsistencyManager {
             }
             ConsistencyLevel::Session => {
                 // Ensure session sees its own writes
-                self.session_manager.wait_for_timestamp(write_timestamp, self.config.consistency_timeout)
+                self.session_manager
+                    .wait_for_timestamp(write_timestamp, self.config.consistency_timeout)
             }
             ConsistencyLevel::Strong => {
                 // Wait for write to be durable
@@ -80,7 +81,7 @@ impl ConsistencyManager {
             }
         }
     }
-    
+
     /// Get read timestamp based on consistency level
     pub fn get_read_timestamp(&self, level: ConsistencyLevel, session_id: Option<u64>) -> u64 {
         match level {
@@ -102,7 +103,7 @@ impl ConsistencyManager {
             }
         }
     }
-    
+
     /// Check if a read repair is needed
     pub fn should_repair_read(
         &self,
@@ -113,44 +114,49 @@ impl ConsistencyManager {
         if !self.config.enable_read_repair {
             return false;
         }
-        
+
         match level {
             ConsistencyLevel::Eventual => {
                 // Repair if version is too old
-                current_timestamp - version_timestamp > self.config.max_clock_skew.as_millis() as u64 * 10
+                current_timestamp - version_timestamp
+                    > self.config.max_clock_skew.as_millis() as u64 * 10
             }
             _ => false, // No repair needed for stronger consistency levels
         }
     }
-    
+
     fn wait_for_durability(&self, timestamp: u64) -> Result<()> {
         let start = std::time::Instant::now();
-        
+
         // Mark the timestamp as durable after some processing
         // In a real implementation, this would wait for actual durability
         self.clock.mark_durable(timestamp);
-        
+
         while start.elapsed() < self.config.consistency_timeout {
             if self.clock.is_durable(timestamp) {
                 return Ok(());
             }
             std::thread::sleep(Duration::from_micros(100));
         }
-        
-        Err(Error::Timeout("Consistency timeout waiting for durability".to_string()))
+
+        Err(Error::Timeout(
+            "Consistency timeout waiting for durability".to_string(),
+        ))
     }
-    
+
     fn wait_for_linearization(&self, timestamp: u64) -> Result<()> {
         let start = std::time::Instant::now();
-        
+
         while start.elapsed() < self.config.consistency_timeout {
             if self.clock.is_linearized(timestamp) {
                 return Ok(());
             }
             std::thread::sleep(Duration::from_micros(100));
         }
-        
-        Err(Error::Timeout("Consistency timeout waiting for linearization".to_string()))
+
+        Err(Error::Timeout(
+            "Consistency timeout waiting for linearization".to_string(),
+        ))
     }
 }
 
@@ -168,7 +174,7 @@ impl HybridLogicalClock {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-            
+
         Self {
             physical_time: std::sync::atomic::AtomicU64::new(now),
             logical_time: std::sync::atomic::AtomicU64::new(0),
@@ -176,37 +182,48 @@ impl HybridLogicalClock {
             linearized_timestamp: std::sync::atomic::AtomicU64::new(0),
         }
     }
-    
+
     pub(crate) fn get_timestamp(&self) -> u64 {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-            
-        let prev_physical = self.physical_time.load(std::sync::atomic::Ordering::Acquire);
-        
+
+        let prev_physical = self
+            .physical_time
+            .load(std::sync::atomic::Ordering::Acquire);
+
         if now > prev_physical {
-            self.physical_time.store(now, std::sync::atomic::Ordering::Release);
-            self.logical_time.store(0, std::sync::atomic::Ordering::Release);
+            self.physical_time
+                .store(now, std::sync::atomic::Ordering::Release);
+            self.logical_time
+                .store(0, std::sync::atomic::Ordering::Release);
             now << 16
         } else {
-            let logical = self.logical_time.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
+            let logical = self
+                .logical_time
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+                + 1;
             (prev_physical << 16) | (logical & 0xFFFF)
         }
     }
-    
+
     fn is_durable(&self, timestamp: u64) -> bool {
-        self.durable_timestamp.load(std::sync::atomic::Ordering::Acquire) >= timestamp
+        self.durable_timestamp
+            .load(std::sync::atomic::Ordering::Acquire)
+            >= timestamp
     }
-    
+
     pub(crate) fn mark_durable(&self, timestamp: u64) {
-        self.durable_timestamp.fetch_max(timestamp, std::sync::atomic::Ordering::AcqRel);
+        self.durable_timestamp
+            .fetch_max(timestamp, std::sync::atomic::Ordering::AcqRel);
     }
-    
+
     fn is_linearized(&self, timestamp: u64) -> bool {
-        self.linearized_timestamp.load(std::sync::atomic::Ordering::Acquire) >= timestamp
+        self.linearized_timestamp
+            .load(std::sync::atomic::Ordering::Acquire)
+            >= timestamp
     }
-    
 }
 
 /// Session manager for session consistency
@@ -229,25 +246,27 @@ impl SessionManager {
             next_session_id: std::sync::atomic::AtomicU64::new(1),
         }
     }
-    
+
     #[cfg(test)]
     fn create_session(&self) -> u64 {
-        let session_id = self.next_session_id.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        let session_id = self
+            .next_session_id
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         let state = SessionState {
             last_write_timestamp: 0,
         };
-        
+
         self.sessions.write().insert(session_id, state);
         session_id
     }
-    
+
     #[cfg(test)]
     fn update_write_timestamp(&self, session_id: u64, timestamp: u64) {
         if let Some(session) = self.sessions.write().get_mut(&session_id) {
             session.last_write_timestamp = session.last_write_timestamp.max(timestamp);
         }
     }
-    
+
     fn get_session_timestamp(&self, session_id: u64) -> u64 {
         self.sessions
             .read()
@@ -255,7 +274,7 @@ impl SessionManager {
             .map(|s| s.last_write_timestamp)
             .unwrap_or(0)
     }
-    
+
     fn wait_for_timestamp(&self, _timestamp: u64, _timeout: Duration) -> Result<()> {
         // In a real implementation, this would wait for replication
         // For now, we'll simulate immediate consistency
@@ -270,9 +289,11 @@ pub struct ReadRepair {
 
 impl ReadRepair {
     pub fn new(consistency_manager: Arc<ConsistencyManager>) -> Self {
-        Self { consistency_manager }
+        Self {
+            consistency_manager,
+        }
     }
-    
+
     /// Perform read repair if needed
     pub fn repair_if_needed(
         &self,
@@ -283,21 +304,21 @@ impl ReadRepair {
         if versions.is_empty() {
             return None;
         }
-        
+
         // Find the most recent version
-        let (latest_timestamp, latest_value) = versions
-            .iter()
-            .max_by_key(|(ts, _)| ts)
-            .unwrap();
-        
+        let (latest_timestamp, latest_value) = versions.iter().max_by_key(|(ts, _)| ts).unwrap();
+
         let current_timestamp = self.consistency_manager.clock.get_timestamp();
-        
-        if self.consistency_manager.should_repair_read(level, *latest_timestamp, current_timestamp) {
+
+        if self
+            .consistency_manager
+            .should_repair_read(level, *latest_timestamp, current_timestamp)
+        {
             // In a real implementation, this would propagate the latest value
             // to nodes with older versions
             tracing::debug!("Read repair needed for key: {:?}", key);
         }
-        
+
         Some(latest_value.clone())
     }
 }
@@ -305,44 +326,46 @@ impl ReadRepair {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_consistency_levels() {
         let config = ConsistencyConfig::default();
         let manager = ConsistencyManager::new(config);
-        
+
         // Test different read timestamps
         let eventual_ts = manager.get_read_timestamp(ConsistencyLevel::Eventual, None);
         let strong_ts = manager.get_read_timestamp(ConsistencyLevel::Strong, None);
-        
+
         assert!(strong_ts >= eventual_ts);
     }
-    
+
     #[test]
     fn test_session_consistency() {
         let config = ConsistencyConfig::default();
         let manager = ConsistencyManager::new(config);
-        
+
         let session_id = manager.session_manager.create_session();
         let write_ts = manager.clock.get_timestamp();
-        
-        manager.session_manager.update_write_timestamp(session_id, write_ts);
-        
+
+        manager
+            .session_manager
+            .update_write_timestamp(session_id, write_ts);
+
         let read_ts = manager.get_read_timestamp(ConsistencyLevel::Session, Some(session_id));
         assert_eq!(read_ts, write_ts);
     }
-    
+
     #[test]
     fn test_hybrid_logical_clock() {
         let clock = HybridLogicalClock::new();
-        
+
         let ts1 = clock.get_timestamp();
         let ts2 = clock.get_timestamp();
         let ts3 = clock.get_timestamp();
-        
+
         assert!(ts2 > ts1);
         assert!(ts3 > ts2);
-        
+
         // Test durability marking
         clock.mark_durable(ts2);
         assert!(clock.is_durable(ts1));

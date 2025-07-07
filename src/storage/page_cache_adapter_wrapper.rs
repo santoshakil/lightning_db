@@ -27,7 +27,7 @@ impl PageCache for PageCacheAdapterWrapper {
         // For prefetching, we can read the page into memory/cache
         // This will warm up the cache for future accesses
         match self.page_manager.get_page(page_id) {
-            Ok(_) => Ok(()), // Page is now in cache
+            Ok(_) => Ok(()),                     // Page is now in cache
             Err(Error::InvalidPageId) => Ok(()), // Page doesn't exist
             Err(e) => Err(e),
         }
