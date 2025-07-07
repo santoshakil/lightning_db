@@ -66,7 +66,7 @@ impl<'a> BTreeLeafIterator<'a> {
     /// Find the leftmost leaf that might contain keys >= start_key
     fn find_start_leaf(&self) -> Result<u32> {
         let start_key = self.start_key.as_deref();
-        
+
         let mut current_page_id = self.btree.root_page_id();
         let mut level = self.btree.height();
 
@@ -85,7 +85,9 @@ impl<'a> BTreeLeafIterator<'a> {
                 self.find_child_for_key(&node, key)?
             } else {
                 // No start key, go to leftmost child
-                *node.children.first()
+                *node
+                    .children
+                    .first()
                     .ok_or_else(|| Error::Index("No children in internal node".to_string()))?
             };
 
@@ -98,7 +100,7 @@ impl<'a> BTreeLeafIterator<'a> {
     /// Find the rightmost leaf that might contain keys <= end_key
     fn find_end_leaf(&self) -> Result<u32> {
         let end_key = self.end_key.as_deref();
-        
+
         let mut current_page_id = self.btree.root_page_id();
         let mut level = self.btree.height();
 
@@ -117,7 +119,9 @@ impl<'a> BTreeLeafIterator<'a> {
                 self.find_child_for_key(&node, key)?
             } else {
                 // No end key, go to rightmost child
-                *node.children.last()
+                *node
+                    .children
+                    .last()
                     .ok_or_else(|| Error::Index("No children in internal node".to_string()))?
             };
 
@@ -141,7 +145,8 @@ impl<'a> BTreeLeafIterator<'a> {
             }
         }
 
-        node.children.get(child_index)
+        node.children
+            .get(child_index)
             .copied()
             .ok_or_else(|| Error::Index("Child index out of bounds".to_string()))
     }
@@ -149,7 +154,7 @@ impl<'a> BTreeLeafIterator<'a> {
     /// Load entries from current leaf
     fn load_current_leaf(&mut self) -> Result<()> {
         self.current_leaf_entries.clear();
-        
+
         if let Some(leaf_id) = self.current_leaf_id {
             let page = self.btree.page_manager.get_page(leaf_id)?;
             let node = BTreeNode::deserialize_from_page(&page)?;
@@ -160,9 +165,9 @@ impl<'a> BTreeLeafIterator<'a> {
 
             // Extract key-value pairs
             for entry in &node.entries {
-                self.current_leaf_entries.push((entry.key.clone(), entry.value.clone()));
+                self.current_leaf_entries
+                    .push((entry.key.clone(), entry.value.clone()));
             }
-            
 
             // Sort entries if needed (should already be sorted)
             if self.forward {
@@ -182,7 +187,9 @@ impl<'a> BTreeLeafIterator<'a> {
                 // Find first key >= start_key
                 self.current_position = 0;
                 while self.current_position < self.current_leaf_entries.len() {
-                    let cmp = self.current_leaf_entries[self.current_position].0.cmp(start_key);
+                    let cmp = self.current_leaf_entries[self.current_position]
+                        .0
+                        .cmp(start_key);
                     match cmp {
                         Ordering::Less => self.current_position += 1,
                         Ordering::Equal => {
@@ -203,7 +210,9 @@ impl<'a> BTreeLeafIterator<'a> {
                 // Find last key <= end_key
                 self.current_position = self.current_leaf_entries.len();
                 while self.current_position > 0 {
-                    let cmp = self.current_leaf_entries[self.current_position - 1].0.cmp(end_key);
+                    let cmp = self.current_leaf_entries[self.current_position - 1]
+                        .0
+                        .cmp(end_key);
                     match cmp {
                         Ordering::Greater => self.current_position -= 1,
                         Ordering::Equal => {
@@ -246,7 +255,7 @@ impl<'a> BTreeLeafIterator<'a> {
                 return Ok(false);
             }
         }
-        
+
         Ok(false)
     }
 
@@ -269,7 +278,7 @@ impl<'a> BTreeLeafIterator<'a> {
                 }
             }
         }
-        
+
         true
     }
 }
@@ -290,12 +299,12 @@ impl Iterator for BTreeLeafIterator<'_> {
                 // Forward iteration
                 if self.current_position < self.current_leaf_entries.len() {
                     let (key, value) = &self.current_leaf_entries[self.current_position];
-                    
+
                     // Check bounds
                     if !self.is_key_in_bounds(key) {
                         return None;
                     }
-                    
+
                     self.current_position += 1;
                     return Some(Ok((key.clone(), value.clone())));
                 } else {
@@ -311,12 +320,12 @@ impl Iterator for BTreeLeafIterator<'_> {
                 if self.current_position > 0 {
                     self.current_position -= 1;
                     let (key, value) = &self.current_leaf_entries[self.current_position];
-                    
+
                     // Check bounds
                     if !self.is_key_in_bounds(key) {
                         return None;
                     }
-                    
+
                     return Some(Ok((key.clone(), value.clone())));
                 } else {
                     // For now, we don't support moving to previous leaf
@@ -341,7 +350,7 @@ mod tests {
     fn test_btree_iterator_forward() {
         let dir = tempdir().unwrap();
         let page_manager = Arc::new(RwLock::new(
-            PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap()
+            PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap(),
         ));
         let mut btree = BPlusTree::new(page_manager).unwrap();
 
@@ -374,7 +383,7 @@ mod tests {
     fn test_btree_iterator_with_bounds() {
         let dir = tempdir().unwrap();
         let page_manager = Arc::new(RwLock::new(
-            PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap()
+            PageManager::create(&dir.path().join("test.db"), 1024 * 1024).unwrap(),
         ));
         let mut btree = BPlusTree::new(page_manager).unwrap();
 
@@ -391,7 +400,8 @@ mod tests {
             Some(b"key03".to_vec()),
             Some(b"key07".to_vec()),
             true,
-        ).unwrap();
+        )
+        .unwrap();
 
         let results: Vec<_> = iter.collect();
         assert_eq!(results.len(), 4); // key03, key04, key05, key06

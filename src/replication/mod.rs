@@ -6,14 +6,14 @@ use crate::error::{Error, Result};
 use crate::wal::WALOperation;
 use crate::Database;
 use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::io::{Read, Write};
-use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ReplicationRole {
@@ -68,8 +68,6 @@ pub struct ReplicationManager {
     slave_connections: Arc<RwLock<Vec<TcpStream>>>,
 }
 
-
-
 impl ReplicationManager {
     pub fn new(config: ReplicationConfig, database: Arc<Database>) -> Self {
         Self {
@@ -101,7 +99,7 @@ impl ReplicationManager {
 
     pub fn stop(&self) {
         self.is_running.store(false, Ordering::Relaxed);
-        
+
         // Wake up any waiting threads
         let (lock, cvar) = &*self.sync_condvar;
         let mut pending = lock.lock().unwrap();
@@ -112,8 +110,9 @@ impl ReplicationManager {
     fn start_master(&self) -> Result<()> {
         let listener = TcpListener::bind(&self.config.bind_address)
             .map_err(|e| Error::Generic(format!("Failed to bind: {}", e)))?;
-        
-        listener.set_nonblocking(true)
+
+        listener
+            .set_nonblocking(true)
             .map_err(|e| Error::Generic(format!("Failed to set nonblocking: {}", e)))?;
 
         let is_running = self.is_running.clone();
@@ -147,7 +146,7 @@ impl ReplicationManager {
 
                 if !ops.is_empty() {
                     let mut disconnected = Vec::new();
-                    
+
                     for (idx, slave) in slaves.iter_mut().enumerate() {
                         if let Err(e) = Self::send_operations(slave, &ops) {
                             eprintln!("Failed to send to slave {}: {}", idx, e);
@@ -169,14 +168,18 @@ impl ReplicationManager {
     }
 
     fn start_slave(&self) -> Result<()> {
-        let master_addr = self.config.master_address.as_ref()
+        let master_addr = self
+            .config
+            .master_address
+            .as_ref()
             .ok_or_else(|| Error::Generic("Master address not configured".to_string()))?
             .clone();
 
         let stream = TcpStream::connect(&master_addr)
             .map_err(|e| Error::Generic(format!("Failed to connect to master: {}", e)))?;
 
-        stream.set_nonblocking(false)
+        stream
+            .set_nonblocking(false)
             .map_err(|e| Error::Generic(format!("Failed to set blocking: {}", e)))?;
 
         let is_running = self.is_running.clone();
@@ -205,16 +208,16 @@ impl ReplicationManager {
                             eprintln!("Failed to apply operation: {}", e);
                         }
                     }
-                    
+
                     // Update LSN
                     last_synced_lsn.fetch_add(1, Ordering::Relaxed);
                 }
                 Err(e) => {
                     eprintln!("Error receiving operations: {}", e);
-                    
+
                     // Try to reconnect
                     thread::sleep(Duration::from_secs(5));
-                    
+
                     if let Ok(new_stream) = TcpStream::connect(&master_addr) {
                         stream = new_stream;
                         println!("Reconnected to master");
@@ -228,37 +231,43 @@ impl ReplicationManager {
         // Simple protocol: length (4 bytes) + serialized operations
         let serialized = bincode::encode_to_vec(operations, bincode::config::standard())
             .map_err(|e| Error::Generic(format!("Serialization error: {}", e)))?;
-        
+
         let len = serialized.len() as u32;
-        stream.write_all(&len.to_be_bytes())
+        stream
+            .write_all(&len.to_be_bytes())
             .map_err(|e| Error::Generic(format!("Write error: {}", e)))?;
-        
-        stream.write_all(&serialized)
+
+        stream
+            .write_all(&serialized)
             .map_err(|e| Error::Generic(format!("Write error: {}", e)))?;
-        
-        stream.flush()
+
+        stream
+            .flush()
             .map_err(|e| Error::Generic(format!("Flush error: {}", e)))?;
-        
+
         Ok(())
     }
 
     fn receive_operations(stream: &mut TcpStream) -> Result<Vec<WALOperation>> {
         // Read length
         let mut len_buf = [0u8; 4];
-        stream.read_exact(&mut len_buf)
+        stream
+            .read_exact(&mut len_buf)
             .map_err(|e| Error::Generic(format!("Read error: {}", e)))?;
-        
+
         let len = u32::from_be_bytes(len_buf) as usize;
-        
+
         // Read data
         let mut data = vec![0u8; len];
-        stream.read_exact(&mut data)
+        stream
+            .read_exact(&mut data)
             .map_err(|e| Error::Generic(format!("Read error: {}", e)))?;
-        
-        let operations: Vec<WALOperation> = bincode::decode_from_slice(&data, bincode::config::standard())
-            .map_err(|e| Error::Generic(format!("Deserialization error: {}", e)))?
-            .0;
-        
+
+        let operations: Vec<WALOperation> =
+            bincode::decode_from_slice(&data, bincode::config::standard())
+                .map_err(|e| Error::Generic(format!("Deserialization error: {}", e)))?
+                .0;
+
         Ok(operations)
     }
 
@@ -298,14 +307,14 @@ impl ReplicationManager {
     pub fn replicate_operation(&self, operation: WALOperation) -> Result<()> {
         if self.config.role == ReplicationRole::Master {
             self.pending_operations.write().push_back(operation);
-            
+
             // Notify sync thread
             let (lock, cvar) = &*self.sync_condvar;
             let mut pending = lock.lock().unwrap();
             *pending = true;
             cvar.notify_one();
         }
-        
+
         Ok(())
     }
 
@@ -330,9 +339,9 @@ impl ReplicationManager {
 mod tests {
     use super::*;
     use crate::LightningDbConfig;
-    use tempfile::tempdir;
     use std::thread;
     use std::time::Duration;
+    use tempfile::tempdir;
 
     #[test]
     fn test_replication_config() {
@@ -342,35 +351,36 @@ mod tests {
         assert_eq!(config.sync_interval_ms, 100);
         assert_eq!(config.heartbeat_interval_ms, 5000);
         assert_eq!(config.snapshot_threshold, 10000);
-        assert_eq!(config.conflict_resolution, ConflictResolution::LastWriteWins);
+        assert_eq!(
+            config.conflict_resolution,
+            ConflictResolution::LastWriteWins
+        );
     }
 
     #[test]
     fn test_master_slave_setup() {
         let master_dir = tempdir().unwrap();
         let slave_dir = tempdir().unwrap();
-        
+
         // Create master database
         let master_config = LightningDbConfig::default();
-        let master_db = Arc::new(
-            Database::create(master_dir.path().join("master.db"), master_config).unwrap()
-        );
-        
+        let master_db =
+            Arc::new(Database::create(master_dir.path().join("master.db"), master_config).unwrap());
+
         // Create slave database
         let slave_config = LightningDbConfig::default();
-        let slave_db = Arc::new(
-            Database::create(slave_dir.path().join("slave.db"), slave_config).unwrap()
-        );
-        
+        let slave_db =
+            Arc::new(Database::create(slave_dir.path().join("slave.db"), slave_config).unwrap());
+
         // Setup master replication
         let master_repl_config = ReplicationConfig {
             role: ReplicationRole::Master,
             bind_address: "127.0.0.1:17890".to_string(),
             ..Default::default()
         };
-        
+
         let master_repl = ReplicationManager::new(master_repl_config, master_db.clone());
-        
+
         // Setup slave replication
         let slave_repl_config = ReplicationConfig {
             role: ReplicationRole::Slave,
@@ -378,57 +388,59 @@ mod tests {
             master_address: Some("127.0.0.1:17890".to_string()),
             ..Default::default()
         };
-        
+
         let slave_repl = ReplicationManager::new(slave_repl_config, slave_db.clone());
-        
+
         // Start replication
         master_repl.start().unwrap();
         thread::sleep(Duration::from_millis(100)); // Let master start
         slave_repl.start().unwrap();
-        
+
         // Write to master
         master_db.put(b"key1", b"value1").unwrap();
-        master_repl.replicate_operation(WALOperation::Put {
-            key: b"key1".to_vec(),
-            value: b"value1".to_vec(),
-        }).unwrap();
-        
+        master_repl
+            .replicate_operation(WALOperation::Put {
+                key: b"key1".to_vec(),
+                value: b"value1".to_vec(),
+            })
+            .unwrap();
+
         // Wait for replication
         thread::sleep(Duration::from_millis(500));
-        
+
         // Verify slave has the data
         let value = slave_db.get(b"key1").unwrap();
         assert_eq!(value, Some(b"value1".to_vec()));
-        
+
         // Cleanup
         master_repl.stop();
         slave_repl.stop();
     }
-    
+
     #[test]
     fn test_enhanced_replication() {
         let dir = tempdir().unwrap();
         let config = LightningDbConfig::default();
         let db = Arc::new(Database::create(dir.path().join("test.db"), config).unwrap());
-        
+
         let repl_config = ReplicationConfig::default();
         let manager = EnhancedReplicationManager::new(repl_config, db.clone());
-        
+
         // Test statistics
         let stats = manager.get_stats();
         assert_eq!(stats.role, ReplicationRole::Master);
         assert!(!stats.is_running);
         assert_eq!(stats.current_lsn, 0);
         assert_eq!(stats.pending_operations, 0);
-        
+
         // Test operation replication
         let op = WALOperation::Put {
             key: b"test_key".to_vec(),
             value: b"test_value".to_vec(),
         };
-        
+
         manager.replicate_operation(op).unwrap();
-        
+
         let stats = manager.get_stats();
         assert_eq!(stats.current_lsn, 1);
         assert_eq!(stats.pending_operations, 1);

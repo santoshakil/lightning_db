@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::lsm::LSMTree;
-use crate::wal::{WriteAheadLog, WALOperation};
+use crate::wal::{WALOperation, WriteAheadLog};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -34,10 +34,7 @@ impl FastPath {
 
     /// Direct get operation with minimal overhead
     #[inline(always)]
-    pub fn get_direct(
-        key: &[u8],
-        lsm: &Option<Arc<LSMTree>>,
-    ) -> Result<Option<Vec<u8>>> {
+    pub fn get_direct(key: &[u8], lsm: &Option<Arc<LSMTree>>) -> Result<Option<Vec<u8>>> {
         if let Some(ref lsm) = lsm {
             lsm.get(key)
         } else {

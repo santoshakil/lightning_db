@@ -10,32 +10,36 @@ use tempfile::tempdir;
 fn test_basic_crash_recovery() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().to_path_buf();
-    
+
     // Phase 1: Write data and crash
     {
         let mut config = LightningDbConfig::default();
         config.use_improved_wal = true;
         config.wal_sync_mode = WalSyncMode::Sync;
-        
+
         let db = Database::open(&db_path, config).unwrap();
-        
+
         // Write some data
         for i in 0..100 {
-            db.put(format!("key_{:04}", i).as_bytes(), format!("value_{:04}", i).as_bytes()).unwrap();
+            db.put(
+                format!("key_{:04}", i).as_bytes(),
+                format!("value_{:04}", i).as_bytes(),
+            )
+            .unwrap();
         }
-        
+
         // Force checkpoint to ensure data is on disk
         db.checkpoint().unwrap();
-        
+
         // Simulate crash by dropping without proper shutdown
         std::mem::forget(db);
     }
-    
+
     // Phase 2: Recover and verify data
     {
         let config = LightningDbConfig::default();
         let db = Database::open(&db_path, config).unwrap();
-        
+
         // Verify all data is recovered
         for i in 0..100 {
             let key = format!("key_{:04}", i);
@@ -51,45 +55,51 @@ fn test_basic_crash_recovery() {
 fn test_transaction_crash_recovery() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().to_path_buf();
-    
+
     // Phase 1: Start transaction and crash
     {
         let mut config = LightningDbConfig::default();
         config.use_improved_wal = true;
         config.wal_sync_mode = WalSyncMode::Sync;
-        
+
         let db = Database::open(&db_path, config).unwrap();
-        
+
         // Write some committed data
         for i in 0..50 {
-            db.put(format!("committed_{:04}", i).as_bytes(), b"committed").unwrap();
+            db.put(format!("committed_{:04}", i).as_bytes(), b"committed")
+                .unwrap();
         }
-        
+
         // Force checkpoint to ensure committed data is on disk
         db.checkpoint().unwrap();
-        
+
         // Start transaction but don't commit
         let tx_id = db.begin_transaction().unwrap();
         for i in 0..50 {
-            db.put_tx(tx_id, format!("uncommitted_{:04}", i).as_bytes(), b"uncommitted").unwrap();
+            db.put_tx(
+                tx_id,
+                format!("uncommitted_{:04}", i).as_bytes(),
+                b"uncommitted",
+            )
+            .unwrap();
         }
-        
+
         // Simulate crash without committing
         std::mem::forget(db);
     }
-    
+
     // Phase 2: Recover and verify only committed data exists
     {
         let config = LightningDbConfig::default();
         let db = Database::open(&db_path, config).unwrap();
-        
+
         // Verify committed data exists
         for i in 0..50 {
             let key = format!("committed_{:04}", i);
             let value = db.get(key.as_bytes()).unwrap();
             assert_eq!(value.as_deref(), Some(b"committed".as_ref()));
         }
-        
+
         // Verify uncommitted data does not exist
         for i in 0..50 {
             let key = format!("uncommitted_{:04}", i);
@@ -104,23 +114,23 @@ fn test_transaction_crash_recovery() {
 fn test_concurrent_crash_recovery() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().to_path_buf();
-    
+
     // Phase 1: Concurrent writes and crash
     {
         let mut config = LightningDbConfig::default();
         config.use_improved_wal = true;
         config.wal_sync_mode = WalSyncMode::Sync;
-        
+
         let db = Arc::new(Database::open(&db_path, config).unwrap());
         let running = Arc::new(AtomicBool::new(true));
-        
+
         let mut handles = vec![];
-        
+
         // Start concurrent writers
         for thread_id in 0..4 {
             let db_clone = Arc::clone(&db);
             let running_clone = Arc::clone(&running);
-            
+
             let handle = thread::spawn(move || {
                 let mut i = 0;
                 while running_clone.load(Ordering::Relaxed) {
@@ -134,10 +144,10 @@ fn test_concurrent_crash_recovery() {
             });
             handles.push(handle);
         }
-        
+
         // Let them run for a bit
         thread::sleep(Duration::from_millis(100));
-        
+
         // Simulate crash
         running.store(false, Ordering::Relaxed);
         for handle in handles {
@@ -145,15 +155,15 @@ fn test_concurrent_crash_recovery() {
         }
         std::mem::forget(Arc::try_unwrap(db).ok());
     }
-    
+
     // Phase 2: Recover and verify data consistency
     {
         let config = LightningDbConfig::default();
         let db = Database::open(&db_path, config).unwrap();
-        
+
         // Count recovered entries per thread
         let mut thread_counts = vec![0; 4];
-        
+
         for thread_id in 0..4 {
             let mut i = 0;
             loop {
@@ -166,10 +176,14 @@ fn test_concurrent_crash_recovery() {
                 }
             }
         }
-        
+
         // Verify we recovered some data from each thread
         for (thread_id, count) in thread_counts.iter().enumerate() {
-            assert!(*count > 0, "Thread {} should have some recovered data", thread_id);
+            assert!(
+                *count > 0,
+                "Thread {} should have some recovered data",
+                thread_id
+            );
             println!("Thread {} recovered {} entries", thread_id, count);
         }
     }
@@ -180,26 +194,30 @@ fn test_concurrent_crash_recovery() {
 fn test_partial_wal_recovery() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().to_path_buf();
-    
+
     // Phase 1: Write data with artificial WAL truncation
     {
         let mut config = LightningDbConfig::default();
         config.use_improved_wal = true;
         config.wal_sync_mode = WalSyncMode::Sync;
-        
+
         let db = Database::open(&db_path, config).unwrap();
-        
+
         // Write batch of data
         for i in 0..1000 {
-            db.put(format!("key_{:06}", i).as_bytes(), format!("value_{:06}", i).as_bytes()).unwrap();
+            db.put(
+                format!("key_{:06}", i).as_bytes(),
+                format!("value_{:06}", i).as_bytes(),
+            )
+            .unwrap();
         }
-        
+
         // Force checkpoint
         db.checkpoint().unwrap();
-        
+
         // Force close without proper shutdown
         drop(db);
-        
+
         // Simulate partial WAL write by truncating WAL file
         let wal_path = db_path.join("wal");
         if wal_path.exists() {
@@ -215,12 +233,12 @@ fn test_partial_wal_recovery() {
             }
         }
     }
-    
+
     // Phase 2: Recover and verify as much data as possible
     {
         let config = LightningDbConfig::default();
         let db = Database::open(&db_path, config).unwrap();
-        
+
         // Count recovered entries
         let mut recovered = 0;
         for i in 0..1000 {
@@ -236,7 +254,7 @@ fn test_partial_wal_recovery() {
                 break;
             }
         }
-        
+
         println!("Recovered {} entries from partial WAL", recovered);
         assert!(recovered > 0, "Should recover at least some data");
     }
@@ -247,15 +265,15 @@ fn test_partial_wal_recovery() {
 fn test_compaction_crash_recovery() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().to_path_buf();
-    
+
     // Phase 1: Write data to trigger compaction
     {
         let mut config = LightningDbConfig::default();
         config.use_improved_wal = true;
         config.wal_sync_mode = WalSyncMode::Async;
-        
+
         let db = Database::open(&db_path, config).unwrap();
-        
+
         // Write enough data to potentially trigger compaction
         for batch in 0..10 {
             for i in 0..1000 {
@@ -268,16 +286,16 @@ fn test_compaction_crash_recovery() {
                 db.checkpoint().unwrap();
             }
         }
-        
+
         // Simulate crash during potential compaction
         std::mem::forget(db);
     }
-    
+
     // Phase 2: Recover and verify data integrity
     {
         let config = LightningDbConfig::default();
         let db = Database::open(&db_path, config).unwrap();
-        
+
         // Verify all data is present
         let mut total_recovered = 0;
         for batch in 0..10 {
@@ -291,8 +309,11 @@ fn test_compaction_crash_recovery() {
                 }
             }
         }
-        
-        println!("Recovered {} entries after compaction crash", total_recovered);
+
+        println!(
+            "Recovered {} entries after compaction crash",
+            total_recovered
+        );
         assert!(total_recovered >= 9000, "Should recover most data");
     }
 }
@@ -302,23 +323,27 @@ fn test_compaction_crash_recovery() {
 fn test_corrupted_page_recovery() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().to_path_buf();
-    
+
     // Phase 1: Write data normally
     {
         let mut config = LightningDbConfig::default();
         config.use_improved_wal = true;
         config.wal_sync_mode = WalSyncMode::Sync;
-        
+
         let db = Database::open(&db_path, config).unwrap();
-        
+
         // Write test data
         for i in 0..500 {
-            db.put(format!("test_key_{:06}", i).as_bytes(), format!("test_value_{:06}", i).as_bytes()).unwrap();
+            db.put(
+                format!("test_key_{:06}", i).as_bytes(),
+                format!("test_value_{:06}", i).as_bytes(),
+            )
+            .unwrap();
         }
-        
+
         drop(db);
     }
-    
+
     // Corrupt a page file
     let btree_path = db_path.join("btree.db");
     if btree_path.exists() {
@@ -326,7 +351,7 @@ fn test_corrupted_page_recovery() {
         if metadata.len() > 4096 {
             // Corrupt a page in the middle
             let mut data = std::fs::read(&btree_path).unwrap();
-            for i in 2048..2048+256 {
+            for i in 2048..2048 + 256 {
                 if i < data.len() {
                     data[i] = 0xFF; // Corrupt data
                 }
@@ -334,7 +359,7 @@ fn test_corrupted_page_recovery() {
             std::fs::write(&btree_path, data).unwrap();
         }
     }
-    
+
     // Phase 2: Try to recover
     {
         let config = LightningDbConfig::default();
@@ -365,14 +390,14 @@ fn test_corrupted_page_recovery() {
 fn test_kill_nine_recovery() {
     // This test would spawn a child process and kill it
     // Included here as a template for manual testing
-    
+
     let dir = tempdir().unwrap();
     let _db_path = dir.path().to_path_buf();
-    
+
     // Would spawn a child process that writes to the database
     // Then send SIGKILL to simulate kill -9
     // Then verify recovery in parent process
-    
+
     println!("Kill -9 recovery test would run here with proper process spawning");
 }
 
@@ -383,12 +408,12 @@ fn verify_database_integrity(db: &Database) -> Result<(), Box<dyn std::error::Er
     let stats = db.stats();
     assert!(stats.page_count > 0);
     assert!(stats.free_page_count <= stats.page_count as usize);
-    
+
     // Try some operations to ensure database is functional
     db.put(b"integrity_test", b"passed")?;
     let value = db.get(b"integrity_test")?;
     assert_eq!(value.as_deref(), Some(b"passed".as_ref()));
     db.delete(b"integrity_test")?;
-    
+
     Ok(())
 }

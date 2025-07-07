@@ -33,7 +33,7 @@ impl KeyValueResult {
             error_code: 0,
         }
     }
-    
+
     pub fn error(code: i32) -> Self {
         Self {
             key: ptr::null_mut(),
@@ -46,7 +46,7 @@ impl KeyValueResult {
 }
 
 /// Create an iterator for scanning a range of keys
-/// 
+///
 /// # Safety
 /// - start_key/end_key must be valid for their respective lengths (can be null for unbounded)
 /// - Returns 0 on success with iterator handle stored in out_handle, error code on failure
@@ -60,43 +60,49 @@ pub extern "C" fn lightning_db_scan(
     out_handle: *mut u64,
 ) -> i32 {
     if out_handle.is_null() {
-        set_last_error(ErrorCode::InvalidArgument, "Null pointer provided".to_string());
+        set_last_error(
+            ErrorCode::InvalidArgument,
+            "Null pointer provided".to_string(),
+        );
         return ErrorCode::InvalidArgument as i32;
     }
-    
+
     let db = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
         Some(db) => db,
         None => {
-            set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
+            set_last_error(
+                ErrorCode::DatabaseNotFound,
+                "Invalid database handle".to_string(),
+            );
             return ErrorCode::DatabaseNotFound as i32;
         }
     };
-    
+
     let start = if start_key.is_null() || start_key_len == 0 {
         None
     } else {
         Some(unsafe { bytes_to_vec(start_key, start_key_len) })
     };
-    
+
     let end = if end_key.is_null() || end_key_len == 0 {
         None
     } else {
         Some(unsafe { bytes_to_vec(end_key, end_key_len) })
     };
-    
+
     let iterator = ffi_try!(db.scan(start, end));
     let handle = ITERATOR_REGISTRY.insert(iterator);
-    
+
     unsafe {
         *out_handle = handle;
     }
-    
+
     clear_last_error();
     0
 }
 
 /// Get the next key-value pair from an iterator
-/// 
+///
 /// # Safety
 /// - The iterator handle must be valid
 /// - The returned KeyValueResult must be freed using lightning_db_free_key_value
@@ -104,9 +110,7 @@ pub extern "C" fn lightning_db_scan(
 pub extern "C" fn lightning_db_iterator_next(iter_handle: u64) -> KeyValueResult {
     match ITERATOR_REGISTRY.with_mut(iter_handle, |iter| {
         match iter.next() {
-            Some(Ok((key, value))) => {
-                KeyValueResult::success(key, value)
-            }
+            Some(Ok((key, value))) => KeyValueResult::success(key, value),
             Some(Err(e)) => {
                 let code = crate::error::error_to_code(&e);
                 set_last_error(code, format!("{}", e));
@@ -127,14 +131,17 @@ pub extern "C" fn lightning_db_iterator_next(iter_handle: u64) -> KeyValueResult
             result
         }
         None => {
-            set_last_error(ErrorCode::InvalidArgument, "Invalid iterator handle".to_string());
+            set_last_error(
+                ErrorCode::InvalidArgument,
+                "Invalid iterator handle".to_string(),
+            );
             KeyValueResult::error(ErrorCode::InvalidArgument as i32)
         }
     }
 }
 
 /// Close an iterator and free its resources
-/// 
+///
 /// # Safety
 /// - The handle must be valid
 /// - The handle must not be used after calling this function
@@ -144,13 +151,16 @@ pub extern "C" fn lightning_db_iterator_close(iter_handle: u64) -> i32 {
         clear_last_error();
         0
     } else {
-        set_last_error(ErrorCode::InvalidArgument, "Invalid iterator handle".to_string());
+        set_last_error(
+            ErrorCode::InvalidArgument,
+            "Invalid iterator handle".to_string(),
+        );
         ErrorCode::InvalidArgument as i32
     }
 }
 
 /// Free a key-value result
-/// 
+///
 /// # Safety
 /// - The result must have been returned by lightning_db_iterator_next
 /// - The result must not be used after calling this function

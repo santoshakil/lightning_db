@@ -27,7 +27,7 @@ pub fn simd_prefix_match(keys: &[&[u8]], prefix: &[u8]) -> Vec<bool> {
             prefix_match_scalar(keys, prefix)
         }
     }
-    
+
     #[cfg(not(target_arch = "x86_64"))]
     {
         prefix_match_scalar(keys, prefix)
@@ -43,13 +43,13 @@ fn prefix_match_scalar(keys: &[&[u8]], prefix: &[u8]) -> Vec<bool> {
 unsafe fn simd_prefix_match_sse2(keys: &[&[u8]], prefix: &[u8]) -> Vec<bool> {
     let mut results = Vec::with_capacity(keys.len());
     let chunks = prefix.len() / 16;
-    
+
     for key in keys {
         if key.len() < prefix.len() {
             results.push(false);
             continue;
         }
-        
+
         let mut matches = true;
         for i in 0..chunks {
             let offset = i * 16;
@@ -57,22 +57,22 @@ unsafe fn simd_prefix_match_sse2(keys: &[&[u8]], prefix: &[u8]) -> Vec<bool> {
             let prefix_vec = _mm_loadu_si128(prefix.as_ptr().add(offset) as *const __m128i);
             let cmp = _mm_cmpeq_epi8(key_vec, prefix_vec);
             let mask = _mm_movemask_epi8(cmp);
-            
+
             if mask != 0xFFFF {
                 matches = false;
                 break;
             }
         }
-        
+
         // Check remaining bytes
         if matches {
             let remainder_start = chunks * 16;
             matches = key[remainder_start..].starts_with(&prefix[remainder_start..]);
         }
-        
+
         results.push(matches);
     }
-    
+
     results
 }
 
@@ -81,13 +81,13 @@ unsafe fn simd_prefix_match_sse2(keys: &[&[u8]], prefix: &[u8]) -> Vec<bool> {
 unsafe fn simd_prefix_match_avx2(keys: &[&[u8]], prefix: &[u8]) -> Vec<bool> {
     let mut results = Vec::with_capacity(keys.len());
     let chunks = prefix.len() / 32;
-    
+
     for key in keys {
         if key.len() < prefix.len() {
             results.push(false);
             continue;
         }
-        
+
         let mut matches = true;
         for i in 0..chunks {
             let offset = i * 32;
@@ -95,21 +95,21 @@ unsafe fn simd_prefix_match_avx2(keys: &[&[u8]], prefix: &[u8]) -> Vec<bool> {
             let prefix_vec = _mm256_loadu_si256(prefix.as_ptr().add(offset) as *const __m256i);
             let cmp = _mm256_cmpeq_epi8(key_vec, prefix_vec);
             let mask = _mm256_movemask_epi8(cmp);
-            
+
             if mask != -1 {
                 matches = false;
                 break;
             }
         }
-        
+
         // Check remaining bytes
         if matches {
             let remainder_start = chunks * 32;
             matches = key[remainder_start..].starts_with(&prefix[remainder_start..]);
         }
-        
+
         results.push(matches);
     }
-    
+
     results
 }

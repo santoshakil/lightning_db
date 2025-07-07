@@ -11,48 +11,41 @@ impl LockUtils {
     /// Try to acquire a read lock with retry on contention
     pub fn read_with_retry<T>(lock: &RwLock<T>) -> Result<RwLockReadGuard<T>> {
         RetryableOperations::lock_operation(|| {
-            lock.try_read()
-                .ok_or_else(|| Error::LockFailed {
-                    resource: "read lock".to_string(),
-                })
+            lock.try_read().ok_or_else(|| Error::LockFailed {
+                resource: "read lock".to_string(),
+            })
         })
     }
 
     /// Try to acquire a write lock with retry on contention
     pub fn write_with_retry<T>(lock: &RwLock<T>) -> Result<RwLockWriteGuard<T>> {
         RetryableOperations::lock_operation(|| {
-            lock.try_write()
-                .ok_or_else(|| Error::LockFailed {
-                    resource: "write lock".to_string(),
-                })
+            lock.try_write().ok_or_else(|| Error::LockFailed {
+                resource: "write lock".to_string(),
+            })
         })
     }
 
     /// Try to acquire a read lock on an Arc<RwLock<T>> with retry
     pub fn arc_read_with_retry<T>(lock: &Arc<RwLock<T>>) -> Result<RwLockReadGuard<T>> {
         RetryableOperations::lock_operation(|| {
-            lock.try_read()
-                .ok_or_else(|| Error::LockFailed {
-                    resource: "arc read lock".to_string(),
-                })
+            lock.try_read().ok_or_else(|| Error::LockFailed {
+                resource: "arc read lock".to_string(),
+            })
         })
     }
 
     /// Try to acquire a write lock on an Arc<RwLock<T>> with retry
     pub fn arc_write_with_retry<T>(lock: &Arc<RwLock<T>>) -> Result<RwLockWriteGuard<T>> {
         RetryableOperations::lock_operation(|| {
-            lock.try_write()
-                .ok_or_else(|| Error::LockFailed {
-                    resource: "arc write lock".to_string(),
-                })
+            lock.try_write().ok_or_else(|| Error::LockFailed {
+                resource: "arc write lock".to_string(),
+            })
         })
     }
 
     /// Acquire a read lock with timeout
-    pub fn read_with_timeout<T>(
-        lock: &RwLock<T>,
-        timeout: Duration,
-    ) -> Result<RwLockReadGuard<T>> {
+    pub fn read_with_timeout<T>(lock: &RwLock<T>, timeout: Duration) -> Result<RwLockReadGuard<T>> {
         let policy = RetryPolicy {
             max_attempts: (timeout.as_millis() / 10) as u32, // Try every 10ms
             initial_delay: Duration::from_millis(10),
@@ -148,27 +141,30 @@ mod tests {
 
         // Try to acquire read lock with retry
         thread::sleep(Duration::from_millis(10)); // Let other thread acquire lock first
-        
+
         // Start trying to get the lock (it will retry while the write lock is held)
         let start = std::time::Instant::now();
         let guard = lock.read_retry();
         let elapsed = start.elapsed();
-        
+
         // Wait for the write lock holder to finish
         handle.join().unwrap();
-        
+
         // The read should have succeeded after the write lock was released
         assert!(guard.is_ok(), "Failed to acquire read lock after retries");
         assert_eq!(*guard.unwrap(), 42);
-        
+
         // Verify that we actually waited and retried (should have taken at least 40ms)
-        assert!(elapsed.as_millis() >= 40, "Lock was acquired too quickly, retry might not be working");
+        assert!(
+            elapsed.as_millis() >= 40,
+            "Lock was acquired too quickly, retry might not be working"
+        );
     }
 
     #[test]
     fn test_lock_timeout() {
         let lock = RwLock::new(42);
-        
+
         // Should succeed immediately
         let guard = lock.read_timeout(Duration::from_millis(100));
         assert!(guard.is_ok());

@@ -7,7 +7,7 @@ use std::sync::Arc;
 #[cfg(feature = "zstd-compression")]
 use zstd::stream::{decode_all, encode_all};
 
-pub use adaptive_compression::{AdaptiveCompressionEngine, AdaptiveCompressionConfig, DataPattern};
+pub use adaptive_compression::{AdaptiveCompressionConfig, AdaptiveCompressionEngine, DataPattern};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CompressionType {
@@ -100,12 +100,16 @@ pub struct SnappyCompressor;
 impl Compressor for SnappyCompressor {
     fn compress(&self, data: &[u8]) -> Result<Vec<u8>> {
         let mut encoder = Encoder::new();
-        encoder.compress_vec(data).map_err(|e| Error::Compression(e.to_string()))
+        encoder
+            .compress_vec(data)
+            .map_err(|e| Error::Compression(e.to_string()))
     }
 
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>> {
         let mut decoder = Decoder::new();
-        decoder.decompress_vec(data).map_err(|e| Error::Decompression(e.to_string()))
+        decoder
+            .decompress_vec(data)
+            .map_err(|e| Error::Decompression(e.to_string()))
     }
 
     fn compression_type(&self) -> CompressionType {
@@ -181,28 +185,28 @@ impl CompressionBenchmark {
             // Very low entropy, highly repetitive - try all compressors
             vec![
                 #[cfg(feature = "zstd-compression")]
-                CompressionType::Zstd,    // Best for highly compressible data
-                CompressionType::Snappy,  // Fast with decent compression
-                CompressionType::Lz4,     // Fastest
+                CompressionType::Zstd, // Best for highly compressible data
+                CompressionType::Snappy, // Fast with decent compression
+                CompressionType::Lz4,    // Fastest
             ]
         } else if entropy < 5.0 && is_text_like {
             // Medium entropy, text-like data
             vec![
-                CompressionType::Snappy,  // Good balance for text
-                CompressionType::Lz4,     // Fast alternative
+                CompressionType::Snappy, // Good balance for text
+                CompressionType::Lz4,    // Fast alternative
                 #[cfg(feature = "zstd-compression")]
-                CompressionType::Zstd,    // Better compression if needed
+                CompressionType::Zstd, // Better compression if needed
             ]
         } else if entropy > 7.0 {
             // High entropy, likely already compressed or encrypted
-            vec![CompressionType::None]  // Don't try to compress
+            vec![CompressionType::None] // Don't try to compress
         } else {
             // Default: try fast compressors first
             vec![
-                CompressionType::Lz4,     // Fastest
-                CompressionType::Snappy,  // Good balance
+                CompressionType::Lz4,    // Fastest
+                CompressionType::Snappy, // Good balance
                 #[cfg(feature = "zstd-compression")]
-                CompressionType::Zstd,    // Best compression
+                CompressionType::Zstd, // Best compression
             ]
         };
 
@@ -223,7 +227,7 @@ impl CompressionBenchmark {
                 let time_weight = compress_time.as_secs_f64();
                 let compression_benefit = stats.compression_ratio;
                 let size_factor = (stats.compressed_size as f64 / 1024.0).max(1.0).ln();
-                
+
                 // Lower score is better
                 let score = (time_weight * size_factor) / (compression_benefit + 0.1);
 
@@ -371,7 +375,7 @@ mod tests {
     #[test]
     fn test_compression_benchmark() {
         let data = b"The quick brown fox jumps over the lazy dog. ".repeat(100);
-        let compressor = get_compressor(CompressionType::Lz4);  // Use Lz4 for testing
+        let compressor = get_compressor(CompressionType::Lz4); // Use Lz4 for testing
 
         let result = CompressionBenchmark::benchmark_compressor(&*compressor, &data);
         assert!(result.is_ok());
@@ -396,9 +400,15 @@ mod tests {
         let repetitive_data = b"AAAAAAAAAA".repeat(100);
         let best = CompressionBenchmark::find_best_compressor(&repetitive_data);
         #[cfg(feature = "zstd-compression")]
-        assert!(matches!(best, CompressionType::Zstd | CompressionType::Snappy | CompressionType::Lz4));
+        assert!(matches!(
+            best,
+            CompressionType::Zstd | CompressionType::Snappy | CompressionType::Lz4
+        ));
         #[cfg(not(feature = "zstd-compression"))]
-        assert!(matches!(best, CompressionType::Snappy | CompressionType::Lz4));
+        assert!(matches!(
+            best,
+            CompressionType::Snappy | CompressionType::Lz4
+        ));
     }
 
     #[test]
@@ -407,9 +417,15 @@ mod tests {
         let text_data = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(50);
         let best = CompressionBenchmark::find_best_compressor(&text_data);
         #[cfg(feature = "zstd-compression")]
-        assert!(matches!(best, CompressionType::Snappy | CompressionType::Lz4 | CompressionType::Zstd));
+        assert!(matches!(
+            best,
+            CompressionType::Snappy | CompressionType::Lz4 | CompressionType::Zstd
+        ));
         #[cfg(not(feature = "zstd-compression"))]
-        assert!(matches!(best, CompressionType::Snappy | CompressionType::Lz4));
+        assert!(matches!(
+            best,
+            CompressionType::Snappy | CompressionType::Lz4
+        ));
     }
 
     #[test]
@@ -422,9 +438,18 @@ mod tests {
         let best = CompressionBenchmark::find_best_compressor(&random_data);
         // Random data might not compress well, could be None or any compressor
         #[cfg(feature = "zstd-compression")]
-        assert!(matches!(best, CompressionType::None | CompressionType::Lz4 | CompressionType::Snappy | CompressionType::Zstd));
+        assert!(matches!(
+            best,
+            CompressionType::None
+                | CompressionType::Lz4
+                | CompressionType::Snappy
+                | CompressionType::Zstd
+        ));
         #[cfg(not(feature = "zstd-compression"))]
-        assert!(matches!(best, CompressionType::None | CompressionType::Lz4 | CompressionType::Snappy));
+        assert!(matches!(
+            best,
+            CompressionType::None | CompressionType::Lz4 | CompressionType::Snappy
+        ));
     }
 
     #[test]

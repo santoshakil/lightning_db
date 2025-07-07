@@ -5,18 +5,18 @@ use tempfile::tempdir;
 fn main() -> Result<(), Box<dyn Error>> {
     let dir = tempdir()?;
     let db_path = dir.path().join("test.db");
-    
+
     // Create a minimal config for testing
     let mut config = LightningDbConfig::default();
     config.compression_enabled = false; // Disable compression to disable LSM tree
     config.cache_size = 0; // Disable cache
     config.use_optimized_transactions = false;
-    
+
     let db = Database::create(db_path, config)?;
 
     // Insert test data with different prefixes
     println!("=== Inserting test data ===");
-    
+
     // Insert data with various prefixes
     let test_data = vec![
         ("prefix_a_001", "value_a_001"),
@@ -43,12 +43,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         ("user:10", "user_data_10"),
         ("user:11", "user_data_11"),
     ];
-    
+
     for (key, value) in &test_data {
         db.put(key.as_bytes(), value.as_bytes())?;
         println!("Inserted: {} => {}", key, value);
     }
-    
+
     // Force sync to ensure data is written
     db.sync()?;
 
@@ -58,73 +58,101 @@ fn main() -> Result<(), Box<dyn Error>> {
     let iter = db.scan_prefix(b"prefix_a")?;
     for result in iter {
         let (key, value) = result?;
-        println!("Found: {} => {}", String::from_utf8_lossy(&key), String::from_utf8_lossy(&value));
+        println!(
+            "Found: {} => {}",
+            String::from_utf8_lossy(&key),
+            String::from_utf8_lossy(&value)
+        );
         count += 1;
     }
     println!("Total items found: {} (expected: 3)", count);
-    
+
     // Test 2: Prefix scan for "prefix_b"
     println!("\n=== Test 2: Prefix scan for 'prefix_b' ===");
     count = 0;
     let iter = db.scan_prefix(b"prefix_b")?;
     for result in iter {
         let (key, value) = result?;
-        println!("Found: {} => {}", String::from_utf8_lossy(&key), String::from_utf8_lossy(&value));
+        println!(
+            "Found: {} => {}",
+            String::from_utf8_lossy(&key),
+            String::from_utf8_lossy(&value)
+        );
         count += 1;
     }
     println!("Total items found: {} (expected: 2)", count);
-    
+
     // Test 3: Prefix scan for "scan_0"
     println!("\n=== Test 3: Prefix scan for 'scan_0' ===");
     count = 0;
     let iter = db.scan_prefix(b"scan_0")?;
     for result in iter {
         let (key, value) = result?;
-        println!("Found: {} => {}", String::from_utf8_lossy(&key), String::from_utf8_lossy(&value));
+        println!(
+            "Found: {} => {}",
+            String::from_utf8_lossy(&key),
+            String::from_utf8_lossy(&value)
+        );
         count += 1;
     }
     println!("Total items found: {} (expected: 9)", count);
-    
+
     // Test 4: Prefix scan for "scan_1"
     println!("\n=== Test 4: Prefix scan for 'scan_1' ===");
     count = 0;
     let iter = db.scan_prefix(b"scan_1")?;
     for result in iter {
         let (key, value) = result?;
-        println!("Found: {} => {}", String::from_utf8_lossy(&key), String::from_utf8_lossy(&value));
+        println!(
+            "Found: {} => {}",
+            String::from_utf8_lossy(&key),
+            String::from_utf8_lossy(&value)
+        );
         count += 1;
     }
     println!("Total items found: {} (expected: 2)", count);
-    
+
     // Test 5: Prefix scan for "test"
     println!("\n=== Test 5: Prefix scan for 'test' ===");
     count = 0;
     let iter = db.scan_prefix(b"test")?;
     for result in iter {
         let (key, value) = result?;
-        println!("Found: {} => {}", String::from_utf8_lossy(&key), String::from_utf8_lossy(&value));
+        println!(
+            "Found: {} => {}",
+            String::from_utf8_lossy(&key),
+            String::from_utf8_lossy(&value)
+        );
         count += 1;
     }
     println!("Total items found: {} (expected: 2)", count);
-    
+
     // Test 6: Prefix scan for "user:1"
     println!("\n=== Test 6: Prefix scan for 'user:1' ===");
     count = 0;
     let iter = db.scan_prefix(b"user:1")?;
     for result in iter {
         let (key, value) = result?;
-        println!("Found: {} => {}", String::from_utf8_lossy(&key), String::from_utf8_lossy(&value));
+        println!(
+            "Found: {} => {}",
+            String::from_utf8_lossy(&key),
+            String::from_utf8_lossy(&value)
+        );
         count += 1;
     }
     println!("Total items found: {} (expected: 3)", count);
-    
+
     // Test 7: Debug scan_prefix with empty result
     println!("\n=== Test 7: Prefix scan for 'xyz' (should be empty) ===");
     count = 0;
     let iter = db.scan_prefix(b"xyz")?;
     for result in iter {
         let (key, value) = result?;
-        println!("Found: {} => {}", String::from_utf8_lossy(&key), String::from_utf8_lossy(&value));
+        println!(
+            "Found: {} => {}",
+            String::from_utf8_lossy(&key),
+            String::from_utf8_lossy(&value)
+        );
         count += 1;
     }
     println!("Total items found: {} (expected: 0)", count);

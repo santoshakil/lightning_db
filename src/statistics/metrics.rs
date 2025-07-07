@@ -1,8 +1,8 @@
+use parking_lot::RwLock;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use parking_lot::RwLock;
-use std::collections::HashMap;
 
 /// Core metrics for database operations
 #[derive(Debug, Default)]
@@ -12,33 +12,33 @@ pub struct DatabaseMetrics {
     pub writes: AtomicU64,
     pub deletes: AtomicU64,
     pub transactions: AtomicU64,
-    
+
     // Operation latencies (in microseconds)
     pub read_latency_sum: AtomicU64,
     pub write_latency_sum: AtomicU64,
     pub delete_latency_sum: AtomicU64,
     pub transaction_latency_sum: AtomicU64,
-    
+
     // Cache metrics
     pub cache_hits: AtomicU64,
     pub cache_misses: AtomicU64,
     pub cache_evictions: AtomicU64,
-    
+
     // Page metrics
     pub pages_read: AtomicU64,
     pub pages_written: AtomicU64,
     pub page_faults: AtomicU64,
-    
+
     // Compaction metrics
     pub compactions: AtomicU64,
     pub compaction_bytes_read: AtomicU64,
     pub compaction_bytes_written: AtomicU64,
-    
+
     // Error counters
     pub read_errors: AtomicU64,
     pub write_errors: AtomicU64,
     pub transaction_aborts: AtomicU64,
-    
+
     // Size metrics
     pub database_size_bytes: AtomicU64,
     pub wal_size_bytes: AtomicU64,
@@ -49,108 +49,131 @@ impl DatabaseMetrics {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     pub fn record_read(&self, latency: Duration) {
         self.reads.fetch_add(1, Ordering::Relaxed);
-        self.read_latency_sum.fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
+        self.read_latency_sum
+            .fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
     }
-    
+
     pub fn record_write(&self, latency: Duration) {
         self.writes.fetch_add(1, Ordering::Relaxed);
-        self.write_latency_sum.fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
+        self.write_latency_sum
+            .fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
     }
-    
+
     pub fn record_delete(&self, latency: Duration) {
         self.deletes.fetch_add(1, Ordering::Relaxed);
-        self.delete_latency_sum.fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
+        self.delete_latency_sum
+            .fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
     }
-    
+
     pub fn record_transaction(&self, latency: Duration) {
         self.transactions.fetch_add(1, Ordering::Relaxed);
-        self.transaction_latency_sum.fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
+        self.transaction_latency_sum
+            .fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
     }
-    
+
     pub fn record_cache_hit(&self) {
         self.cache_hits.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     pub fn record_cache_miss(&self) {
         self.cache_misses.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     pub fn record_cache_eviction(&self) {
         self.cache_evictions.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     pub fn record_page_read(&self) {
         self.pages_read.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     pub fn record_page_write(&self) {
         self.pages_written.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     pub fn record_page_fault(&self) {
         self.page_faults.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     pub fn record_compaction(&self, bytes_read: u64, bytes_written: u64) {
         self.compactions.fetch_add(1, Ordering::Relaxed);
-        self.compaction_bytes_read.fetch_add(bytes_read, Ordering::Relaxed);
-        self.compaction_bytes_written.fetch_add(bytes_written, Ordering::Relaxed);
+        self.compaction_bytes_read
+            .fetch_add(bytes_read, Ordering::Relaxed);
+        self.compaction_bytes_written
+            .fetch_add(bytes_written, Ordering::Relaxed);
     }
-    
+
     pub fn record_read_error(&self) {
         self.read_errors.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     pub fn record_write_error(&self) {
         self.write_errors.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     pub fn record_transaction_abort(&self) {
         self.transaction_aborts.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     pub fn update_database_size(&self, size_bytes: u64) {
-        self.database_size_bytes.store(size_bytes, Ordering::Relaxed);
+        self.database_size_bytes
+            .store(size_bytes, Ordering::Relaxed);
     }
-    
+
     pub fn update_wal_size(&self, size_bytes: u64) {
         self.wal_size_bytes.store(size_bytes, Ordering::Relaxed);
     }
-    
+
     pub fn increment_active_transactions(&self) {
         self.active_transactions.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     pub fn decrement_active_transactions(&self) {
         self.active_transactions.fetch_sub(1, Ordering::Relaxed);
     }
-    
+
     pub fn get_snapshot(&self) -> MetricsSnapshot {
         let reads = self.reads.load(Ordering::Relaxed);
         let writes = self.writes.load(Ordering::Relaxed);
         let deletes = self.deletes.load(Ordering::Relaxed);
         let transactions = self.transactions.load(Ordering::Relaxed);
-        
+
         let read_latency_sum = self.read_latency_sum.load(Ordering::Relaxed);
         let write_latency_sum = self.write_latency_sum.load(Ordering::Relaxed);
         let delete_latency_sum = self.delete_latency_sum.load(Ordering::Relaxed);
         let transaction_latency_sum = self.transaction_latency_sum.load(Ordering::Relaxed);
-        
+
         let cache_hits = self.cache_hits.load(Ordering::Relaxed);
         let cache_misses = self.cache_misses.load(Ordering::Relaxed);
-        
+
         MetricsSnapshot {
             reads,
             writes,
             deletes,
             transactions,
-            avg_read_latency_us: if reads > 0 { read_latency_sum / reads } else { 0 },
-            avg_write_latency_us: if writes > 0 { write_latency_sum / writes } else { 0 },
-            avg_delete_latency_us: if deletes > 0 { delete_latency_sum / deletes } else { 0 },
-            avg_transaction_latency_us: if transactions > 0 { transaction_latency_sum / transactions } else { 0 },
+            avg_read_latency_us: if reads > 0 {
+                read_latency_sum / reads
+            } else {
+                0
+            },
+            avg_write_latency_us: if writes > 0 {
+                write_latency_sum / writes
+            } else {
+                0
+            },
+            avg_delete_latency_us: if deletes > 0 {
+                delete_latency_sum / deletes
+            } else {
+                0
+            },
+            avg_transaction_latency_us: if transactions > 0 {
+                transaction_latency_sum / transactions
+            } else {
+                0
+            },
             cache_hits,
             cache_misses,
             cache_hit_rate: if cache_hits + cache_misses > 0 {
@@ -173,7 +196,7 @@ impl DatabaseMetrics {
             active_transactions: self.active_transactions.load(Ordering::Relaxed),
         }
     }
-    
+
     pub fn reset(&self) {
         self.reads.store(0, Ordering::Relaxed);
         self.writes.store(0, Ordering::Relaxed);
@@ -244,13 +267,13 @@ impl ComponentMetrics {
             last_updated: Arc::new(RwLock::new(Instant::now())),
         }
     }
-    
+
     pub fn update_metric(&self, key: &str, value: f64) {
         let mut metrics = self.custom_metrics.write();
         metrics.insert(key.to_string(), value);
         *self.last_updated.write() = Instant::now();
     }
-    
+
     pub fn get_metrics(&self) -> HashMap<String, f64> {
         self.custom_metrics.read().clone()
     }

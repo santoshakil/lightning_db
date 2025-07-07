@@ -38,7 +38,7 @@ pub fn clear_last_error() {
 }
 
 /// Get the last error message
-/// 
+///
 /// # Safety
 /// - The returned pointer is valid until the next call to any function that sets an error
 /// - The caller must not free the returned pointer
@@ -55,7 +55,7 @@ pub extern "C" fn lightning_db_get_last_error() -> *const c_char {
 }
 
 /// Get the last error message and copy it to a buffer
-/// 
+///
 /// # Safety
 /// - buffer must be valid for buffer_len bytes
 /// - Returns the number of bytes written (excluding null terminator)
@@ -75,16 +75,16 @@ pub extern "C" fn lightning_db_get_last_error_buffer(
                 Ok(s) => s,
                 Err(_) => return -1,
             };
-            
+
             let bytes = c_str.as_bytes_with_nul();
             if bytes.len() > buffer_len {
                 return -(bytes.len() as i32);
             }
-            
+
             unsafe {
                 ptr::copy_nonoverlapping(bytes.as_ptr(), buffer as *mut u8, bytes.len());
             }
-            
+
             (bytes.len() - 1) as i32 // Don't count null terminator
         }
         None => 0,
@@ -104,10 +104,7 @@ macro_rules! ffi_try {
         match $expr {
             Ok(val) => val,
             Err(e) => {
-                crate::error::set_last_error(
-                    crate::error::error_to_code(&e),
-                    format!("{}", e),
-                );
+                crate::error::set_last_error(crate::error::error_to_code(&e), format!("{}", e));
                 return crate::error::error_to_code(&e) as i32;
             }
         }
@@ -116,10 +113,7 @@ macro_rules! ffi_try {
         match $expr {
             Ok(val) => val,
             Err(e) => {
-                crate::error::set_last_error(
-                    crate::error::error_to_code(&e),
-                    format!("{}", e),
-                );
+                crate::error::set_last_error(crate::error::error_to_code(&e), format!("{}", e));
                 return $default;
             }
         }

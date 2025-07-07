@@ -9,22 +9,22 @@ use std::pin::Pin;
 pub trait AsyncStorage: Send + Sync {
     /// Allocate a new page asynchronously
     async fn allocate_page(&self) -> Result<u32>;
-    
+
     /// Free a page asynchronously
     async fn free_page(&self, page_id: u32) -> Result<()>;
-    
+
     /// Read a page asynchronously
     async fn read_page(&self, page_id: u32) -> Result<Page>;
-    
+
     /// Write a page asynchronously
     async fn write_page(&self, page: &Page) -> Result<()>;
-    
+
     /// Sync all pending writes to disk
     async fn sync(&self) -> Result<()>;
-    
+
     /// Get total page count
     fn page_count(&self) -> u32;
-    
+
     /// Get free page count
     fn free_page_count(&self) -> usize;
 }
@@ -34,13 +34,13 @@ pub trait AsyncStorage: Send + Sync {
 pub trait AsyncWAL: Send + Sync {
     /// Append an operation to the log asynchronously
     async fn append(&self, operation: crate::wal::WALOperation) -> Result<()>;
-    
+
     /// Sync the WAL to disk
     async fn sync(&self) -> Result<()>;
-    
+
     /// Recover operations from the WAL
     async fn recover(&self) -> Result<Vec<crate::wal::WALOperation>>;
-    
+
     /// Checkpoint the WAL (mark operations as persisted)
     async fn checkpoint(&self, operations_count: usize) -> Result<()>;
 }
@@ -50,19 +50,19 @@ pub trait AsyncWAL: Send + Sync {
 pub trait AsyncTransaction: Send + Sync {
     /// Begin a transaction asynchronously
     async fn begin(&self) -> Result<u64>;
-    
+
     /// Put a key-value pair in the transaction
     async fn put(&self, tx_id: u64, key: &[u8], value: &[u8]) -> Result<()>;
-    
+
     /// Get a value from the transaction
     async fn get(&self, tx_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>>;
-    
+
     /// Delete a key from the transaction
     async fn delete(&self, tx_id: u64, key: &[u8]) -> Result<()>;
-    
+
     /// Commit a transaction asynchronously
     async fn commit(&self, tx_id: u64) -> Result<()>;
-    
+
     /// Abort a transaction asynchronously
     async fn abort(&self, tx_id: u64) -> Result<()>;
 }
@@ -75,10 +75,10 @@ pub type BatchFuture<T> = Pin<Box<dyn Future<Output = Result<T>> + Send>>;
 pub trait AsyncBatchProcessor: Send + Sync {
     /// Process a batch of write operations
     async fn process_write_batch(&self, writes: Vec<(Vec<u8>, Vec<u8>)>) -> Result<()>;
-    
+
     /// Process a batch of read operations
     async fn process_read_batch(&self, keys: Vec<Vec<u8>>) -> Result<Vec<Option<Vec<u8>>>>;
-    
+
     /// Get the optimal batch size for this processor
     fn optimal_batch_size(&self) -> usize;
 }
@@ -88,22 +88,22 @@ pub trait AsyncBatchProcessor: Send + Sync {
 pub struct AsyncIOConfig {
     /// Number of async I/O worker threads
     pub worker_threads: usize,
-    
+
     /// Maximum number of concurrent operations
     pub max_concurrent_ops: usize,
-    
+
     /// Buffer size for async operations
     pub buffer_size: usize,
-    
+
     /// Enable write coalescing (combine multiple writes)
     pub enable_write_coalescing: bool,
-    
+
     /// Write coalescing window in milliseconds
     pub write_coalescing_window_ms: u64,
-    
+
     /// Enable read-ahead for sequential access
     pub enable_read_ahead: bool,
-    
+
     /// Read-ahead distance in pages
     pub read_ahead_pages: usize,
 }
@@ -151,7 +151,7 @@ impl<T> AsyncBatchResult<T> {
     pub fn new(results: Vec<Result<T>>, total_time_ms: u64) -> Self {
         let completed_count = results.iter().filter(|r| r.is_ok()).count();
         let failed_count = results.len() - completed_count;
-        
+
         Self {
             results,
             completed_count,
@@ -159,7 +159,7 @@ impl<T> AsyncBatchResult<T> {
             total_time_ms,
         }
     }
-    
+
     pub fn success_rate(&self) -> f64 {
         if self.results.is_empty() {
             0.0
@@ -167,7 +167,7 @@ impl<T> AsyncBatchResult<T> {
             self.completed_count as f64 / self.results.len() as f64
         }
     }
-    
+
     pub fn throughput_ops_per_sec(&self) -> f64 {
         if self.total_time_ms == 0 {
             0.0

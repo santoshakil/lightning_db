@@ -14,11 +14,11 @@ impl MemTable {
             size_bytes: AtomicUsize::new(0),
         }
     }
-    
+
     fn is_tombstone(value: &[u8]) -> bool {
         value == [0xFF, 0xFF, 0xFF, 0xFF]
     }
-    
+
     /// Get iterator over all entries
     pub fn entries(&self) -> impl Iterator<Item = (Vec<u8>, Option<Vec<u8>>)> + '_ {
         self.map.iter().map(|entry| {

@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 
 /// Guard for ensuring proper cleanup of background threads
@@ -15,7 +15,7 @@ impl ThreadGuard {
             shutdown,
         }
     }
-    
+
     pub fn shutdown(&mut self) {
         self.shutdown.store(true, Ordering::Relaxed);
         if let Some(handle) = self.handle.take() {
@@ -45,20 +45,20 @@ impl FileGuard {
             delete_on_drop,
         }
     }
-    
+
     pub fn file(&self) -> &std::fs::File {
         self.file.as_ref().expect("File already closed")
     }
-    
+
     pub fn file_mut(&mut self) -> &mut std::fs::File {
         self.file.as_mut().expect("File already closed")
     }
-    
+
     pub fn close(&mut self) -> std::io::Result<()> {
         if let Some(file) = self.file.take() {
             file.sync_all()?;
             drop(file);
-            
+
             if self.delete_on_drop {
                 std::fs::remove_file(&self.path)?;
             }
@@ -90,7 +90,7 @@ impl BoundedMemoryPool {
             total_size_limit,
         }
     }
-    
+
     pub fn allocate(&mut self) -> Option<Vec<u8>> {
         if let Some(buffer) = self.pool.pop() {
             Some(buffer)
@@ -103,15 +103,15 @@ impl BoundedMemoryPool {
             }
         }
     }
-    
+
     pub fn deallocate(&mut self, mut buffer: Vec<u8>) {
         if buffer.capacity() >= self.item_size && self.pool.len() < self.max_items {
             buffer.clear();
-            buffer.resize(self.item_size, 0);  // Ensure correct length
+            buffer.resize(self.item_size, 0); // Ensure correct length
             self.pool.push(buffer);
         }
     }
-    
+
     pub fn clear(&mut self) {
         self.pool.clear();
     }
@@ -122,41 +122,41 @@ mod tests {
     use super::*;
     use std::thread;
     use std::time::Duration;
-    
+
     #[test]
     fn test_thread_guard() {
         let shutdown = Arc::new(AtomicBool::new(false));
         let shutdown_clone = shutdown.clone();
-        
+
         let handle = thread::spawn(move || {
             while !shutdown_clone.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(10));
             }
         });
-        
+
         {
             let mut guard = ThreadGuard::new(handle, shutdown.clone());
             guard.shutdown();
         }
-        
+
         assert!(shutdown.load(Ordering::Relaxed));
     }
-    
+
     #[test]
     fn test_bounded_memory_pool() {
         let mut pool = BoundedMemoryPool::new(10, 1024, 10240);
-        
+
         // Allocate some buffers
         let mut buffers = Vec::new();
         for _ in 0..5 {
             buffers.push(pool.allocate().unwrap());
         }
-        
+
         // Return them to pool
         for buffer in buffers {
             pool.deallocate(buffer);
         }
-        
+
         // Pool should reuse them
         let reused = pool.allocate().unwrap();
         assert_eq!(reused.len(), 1024);

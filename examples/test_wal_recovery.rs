@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let db_path = Path::new("test_wal_recovery_db");
-    
+
     // Clean up any existing database
     if db_path.exists() {
         std::fs::remove_dir_all(db_path)?;
@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let config = LightningDbConfig::default();
         let db = Database::create(db_path, config)?;
-        
+
         // Write some test data
         for i in 0..5 {
             let key = format!("key_{}", i);
@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Writing: {} = {}", key, value);
             db.put(key.as_bytes(), value.as_bytes())?;
         }
-        
+
         // Verify data is written
         for i in 0..5 {
             let key = format!("key_{}", i);
@@ -37,14 +37,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("ERROR: Could not read back key: {}", key);
             }
         }
-        
+
         // Sync to ensure data is persisted
         println!("Syncing database...");
         db.sync()?;
-        
+
         println!("Database dropped, files should be persisted");
     }
-    
+
     // Check what files were created
     println!("\n=== Files created ===");
     for entry in std::fs::read_dir(db_path)? {
@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let path = entry.path();
         let metadata = entry.metadata()?;
         println!("{}: {} bytes", path.display(), metadata.len());
-        
+
         if path.is_dir() {
             // Check WAL directory
             for wal_entry in std::fs::read_dir(&path)? {
@@ -63,42 +63,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    
+
     println!("\n=== Phase 2: Reopening database ===");
     {
         let config = LightningDbConfig::default();
         let db = Database::open(db_path, config)?;
-        
+
         println!("Database reopened, checking for recovered data...");
-        
+
         // Try to read the data again
         let mut found_count = 0;
         for i in 0..5 {
             let key = format!("key_{}", i);
             let result = db.get(key.as_bytes())?;
             if let Some(value) = result {
-                println!("Found recovered: {} = {}", key, String::from_utf8_lossy(&value));
+                println!(
+                    "Found recovered: {} = {}",
+                    key,
+                    String::from_utf8_lossy(&value)
+                );
                 found_count += 1;
             } else {
                 println!("NOT FOUND: {}", key);
             }
         }
-        
+
         println!("\nRecovered {} out of 5 entries", found_count);
-        
+
         // Try writing new data to verify database is functional
         println!("\n=== Writing new data after recovery ===");
         db.put(b"new_key", b"new_value")?;
         let new_result = db.get(b"new_key")?;
         if let Some(value) = new_result {
-            println!("New write successful: new_key = {}", String::from_utf8_lossy(&value));
+            println!(
+                "New write successful: new_key = {}",
+                String::from_utf8_lossy(&value)
+            );
         } else {
             println!("ERROR: New write failed");
         }
     }
-    
+
     // Clean up
     std::fs::remove_dir_all(db_path)?;
-    
+
     Ok(())
 }

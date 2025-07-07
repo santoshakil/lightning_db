@@ -9,7 +9,7 @@ fn test_simple_scan() {
     // Insert a single key
     println!("Inserting key1...");
     db.put(b"key1", b"value1").unwrap();
-    
+
     // Verify it was inserted
     println!("Getting key1...");
     let value = db.get(b"key1").unwrap();
@@ -19,12 +19,13 @@ fn test_simple_scan() {
     // Try to scan
     println!("Starting scan...");
     let iter = db.scan(None, None).unwrap();
-    
+
     let mut count = 0;
     for result in iter {
         match result {
             Ok((key, value)) => {
-                println!("Scanned: {} = {}", 
+                println!(
+                    "Scanned: {} = {}",
                     String::from_utf8_lossy(&key),
                     String::from_utf8_lossy(&value)
                 );
@@ -36,7 +37,7 @@ fn test_simple_scan() {
             }
         }
     }
-    
+
     println!("Total scanned: {}", count);
     assert_eq!(count, 1, "Expected to scan 1 entry");
 }

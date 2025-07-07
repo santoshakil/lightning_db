@@ -1,6 +1,6 @@
-pub mod node;
 mod delete;
 mod iterator;
+pub mod node;
 mod split_handler;
 
 pub use iterator::BTreeLeafIterator;
@@ -10,9 +10,9 @@ use crate::error::{Error, Result};
 use crate::simd::key_compare::simd_compare_keys;
 use crate::storage::{Page, PageManager, PageManagerWrapper};
 use parking_lot::RwLock;
+use split_handler::SplitHandler;
 use std::cmp::Ordering;
 use std::sync::Arc;
-use split_handler::SplitHandler;
 
 pub use node::*;
 
@@ -66,7 +66,7 @@ impl BPlusTree {
     pub fn new(page_manager: Arc<RwLock<PageManager>>) -> Result<Self> {
         Self::new_with_wrapper(PageManagerWrapper::standard(page_manager))
     }
-    
+
     pub fn new_with_wrapper(page_manager: PageManagerWrapper) -> Result<Self> {
         let root_page_id = page_manager.allocate_page()?;
 
@@ -88,10 +88,10 @@ impl BPlusTree {
         Self::from_existing_with_wrapper(
             PageManagerWrapper::standard(page_manager),
             root_page_id,
-            height
+            height,
         )
     }
-    
+
     pub fn from_existing_with_wrapper(
         page_manager: PageManagerWrapper,
         root_page_id: u32,
@@ -117,7 +117,7 @@ impl BPlusTree {
         // Validate key and value sizes
         const MAX_KEY_SIZE: usize = 4096;
         const MAX_VALUE_SIZE: usize = 1024 * 1024; // 1MB
-        
+
         if key.is_empty() || key.len() > MAX_KEY_SIZE {
             return Err(Error::InvalidKeySize {
                 size: key.len(),
@@ -125,14 +125,14 @@ impl BPlusTree {
                 max: MAX_KEY_SIZE,
             });
         }
-        
+
         if value.len() > MAX_VALUE_SIZE {
             return Err(Error::InvalidValueSize {
                 size: value.len(),
                 max: MAX_VALUE_SIZE,
             });
         }
-        
+
         let entry = KeyEntry::new(key.to_vec(), value.to_vec());
 
         // Find insertion point
@@ -177,10 +177,7 @@ impl BPlusTree {
         self.delete_complete(key)
     }
 
-    fn find_leaf_path(
-        &self,
-        key: &[u8],
-    ) -> Result<Vec<u32>> {
+    fn find_leaf_path(&self, key: &[u8]) -> Result<Vec<u32>> {
         let mut path = Vec::new();
         let mut current_page_id = self.root_page_id;
         let mut level = self.height;
@@ -244,11 +241,7 @@ impl BPlusTree {
         Ok(None)
     }
 
-    fn insert_into_leaf(
-        &self,
-        path: &[u32],
-        entry: KeyEntry,
-    ) -> Result<Option<(Vec<u8>, u32)>> {
+    fn insert_into_leaf(&self, path: &[u32], entry: KeyEntry) -> Result<Option<(Vec<u8>, u32)>> {
         let leaf_page_id = *path.last().ok_or(Error::Index("Empty path".to_string()))?;
         let mut leaf_page = self.page_manager.get_page(leaf_page_id)?;
         let mut leaf_node = BTreeNode::deserialize_from_page(&leaf_page)?;
@@ -281,7 +274,7 @@ impl BPlusTree {
                 // Check if we should split based on entry count
                 if leaf_node.entries.len() > MAX_KEYS_PER_NODE {
                     let split_result = self.split_leaf_node(&mut leaf_node, leaf_page_id)?;
-                    
+
                     // Handle propagation of split up the tree
                     if let Some((split_key, new_page_id)) = split_result {
                         self.propagate_split(path, split_key, new_page_id)
@@ -296,7 +289,7 @@ impl BPlusTree {
             Err(Error::PageOverflow) => {
                 // Page overflow - must split
                 let split_result = self.split_leaf_node(&mut leaf_node, leaf_page_id)?;
-                
+
                 // Handle propagation of split up the tree
                 if let Some((split_key, new_page_id)) = split_result {
                     self.propagate_split(path, split_key, new_page_id)
@@ -364,7 +357,7 @@ impl BPlusTree {
 
         Ok(())
     }
-    
+
     fn propagate_split(
         &self,
         path: &[u32],
@@ -375,24 +368,28 @@ impl BPlusTree {
         if path.len() <= 1 {
             return Ok(Some((split_key, new_page_id)));
         }
-        
+
         // Use the SplitHandler for intermediate node splits
         let handler = SplitHandler::new(&self.page_manager);
-        
+
         // Process splits up the tree
         let mut current_split_key = split_key;
         let mut current_new_page = new_page_id;
-        
+
         // Start from the parent of the split node
         for i in (0..path.len() - 1).rev() {
             let parent_page_id = path[i];
-            
-            match handler.insert_into_internal(parent_page_id, current_split_key.clone(), current_new_page)? {
+
+            match handler.insert_into_internal(
+                parent_page_id,
+                current_split_key.clone(),
+                current_new_page,
+            )? {
                 Some((new_split_key, new_split_page)) => {
                     // Parent also split, continue propagating
                     current_split_key = new_split_key;
                     current_new_page = new_split_page;
-                    
+
                     // If we've reached the root, return the split info
                     if i == 0 {
                         return Ok(Some((current_split_key, current_new_page)));
@@ -404,10 +401,9 @@ impl BPlusTree {
                 }
             }
         }
-        
+
         Ok(None)
     }
-
 
     pub fn root_page_id(&self) -> u32 {
         self.root_page_id
@@ -418,44 +414,55 @@ impl BPlusTree {
     }
 
     /// Range scan from start_key to end_key (exclusive end)
-    pub fn range(&self, start_key: Option<&[u8]>, end_key: Option<&[u8]>) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    pub fn range(
+        &self,
+        start_key: Option<&[u8]>,
+        end_key: Option<&[u8]>,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let start_key_owned = start_key.map(|k| k.to_vec());
         let end_key_owned = end_key.map(|k| k.to_vec());
-        
+
         let iterator = BTreeLeafIterator::new(
             self,
             start_key_owned,
             end_key_owned,
             true, // forward iteration
         )?;
-        
+
         let mut results = Vec::new();
         for entry in iterator {
             let (key, value) = entry?;
             results.push((key, value));
         }
-        
+
         Ok(results)
     }
 
     /// Range scan with inclusive bounds control
-    pub fn range_inclusive(&self, start_key: Option<&[u8]>, end_key: Option<&[u8]>, include_start: bool, include_end: bool) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    pub fn range_inclusive(
+        &self,
+        start_key: Option<&[u8]>,
+        end_key: Option<&[u8]>,
+        include_start: bool,
+        include_end: bool,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let start_key_owned = start_key.map(|k| k.to_vec());
         let end_key_owned = end_key.map(|k| k.to_vec());
-        
+
         let iterator = BTreeLeafIterator::new(
             self,
             start_key_owned,
             end_key_owned,
             true, // forward iteration
-        )?.with_bounds(include_start, include_end);
-        
+        )?
+        .with_bounds(include_start, include_end);
+
         let mut results = Vec::new();
         for entry in iterator {
             let (key, value) = entry?;
             results.push((key, value));
         }
-        
+
         Ok(results)
     }
 
@@ -465,10 +472,14 @@ impl BPlusTree {
     }
 
     /// Create a range iterator
-    pub fn iter_range(&self, start_key: Option<&[u8]>, end_key: Option<&[u8]>) -> Result<BTreeLeafIterator> {
+    pub fn iter_range(
+        &self,
+        start_key: Option<&[u8]>,
+        end_key: Option<&[u8]>,
+    ) -> Result<BTreeLeafIterator> {
         let start_key_owned = start_key.map(|k| k.to_vec());
         let end_key_owned = end_key.map(|k| k.to_vec());
-        
+
         BTreeLeafIterator::new(self, start_key_owned, end_key_owned, true)
     }
 }

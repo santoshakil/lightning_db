@@ -12,7 +12,7 @@ pub enum Error {
 
     #[error("Corrupted page")]
     CorruptedPage,
-    
+
     #[error("Corrupted database: {0}")]
     CorruptedDatabase(String),
 
@@ -51,7 +51,7 @@ pub enum Error {
 
     #[error("Timeout error: {0}")]
     Timeout(String),
-    
+
     #[error("Generic error: {0}")]
     Generic(String),
 
@@ -112,13 +112,13 @@ pub enum Error {
 
     #[error("Unsupported feature: {feature}")]
     UnsupportedFeature { feature: String },
-    
+
     #[error("Page overflow: node data exceeds page size")]
     PageOverflow,
-    
+
     #[error("Resource limit exceeded: {0}")]
     ResourceLimitExceeded(String),
-    
+
     #[error("Operation throttled for {0:?}")]
     Throttled(std::time::Duration),
 }
@@ -132,7 +132,9 @@ impl From<std::io::Error> for Error {
             std::io::ErrorKind::AlreadyExists => Error::DatabaseExists {
                 path: err.to_string(),
             },
-            std::io::ErrorKind::PermissionDenied => Error::Io(format!("Permission denied: {}", err)),
+            std::io::ErrorKind::PermissionDenied => {
+                Error::Io(format!("Permission denied: {}", err))
+            }
             std::io::ErrorKind::OutOfMemory => Error::Memory,
             std::io::ErrorKind::TimedOut => Error::Timeout(err.to_string()),
             _ => Error::Io(err.to_string()),
@@ -237,7 +239,6 @@ impl<T> ErrorContext<T> for Result<T> {
         self.map_err(|e| Error::Generic(format!("{}: {}", f(), e)))
     }
 }
-
 
 // Additional error conversions for common external errors
 impl From<bincode::error::EncodeError> for Error {

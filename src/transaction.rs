@@ -1,5 +1,5 @@
-pub mod optimized_manager;
 pub mod mvcc;
+pub mod optimized_manager;
 pub mod version_cleanup;
 
 use crate::error::{Error, Result};
@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+pub use mvcc::{MVCCTransaction, MVCCTransactionManager, MVCCVersionStore};
 pub use optimized_manager::{OptimizedTransactionManager, TransactionStatistics};
-pub use mvcc::{MVCCTransactionManager, MVCCTransaction, MVCCVersionStore};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TxState {
@@ -210,7 +210,7 @@ impl TransactionManager {
         // For basic TransactionManager, we use optimistic concurrency control
         // Write-write conflicts are resolved by first-committer-wins
         // We don't check against other active transactions here, only committed state
-        
+
         // Check for write-write conflicts against committed data only
         for write_op in &tx.write_set {
             // Check if someone else has committed a write to this key after our read timestamp
@@ -233,12 +233,16 @@ impl TransactionManager {
 
         // Try to atomically reserve all writes
         let mut reserved_keys: Vec<Vec<u8>> = Vec::new();
-        
+
         for write_op in &tx.write_set {
-            if !self.version_store.try_reserve_write(&write_op.key, tx.read_timestamp, commit_ts) {
+            if !self
+                .version_store
+                .try_reserve_write(&write_op.key, tx.read_timestamp, commit_ts)
+            {
                 // Conflict detected - cancel all previous reservations
                 for reserved_key in &reserved_keys {
-                    self.version_store.cancel_reserved_write(reserved_key, commit_ts);
+                    self.version_store
+                        .cancel_reserved_write(reserved_key, commit_ts);
                 }
                 return Err(Error::Transaction(
                     "Write-write conflict detected during atomic validation".to_string(),
@@ -255,10 +259,10 @@ impl TransactionManager {
                 .unwrap_or(0);
 
             if current_version > read_op.version {
-                
                 // Conflict detected - cancel all reservations
                 for reserved_key in &reserved_keys {
-                    self.version_store.cancel_reserved_write(reserved_key, commit_ts);
+                    self.version_store
+                        .cancel_reserved_write(reserved_key, commit_ts);
                 }
                 return Err(Error::Transaction(
                     "Read-write conflict detected during atomic validation".to_string(),
@@ -309,17 +313,17 @@ impl TransactionManager {
         let cleanup_before_timestamp = current_time.saturating_sub(retention_duration_ms);
 
         // Get minimum active transaction timestamp to avoid cleaning up needed versions
-        let min_active_timestamp = self.get_min_active_transaction_timestamp()
+        let min_active_timestamp = self
+            .get_min_active_transaction_timestamp()
             .unwrap_or(cleanup_before_timestamp);
 
         // Use the more conservative threshold
         let safe_cleanup_threshold = std::cmp::min(cleanup_before_timestamp, min_active_timestamp);
 
         // Cleanup old versions in the version store
-        let _cleaned_versions = self.version_store.cleanup_old_versions(
-            safe_cleanup_threshold,
-            min_versions_per_key,
-        );
+        let _cleaned_versions = self
+            .version_store
+            .cleanup_old_versions(safe_cleanup_threshold, min_versions_per_key);
 
         #[cfg(debug_assertions)]
         if _cleaned_versions > 0 {
@@ -350,7 +354,7 @@ impl TransactionManager {
         // This would integrate with a committed transactions tracking system
         // For now, we focus on the active transactions cleanup
         // The committed transaction cleanup is handled by TransactionCleanup in version_cleanup.rs
-        
+
         #[cfg(debug_assertions)]
         println!(
             "Active transactions count: {}, max retained committed: {}",
@@ -436,7 +440,7 @@ impl VersionStore {
         self.get_versioned(key, read_timestamp)
             .and_then(|versioned| versioned.value)
     }
-    
+
     pub fn get_versioned(&self, key: &[u8], read_timestamp: u64) -> Option<VersionedValue> {
         if let Some(key_versions) = self.versions.get(key) {
             // Find the latest version that is <= read_timestamp
@@ -470,7 +474,12 @@ impl VersionStore {
 
     /// Atomically check for write-write conflicts and reserve write slot
     /// Returns true if reservation successful (no conflict), false if conflict detected
-    pub fn try_reserve_write(&self, key: &[u8], read_timestamp: u64, commit_timestamp: u64) -> bool {
+    pub fn try_reserve_write(
+        &self,
+        key: &[u8],
+        read_timestamp: u64,
+        commit_timestamp: u64,
+    ) -> bool {
         // Get or create key versions atomically using insert + get pattern
         let key_versions = match self.versions.get(key) {
             Some(existing) => existing.value().clone(),
@@ -505,7 +514,13 @@ impl VersionStore {
     }
 
     /// Complete a reserved write by updating the value
-    pub fn complete_reserved_write(&self, key: &[u8], timestamp: u64, value: Option<Vec<u8>>, tx_id: u64) {
+    pub fn complete_reserved_write(
+        &self,
+        key: &[u8],
+        timestamp: u64,
+        value: Option<Vec<u8>>,
+        tx_id: u64,
+    ) {
         if let Some(key_versions) = self.versions.get(key) {
             // Replace the reserved entry with the actual value
             let versioned_value = VersionedValue::new(value, timestamp, tx_id);
@@ -522,7 +537,7 @@ impl VersionStore {
 
     pub fn cleanup_old_versions(&self, before_timestamp: u64, keep_min_versions: usize) -> usize {
         let mut total_removed = 0;
-        
+
         for entry in self.versions.iter() {
             let key_versions = entry.value();
 
@@ -548,10 +563,10 @@ impl VersionStore {
             for version in &to_remove {
                 key_versions.remove(version);
             }
-            
+
             total_removed += to_remove.len();
         }
-        
+
         total_removed
     }
 
@@ -573,7 +588,6 @@ impl Default for VersionStore {
         Self::new()
     }
 }
-
 
 #[cfg(test)]
 mod tests {

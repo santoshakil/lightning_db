@@ -1,13 +1,13 @@
 pub mod production_hooks;
 
 use crate::error::Result;
-use prometheus::{
-    register_counter_vec, register_gauge_vec, register_histogram_vec,
-    CounterVec, GaugeVec, HistogramVec, TextEncoder, Encoder,
-};
-use std::time::Instant;
-use std::net::TcpStream;
 use lazy_static::lazy_static;
+use prometheus::{
+    register_counter_vec, register_gauge_vec, register_histogram_vec, CounterVec, Encoder,
+    GaugeVec, HistogramVec, TextEncoder,
+};
+use std::net::TcpStream;
+use std::time::Instant;
 
 lazy_static! {
     // Operation counters
@@ -182,32 +182,44 @@ pub fn export_metrics() -> Result<String> {
     let encoder = TextEncoder::new();
     let metric_families = prometheus::gather();
     let mut buffer = Vec::new();
-    encoder.encode(&metric_families, &mut buffer)
+    encoder
+        .encode(&metric_families, &mut buffer)
         .map_err(|e| crate::error::Error::Generic(format!("Failed to encode metrics: {}", e)))?;
-    
-    String::from_utf8(buffer)
-        .map_err(|e| crate::error::Error::Generic(format!("Failed to convert metrics to string: {}", e)))
+
+    String::from_utf8(buffer).map_err(|e| {
+        crate::error::Error::Generic(format!("Failed to convert metrics to string: {}", e))
+    })
 }
 
 /// Update database-wide metrics
-pub fn update_db_metrics(
-    db_size: u64,
-    wal_size: u64,
-    active_transactions: usize,
-    cache_size: u64,
-) {
-    DB_SIZE_GAUGE.with_label_values(&["total"]).set(db_size as f64);
-    WAL_SIZE_GAUGE.with_label_values(&["total"]).set(wal_size as f64);
-    TRANSACTION_GAUGE.with_label_values(&["active"]).set(active_transactions as f64);
-    MEMORY_USAGE_GAUGE.with_label_values(&["cache"]).set(cache_size as f64);
+pub fn update_db_metrics(db_size: u64, wal_size: u64, active_transactions: usize, cache_size: u64) {
+    DB_SIZE_GAUGE
+        .with_label_values(&["total"])
+        .set(db_size as f64);
+    WAL_SIZE_GAUGE
+        .with_label_values(&["total"])
+        .set(wal_size as f64);
+    TRANSACTION_GAUGE
+        .with_label_values(&["active"])
+        .set(active_transactions as f64);
+    MEMORY_USAGE_GAUGE
+        .with_label_values(&["cache"])
+        .set(cache_size as f64);
 }
 
 /// Record compaction event
-pub fn record_compaction(level: usize, files_before: usize, files_after: usize, duration_secs: f64) {
+pub fn record_compaction(
+    level: usize,
+    files_before: usize,
+    files_after: usize,
+    duration_secs: f64,
+) {
     let level_str = level.to_string();
     COMPACTION_COUNTER.with_label_values(&[&level_str]).inc();
-    COMPACTION_DURATION.with_label_values(&[&level_str]).observe(duration_secs);
-    
+    COMPACTION_DURATION
+        .with_label_values(&[&level_str])
+        .observe(duration_secs);
+
     tracing::info!(
         level = level,
         files_before = files_before,
@@ -229,12 +241,13 @@ impl MetricsEndpoint {
 
     pub fn start(self) -> Result<()> {
         use std::net::TcpListener;
-        
-        let listener = TcpListener::bind(format!("0.0.0.0:{}", self.port))
-            .map_err(|e| crate::error::Error::Generic(format!("Failed to bind metrics endpoint: {}", e)))?;
-        
+
+        let listener = TcpListener::bind(format!("0.0.0.0:{}", self.port)).map_err(|e| {
+            crate::error::Error::Generic(format!("Failed to bind metrics endpoint: {}", e))
+        })?;
+
         tracing::info!("Metrics endpoint listening on :{}", self.port);
-        
+
         std::thread::spawn(move || {
             for stream in listener.incoming() {
                 if let Ok(mut stream) = stream {
@@ -242,7 +255,7 @@ impl MetricsEndpoint {
                 }
             }
         });
-        
+
         Ok(())
     }
 }
@@ -250,13 +263,13 @@ impl MetricsEndpoint {
 fn handle_metrics_request(stream: &mut TcpStream) -> std::io::Result<()> {
     use std::io::Write;
     let metrics = export_metrics().unwrap_or_else(|e| format!("Error: {}", e));
-    
+
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\nContent-Length: {}\r\n\r\n{}",
         metrics.len(),
         metrics
     );
-    
+
     stream.write_all(response.as_bytes())?;
     stream.flush()
 }
@@ -273,7 +286,7 @@ mod tests {
         // Initialize metrics lazily to ensure they're registered
         let _ = &*OPERATION_COUNTER;
         let _ = &*OPERATION_HISTOGRAM;
-        
+
         let timer = MetricsTimer::new("test_operation");
         std::thread::sleep(std::time::Duration::from_millis(10));
         timer.record_success();
@@ -290,7 +303,7 @@ mod tests {
         let _ = &*CACHE_MISSES;
         let _ = &*DB_SIZE_GAUGE;
         let _ = &*TRANSACTION_GAUGE;
-        
+
         let recorder = MetricsRecorder;
         recorder.record_operation("put", true, 0.001);
         recorder.record_cache_access("page", true);
@@ -304,10 +317,12 @@ mod tests {
     fn test_export_metrics() {
         // Initialize metrics lazily to ensure they're registered
         let _ = &*OPERATION_COUNTER;
-        
+
         // Record some metrics
-        OPERATION_COUNTER.with_label_values(&["test", "success"]).inc();
-        
+        OPERATION_COUNTER
+            .with_label_values(&["test", "success"])
+            .inc();
+
         // Export and verify format
         let metrics = export_metrics().unwrap();
         assert!(metrics.contains("lightning_db_operations_total"));

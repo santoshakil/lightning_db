@@ -1,6 +1,6 @@
 //! # Lightning DB ⚡
 //!
-//! A high-performance embedded key-value database written in Rust, designed for speed and 
+//! A high-performance embedded key-value database written in Rust, designed for speed and
 //! efficiency with sub-microsecond latency and millions of operations per second.
 //!
 //! ## Features
@@ -61,91 +61,91 @@
 //! | Range Scan | 2M+ entries/sec | - | - | ✅ |
 
 pub mod async_db;
+pub mod auto_batcher;
 pub mod backup;
 pub mod btree;
+pub mod btree_write_buffer;
 pub mod cache;
 pub mod compression;
 pub mod consistency;
 pub mod error;
+pub mod fast_auto_batcher;
 pub mod fast_path;
+pub mod index;
+pub mod integrity_checker;
 pub mod iterator;
+pub mod key;
+pub mod key_ops;
+pub mod lock_free;
+pub mod lock_free_batcher;
 pub mod lsm;
+pub mod metrics;
 pub mod prefetch;
+pub mod profiling;
+pub mod query_planner;
+pub mod realtime_stats;
+pub mod replication;
 pub mod serialization;
+pub mod sharding;
+pub mod simd;
+pub mod simple_batcher;
+pub mod simple_http_admin;
 pub mod statistics;
 pub mod storage;
+pub mod sync_write_batcher;
+pub mod thread_local_buffer;
 pub mod thread_local_cache;
 pub mod transaction;
 pub mod wal;
-pub mod simple_http_admin;
-pub mod integrity_checker;
 pub mod wal_improved;
-pub mod lock_free;
-pub mod simd;
-pub mod zero_copy;
-pub mod sync_write_batcher;
-pub mod auto_batcher;
-pub mod simple_batcher;
-pub mod fast_auto_batcher;
-pub mod lock_free_batcher;
-pub mod btree_write_buffer;
-pub mod thread_local_buffer;
-pub mod index;
-pub mod query_planner;
-pub mod replication;
-pub mod sharding;
 pub mod write_batch;
-pub mod metrics;
-pub mod profiling;
-pub mod realtime_stats;
-pub mod key;
-pub mod key_ops;
+pub mod zero_copy;
 pub mod utils {
+    pub mod lock_utils;
     pub mod resource_guard;
     pub mod retry;
-    pub mod lock_utils;
 }
+pub mod integrity;
 pub mod logging;
 pub mod monitoring;
-pub mod integrity;
 pub mod observability;
 pub mod resource_limits;
 pub mod safety_guards;
 // Async modules
-pub mod async_storage;
-pub mod async_page_manager;
-pub mod async_wal;
-pub mod async_transaction;
 pub mod async_database;
+pub mod async_page_manager;
+pub mod async_storage;
+pub mod async_transaction;
+pub mod async_wal;
 
+pub use auto_batcher::AutoBatcher;
 use btree::BPlusTree;
 use cache::{MemoryConfig, MemoryPool};
 use compression::CompressionType as CompType;
 use consistency::ConsistencyManager;
 pub use error::{Error, Result};
+pub use fast_auto_batcher::FastAutoBatcher;
+use index::IndexManager;
+pub use index::{IndexConfig, IndexKey, IndexQuery, IndexType};
 pub use iterator::{IteratorBuilder, RangeIterator, ScanDirection, TransactionIterator};
+pub use key::{Key, KeyBatch, SmallKey, SmallKeyExt};
 use lsm::{DeltaCompressionStats, LSMConfig, LSMTree};
 use parking_lot::RwLock;
 use prefetch::{PrefetchConfig, PrefetchManager};
 use statistics::{MetricsCollector, MetricsInstrumented, OperationType};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use std::collections::HashMap;
 use storage::{PageManager, PAGE_SIZE};
-use transaction::{
-    OptimizedTransactionManager, TransactionManager, TransactionStatistics, VersionStore,
-    version_cleanup::VersionCleanupThread,
-};
-use wal::{WriteAheadLog, BasicWriteAheadLog};
-use wal_improved::{ImprovedWriteAheadLog, TransactionRecoveryState};
 use sync_write_batcher::SyncWriteBatcher;
-use write_batch::{WriteBatch, BatchOperation};
-pub use auto_batcher::AutoBatcher;
-pub use fast_auto_batcher::FastAutoBatcher;
-use index::IndexManager;
-pub use index::{IndexConfig, IndexKey, IndexQuery, IndexType};
-pub use key::{Key, SmallKey, SmallKeyExt, KeyBatch};
+use transaction::{
+    version_cleanup::VersionCleanupThread, OptimizedTransactionManager, TransactionManager,
+    TransactionStatistics, VersionStore,
+};
+use wal::{BasicWriteAheadLog, WriteAheadLog};
+use wal_improved::{ImprovedWriteAheadLog, TransactionRecoveryState};
+use write_batch::{BatchOperation, WriteBatch};
 
 // Include protobuf generated code
 include!(concat!(env!("OUT_DIR"), "/lightning_db.rs"));
@@ -198,7 +198,7 @@ impl Default for LightningDbConfig {
             consistency_config: ConsistencyConfig::default(),
             use_improved_wal: true,
             wal_sync_mode: WalSyncMode::Async, // Default to async for better performance
-            write_batch_size: 1000, // Batch up to 1000 writes
+            write_batch_size: 1000,            // Batch up to 1000 writes
         }
     }
 }
@@ -237,28 +237,37 @@ impl Database {
         let wal_path = db_path.join("wal.log");
 
         let initial_size = config.page_size * 16; // Start with 16 pages
-        
+
         // Create either standard or optimized page manager based on config
         let (page_manager_wrapper, page_manager_arc, btree) = if config.use_optimized_page_manager {
             if let Some(mmap_config) = config.mmap_config.clone() {
                 // Create optimized page manager
-                let opt_page_manager = Arc::new(storage::OptimizedPageManager::create(&btree_path, initial_size, mmap_config)?);
+                let opt_page_manager = Arc::new(storage::OptimizedPageManager::create(
+                    &btree_path,
+                    initial_size,
+                    mmap_config,
+                )?);
                 let wrapper = storage::PageManagerWrapper::optimized(opt_page_manager);
                 let btree = BPlusTree::new_with_wrapper(wrapper.clone())?;
-                
+
                 // Create a dummy standard page manager for legacy compatibility
-                let std_page_manager = Arc::new(RwLock::new(PageManager::create(&btree_path.with_extension("legacy"), initial_size)?));
-                
+                let std_page_manager = Arc::new(RwLock::new(PageManager::create(
+                    &btree_path.with_extension("legacy"),
+                    initial_size,
+                )?));
+
                 (wrapper, std_page_manager, btree)
             } else {
                 // Fall back to standard if no mmap config provided
-                let page_manager = Arc::new(RwLock::new(PageManager::create(&btree_path, initial_size)?));
+                let page_manager =
+                    Arc::new(RwLock::new(PageManager::create(&btree_path, initial_size)?));
                 let wrapper = storage::PageManagerWrapper::standard(page_manager.clone());
                 let btree = BPlusTree::new(page_manager.clone())?;
                 (wrapper, page_manager, btree)
             }
         } else {
-            let page_manager = Arc::new(RwLock::new(PageManager::create(&btree_path, initial_size)?));
+            let page_manager =
+                Arc::new(RwLock::new(PageManager::create(&btree_path, initial_size)?));
             let wrapper = storage::PageManagerWrapper::standard(page_manager.clone());
             let btree = BPlusTree::new(page_manager.clone())?;
             (wrapper, page_manager, btree)
@@ -271,7 +280,10 @@ impl Database {
                 mmap_size: config.mmap_size.map(|s| s as usize),
                 ..Default::default()
             };
-            Some(Arc::new(MemoryPool::new(page_manager_arc.clone(), mem_config)))
+            Some(Arc::new(MemoryPool::new(
+                page_manager_arc.clone(),
+                mem_config,
+            )))
         } else {
             None
         };
@@ -323,7 +335,11 @@ impl Database {
             )?;
             (None, Some(wal))
         } else {
-            (Some(Arc::new(BasicWriteAheadLog::create(&wal_path)?) as Arc<dyn WriteAheadLog + Send + Sync>), None)
+            (
+                Some(Arc::new(BasicWriteAheadLog::create(&wal_path)?)
+                    as Arc<dyn WriteAheadLog + Send + Sync>),
+                None,
+            )
         };
 
         // Optional prefetch manager for performance
@@ -337,7 +353,9 @@ impl Database {
             let mut manager = PrefetchManager::new(prefetch_config);
 
             // Set up page cache adapter
-            let page_cache_adapter = Arc::new(storage::PageCacheAdapterWrapper::new(page_manager_wrapper.clone()));
+            let page_cache_adapter = Arc::new(storage::PageCacheAdapterWrapper::new(
+                page_manager_wrapper.clone(),
+            ));
             manager.set_page_cache(page_cache_adapter);
 
             let manager = Arc::new(manager);
@@ -346,17 +364,17 @@ impl Database {
         } else {
             None
         };
-        
+
         // Initialize metrics collector
         let metrics_collector = Arc::new(MetricsCollector::new(
             Duration::from_secs(10), // Collect metrics every 10 seconds
-            360, // Keep 1 hour of history (360 * 10s = 3600s)
+            360,                     // Keep 1 hour of history (360 * 10s = 3600s)
         ));
         // Only start background collection if we have features enabled that need it
         if config.cache_size > 0 || config.compression_enabled || config.prefetch_enabled {
             metrics_collector.start();
         }
-        
+
         // Register components
         if lsm_tree.is_some() {
             metrics_collector.register_component("lsm_tree");
@@ -367,13 +385,14 @@ impl Database {
         if prefetch_manager.is_some() {
             metrics_collector.register_component("prefetch");
         }
-        
+
         // Initialize consistency manager
-        let consistency_manager = Arc::new(ConsistencyManager::new(config.consistency_config.clone()));
-        
+        let consistency_manager =
+            Arc::new(ConsistencyManager::new(config.consistency_config.clone()));
+
         // Initialize index manager
         let index_manager = Arc::new(IndexManager::new(page_manager_wrapper.clone()));
-        
+
         // Initialize query planner
         let query_planner = Arc::new(RwLock::new(query_planner::QueryPlanner::new()));
 
@@ -391,7 +410,7 @@ impl Database {
         // Start version cleanup thread to prevent memory leaks
         let version_cleanup_thread = Arc::new(VersionCleanupThread::new(
             version_store.clone(),
-            Duration::from_secs(30), // cleanup every 30 seconds
+            Duration::from_secs(30),  // cleanup every 30 seconds
             Duration::from_secs(300), // keep versions for 5 minutes
         ));
         let _cleanup_handle = version_cleanup_thread.clone().start();
@@ -425,35 +444,41 @@ impl Database {
 
         // Check if the directory exists AND the database files exist
         let btree_path = db_path.join("btree.db");
-        
+
         if db_path.exists() && btree_path.exists() {
             let lsm_path = db_path.join("lsm");
 
             // Open either standard or optimized page manager based on config
-            let (page_manager_wrapper, page_manager_arc, mut btree) = if config.use_optimized_page_manager {
-                if let Some(mmap_config) = config.mmap_config.clone() {
-                    // Open optimized page manager
-                    let opt_page_manager = Arc::new(storage::OptimizedPageManager::open(&btree_path, mmap_config)?);
-                    let wrapper = storage::PageManagerWrapper::optimized(opt_page_manager);
-                    let btree = BPlusTree::from_existing_with_wrapper(wrapper.clone(), 1, 1);
-                    
-                    // Create a dummy standard page manager for legacy compatibility
-                    let std_page_manager = Arc::new(RwLock::new(PageManager::open(&btree_path.with_extension("legacy"))?));
-                    
-                    (wrapper, std_page_manager, btree)
+            let (page_manager_wrapper, page_manager_arc, mut btree) =
+                if config.use_optimized_page_manager {
+                    if let Some(mmap_config) = config.mmap_config.clone() {
+                        // Open optimized page manager
+                        let opt_page_manager = Arc::new(storage::OptimizedPageManager::open(
+                            &btree_path,
+                            mmap_config,
+                        )?);
+                        let wrapper = storage::PageManagerWrapper::optimized(opt_page_manager);
+                        let btree = BPlusTree::from_existing_with_wrapper(wrapper.clone(), 1, 1);
+
+                        // Create a dummy standard page manager for legacy compatibility
+                        let std_page_manager = Arc::new(RwLock::new(PageManager::open(
+                            &btree_path.with_extension("legacy"),
+                        )?));
+
+                        (wrapper, std_page_manager, btree)
+                    } else {
+                        // Fall back to standard if no mmap config provided
+                        let page_manager = Arc::new(RwLock::new(PageManager::open(&btree_path)?));
+                        let wrapper = storage::PageManagerWrapper::standard(page_manager.clone());
+                        let btree = BPlusTree::from_existing(page_manager.clone(), 1, 1);
+                        (wrapper, page_manager, btree)
+                    }
                 } else {
-                    // Fall back to standard if no mmap config provided
                     let page_manager = Arc::new(RwLock::new(PageManager::open(&btree_path)?));
                     let wrapper = storage::PageManagerWrapper::standard(page_manager.clone());
                     let btree = BPlusTree::from_existing(page_manager.clone(), 1, 1);
                     (wrapper, page_manager, btree)
-                }
-            } else {
-                let page_manager = Arc::new(RwLock::new(PageManager::open(&btree_path)?));
-                let wrapper = storage::PageManagerWrapper::standard(page_manager.clone());
-                let btree = BPlusTree::from_existing(page_manager.clone(), 1, 1);
-                (wrapper, page_manager, btree)
-            };
+                };
 
             // Similar setup for memory pool and LSM tree
             let memory_pool = if config.cache_size > 0 {
@@ -462,7 +487,10 @@ impl Database {
                     mmap_size: config.mmap_size.map(|s| s as usize),
                     ..Default::default()
                 };
-                Some(Arc::new(MemoryPool::new(page_manager_arc.clone(), mem_config)))
+                Some(Arc::new(MemoryPool::new(
+                    page_manager_arc.clone(),
+                    mem_config,
+                )))
             } else {
                 None
             };
@@ -508,13 +536,13 @@ impl Database {
                 let wal_dir = db_path.join("wal");
                 if wal_dir.exists() {
                     let improved_wal_instance = ImprovedWriteAheadLog::open(&wal_dir)?;
-                    
+
                     // Replay with transaction awareness
                     {
                         let lsm_ref = &lsm_tree;
                         let _version_store_ref = &version_store;
                         let mut operations_recovered = 0;
-                        
+
                         improved_wal_instance.recover_with_progress(
                             |operation, tx_state| {
                                 match operation {
@@ -550,17 +578,20 @@ impl Database {
                                 if current % 1000 == 0 {
                                     tracing::info!("Recovery progress: LSN {}", current);
                                 }
-                            }
+                            },
                         )?;
-                        
-                        tracing::info!("WAL recovery complete: {} operations recovered", operations_recovered);
-                        
+
+                        tracing::info!(
+                            "WAL recovery complete: {} operations recovered",
+                            operations_recovered
+                        );
+
                         // Sync page manager to ensure recovered data is persisted
                         if operations_recovered > 0 && lsm_ref.is_none() {
                             page_manager_wrapper.sync()?;
                         }
                     }
-                    
+
                     (None, Some(improved_wal_instance))
                 } else {
                     let sync_on_commit = matches!(config.wal_sync_mode, WalSyncMode::Sync);
@@ -575,12 +606,13 @@ impl Database {
                 // Use standard WAL
                 let wal_path = db_path.join("wal.log");
                 let wal = if wal_path.exists() {
-                    let wal_instance: Arc<dyn WriteAheadLog + Send + Sync> = Arc::new(BasicWriteAheadLog::open(&wal_path)?);
-                    
+                    let wal_instance: Arc<dyn WriteAheadLog + Send + Sync> =
+                        Arc::new(BasicWriteAheadLog::open(&wal_path)?);
+
                     // Standard replay
                     {
                         let lsm_ref = &lsm_tree;
-                        
+
                         let operations = wal_instance.replay()?;
                         for operation in operations {
                             match &operation {
@@ -603,18 +635,19 @@ impl Database {
                                 _ => {}
                             }
                         }
-                        
+
                         // Sync page manager to ensure recovered data is persisted
                         if lsm_ref.is_none() {
                             page_manager_wrapper.sync()?;
                         }
                     }
-                    
+
                     Some(wal_instance)
                 } else {
-                    Some(Arc::new(BasicWriteAheadLog::create(&wal_path)?) as Arc<dyn WriteAheadLog + Send + Sync>)
+                    Some(Arc::new(BasicWriteAheadLog::create(&wal_path)?)
+                        as Arc<dyn WriteAheadLog + Send + Sync>)
                 };
-                
+
                 (wal, None)
             };
 
@@ -629,7 +662,9 @@ impl Database {
                 let mut manager = PrefetchManager::new(prefetch_config);
 
                 // Set up page cache adapter
-                let page_cache_adapter = Arc::new(storage::PageCacheAdapterWrapper::new(page_manager_wrapper.clone()));
+                let page_cache_adapter = Arc::new(storage::PageCacheAdapterWrapper::new(
+                    page_manager_wrapper.clone(),
+                ));
                 manager.set_page_cache(page_cache_adapter);
 
                 let manager = Arc::new(manager);
@@ -638,17 +673,14 @@ impl Database {
             } else {
                 None
             };
-            
+
             // Initialize metrics collector
-            let metrics_collector = Arc::new(MetricsCollector::new(
-                Duration::from_secs(10),
-                360,
-            ));
+            let metrics_collector = Arc::new(MetricsCollector::new(Duration::from_secs(10), 360));
             // Only start background collection if we have features enabled that need it
             if config.cache_size > 0 || config.compression_enabled || config.prefetch_enabled {
                 metrics_collector.start();
             }
-            
+
             // Register components
             if lsm_tree.is_some() {
                 metrics_collector.register_component("lsm_tree");
@@ -659,13 +691,14 @@ impl Database {
             if prefetch_manager.is_some() {
                 metrics_collector.register_component("prefetch");
             }
-            
+
             // Initialize consistency manager
-            let consistency_manager = Arc::new(ConsistencyManager::new(config.consistency_config.clone()));
-            
+            let consistency_manager =
+                Arc::new(ConsistencyManager::new(config.consistency_config.clone()));
+
             // Initialize index manager
             let index_manager = Arc::new(IndexManager::new(page_manager_wrapper.clone()));
-            
+
             // Initialize query planner
             let query_planner = Arc::new(RwLock::new(query_planner::QueryPlanner::new()));
 
@@ -683,7 +716,7 @@ impl Database {
             // Start version cleanup thread to prevent memory leaks
             let version_cleanup_thread = Arc::new(VersionCleanupThread::new(
                 version_store.clone(),
-                Duration::from_secs(30), // cleanup every 30 seconds
+                Duration::from_secs(30),  // cleanup every 30 seconds
                 Duration::from_secs(300), // keep versions for 5 minutes
             ));
             let _cleanup_handle = version_cleanup_thread.clone().start();
@@ -720,17 +753,17 @@ impl Database {
         // Create and start the version cleanup thread
         let cleanup_thread = Arc::new(VersionCleanupThread::new(
             db.version_store.clone(),
-            Duration::from_secs(30), // Cleanup every 30 seconds
+            Duration::from_secs(30),  // Cleanup every 30 seconds
             Duration::from_secs(300), // Keep versions for 5 minutes
         ));
-        
+
         // Start the cleanup thread
         let _handle = cleanup_thread.clone().start();
-        
+
         // Store the thread reference (we can't modify self, so this is a limitation)
         // In a real implementation, we'd need to refactor to allow mutable updates
         // For now, the thread will run until process exit
-        
+
         db
     }
 
@@ -740,59 +773,53 @@ impl Database {
             db._config.write_batch_size,
             10, // 10ms max delay
         );
-        
+
         // We need to store the batcher in the database struct
         // Since Database fields are not mutable, we return a wrapper
         // For now, we'll use a different approach - store it globally
         db
     }
-    
+
     pub fn create_with_batcher(db: Arc<Self>) -> Arc<SyncWriteBatcher> {
         SyncWriteBatcher::new(
-            db,
-            1000, // batch size
+            db, 1000, // batch size
             10,   // 10ms max delay
         )
     }
-    
+
     pub fn create_auto_batcher(db: Arc<Self>) -> Arc<AutoBatcher> {
         // Check if sync WAL is enabled and adjust batch size accordingly
         let (batch_size, max_delay) = match &db._config.wal_sync_mode {
             WalSyncMode::Sync => (5000, 50), // Larger batches for sync WAL
-            _ => (1000, 10), // Standard for async/periodic
+            _ => (1000, 10),                 // Standard for async/periodic
         };
-        
-        AutoBatcher::new(
-            db,
-            batch_size,
-            max_delay,
-        )
+
+        AutoBatcher::new(db, batch_size, max_delay)
     }
-    
+
     pub fn create_fast_auto_batcher(db: Arc<Self>) -> Arc<FastAutoBatcher> {
         FastAutoBatcher::new(
-            db,
-            1000, // batch size
+            db, 1000, // batch size
             5,    // 5ms max delay for lower latency
         )
     }
-    
+
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         // Validate key is not empty
         if key.is_empty() {
-            return Err(Error::InvalidKeySize { 
-                size: 0, 
-                min: 1, 
-                max: usize::MAX 
+            return Err(Error::InvalidKeySize {
+                size: 0,
+                min: 1,
+                max: usize::MAX,
             });
         }
-        
+
         let _timer = logging::OperationTimer::with_key("put", key);
         // Check if we have a write batcher
         if let Some(ref batcher) = self.write_batcher {
             return batcher.put(key.to_vec(), value.to_vec());
         }
-        
+
         // Optimization: For small keys/values, try to minimize allocations
         if key.len() <= 64 && value.len() <= 1024 {
             return self.put_small_optimized(key, value);
@@ -813,18 +840,18 @@ impl Database {
                     value: value.to_vec(),
                 })?;
             }
-            
+
             // Write to LSM
             lsm.insert(key.to_vec(), value.to_vec())?;
-            
+
             // Update cache
             if let Some(ref memory_pool) = self.memory_pool {
                 let _ = memory_pool.cache_put(key, value);
             }
-            
+
             return Ok(());
         }
-        
+
         // Fast path for direct B+Tree writes when not using transactions
         // Note: Even with optimized transactions enabled, non-transactional puts should use the direct path
         if self.lsm_tree.is_none() {
@@ -842,7 +869,7 @@ impl Database {
                     value: value.to_vec(),
                 })?;
             }
-            
+
             // Use write buffer if available, otherwise write directly
             if let Some(ref write_buffer) = self.btree_write_buffer {
                 write_buffer.insert(key.to_vec(), value.to_vec())?;
@@ -851,15 +878,15 @@ impl Database {
                 let mut btree = self.btree.write();
                 btree.insert(key, value)?;
             }
-            
+
             // Update cache
             if let Some(ref memory_pool) = self.memory_pool {
                 let _ = memory_pool.cache_put(key, value);
             }
-            
+
             return Ok(());
         }
-        
+
         // Fast path: avoid consistency overhead for performance
         // Write to WAL first for durability
         if let Some(ref improved_wal) = self.improved_wal {
@@ -875,7 +902,7 @@ impl Database {
                 value: value.to_vec(),
             })?;
         }
-        
+
         // Direct B+Tree write without transaction overhead
         if let Some(ref write_buffer) = self.btree_write_buffer {
             write_buffer.insert(key.to_vec(), value.to_vec())?;
@@ -885,17 +912,17 @@ impl Database {
             drop(btree);
             self.page_manager.sync()?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Optimized put path for small keys/values to minimize allocations
     fn put_small_optimized(&self, key: &[u8], value: &[u8]) -> Result<()> {
         // Fast path for LSM without going through full consistency checks
         if let Some(ref lsm) = self.lsm_tree {
             // Direct LSM insert
             lsm.insert(key.to_vec(), value.to_vec())?;
-            
+
             // Async WAL write (don't block on it)
             if let Some(ref improved_wal) = self.improved_wal {
                 use wal::WALOperation;
@@ -904,10 +931,10 @@ impl Database {
                     value: value.to_vec(),
                 })?;
             }
-            
+
             return Ok(());
         }
-        
+
         // Fast path for B+Tree writes
         if !self._config.use_optimized_transactions {
             // Direct write with minimal lock time
@@ -917,7 +944,7 @@ impl Database {
                 let mut btree = self.btree.write();
                 btree.insert(key, value)?;
             }
-            
+
             // Async WAL write
             if let Some(ref improved_wal) = self.improved_wal {
                 use wal::WALOperation;
@@ -926,32 +953,37 @@ impl Database {
                     value: value.to_vec(),
                 })?;
             }
-            
+
             return Ok(());
         }
-        
+
         // Fall back to standard path
         self.put_standard(key, value)
     }
-    
+
     /// Standard put path for larger data  
     fn put_standard(&self, key: &[u8], value: &[u8]) -> Result<()> {
         // Just delegate to the original put logic for now
         self.put_with_consistency(key, value, self._config.consistency_config.default_level)
     }
-    
-    pub fn put_with_consistency(&self, key: &[u8], value: &[u8], level: ConsistencyLevel) -> Result<()> {
+
+    pub fn put_with_consistency(
+        &self,
+        key: &[u8],
+        value: &[u8],
+        level: ConsistencyLevel,
+    ) -> Result<()> {
         // Validate key is not empty
         if key.is_empty() {
-            return Err(Error::InvalidKeySize { 
-                size: 0, 
-                min: 1, 
-                max: usize::MAX 
+            return Err(Error::InvalidKeySize {
+                size: 0,
+                min: 1,
+                max: usize::MAX,
             });
         }
-        
+
         let metrics = self.metrics_collector.database_metrics();
-        
+
         metrics.record_operation(OperationType::Write, || {
             // Write to WAL first for durability
             if let Some(ref improved_wal) = self.improved_wal {
@@ -989,13 +1021,14 @@ impl Database {
                     self.page_manager.sync()?;
                 }
             }
-            
+
             // Wait for consistency only if needed
             if level != ConsistencyLevel::Eventual {
                 let write_timestamp = self.consistency_manager.clock.get_timestamp();
-                self.consistency_manager.wait_for_write_visibility(write_timestamp, level)?;
+                self.consistency_manager
+                    .wait_for_write_visibility(write_timestamp, level)?;
             }
-            
+
             Ok(())
         })
     }
@@ -1004,7 +1037,7 @@ impl Database {
     pub fn write_batch(&self, batch: &WriteBatch) -> Result<()> {
         let metrics = self.metrics_collector.database_metrics();
         let start = std::time::Instant::now();
-        
+
         // Write entire batch to WAL first for durability
         if let Some(ref improved_wal) = self.improved_wal {
             // Write all operations without syncing
@@ -1017,9 +1050,7 @@ impl Database {
                         })?;
                     }
                     BatchOperation::Delete { key } => {
-                        improved_wal.append(wal::WALOperation::Delete {
-                            key: key.clone(),
-                        })?;
+                        improved_wal.append(wal::WALOperation::Delete { key: key.clone() })?;
                     }
                 }
             }
@@ -1036,15 +1067,13 @@ impl Database {
                         })?;
                     }
                     BatchOperation::Delete { key } => {
-                        wal.append(wal::WALOperation::Delete {
-                            key: key.clone(),
-                        })?;
+                        wal.append(wal::WALOperation::Delete { key: key.clone() })?;
                     }
                 }
             }
             wal.sync()?;
         }
-        
+
         // Apply all operations to storage
         for operation in batch.operations() {
             match operation {
@@ -1053,7 +1082,7 @@ impl Database {
                     if let Some(ref memory_pool) = self.memory_pool {
                         let _ = memory_pool.cache_put(key, value);
                     }
-                    
+
                     // Apply to storage layer
                     if let Some(ref lsm) = self.lsm_tree {
                         lsm.insert(key.clone(), value.clone())?;
@@ -1069,7 +1098,7 @@ impl Database {
                     if let Some(ref memory_pool) = self.memory_pool {
                         let _ = memory_pool.cache_remove(key);
                     }
-                    
+
                     // Apply to storage layer
                     if let Some(ref lsm) = self.lsm_tree {
                         lsm.delete(key)?;
@@ -1082,12 +1111,12 @@ impl Database {
                 }
             }
         }
-        
+
         // Single sync at the end for B+Tree (if not using LSM or write buffer)
         if self.lsm_tree.is_none() && self.btree_write_buffer.is_none() {
             self.page_manager.sync()?;
         }
-        
+
         // Record metrics
         let duration = start.elapsed();
         let batch_size = batch.len();
@@ -1099,7 +1128,7 @@ impl Database {
                 metrics.record_write(std::time::Duration::from_micros(1));
             }
         }
-        
+
         Ok(())
     }
 
@@ -1115,13 +1144,17 @@ impl Database {
                 return Ok(Some(cached_value));
             }
         }
-        
+
         self.get_with_consistency(key, self._config.consistency_config.default_level)
     }
-    
-    pub fn get_with_consistency(&self, key: &[u8], level: ConsistencyLevel) -> Result<Option<Vec<u8>>> {
+
+    pub fn get_with_consistency(
+        &self,
+        key: &[u8],
+        level: ConsistencyLevel,
+    ) -> Result<Option<Vec<u8>>> {
         let metrics = self.metrics_collector.database_metrics();
-        
+
         metrics.record_operation(OperationType::Read, || {
             let was_cache_hit;
             let mut result = None;
@@ -1187,19 +1220,15 @@ impl Database {
     pub fn delete(&self, key: &[u8]) -> Result<bool> {
         let _timer = logging::OperationTimer::with_key("delete", key);
         let metrics = self.metrics_collector.database_metrics();
-        
+
         metrics.record_operation(OperationType::Delete, || {
             // Write to WAL first for durability
             if let Some(ref improved_wal) = self.improved_wal {
                 use wal::WALOperation;
-                improved_wal.append(WALOperation::Delete {
-                    key: key.to_vec(),
-                })?;
+                improved_wal.append(WALOperation::Delete { key: key.to_vec() })?;
             } else if let Some(ref wal) = self.wal {
                 use wal::WALOperation;
-                wal.append(WALOperation::Delete {
-                    key: key.to_vec(),
-                })?;
+                wal.append(WALOperation::Delete { key: key.to_vec() })?;
             }
 
             // Clear from cache if present
@@ -1227,7 +1256,7 @@ impl Database {
                     existed
                 }
             };
-            
+
             Ok(existed)
         })
     }
@@ -1249,21 +1278,21 @@ impl Database {
             } else {
                 self.transaction_manager.get_transaction(tx_id)?
             };
-            
+
             let tx = tx_arc.read();
             tx.write_set.clone()
         };
-        
+
         // For sync WAL mode, we need to optimize transaction commits
         let is_sync_wal = matches!(self._config.wal_sync_mode, WalSyncMode::Sync);
-        
+
         // Write to WAL first for durability (before committing to version store)
         if let Some(ref improved_wal) = self.improved_wal {
             use wal::WALOperation;
-            
+
             // Write transaction begin marker
             improved_wal.append(WALOperation::TransactionBegin { tx_id })?;
-            
+
             // Write all operations
             for write_op in &write_set {
                 if let Some(ref value) = write_op.value {
@@ -1277,10 +1306,10 @@ impl Database {
                     })?;
                 }
             }
-            
+
             // Write transaction commit marker
             improved_wal.append(WALOperation::TransactionCommit { tx_id })?;
-            
+
             // For sync WAL, sync once at the end of transaction
             if is_sync_wal {
                 improved_wal.sync()?;
@@ -1300,7 +1329,7 @@ impl Database {
                 }
             }
         }
-        
+
         // Write all changes to B+Tree for persistence (when not using LSM)
         if self.lsm_tree.is_none() {
             let mut btree = self.btree.write();
@@ -1317,7 +1346,7 @@ impl Database {
             drop(btree);
             self.page_manager.sync()?;
         }
-        
+
         // Now commit to version store
         if let Some(ref opt_manager) = self.optimized_transaction_manager {
             opt_manager.commit_sync(tx_id)
@@ -1337,10 +1366,10 @@ impl Database {
     pub fn put_tx(&self, tx_id: u64, key: &[u8], value: &[u8]) -> Result<()> {
         // Validate key is not empty
         if key.is_empty() {
-            return Err(Error::InvalidKeySize { 
-                size: 0, 
-                min: 1, 
-                max: usize::MAX 
+            return Err(Error::InvalidKeySize {
+                size: 0,
+                min: 1,
+                max: usize::MAX,
             });
         }
         if let Some(ref opt_manager) = self.optimized_transaction_manager {
@@ -1436,7 +1465,9 @@ impl Database {
 
             // Record read with the version that was actually read (at read_timestamp)
             // This is critical for correct conflict detection
-            let actual_read_version = self.version_store.get_versioned(key, read_timestamp)
+            let actual_read_version = self
+                .version_store
+                .get_versioned(key, read_timestamp)
                 .map(|v| v.timestamp)
                 .unwrap_or(0);
             tx.add_read(key.to_vec(), actual_read_version);
@@ -1471,9 +1502,9 @@ impl Database {
             let tx_arc = self.transaction_manager.get_transaction(tx_id)?;
 
             let timeout = std::time::Duration::from_millis(100);
-            let mut tx = tx_arc
-                .try_write_for(timeout)
-                .ok_or_else(|| Error::Transaction("Failed to acquire transaction lock".to_string()))?;
+            let mut tx = tx_arc.try_write_for(timeout).ok_or_else(|| {
+                Error::Transaction("Failed to acquire transaction lock".to_string())
+            })?;
 
             if !tx.is_active() {
                 return Err(Error::Transaction("Transaction is not active".to_string()));
@@ -1486,26 +1517,25 @@ impl Database {
         }
     }
 
-    
     pub fn checkpoint(&self) -> Result<()> {
         // Flush all in-memory data to disk
         self.sync()?;
-        
+
         // Flush LSM tree if available
         if let Some(ref lsm) = self.lsm_tree {
             lsm.flush()?;
         }
-        
+
         // Checkpoint WAL
         if let Some(ref wal) = self.improved_wal {
             wal.checkpoint()?;
         } else if let Some(ref wal) = self.wal {
             wal.checkpoint()?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Gracefully shutdown the database, ensuring all data is persisted
     /// and background threads are stopped. This is called automatically
     /// when the database is dropped, but can be called explicitly for
@@ -1513,119 +1543,129 @@ impl Database {
     pub fn shutdown(&self) -> Result<()> {
         // Stop all background threads first
         self.metrics_collector.stop();
-        
+
         if let Some(ref prefetch_manager) = self.prefetch_manager {
             prefetch_manager.stop();
         }
-        
+
         if let Some(ref opt_manager) = self.optimized_transaction_manager {
             opt_manager.stop();
         }
-        
+
         // Perform final checkpoint to ensure all data is persisted
         self.checkpoint()?;
-        
+
         // Shutdown improved WAL if present
         if let Some(ref improved_wal) = self.improved_wal {
             improved_wal.shutdown();
         }
-        
+
         // Flush write buffer if present
         if let Some(ref write_buffer) = self.btree_write_buffer {
             write_buffer.flush()?;
         }
-        
+
         // Final sync to ensure all data is on disk
         self.page_manager.sync()?;
-        
+
         Ok(())
     }
-    
+
     // ===== DATA INTEGRITY METHODS =====
-    
+
     /// Verify database integrity
     pub fn verify_integrity(&self) -> Result<integrity::IntegrityReport> {
         use integrity::{IntegrityVerifier, VerificationConfig};
-        
+
         let config = VerificationConfig::default();
-        let verifier = IntegrityVerifier::new(self.page_manager.clone())
-            .with_config(config);
-        
+        let verifier = IntegrityVerifier::new(self.page_manager.clone()).with_config(config);
+
         verifier.verify()
     }
-    
+
     /// Verify integrity with custom configuration
-    pub fn verify_integrity_with_config(&self, config: integrity::VerificationConfig) -> Result<integrity::IntegrityReport> {
+    pub fn verify_integrity_with_config(
+        &self,
+        config: integrity::VerificationConfig,
+    ) -> Result<integrity::IntegrityReport> {
         use integrity::IntegrityVerifier;
-        
-        let verifier = IntegrityVerifier::new(self.page_manager.clone())
-            .with_config(config);
-        
+
+        let verifier = IntegrityVerifier::new(self.page_manager.clone()).with_config(config);
+
         verifier.verify()
     }
-    
+
     /// Attempt to repair integrity issues
-    pub fn repair_integrity(&self, report: &integrity::IntegrityReport) -> Result<integrity::RepairReport> {
+    pub fn repair_integrity(
+        &self,
+        report: &integrity::IntegrityReport,
+    ) -> Result<integrity::RepairReport> {
         use integrity::IntegrityRepairer;
-        
+
         let repairer = IntegrityRepairer::new(self.page_manager.clone());
         repairer.repair(report)
     }
-    
+
     // ===== INDEX MANAGEMENT METHODS =====
-    
+
     /// Create a secondary index with full config
     pub fn create_index_with_config(&self, config: IndexConfig) -> Result<()> {
         self.index_manager.create_index(config)
     }
-    
+
     /// Drop a secondary index
     pub fn drop_index(&self, index_name: &str) -> Result<()> {
         self.index_manager.drop_index(index_name)
     }
-    
+
     /// List all indexes
     pub fn list_indexes(&self) -> Vec<String> {
         self.index_manager.list_indexes()
     }
-    
+
     /// Query using a secondary index with full query object
     pub fn query_index_advanced(&self, query: IndexQuery) -> Result<Vec<Vec<u8>>> {
         query.execute(&self.index_manager)
     }
-    
+
     /// Get value by secondary index key
     pub fn get_by_index(&self, index_name: &str, index_key: &IndexKey) -> Result<Option<Vec<u8>>> {
-        let index = self.index_manager
+        let index = self
+            .index_manager
             .get_index(index_name)
             .ok_or_else(|| Error::Generic("Index not found".to_string()))?;
-        
+
         if let Some(primary_key) = index.get(index_key)? {
             self.get(&primary_key)
         } else {
             Ok(None)
         }
     }
-    
+
     /// Put with automatic index updates
-    pub fn put_indexed(&self, key: &[u8], value: &[u8], record: &dyn IndexableRecord) -> Result<()> {
+    pub fn put_indexed(
+        &self,
+        key: &[u8],
+        value: &[u8],
+        record: &dyn IndexableRecord,
+    ) -> Result<()> {
         // First, update indexes
         self.index_manager.insert_into_indexes(key, record)?;
-        
+
         // Then, put the main record
         self.put(key, value)
     }
-    
+
     /// Delete with automatic index updates
     pub fn delete_indexed(&self, key: &[u8], record: &dyn IndexableRecord) -> Result<()> {
         // First, remove from indexes
         self.index_manager.delete_from_indexes(key, record)?;
-        
+
         // Then, delete the main record
         self.delete(key)?;
         Ok(())
     }
-    
+
     /// Update with automatic index updates
     pub fn update_indexed(
         &self,
@@ -1635,8 +1675,9 @@ impl Database {
         new_record: &dyn IndexableRecord,
     ) -> Result<()> {
         // Update indexes
-        self.index_manager.update_indexes(key, old_record, new_record)?;
-        
+        self.index_manager
+            .update_indexes(key, old_record, new_record)?;
+
         // Update the main record
         self.put(key, new_value)
     }
@@ -1660,17 +1701,17 @@ impl Database {
     pub fn cleanup_old_versions(&self, before_timestamp: u64) {
         self.version_store.cleanup_old_versions(before_timestamp, 2); // Keep at least 2 versions
     }
-    
+
     /// Get current metrics snapshot
     pub fn get_metrics(&self) -> statistics::MetricsSnapshot {
         self.metrics_collector.get_current_snapshot()
     }
-    
+
     /// Get metrics reporter for formatted output
     pub fn get_metrics_reporter(&self) -> statistics::MetricsReporter {
         statistics::MetricsReporter::new(self.metrics_collector.clone())
     }
-    
+
     /// Get raw metrics collector
     pub fn metrics_collector(&self) -> Arc<statistics::MetricsCollector> {
         Arc::clone(&self.metrics_collector)
@@ -1683,7 +1724,7 @@ impl Database {
             Ok(())
         }
     }
-    
+
     /// Flush any pending writes in the write buffer
     pub fn flush_write_buffer(&self) -> Result<()> {
         if let Some(ref write_buffer) = self.btree_write_buffer {
@@ -1714,25 +1755,25 @@ impl Database {
             .as_ref()
             .map(|lsm| lsm.get_delta_compression_stats())
     }
-    
+
     /// Sync all pending writes to disk
     pub fn sync(&self) -> Result<()> {
         // Flush write buffer if present
         self.flush_write_buffer()?;
-        
+
         // Flush LSM if present
         self.flush_lsm()?;
-        
+
         // Sync WAL
         if let Some(ref improved_wal) = self.improved_wal {
             improved_wal.sync()?;
         } else if let Some(ref wal) = self.wal {
             wal.sync()?;
         }
-        
+
         // Sync page manager
         self.page_manager.sync()?;
-        
+
         Ok(())
     }
 
@@ -1786,22 +1827,29 @@ impl Database {
     }
 
     // Production monitoring methods
-    pub fn register_monitoring_hook(&self, hook: Arc<dyn monitoring::production_hooks::MonitoringHook>) {
+    pub fn register_monitoring_hook(
+        &self,
+        hook: Arc<dyn monitoring::production_hooks::MonitoringHook>,
+    ) {
         self.production_monitor.register_hook(hook);
     }
-    
-    pub fn set_operation_threshold(&self, operation: monitoring::production_hooks::OperationType, threshold: Duration) {
+
+    pub fn set_operation_threshold(
+        &self,
+        operation: monitoring::production_hooks::OperationType,
+        threshold: Duration,
+    ) {
         self.production_monitor.set_threshold(operation, threshold);
     }
-    
+
     pub fn get_production_metrics(&self) -> HashMap<String, f64> {
         self.production_monitor.collect_metrics()
     }
-    
+
     pub fn production_health_check(&self) -> monitoring::production_hooks::HealthStatus {
         self.production_monitor.health_check()
     }
-    
+
     pub fn emit_monitoring_event(&self, event: monitoring::production_hooks::MonitoringEvent) {
         self.production_monitor.emit_event(event);
     }
@@ -2000,23 +2048,31 @@ impl Database {
     }
 
     /// Range query that returns all results as a vector
-    pub fn range(&self, start_key: Option<&[u8]>, end_key: Option<&[u8]>) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    pub fn range(
+        &self,
+        start_key: Option<&[u8]>,
+        end_key: Option<&[u8]>,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let start_owned = start_key.map(|k| k.to_vec());
         let end_owned = end_key.map(|k| k.to_vec());
-        
+
         let iter = self.scan(start_owned, end_owned)?;
         let mut results = Vec::new();
-        
+
         for entry in iter {
             let (key, value) = entry?;
             results.push((key, value));
         }
-        
+
         Ok(results)
     }
 
     /// Direct B+Tree range scan (bypasses LSM and transactions for performance)
-    pub fn btree_range(&self, start_key: Option<&[u8]>, end_key: Option<&[u8]>) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    pub fn btree_range(
+        &self,
+        start_key: Option<&[u8]>,
+        end_key: Option<&[u8]>,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let btree = self.btree.read();
         btree.range(start_key, end_key)
     }
@@ -2027,33 +2083,47 @@ impl Database {
     }
 
     /// Execute a multi-index query with joins and conditions
-    pub fn query_multi_index(&self, query: MultiIndexQuery) -> Result<Vec<std::collections::HashMap<String, Vec<u8>>>> {
+    pub fn query_multi_index(
+        &self,
+        query: MultiIndexQuery,
+    ) -> Result<Vec<std::collections::HashMap<String, Vec<u8>>>> {
         query.execute(&self.index_manager)
     }
 
     /// Convenience method for inner join between two indexes on specific keys
-    pub fn inner_join(&self, left_index: &str, left_key: IndexKey, right_index: &str, right_key: IndexKey) -> Result<Vec<JoinResult>> {
-        let join = JoinQuery::new(left_index.to_string(), right_index.to_string(), JoinType::Inner)
-            .left_key(left_key)
-            .right_key(right_key);
-        
+    pub fn inner_join(
+        &self,
+        left_index: &str,
+        left_key: IndexKey,
+        right_index: &str,
+        right_key: IndexKey,
+    ) -> Result<Vec<JoinResult>> {
+        let join = JoinQuery::new(
+            left_index.to_string(),
+            right_index.to_string(),
+            JoinType::Inner,
+        )
+        .left_key(left_key)
+        .right_key(right_key);
+
         self.join_indexes(join)
     }
 
     /// Convenience method for range-based join between two indexes
-    pub fn range_join(&self, 
-        left_index: &str, 
-        left_start: IndexKey, 
+    pub fn range_join(
+        &self,
+        left_index: &str,
+        left_start: IndexKey,
         left_end: IndexKey,
-        right_index: &str, 
-        right_start: IndexKey, 
+        right_index: &str,
+        right_start: IndexKey,
         right_end: IndexKey,
-        join_type: JoinType
+        join_type: JoinType,
     ) -> Result<Vec<JoinResult>> {
         let join = JoinQuery::new(left_index.to_string(), right_index.to_string(), join_type)
             .left_range(left_start, left_end)
             .right_range(right_start, right_end);
-        
+
         self.join_indexes(join)
     }
 
@@ -2064,32 +2134,42 @@ impl Database {
     }
 
     /// Plan a query using the query planner with full spec
-    pub fn plan_query_advanced(&self, query: &query_planner::QuerySpec) -> Result<query_planner::ExecutionPlan> {
+    pub fn plan_query_advanced(
+        &self,
+        query: &query_planner::QuerySpec,
+    ) -> Result<query_planner::ExecutionPlan> {
         let planner = self.query_planner.read();
         planner.plan_query(query)
     }
 
     /// Execute a planned query
-    pub fn execute_planned_query(&self, plan: &query_planner::ExecutionPlan) -> Result<Vec<Vec<u8>>> {
+    pub fn execute_planned_query(
+        &self,
+        plan: &query_planner::ExecutionPlan,
+    ) -> Result<Vec<Vec<u8>>> {
         let planner = self.query_planner.read();
         planner.execute_plan(plan, &self.index_manager)
     }
 
     /// High-level query interface with automatic optimization
-    pub fn query_optimized(&self, conditions: Vec<query_planner::QueryCondition>, joins: Vec<query_planner::QueryJoin>) -> Result<Vec<Vec<u8>>> {
+    pub fn query_optimized(
+        &self,
+        conditions: Vec<query_planner::QueryCondition>,
+        joins: Vec<query_planner::QueryJoin>,
+    ) -> Result<Vec<Vec<u8>>> {
         let query_spec = query_planner::QuerySpec {
             conditions,
             joins,
             limit: None,
             order_by: None,
         };
-        
+
         let plan = self.plan_query_advanced(&query_spec)?;
         self.execute_planned_query(&plan)
     }
-    
+
     // ===== CONVENIENCE METHODS FOR BENCHMARKS =====
-    
+
     /// Create an index with simplified API
     pub fn create_index(&self, name: &str, columns: Vec<String>) -> Result<()> {
         let config = IndexConfig {
@@ -2100,38 +2180,45 @@ impl Database {
         };
         self.index_manager.create_index(config)
     }
-    
+
     /// Query an index by key
     pub fn query_index(&self, index_name: &str, key: &[u8]) -> Result<Vec<Vec<u8>>> {
         let index_key = IndexKey::single(key.to_vec());
-        let query = IndexQuery::new(index_name.to_string())
-            .key(index_key);
+        let query = IndexQuery::new(index_name.to_string()).key(index_key);
         query.execute(&self.index_manager)
     }
-    
+
     /// Analyze all indexes
     pub fn analyze_indexes(&self) -> Result<()> {
         self.analyze_query_performance()
     }
-    
+
     /// Range query on an index
-    pub fn range_index(&self, index_name: &str, start: Option<&[u8]>, end: Option<&[u8]>) -> Result<Vec<Vec<u8>>> {
+    pub fn range_index(
+        &self,
+        index_name: &str,
+        start: Option<&[u8]>,
+        end: Option<&[u8]>,
+    ) -> Result<Vec<Vec<u8>>> {
         let start_key = start.map(|s| IndexKey::single(s.to_vec()));
         let end_key = end.map(|e| IndexKey::single(e.to_vec()));
-        
+
         let mut query = IndexQuery::new(index_name.to_string());
-        
+
         if let (Some(s), Some(e)) = (start_key, end_key) {
             query = query.range(s, e);
         }
-        
+
         query.execute(&self.index_manager)
     }
-    
+
     /// Plan a query with simple conditions
-    pub fn plan_query(&self, conditions: &[(&str, &str, &[u8])]) -> Result<query_planner::ExecutionPlan> {
+    pub fn plan_query(
+        &self,
+        conditions: &[(&str, &str, &[u8])],
+    ) -> Result<query_planner::ExecutionPlan> {
         let mut query_conditions = Vec::new();
-        
+
         for (field, op, value) in conditions {
             let condition = match *op {
                 "=" => query_planner::QueryCondition::Equals {
@@ -2150,24 +2237,24 @@ impl Database {
             };
             query_conditions.push(condition);
         }
-        
+
         let query_spec = query_planner::QuerySpec {
             conditions: query_conditions,
             joins: Vec::new(),
             limit: None,
             order_by: None,
         };
-        
+
         let planner = self.query_planner.read();
         planner.plan_query(&query_spec)
     }
-    
+
     /// Get a reference to the internal B+Tree (for testing/debugging only)
     #[cfg(any(test, feature = "testing"))]
     pub fn get_btree(&self) -> Arc<RwLock<BPlusTree>> {
         self.btree.clone()
     }
-    
+
     /// Get a reference to the memory pool (for testing/debugging)
     pub fn get_memory_pool(&self) -> Option<Arc<MemoryPool>> {
         self.memory_pool.clone()
@@ -2178,15 +2265,15 @@ impl Drop for Database {
     fn drop(&mut self) {
         // Stop all background threads
         self.metrics_collector.stop();
-        
+
         if let Some(ref prefetch_manager) = self.prefetch_manager {
             prefetch_manager.stop();
         }
-        
+
         if let Some(ref opt_manager) = self.optimized_transaction_manager {
             opt_manager.stop();
         }
-        
+
         if let Some(ref lsm_tree) = self.lsm_tree {
             // Flush LSM tree to ensure all data is persisted
             let _ = lsm_tree.flush();
@@ -2195,22 +2282,22 @@ impl Drop for Database {
             // If not using LSM, ensure B+Tree changes are persisted
             let _ = self.page_manager.sync();
         }
-        
+
         // Shutdown improved WAL if present
         if let Some(ref improved_wal) = self.improved_wal {
             improved_wal.shutdown();
         }
-        
+
         // Flush write buffer if present
         if let Some(ref write_buffer) = self.btree_write_buffer {
             let _ = write_buffer.flush();
         }
-        
+
         // Stop version cleanup thread to prevent memory leaks
         if let Some(ref cleanup_thread) = self._version_cleanup_thread {
             cleanup_thread.stop();
         }
-        
+
         // Sync any pending writes
         let _ = self.page_manager.sync();
     }
@@ -2228,10 +2315,10 @@ pub struct DatabaseStats {
 pub use async_db::AsyncDatabase;
 pub use backup::{BackupConfig, BackupManager, BackupMetadata};
 pub use btree::KeyEntry;
-pub use consistency::{ConsistencyLevel, ConsistencyConfig};
+pub use consistency::{ConsistencyConfig, ConsistencyLevel};
 pub use error::ErrorContext;
-pub use index::{IndexableRecord, SimpleRecord, JoinQuery, JoinType, JoinResult, MultiIndexQuery};
-pub use query_planner::{QueryCondition, QueryJoin, QuerySpec, ExecutionPlan, QueryCost};
+pub use index::{IndexableRecord, JoinQuery, JoinResult, JoinType, MultiIndexQuery, SimpleRecord};
+pub use query_planner::{ExecutionPlan, QueryCondition, QueryCost, QueryJoin, QuerySpec};
 pub use storage::Page;
 pub use transaction::Transaction;
 
@@ -2255,17 +2342,17 @@ mod tests {
         let db_path = dir.path().join("test.db");
 
         let db = Database::create(&db_path, LightningDbConfig::default()).unwrap();
-        
+
         // Write some data
         db.put(b"key1", b"value1").unwrap();
         db.put(b"key2", b"value2").unwrap();
-        
+
         // Explicitly shutdown
         db.shutdown().unwrap();
-        
+
         // Try to open again to verify clean shutdown
         let db2 = Database::open(&db_path, LightningDbConfig::default()).unwrap();
-        
+
         // Verify data is persisted
         assert_eq!(db2.get(b"key1").unwrap(), Some(b"value1".to_vec()));
         assert_eq!(db2.get(b"key2").unwrap(), Some(b"value2".to_vec()));
@@ -2277,22 +2364,26 @@ mod tests {
         let db_path = dir.path().join("test.db");
 
         let db = Database::create(&db_path, LightningDbConfig::default()).unwrap();
-        
+
         // Write some data
         for i in 0..100 {
             let key = format!("key_{:04}", i);
             let value = format!("value_{:04}", i);
             db.put(key.as_bytes(), value.as_bytes()).unwrap();
         }
-        
+
         // Checkpoint to ensure data is written to disk
         db.checkpoint().unwrap();
-        
+
         // Verify integrity
         let report = db.verify_integrity().unwrap();
-        
+
         // Should have no errors on a healthy database
-        assert_eq!(report.errors.len(), 0, "Healthy database should have no integrity errors");
+        assert_eq!(
+            report.errors.len(),
+            0,
+            "Healthy database should have no integrity errors"
+        );
         assert!(report.statistics.total_pages > 0);
         // Note: Current integrity verification implementation uses placeholder values
         // TODO: Implement proper key counting when B+tree metadata is available

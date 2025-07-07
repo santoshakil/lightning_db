@@ -158,7 +158,7 @@ impl PageManager {
         if self.mmap.len() < PAGE_SIZE {
             return Err(Error::Memory);
         }
-        
+
         let header_data = &mut self.mmap[0..PAGE_SIZE];
 
         // Write magic number
@@ -189,7 +189,7 @@ impl PageManager {
                 PAGE_SIZE
             )));
         }
-        
+
         let header_data = &self.mmap[0..PAGE_SIZE];
 
         // Verify magic number
@@ -252,10 +252,10 @@ impl PageManager {
         data[0..4].copy_from_slice(&MAGIC.to_le_bytes());
         data[4..8].copy_from_slice(&1u32.to_le_bytes()); // version
         data[8..12].copy_from_slice(&0u32.to_le_bytes()); // page type (leaf)
-        // checksum will be calculated on write
+                                                          // checksum will be calculated on write
         data[16..20].copy_from_slice(&0u32.to_le_bytes()); // num_entries
         data[20..24].copy_from_slice(&(PAGE_SIZE as u32 - 64).to_le_bytes()); // free_space
-        
+
         // Write the initialized page
         self.write_page(&page)?;
 
@@ -328,7 +328,8 @@ impl PageManager {
 
         // Set new file length with retry
         RetryableOperations::file_operation(|| {
-            self.file.set_len(grow_size)
+            self.file
+                .set_len(grow_size)
                 .map_err(|e| Error::Io(format!("Failed to grow file: {}", e)))
         })?;
         self.file_size = grow_size;
@@ -338,7 +339,7 @@ impl PageManager {
             unsafe { MmapOptions::new().map_mut(&self.file) }
                 .map_err(|e| Error::Io(format!("Failed to recreate memory map after grow: {}", e)))
         })?;
-        
+
         drop(std::mem::replace(&mut self.mmap, new_mmap));
 
         Ok(())
@@ -347,16 +348,18 @@ impl PageManager {
     pub fn sync(&mut self) -> Result<()> {
         // Flush memory map with retry
         RetryableOperations::file_operation(|| {
-            self.mmap.flush()
+            self.mmap
+                .flush()
                 .map_err(|e| Error::Io(format!("Failed to flush memory map: {}", e)))
         })?;
-        
+
         // Sync file with retry
         RetryableOperations::file_operation(|| {
-            self.file.sync_all()
+            self.file
+                .sync_all()
                 .map_err(|e| Error::Io(format!("Failed to sync file: {}", e)))
         })?;
-        
+
         Ok(())
     }
 
@@ -384,40 +387,55 @@ impl ThreadSafePageManager {
 
 impl PageManagerTrait for ThreadSafePageManager {
     fn allocate_page(&self) -> Result<u32> {
-        self.inner.lock()
-            .map_err(|_| Error::LockFailed { resource: "PageManager mutex".to_string() })?
+        self.inner
+            .lock()
+            .map_err(|_| Error::LockFailed {
+                resource: "PageManager mutex".to_string(),
+            })?
             .allocate_page()
     }
-    
+
     fn free_page(&self, page_id: u32) {
         // Free page is void, so we can't propagate errors easily
         // Log and continue on lock failure
         match self.inner.lock() {
             Ok(mut guard) => guard.free_page(page_id),
             Err(_) => {
-                tracing::error!("Failed to acquire lock for free_page, page {} may leak", page_id);
+                tracing::error!(
+                    "Failed to acquire lock for free_page, page {} may leak",
+                    page_id
+                );
             }
         }
     }
-    
+
     fn get_page(&self, page_id: u32) -> Result<Page> {
-        self.inner.lock()
-            .map_err(|_| Error::LockFailed { resource: "PageManager mutex".to_string() })?
+        self.inner
+            .lock()
+            .map_err(|_| Error::LockFailed {
+                resource: "PageManager mutex".to_string(),
+            })?
             .get_page(page_id)
     }
-    
+
     fn write_page(&self, page: &Page) -> Result<()> {
-        self.inner.lock()
-            .map_err(|_| Error::LockFailed { resource: "PageManager mutex".to_string() })?
+        self.inner
+            .lock()
+            .map_err(|_| Error::LockFailed {
+                resource: "PageManager mutex".to_string(),
+            })?
             .write_page(page)
     }
-    
+
     fn sync(&self) -> Result<()> {
-        self.inner.lock()
-            .map_err(|_| Error::LockFailed { resource: "PageManager mutex".to_string() })?
+        self.inner
+            .lock()
+            .map_err(|_| Error::LockFailed {
+                resource: "PageManager mutex".to_string(),
+            })?
             .sync()
     }
-    
+
     fn page_count(&self) -> u32 {
         match self.inner.lock() {
             Ok(guard) => guard.page_count(),
@@ -427,7 +445,7 @@ impl PageManagerTrait for ThreadSafePageManager {
             }
         }
     }
-    
+
     fn free_page_count(&self) -> usize {
         match self.inner.lock() {
             Ok(guard) => guard.free_page_count(),

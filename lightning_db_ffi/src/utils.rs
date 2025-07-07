@@ -4,14 +4,14 @@ use std::ptr;
 use std::slice;
 
 /// Convert a C string to a Rust String
-/// 
+///
 /// # Safety
 /// - The pointer must be a valid null-terminated UTF-8 string
 pub unsafe fn c_str_to_string(ptr: *const c_char) -> Result<String, String> {
     if ptr.is_null() {
         return Err("Null pointer".to_string());
     }
-    
+
     match CStr::from_ptr(ptr).to_str() {
         Ok(s) => Ok(s.to_string()),
         Err(e) => Err(format!("Invalid UTF-8: {}", e)),
@@ -19,7 +19,7 @@ pub unsafe fn c_str_to_string(ptr: *const c_char) -> Result<String, String> {
 }
 
 /// Convert a Rust string to a C string
-/// 
+///
 /// The caller must free the returned pointer using `lightning_db_free_string`
 pub fn string_to_c_str(s: &str) -> *mut c_char {
     match CString::new(s) {
@@ -29,7 +29,7 @@ pub fn string_to_c_str(s: &str) -> *mut c_char {
 }
 
 /// Free a string allocated by this library
-/// 
+///
 /// # Safety
 /// - The pointer must have been allocated by this library
 /// - The pointer must not be used after calling this function
@@ -43,19 +43,19 @@ pub extern "C" fn lightning_db_free_string(ptr: *mut c_char) {
 }
 
 /// Convert a byte slice to a Rust Vec
-/// 
+///
 /// # Safety
 /// - The pointer must be valid for `len` bytes
 pub unsafe fn bytes_to_vec(ptr: *const u8, len: usize) -> Vec<u8> {
     if ptr.is_null() || len == 0 {
         return Vec::new();
     }
-    
+
     slice::from_raw_parts(ptr, len).to_vec()
 }
 
 /// Allocate memory for bytes
-/// 
+///
 /// The caller must free the returned pointer using `lightning_db_free_bytes`
 pub fn vec_to_bytes(data: Vec<u8>) -> (*mut u8, usize) {
     let len = data.len();
@@ -66,7 +66,7 @@ pub fn vec_to_bytes(data: Vec<u8>) -> (*mut u8, usize) {
 }
 
 /// Free bytes allocated by this library
-/// 
+///
 /// # Safety
 /// - The pointer must have been allocated by this library with the given length
 /// - The pointer must not be used after calling this function
@@ -96,7 +96,7 @@ impl ByteResult {
             error_code: 0,
         }
     }
-    
+
     pub fn error(code: i32) -> Self {
         Self {
             data: ptr::null_mut(),
@@ -109,34 +109,34 @@ impl ByteResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_string_conversion() {
         let rust_str = "Hello, Lightning DB!";
         let c_str = string_to_c_str(rust_str);
-        
+
         assert!(!c_str.is_null());
-        
+
         unsafe {
             let converted = c_str_to_string(c_str).unwrap();
             assert_eq!(converted, rust_str);
-            
+
             lightning_db_free_string(c_str);
         }
     }
-    
+
     #[test]
     fn test_bytes_conversion() {
         let data = vec![1, 2, 3, 4, 5];
         let (ptr, len) = vec_to_bytes(data.clone());
-        
+
         assert!(!ptr.is_null());
         assert_eq!(len, 5);
-        
+
         unsafe {
             let converted = bytes_to_vec(ptr, len);
             assert_eq!(converted, data);
-            
+
             lightning_db_free_bytes(ptr, len);
         }
     }

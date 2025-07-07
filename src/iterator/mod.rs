@@ -112,14 +112,14 @@ impl RangeIterator {
             self.end_key.clone(),
             self.direction.clone(),
         )?);
-        
+
         // Immediately populate the heap with first entry
         if let Some(ref mut btree_iter) = self.btree_iterator {
             if let Some(entry) = btree_iter.next()? {
                 self.merge_heap.push(entry);
             }
         }
-        
+
         Ok(())
     }
 
@@ -131,14 +131,14 @@ impl RangeIterator {
             self.direction.clone(),
             self.read_timestamp,
         )?);
-        
+
         // Immediately populate the heap with first entry
         if let Some(ref mut lsm_iter) = self.lsm_iterator {
             if let Some(entry) = lsm_iter.next()? {
                 self.merge_heap.push(entry);
             }
         }
-        
+
         Ok(())
     }
 
@@ -150,17 +150,16 @@ impl RangeIterator {
             self.direction.clone(),
             self.read_timestamp,
         )?);
-        
+
         // Immediately populate the heap with first entry
         if let Some(ref mut vs_iter) = self.version_store_iterator {
             if let Some(entry) = vs_iter.next()? {
                 self.merge_heap.push(entry);
             }
         }
-        
+
         Ok(())
     }
-
 
     fn is_within_bounds(&self, key: &[u8]) -> bool {
         // Check start bound
@@ -249,7 +248,7 @@ impl Iterator for RangeIterator {
                     break;
                 }
             }
-            
+
             // Re-fetch entries from the sources that had duplicates
             for dup_entry in skip_duplicates {
                 match dup_entry.source {
@@ -276,7 +275,7 @@ impl Iterator for RangeIterator {
                     }
                 }
             }
-            
+
             // CRITICAL: Also refill from the source that provided the main entry
             match entry.source {
                 IteratorSource::BTree => {
@@ -323,20 +322,15 @@ impl BTreeIterator {
         direction: ScanDirection,
     ) -> Result<Self> {
         use crate::btree::BTreeLeafIterator;
-        
+
         let forward = match direction {
             ScanDirection::Forward => true,
             ScanDirection::Backward => false,
         };
-        
+
         // Create iterator and collect all entries to avoid lifetime issues
-        let iter = BTreeLeafIterator::new(
-            btree,
-            start_key.clone(),
-            end_key.clone(),
-            forward,
-        )?;
-        
+        let iter = BTreeLeafIterator::new(btree, start_key.clone(), end_key.clone(), forward)?;
+
         // Collect all entries that match the range
         let mut entries = Vec::new();
         for result in iter {
@@ -345,13 +339,13 @@ impl BTreeIterator {
                 Err(e) => return Err(e),
             }
         }
-        
+
         // For backward iteration, reverse the entries
         if !forward {
             entries.reverse();
         }
 
-        Ok(Self { 
+        Ok(Self {
             entries,
             position: 0,
         })
@@ -391,14 +385,9 @@ impl LSMIterator {
             ScanDirection::Forward => true,
             ScanDirection::Backward => false,
         };
-        
+
         // Create the fixed iterator that includes all data sources
-        let lsm_iter = crate::lsm::LSMFullIteratorFixed::new(
-            lsm,
-            start_key,
-            end_key,
-            forward,
-        )?;
+        let lsm_iter = crate::lsm::LSMFullIteratorFixed::new(lsm, start_key, end_key, forward)?;
 
         Ok(Self {
             lsm_iter,

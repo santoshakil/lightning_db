@@ -15,9 +15,7 @@ impl AsyncDatabase {
     ) -> Result<Self> {
         let db = task::spawn_blocking(move || Database::create(path, config))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })??;
+            .map_err(|e| crate::error::Error::Io(e.to_string()))??;
 
         Ok(Self {
             inner: Arc::new(db),
@@ -30,9 +28,7 @@ impl AsyncDatabase {
     ) -> Result<Self> {
         let db = task::spawn_blocking(move || Database::open(path, config))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })??;
+            .map_err(|e| crate::error::Error::Io(e.to_string()))??;
 
         Ok(Self {
             inner: Arc::new(db),
@@ -43,142 +39,112 @@ impl AsyncDatabase {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.put(&key, &value))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.get(&key))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn delete(&self, key: Vec<u8>) -> Result<bool> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.delete(&key))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn begin_transaction(&self) -> Result<u64> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.begin_transaction())
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.commit_transaction(tx_id))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn abort_transaction(&self, tx_id: u64) -> Result<()> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.abort_transaction(tx_id))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn put_tx(&self, tx_id: u64, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.put_tx(tx_id, &key, &value))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn get_tx(&self, tx_id: u64, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.get_tx(tx_id, &key))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn delete_tx(&self, tx_id: u64, key: Vec<u8>) -> Result<()> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.delete_tx(tx_id, &key))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn put_batch(&self, pairs: Vec<(Vec<u8>, Vec<u8>)>) -> Result<()> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.put_batch(&pairs))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn get_batch(&self, keys: Vec<Vec<u8>>) -> Result<Vec<Option<Vec<u8>>>> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.get_batch(&keys))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn delete_batch(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.delete_batch(&keys))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn sync(&self) -> Result<()> {
         let db = Arc::clone(&self.inner);
-        task::spawn_blocking(move || db.sync()).await.map_err(|e| {
-            crate::error::Error::Io(e.to_string())
-        })?
+        task::spawn_blocking(move || db.sync())
+            .await
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn stats(&self) -> Result<DatabaseStats> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || Ok(db.stats()))
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn flush_lsm(&self) -> Result<()> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.flush_lsm())
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub async fn compact_lsm(&self) -> Result<()> {
         let db = Arc::clone(&self.inner);
         task::spawn_blocking(move || db.compact_lsm())
             .await
-            .map_err(|e| {
-                crate::error::Error::Io(e.to_string())
-            })?
+            .map_err(|e| crate::error::Error::Io(e.to_string()))?
     }
 
     pub fn cache_stats(&self) -> Option<String> {
@@ -269,9 +235,7 @@ mod tests {
             use_optimized_transactions: false, // Disable for tests
             ..Default::default()
         };
-        let db = AsyncDatabase::create(db_path, config)
-            .await
-            .unwrap();
+        let db = AsyncDatabase::create(db_path, config).await.unwrap();
 
         // Test put and get
         db.put(b"test_key".to_vec(), b"test_value".to_vec())
@@ -296,9 +260,7 @@ mod tests {
             use_optimized_transactions: false, // Disable for tests
             ..Default::default()
         };
-        let db = AsyncDatabase::create(db_path, config)
-            .await
-            .unwrap();
+        let db = AsyncDatabase::create(db_path, config).await.unwrap();
 
         let tx_id = db.begin_transaction().await.unwrap();
         db.put_tx(tx_id, b"tx_key".to_vec(), b"tx_value".to_vec())
@@ -323,9 +285,7 @@ mod tests {
             use_optimized_transactions: false, // Disable for tests
             ..Default::default()
         };
-        let db = AsyncDatabase::create(db_path, config)
-            .await
-            .unwrap();
+        let db = AsyncDatabase::create(db_path, config).await.unwrap();
 
         // Test concurrent puts
         let pairs = vec![
@@ -354,9 +314,7 @@ mod tests {
             use_optimized_transactions: false, // Disable for tests
             ..Default::default()
         };
-        let db = AsyncDatabase::create(db_path, config)
-            .await
-            .unwrap();
+        let db = AsyncDatabase::create(db_path, config).await.unwrap();
 
         // Test batch put
         let pairs = vec![
