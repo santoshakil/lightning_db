@@ -262,8 +262,10 @@ fn test_transaction_isolation() -> Result<bool, Box<dyn std::error::Error>> {
 fn test_memory_safety() -> Result<bool, Box<dyn std::error::Error>> {
     println!("\n4️⃣ Testing Memory Safety...");
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 1024 * 1024; // 1MB cache
+    let config = LightningDbConfig {
+        cache_size: 1024 * 1024, // 1MB cache
+        ..Default::default()
+    };
 
     let db = Database::create(temp_dir.path(), config)?;
 

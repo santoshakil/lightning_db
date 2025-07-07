@@ -7,8 +7,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Testing cache pattern...");
 
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 10 * 1024 * 1024;
+    let config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024,
+        ..Default::default()
+    };
 
     println!("Creating database...");
     let db = Database::create(temp_dir.path(), config)?;

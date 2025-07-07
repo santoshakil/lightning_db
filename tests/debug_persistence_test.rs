@@ -12,9 +12,11 @@ fn test_debug_persistence() {
 
     // Write data
     {
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
-        config.use_improved_wal = true;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            use_improved_wal: true,
+            ..Default::default()
+        };
 
         println!("Opening database with config: {:?}", config.wal_sync_mode);
         let db = Database::open(db_path, config).unwrap();
@@ -38,21 +40,23 @@ fn test_debug_persistence() {
     println!("\n=== Checking files ===");
     for entry in fs::read_dir(db_path).unwrap() {
         let entry = entry.unwrap();
-        let metadata = fs::metadata(&entry.path()).unwrap();
+        let metadata = fs::metadata(entry.path()).unwrap();
         println!("  {:?} - {} bytes", entry.file_name(), metadata.len());
 
         // For WAL file, print first few bytes
         if entry.file_name().to_str().unwrap() == "wal" && metadata.is_file() && metadata.len() > 0
         {
-            let data = fs::read(&entry.path()).unwrap();
+            let data = fs::read(entry.path()).unwrap();
             println!("    WAL first 32 bytes: {:?}", &data[..32.min(data.len())]);
         }
     }
 
     println!("\n=== Phase 2: Reading data ===");
     {
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            ..Default::default()
+        };
 
         println!("Opening database for recovery...");
         let db = Database::open(db_path, config).unwrap();

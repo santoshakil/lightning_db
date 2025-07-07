@@ -11,8 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 1: Baseline - Single writes with sync WAL
     {
         let db_path = dir.path().join("test_sync.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
 
         println!("Test 1: Single writes with sync WAL (baseline)");
@@ -33,9 +35,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 2: Auto batcher with sync WAL
     {
         let db_path = dir.path().join("test_auto_batch.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
-        config.compression_enabled = true; // Ensure LSM is enabled
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            compression_enabled: true, // Ensure LSM is enabled
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
 
         // Create auto batcher
@@ -112,8 +116,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         use std::thread;
 
         let db_path = dir.path().join("test_concurrent.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
 
         // Create auto batcher

@@ -35,11 +35,11 @@ fn test_write_write_conflict_detection() {
 
         // Both threads will try to write to the same key
         let put_result = db1.put_tx(tx_id, b"test_key", b"thread1_value");
-        if put_result.is_ok() {
+        if let Err(e) = put_result {
+            Err(e)
+        } else {
             // Try to commit
             db1.commit_transaction(tx_id)
-        } else {
-            Err(put_result.unwrap_err())
         }
     });
 
@@ -54,11 +54,11 @@ fn test_write_write_conflict_detection() {
 
         // Both threads will try to write to the same key
         let put_result = db2.put_tx(tx_id, b"test_key", b"thread2_value");
-        if put_result.is_ok() {
+        if let Err(e) = put_result {
+            Err(e)
+        } else {
             // Try to commit
             db2.commit_transaction(tx_id)
-        } else {
-            Err(put_result.unwrap_err())
         }
     });
 
@@ -216,10 +216,10 @@ fn test_atomic_reservation_system() {
             let value = format!("thread_{}_value", thread_id);
             let put_result = db_clone.put_tx(tx_id, b"contested_key", value.as_bytes());
 
-            if put_result.is_ok() {
-                db_clone.commit_transaction(tx_id)
+            if let Err(e) = put_result {
+                Err(e)
             } else {
-                Err(put_result.unwrap_err())
+                db_clone.commit_transaction(tx_id)
             }
         });
 

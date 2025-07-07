@@ -89,8 +89,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Testing LSM Database");
         let dir = tempdir()?;
         let start = Instant::now();
-        let mut config = LightningDbConfig::default();
-        config.compression_enabled = true;
+        let config = LightningDbConfig {
+            compression_enabled: true,
+            ..Default::default()
+        };
         let db = Database::create(dir.path().join("lsm.db"), config)?;
         println!(
             "  LSM Database created in: {:.3}s",

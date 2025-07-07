@@ -9,11 +9,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 1: Without optimized transactions
     {
-        let mut config = LightningDbConfig::default();
-        config.use_optimized_transactions = false;
-        config.use_improved_wal = true;
-        config.cache_size = 0;
-        config.compression_enabled = false;
+        let config = LightningDbConfig {
+            use_optimized_transactions: false,
+            use_improved_wal: true,
+            cache_size: 0,
+            compression_enabled: false,
+            ..Default::default()
+        };
 
         let db = Database::create(temp_dir.path().join("normal"), config)?;
 
@@ -43,11 +45,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 2: With optimized transactions
     {
-        let mut config = LightningDbConfig::default();
-        config.use_optimized_transactions = true;
-        config.use_improved_wal = true;
-        config.cache_size = 0;
-        config.compression_enabled = false;
+        let config = LightningDbConfig {
+            use_optimized_transactions: true,
+            use_improved_wal: true,
+            cache_size: 0,
+            compression_enabled: false,
+            ..Default::default()
+        };
 
         let db = Database::create(temp_dir.path().join("optimized"), config)?;
 
@@ -77,11 +81,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 3: Using actual transactions
     {
-        let mut config = LightningDbConfig::default();
-        config.use_optimized_transactions = true;
-        config.use_improved_wal = true;
-        config.cache_size = 0;
-        config.compression_enabled = false;
+        let config = LightningDbConfig {
+            use_optimized_transactions: true,
+            use_improved_wal: true,
+            cache_size: 0,
+            compression_enabled: false,
+            ..Default::default()
+        };
 
         let db = Database::create(temp_dir.path().join("tx_test"), config)?;
 

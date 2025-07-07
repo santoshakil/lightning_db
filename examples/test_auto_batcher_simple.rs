@@ -9,14 +9,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = dir.path().join("test.db");
 
     // Use minimal config to isolate AutoBatcher issue
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 0;
-    config.compression_enabled = false;
-    config.prefetch_enabled = false;
-    config.use_optimized_transactions = false;
-    config.use_improved_wal = false;
-    config.use_optimized_page_manager = false;
-    config.mmap_config = None;
+    let config = LightningDbConfig {
+        cache_size: 0,
+        compression_enabled: false,
+        prefetch_enabled: false,
+        use_optimized_transactions: false,
+        use_improved_wal: false,
+        use_optimized_page_manager: false,
+        mmap_config: None,
+        ..Default::default()
+    };
 
     println!("Creating database...");
     let db = Arc::new(Database::create(&db_path, config)?);

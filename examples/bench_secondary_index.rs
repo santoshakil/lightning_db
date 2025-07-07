@@ -8,8 +8,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⚡ Lightning DB Secondary Index Performance Benchmark\n");
 
     let dir = tempdir()?;
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Async;
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async,
+        ..Default::default()
+    };
 
     let db = Arc::new(Database::create(dir.path().join("index_bench.db"), config)?);
 

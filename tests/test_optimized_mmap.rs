@@ -30,8 +30,8 @@ fn test_optimized_page_manager_basic() {
     let mut page = Page::new(page_id1);
     let data = page.get_mut_data();
     // Write test pattern, starting after header (16 bytes)
-    for i in 16..256 {
-        data[i] = (i - 16) as u8;
+    for (i, item) in data.iter_mut().enumerate().skip(16).take(240) {
+        *item = (i - 16) as u8;
     }
 
     manager.write_page(&page).unwrap();
@@ -40,8 +40,8 @@ fn test_optimized_page_manager_basic() {
     let read_page = manager.get_page(page_id1).unwrap();
     let read_data = read_page.get_data();
     // Verify data after header
-    for i in 16..256 {
-        assert_eq!(read_data[i], (i - 16) as u8);
+    for (i, &item) in read_data.iter().enumerate().skip(16).take(240) {
+        assert_eq!(item, (i - 16) as u8);
     }
 
     // Test page freeing and reallocation
@@ -88,8 +88,8 @@ fn test_optimized_page_manager_performance() {
         let mut page = Page::new(page_id);
         let data = page.get_mut_data();
         // Write pattern to page (skip header)
-        for j in 16..PAGE_DATA_SIZE {
-            data[j] = ((i + j as u32) % 256) as u8;
+        for (j, item) in data.iter_mut().enumerate().skip(16) {
+            *item = ((i + j as u32) % 256) as u8;
         }
 
         manager.write_page(&page).unwrap();
@@ -114,8 +114,8 @@ fn test_optimized_page_manager_performance() {
         let data = page.get_data();
         // Verify pattern (skip header)
         let i = page_id - 1; // Adjust for header page
-        for j in 16..PAGE_DATA_SIZE {
-            assert_eq!(data[j], ((i + j as u32) % 256) as u8);
+        for (j, &item) in data.iter().enumerate().skip(16) {
+            assert_eq!(item, ((i + j as u32) % 256) as u8);
         }
     }
     let read_duration = read_start.elapsed();

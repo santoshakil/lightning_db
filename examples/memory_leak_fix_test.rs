@@ -17,7 +17,7 @@ fn main() {
 
     // Create database with minimal cache to isolate leak
     let config = LightningDbConfig {
-        cache_size: 1 * 1024 * 1024, // 1MB cache only
+        cache_size: 1024 * 1024, // 1MB cache only
         compression_enabled: true,
         use_improved_wal: true,
         wal_sync_mode: lightning_db::WalSyncMode::Periodic { interval_ms: 1000 },

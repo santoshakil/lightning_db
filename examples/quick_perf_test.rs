@@ -8,8 +8,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 1: Async WAL performance (target: 248K ops/sec)
     {
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(dir.path().join("async.db"), config)?);
 
         println!("Testing Async WAL write performance...");
@@ -36,8 +38,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 2: AutoBatcher performance
     {
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(dir.path().join("batcher.db"), config)?);
         let batcher = Database::create_auto_batcher(db.clone());
 

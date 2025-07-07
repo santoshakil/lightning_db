@@ -2,6 +2,7 @@ use lightning_db::{Database, LightningDbConfig};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
 use tempfile::tempdir;
 
 fn fill_disk_space(
@@ -334,28 +335,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // This is tricky to test reliably, so we'll simulate
         println!("  Simulating zero space condition...");
 
-        let db = Database::open(db_path, LightningDbConfig::default())?;
+        let db = Arc::new(Database::open(db_path, LightningDbConfig::default())?);
 
         // Test various operations
-        let operations: Vec<(
-            &str,
-            Box<dyn Fn() -> Result<(), Box<dyn std::error::Error>>>,
-        )> = vec![
+        type OperationFn = Box<dyn Fn() -> Result<(), Box<dyn std::error::Error>>>;
+        let db1 = Arc::clone(&db);
+        let db2 = Arc::clone(&db);
+        let db3 = Arc::clone(&db);
+        let db4 = Arc::clone(&db);
+        let operations: Vec<(&str, OperationFn)> = vec![
             (
                 "Read",
-                Box::new(|| db.get(b"any_key").map(|_| ()).map_err(|e| e.into())),
+                Box::new(move || db1.get(b"any_key").map(|_| ()).map_err(|e| e.into())),
             ),
             (
                 "Delete",
-                Box::new(|| db.delete(b"any_key").map(|_| ()).map_err(|e| e.into())),
+                Box::new(move || db2.delete(b"any_key").map(|_| ()).map_err(|e| e.into())),
             ),
             (
                 "Small write",
-                Box::new(|| db.put(b"tiny", b"x").map_err(|e| e.into())),
+                Box::new(move || db3.put(b"tiny", b"x").map_err(|e| e.into())),
             ),
             (
                 "Checkpoint",
-                Box::new(|| db.checkpoint().map_err(|e| e.into())),
+                Box::new(move || db4.checkpoint().map_err(|e| e.into())),
             ),
         ];
 

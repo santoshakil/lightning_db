@@ -9,8 +9,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = dir.path().join("test.db");
 
     // Test with async writes for performance
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = lightning_db::WalSyncMode::Async;
+    let config = LightningDbConfig {
+        wal_sync_mode: lightning_db::WalSyncMode::Async,
+        ..Default::default()
+    };
 
     let write_count = 10_000;
     let value_size = 100;

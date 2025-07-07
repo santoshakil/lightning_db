@@ -201,7 +201,7 @@ fn simulate_baseline_db(num_operations: usize) -> BenchmarkResults {
     BenchmarkResults {
         sequential_write: Duration::from_micros((num_operations as u64) * 5), // ~5μs per op
         random_write: Duration::from_micros((num_operations as u64) * 10),    // ~10μs per op
-        sequential_read: Duration::from_micros((num_operations as u64) * 1),  // ~1μs per op
+        sequential_read: Duration::from_micros(num_operations as u64),  // ~1μs per op
         random_read: Duration::from_micros((num_operations as u64) * 2),      // ~2μs per op
         mixed_workload: Duration::from_micros((num_operations as u64) * 3),   // ~3μs per op
         transaction_overhead: Duration::from_micros((num_operations as u64) * 15), // ~15μs per op

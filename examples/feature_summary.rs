@@ -329,8 +329,10 @@ fn test_iterators(path: &std::path::Path) -> Result<(), Box<dyn std::error::Erro
 }
 
 fn test_compression(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = true;
+    let config = LightningDbConfig {
+        compression_enabled: true,
+        ..Default::default()
+    };
 
     let db = Database::create(path, config)?;
 
@@ -349,8 +351,10 @@ fn test_compression(path: &std::path::Path) -> Result<(), Box<dyn std::error::Er
 }
 
 fn test_caching(path: &std::path::Path) -> Result<Option<(f64, f64)>, Box<dyn std::error::Error>> {
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 10 * 1024 * 1024; // 10MB
+    let config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024, // 10MB
+        ..Default::default()
+    };
 
     let db = Database::create(path, config)?;
 

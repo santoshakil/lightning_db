@@ -178,8 +178,7 @@ fn test_iterator_limit() {
     assert_eq!(results.len(), 10);
 
     // Verify we got the first 10 keys
-    for i in 0..10 {
-        let (key, _) = &results[i];
+    for (i, (key, _)) in results.iter().enumerate().take(10) {
         let expected = format!("key{:03}", i);
         assert_eq!(key, expected.as_bytes());
     }

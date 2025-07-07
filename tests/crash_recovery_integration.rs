@@ -13,9 +13,11 @@ fn test_basic_crash_recovery() {
 
     // Phase 1: Write data and crash
     {
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
 
         let db = Database::open(&db_path, config).unwrap();
 
@@ -58,9 +60,11 @@ fn test_transaction_crash_recovery() {
 
     // Phase 1: Start transaction and crash
     {
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
 
         let db = Database::open(&db_path, config).unwrap();
 
@@ -117,9 +121,11 @@ fn test_concurrent_crash_recovery() {
 
     // Phase 1: Concurrent writes and crash
     {
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
 
         let db = Arc::new(Database::open(&db_path, config).unwrap());
         let running = Arc::new(AtomicBool::new(true));
@@ -162,7 +168,7 @@ fn test_concurrent_crash_recovery() {
         let db = Database::open(&db_path, config).unwrap();
 
         // Count recovered entries per thread
-        let mut thread_counts = vec![0; 4];
+        let mut thread_counts = [0; 4];
 
         for thread_id in 0..4 {
             let mut i = 0;
@@ -197,9 +203,11 @@ fn test_partial_wal_recovery() {
 
     // Phase 1: Write data with artificial WAL truncation
     {
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
 
         let db = Database::open(&db_path, config).unwrap();
 
@@ -268,9 +276,11 @@ fn test_compaction_crash_recovery() {
 
     // Phase 1: Write data to trigger compaction
     {
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
 
         let db = Database::open(&db_path, config).unwrap();
 
@@ -326,9 +336,11 @@ fn test_corrupted_page_recovery() {
 
     // Phase 1: Write data normally
     {
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
 
         let db = Database::open(&db_path, config).unwrap();
 

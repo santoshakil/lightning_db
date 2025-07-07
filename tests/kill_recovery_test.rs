@@ -286,7 +286,7 @@ fn main() {{
 
         // Compile the test program
         let output = Command::new("rustc")
-            .args(&[
+            .args([
                 "--edition",
                 "2021",
                 "-L",
@@ -356,7 +356,7 @@ fn main() {{
 
         // Kill -9 the process
         let _ = Command::new("kill")
-            .args(&["-9", &pid.to_string()])
+            .args(["-9", &pid.to_string()])
             .output();
 
         // Clean up marker file
@@ -468,7 +468,7 @@ fn main() {{
         println!("🧪 Starting Kill -9 Recovery Test Suite");
         println!("📊 Total test points: {}", total);
         println!("⏱️  Estimated time: {} minutes", total * 2 / 60);
-        println!("");
+        println!();
 
         let mut passed = 0;
         let mut failed = 0;
@@ -568,7 +568,7 @@ fn main() {{
                 !r.success
                     && r.error
                         .as_ref()
-                        .map_or(false, |e| e.contains("Missing keys"))
+                        .is_some_and(|e| e.contains("Missing keys"))
             })
             .count();
 
@@ -581,7 +581,7 @@ fn main() {{
         // Check for corruption
         let corruption_tests = results
             .iter()
-            .filter(|r| !r.success && r.error.as_ref().map_or(false, |e| e.contains("Corrupted")))
+            .filter(|r| !r.success && r.error.as_ref().is_some_and(|e| e.contains("Corrupted")))
             .count();
 
         if corruption_tests > 0 {

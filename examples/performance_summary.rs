@@ -12,9 +12,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 1: Original problem - Sync WAL
     {
         let db_path = dir.path().join("sync_mode.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
-        config.compression_enabled = false; // Disable LSM for direct B+Tree
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            compression_enabled: false, // Disable LSM for direct B+Tree
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
 
         println!("❌ Original Problem: Sync WAL Mode");
@@ -35,9 +37,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 2: Solution 1 - Async WAL
     {
         let db_path = dir.path().join("async_mode.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
-        config.compression_enabled = false;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            compression_enabled: false,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
 
         println!("\n✅ Solution 1: Async WAL Mode");
@@ -68,9 +72,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 3: Solution 2 - Manual Batching
     {
         let db_path = dir.path().join("batched_mode.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync; // Even with sync!
-        config.compression_enabled = false;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync, // Even with sync!
+            compression_enabled: false,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
 
         println!("\n✅ Solution 2: Manual Transaction Batching");
