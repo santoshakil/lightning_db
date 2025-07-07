@@ -355,9 +355,7 @@ fn main() {{
         }
 
         // Kill -9 the process
-        let _ = Command::new("kill")
-            .args(["-9", &pid.to_string()])
-            .output();
+        let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
 
         // Clean up marker file
         let _ = fs::remove_file(marker_file);
@@ -564,12 +562,7 @@ fn main() {{
         // Check for data loss
         let data_loss_tests = results
             .iter()
-            .filter(|r| {
-                !r.success
-                    && r.error
-                        .as_ref()
-                        .is_some_and(|e| e.contains("Missing keys"))
-            })
+            .filter(|r| !r.success && r.error.as_ref().is_some_and(|e| e.contains("Missing keys")))
             .count();
 
         if data_loss_tests > 0 {

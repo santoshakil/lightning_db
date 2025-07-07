@@ -338,9 +338,7 @@ impl TransactionManager {
     fn get_min_active_transaction_timestamp(&self) -> Option<u64> {
         self.active_transactions
             .iter()
-            .filter_map(|entry| {
-                entry.value().try_read().map(|tx| tx.read_timestamp)
-            })
+            .filter_map(|entry| entry.value().try_read().map(|tx| tx.read_timestamp))
             .min()
     }
 

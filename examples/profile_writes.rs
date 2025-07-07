@@ -12,30 +12,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test different configurations
     let configs = vec![
         ("Default", LightningDbConfig::default()),
-        ("No LSM", LightningDbConfig {
-            compression_enabled: false,
-            ..Default::default()
-        }),
-        ("No Improved WAL", LightningDbConfig {
-            use_improved_wal: false,
-            ..Default::default()
-        }),
-        ("No Optimized Transactions", LightningDbConfig {
-            use_optimized_transactions: false,
-            ..Default::default()
-        }),
-        ("Minimal", LightningDbConfig {
-            compression_enabled: false,
-            use_improved_wal: false,
-            use_optimized_transactions: false,
-            cache_size: 0,
-            prefetch_enabled: false,
-            ..Default::default()
-        }),
-        ("Large WAL batch", LightningDbConfig {
-            write_batch_size: 5000,
-            ..Default::default()
-        }),
+        (
+            "No LSM",
+            LightningDbConfig {
+                compression_enabled: false,
+                ..Default::default()
+            },
+        ),
+        (
+            "No Improved WAL",
+            LightningDbConfig {
+                use_improved_wal: false,
+                ..Default::default()
+            },
+        ),
+        (
+            "No Optimized Transactions",
+            LightningDbConfig {
+                use_optimized_transactions: false,
+                ..Default::default()
+            },
+        ),
+        (
+            "Minimal",
+            LightningDbConfig {
+                compression_enabled: false,
+                use_improved_wal: false,
+                use_optimized_transactions: false,
+                cache_size: 0,
+                prefetch_enabled: false,
+                ..Default::default()
+            },
+        ),
+        (
+            "Large WAL batch",
+            LightningDbConfig {
+                write_batch_size: 5000,
+                ..Default::default()
+            },
+        ),
     ];
 
     for (name, config) in configs {

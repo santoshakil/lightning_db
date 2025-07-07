@@ -2128,13 +2128,9 @@ impl Database {
 
     /// Convenience method for range-based join between two indexes
     pub fn range_join(&self, params: RangeJoinParams) -> Result<Vec<JoinResult>> {
-        let join = JoinQuery::new(
-            params.left_index, 
-            params.right_index, 
-            params.join_type
-        )
-        .left_range(params.left_range.0, params.left_range.1)
-        .right_range(params.right_range.0, params.right_range.1);
+        let join = JoinQuery::new(params.left_index, params.right_index, params.join_type)
+            .left_range(params.left_range.0, params.left_range.1)
+            .right_range(params.right_range.0, params.right_range.1);
 
         self.join_indexes(join)
     }

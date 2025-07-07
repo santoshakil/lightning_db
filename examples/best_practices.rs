@@ -8,8 +8,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Best Practice 1: Use optimized configuration
     let config = LightningDbConfig {
         wal_sync_mode: WalSyncMode::Async, // Much faster than Sync
-        compression_enabled: false, // Disable for pure B+Tree performance
-        cache_size: 200 * 1024 * 1024, // 200MB cache for better performance
+        compression_enabled: false,        // Disable for pure B+Tree performance
+        cache_size: 200 * 1024 * 1024,     // 200MB cache for better performance
         ..Default::default()
     };
 

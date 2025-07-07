@@ -189,22 +189,28 @@ impl Error {
 
     /// Check if this error is recoverable
     pub fn is_recoverable(&self) -> bool {
-        matches!(self, Error::KeyNotFound
-            | Error::TransactionNotFound { .. }
-            | Error::IndexNotFound { .. }
-            | Error::Timeout(_)
-            | Error::ConcurrentModification
-            | Error::Cancelled
-            | Error::LockFailed { .. })
+        matches!(
+            self,
+            Error::KeyNotFound
+                | Error::TransactionNotFound { .. }
+                | Error::IndexNotFound { .. }
+                | Error::Timeout(_)
+                | Error::ConcurrentModification
+                | Error::Cancelled
+                | Error::LockFailed { .. }
+        )
     }
 
     /// Check if this error indicates data corruption
     pub fn is_corruption(&self) -> bool {
-        matches!(self, Error::CorruptedPage
-            | Error::CorruptedDatabase(_)
-            | Error::ChecksumMismatch { .. }
-            | Error::WalCorruption { .. }
-            | Error::InvalidDatabase)
+        matches!(
+            self,
+            Error::CorruptedPage
+                | Error::CorruptedDatabase(_)
+                | Error::ChecksumMismatch { .. }
+                | Error::WalCorruption { .. }
+                | Error::InvalidDatabase
+        )
     }
 
     /// Convert error to FFI-safe error code and message
