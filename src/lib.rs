@@ -71,6 +71,7 @@ pub mod consistency;
 pub mod error;
 pub mod fast_auto_batcher;
 pub mod fast_path;
+pub mod header;
 pub mod index;
 pub mod integrity_checker;
 pub mod iterator;
@@ -150,7 +151,8 @@ use wal_improved::{ImprovedWriteAheadLog, TransactionRecoveryState};
 use write_batch::BatchOperation;
 pub use write_batch::WriteBatch;
 
-// Include protobuf generated code
+// Include protobuf generated code if available
+#[cfg(feature = "proto")]
 include!(concat!(env!("OUT_DIR"), "/lightning_db.rs"));
 
 /// Parameters for range-based join operations

@@ -1,5 +1,4 @@
 use crossbeam_epoch::{self as epoch, Atomic, Owned, Shared};
-use std::ptr;
 use std::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 
 /// Lock-free hot path cache optimized for maximum performance
@@ -164,7 +163,7 @@ impl<T: Clone> WaitFreeReadBuffer<T> {
     where
         F: FnOnce(&[T]) -> R,
     {
-        let guard = &epoch::pin();
+        let _guard = epoch::pin();
         let buffer_idx = self.active_buffer.load(Ordering::Acquire);
         let buffer_ptr = self.buffers[buffer_idx].load(Ordering::Acquire);
 
@@ -178,7 +177,7 @@ impl<T: Clone> WaitFreeReadBuffer<T> {
 
     /// Update the buffer (not wait-free, but minimally blocking)
     pub fn update(&self, new_data: Vec<T>) {
-        let guard = &epoch::pin();
+        let _guard = epoch::pin();
         let current_idx = self.active_buffer.load(Ordering::Acquire);
         let next_idx = 1 - current_idx;
 

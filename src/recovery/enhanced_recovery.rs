@@ -9,8 +9,7 @@
 use crate::error::{Error, Result};
 use crate::storage::{Page, PageId};
 use crate::wal::{WalEntry, LogSequenceNumber};
-use crate::Header;
-use std::collections::HashMap;
+use crate::header::Header;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -20,10 +19,10 @@ use crc32fast::Hasher;
 
 /// Double-write buffer to prevent torn pages
 pub struct DoubleWriteBuffer {
-    buffer_file: PathBuf,
+    _buffer_file: PathBuf,
     buffer: Mutex<File>,
     page_size: usize,
-    batch_size: usize,
+    _batch_size: usize,
     active: AtomicBool,
 }
 
@@ -36,13 +35,13 @@ impl DoubleWriteBuffer {
             .read(true)
             .write(true)
             .open(&buffer_file)
-            .map_err(|e| Error::Io(e))?;
+            .map_err(|e| Error::Io(e.to_string()))?;
             
         Ok(Self {
-            buffer_file,
+            _buffer_file: buffer_file,
             buffer: Mutex::new(buffer),
             page_size,
-            batch_size,
+            _batch_size: batch_size,
             active: AtomicBool::new(true),
         })
     }
@@ -129,7 +128,7 @@ impl DoubleWriteBuffer {
         for _ in 0..page_count {
             let mut page_id_bytes = [0u8; 4];
             buffer.read_exact(&mut page_id_bytes)?;
-            let page_id = PageId::from_le_bytes(page_id_bytes);
+            let page_id = u32::from_le_bytes(page_id_bytes);
             
             let mut page_data = vec![0u8; self.page_size];
             buffer.read_exact(&mut page_data)?;
@@ -142,7 +141,10 @@ impl DoubleWriteBuffer {
         
         // Verify checksum
         if hasher.finalize() != expected_checksum {
-            return Err(Error::Corruption("Double-write buffer checksum mismatch".into()));
+            return Err(Error::WalCorruption {
+                offset: 0,
+                reason: "Double-write buffer checksum mismatch".to_string(),
+            });
         }
         
         // Recover pages
@@ -229,7 +231,7 @@ impl RedundantMetadata {
             }
         }
         
-        Err(Error::Corruption("All metadata copies are corrupted".into()))
+        Err(Error::InvalidFormat("All metadata copies are corrupted".to_string()))
     }
     
     fn write_header_to_file(&self, path: &Path, data: &[u8]) -> Result<()> {
@@ -411,7 +413,7 @@ impl EnhancedWalRecovery {
                     
                     position = file.seek(SeekFrom::Current(0))?;
                 }
-                Err(e) => {
+                Err(_e) => {
                     // Try to find next valid entry
                     if self.scan_for_next_entry(&mut file, &mut position, file_size)? {
                         stats.recovered_after_corruption += 1;

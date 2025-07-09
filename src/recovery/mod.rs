@@ -59,7 +59,7 @@ impl RecoveryManager {
             32,
         )?;
         
-        let recovered_pages = dwb.recover(|page_id, data| {
+        let recovered_pages = dwb.recover(|page_id, _data| {
             // In real implementation, write to page manager
             println!("Recovered page {} from double-write buffer", page_id);
             Ok(())
@@ -76,7 +76,7 @@ impl RecoveryManager {
             self.progress.clone(),
         );
         
-        let stats = wal_recovery.recover(|entry| {
+        let stats = wal_recovery.recover(|_entry| {
             // In real implementation, apply entry to database
             Ok(())
         })?;
@@ -85,7 +85,7 @@ impl RecoveryManager {
         
         // Step 4: Open database normally
         self.progress.set_phase("Opening database");
-        let db = Database::open(&self.db_path, self.config)?;
+        let db = Database::open(&self.db_path, self.config.clone())?;
         
         self.progress.set_phase("Recovery complete");
         

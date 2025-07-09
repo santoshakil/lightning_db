@@ -336,7 +336,7 @@ impl SSTableBuilder {
                     if delta_compressed.compressed_size < block_data.len() {
                         // Serialize delta compressed data
                         bincode::encode_to_vec(&delta_compressed, bincode::config::standard())
-                            .map_err(|_| Error::Serialization)?
+                            .map_err(|e| Error::Serialization(e.to_string()))?
                     } else {
                         block_data.to_vec()
                     }
@@ -404,7 +404,7 @@ impl SSTableBuilder {
 
         // Write index
         let index_data = bincode::encode_to_vec(&self.index, bincode::config::standard())
-            .map_err(|_| Error::Serialization)?;
+            .map_err(|e| Error::Serialization(e.to_string()))?;
         let index_offset = self.current_offset;
         self.writer.write_all(&index_data)?;
         self.current_offset += index_data.len() as u64;
@@ -425,7 +425,7 @@ impl SSTableBuilder {
         };
 
         let footer_data = bincode::encode_to_vec(&footer, bincode::config::standard())
-            .map_err(|_| Error::Serialization)?;
+            .map_err(|e| Error::Serialization(e.to_string()))?;
         self.writer.write_all(&footer_data)?;
 
         // Write footer size at the end
@@ -467,7 +467,7 @@ impl SSTableReader {
     fn deserialize_bloom_filter(data: &[u8]) -> Result<BloomFilter> {
         // Simple deserialization
         if data.len() < 4 {
-            return Err(Error::Serialization);
+            return Err(Error::Serialization("Failed to decode entry".to_string()));
         }
         // Create a new bloom filter with default parameters
         Ok(BloomFilter::with_rate(0.01, 10000))
@@ -492,7 +492,7 @@ impl SSTableReader {
         let mut footer_data = vec![0u8; footer_size as usize];
         file.read_exact(&mut footer_data)?;
         let footer: Footer = bincode::decode_from_slice(&footer_data, bincode::config::standard())
-            .map_err(|_| Error::Serialization)?
+            .map_err(|e| Error::Serialization(e.to_string()))?
             .0;
 
         // Verify magic and version
@@ -524,7 +524,7 @@ impl SSTableReader {
         file.read_exact(&mut index_data)?;
         let index: Vec<IndexEntry> =
             bincode::decode_from_slice(&index_data, bincode::config::standard())
-                .map_err(|_| Error::Serialization)?
+                .map_err(|e| Error::Serialization(e.to_string()))?
                 .0;
 
         // Extract ID from filename
