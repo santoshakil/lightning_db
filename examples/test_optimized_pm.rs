@@ -8,15 +8,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let db_path = temp_dir.path();
 
     // Create config with optimized page manager
-    let mut config = LightningDbConfig::default();
-    config.prefetch_enabled = false;
-    config.use_optimized_transactions = false;
-    config.use_improved_wal = false;
-    config.cache_size = 0;
-    config.compression_enabled = false;
+    let mut config = LightningDbConfig {
+        prefetch_enabled: false,
+        use_optimized_transactions: false,
+        use_improved_wal: false,
+        cache_size: 0,
+        compression_enabled: false,
+        use_optimized_page_manager: true,
+        ..Default::default()
+    };
 
-    // Enable optimized page manager with custom mmap config
-    config.use_optimized_page_manager = true;
+    // Customize mmap config
     if let Some(ref mut mmap_config) = config.mmap_config {
         mmap_config.enable_async_msync = false; // Disable async msync
         mmap_config.flush_interval = std::time::Duration::from_secs(60); // Longer interval

@@ -41,14 +41,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "-".repeat(65));
 
     // Absolute minimal - direct B+Tree writes
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 0;
-    config.compression_enabled = false;
-    config.prefetch_enabled = false;
-    config.use_improved_wal = false;
-    config.use_optimized_transactions = false;
-    config.use_optimized_page_manager = false;
-    config.mmap_config = None;
+    let mut config = LightningDbConfig {
+        cache_size: 0,
+        compression_enabled: false,
+        prefetch_enabled: false,
+        use_improved_wal: false,
+        use_optimized_transactions: false,
+        use_optimized_page_manager: false,
+        mmap_config: None,
+        ..Default::default()
+    };
     bench_config("Minimal (B+Tree only)", config.clone())?;
 
     // Add components one by one
@@ -73,10 +75,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     bench_config("Default config", LightningDbConfig::default())?;
 
     // Optimized for writes
-    let mut write_optimized = LightningDbConfig::default();
-    write_optimized.compression_enabled = false;
-    write_optimized.cache_size = 0;
-    write_optimized.prefetch_enabled = false;
+    let write_optimized = LightningDbConfig {
+        compression_enabled: false,
+        cache_size: 0,
+        prefetch_enabled: false,
+        ..Default::default()
+    };
     bench_config("Write-optimized (no cache/comp)", write_optimized)?;
 
     Ok(())
