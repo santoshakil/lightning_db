@@ -1,0 +1,194 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  ios-build:
+    name: iOS Build
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+    
+    - name: Install cargo-lipo
+      run: cargo install cargo-lipo
+    
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: ios-build
+    
+    - name: Build iOS libraries
+      run: |
+        cd lightning_db_ffi
+        # Build for iOS devices
+        cargo lipo --release --targets aarch64-apple-ios
+        # Build for iOS simulator
+        cargo build --release --target aarch64-apple-ios-sim
+        cargo build --release --target x86_64-apple-ios
+    
+    - name: Create XCFramework
+      run: |
+        cd lightning_db_ffi
+        
+        # Create directories
+        mkdir -p build/ios-arm64
+        mkdir -p build/ios-sim-arm64
+        mkdir -p build/ios-sim-x86_64
+        
+        # Copy libraries
+        cp target/aarch64-apple-ios/release/liblightning_db_ffi.a build/ios-arm64/
+        cp target/aarch64-apple-ios-sim/release/liblightning_db_ffi.a build/ios-sim-arm64/
+        cp target/x86_64-apple-ios/release/liblightning_db_ffi.a build/ios-sim-x86_64/
+        
+        # Create fat library for simulator
+        lipo -create \
+          build/ios-sim-arm64/liblightning_db_ffi.a \
+          build/ios-sim-x86_64/liblightning_db_ffi.a \
+          -output build/liblightning_db_ffi_sim.a
+        
+        # Create XCFramework
+        xcodebuild -create-xcframework \
+          -library build/ios-arm64/liblightning_db_ffi.a \
+          -library build/liblightning_db_ffi_sim.a \
+          -output LightningDB.xcframework
+    
+    - name: Upload XCFramework
+      uses: actions/upload-artifact@v4
+      with:
+        name: LightningDB-xcframework
+        path: lightning_db_ffi/LightningDB.xcframework
+        
+  ios-flutter-test:
+    name: iOS Flutter Test
+    runs-on: macos-latest
+    needs: ios-build
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.22.0'
+        channel: 'stable'
+        
+    - name: Download XCFramework
+      uses: actions/download-artifact@v4
+      with:
+        name: LightningDB-xcframework
+        path: packages/lightning_db/ios/
+        
+    - name: Setup iOS environment
+      run: |
+        cd packages/lightning_db/example
+        flutter pub get
+        cd ios
+        pod install
+        
+    - name: List available simulators
+      run: xcrun simctl list devices
+      
+    - name: Start iOS Simulator
+      run: |
+        # Boot iPhone 15 simulator
+        DEVICE_ID=$(xcrun simctl list devices | grep "iPhone 15 (" | grep -v "Pro" | head -1 | awk -F'[()]' '{print $2}')
+        echo "Starting simulator with ID: $DEVICE_ID"
+        xcrun simctl boot $DEVICE_ID || true
+        xcrun simctl bootstatus $DEVICE_ID -b
+        
+    - name: Run Flutter tests on iOS
+      run: |
+        cd packages/lightning_db/example
+        flutter test integration_test/integration_test.dart
+        
+    - name: Build iOS app
+      run: |
+        cd packages/lightning_db/example
+        flutter build ios --simulator --no-codesign
+        
+  ios-example-app:
+    name: iOS Example App
+    runs-on: macos-latest
+    needs: ios-build
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+        
+    - name: Download XCFramework
+      uses: actions/download-artifact@v4
+      with:
+        name: LightningDB-xcframework
+        path: examples/ios/LightningDBExample/
+        
+    - name: Build iOS example app
+      run: |
+        cd examples/ios/LightningDBExample
+        xcodebuild -project LightningDBExample.xcodeproj \
+          -scheme LightningDBExample \
+          -sdk iphonesimulator \
+          -configuration Release \
+          -derivedDataPath build \
+          build
+          
+  ios-release:
+    name: iOS Release Build
+    runs-on: macos-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [ios-build, ios-flutter-test]
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download XCFramework
+      uses: actions/download-artifact@v4
+      with:
+        name: LightningDB-xcframework
+        path: ./
+        
+    - name: Create CocoaPods package
+      run: |
+        # Create podspec
+        cat > LightningDB.podspec << 'EOF'
+        Pod::Spec.new do |s|
+          s.name             = 'LightningDB'
+          s.version          = ENV['GITHUB_REF_NAME'] || '0.1.0'
+          s.summary          = 'High-performance embedded database for iOS'
+          s.description      = <<-DESC
+            Lightning DB is a blazing-fast embedded database written in Rust
+            with native iOS support via XCFramework.
+          DESC
+          s.homepage         = 'https://github.com/santoshakil/lightning_db'
+          s.license          = { :type => 'MIT', :file => 'LICENSE' }
+          s.author           = { 'Lightning DB Team' => 'team@lightningdb.dev' }
+          s.source           = { :git => 'https://github.com/santoshakil/lightning_db.git', :tag => s.version.to_s }
+          
+          s.ios.deployment_target = '13.0'
+          s.swift_version = '5.0'
+          
+          s.vendored_frameworks = 'LightningDB.xcframework'
+          s.pod_target_xcconfig = { 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
+          s.user_target_xcconfig = { 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
+        end
+        EOF
+        
+        # Create package
+        zip -r LightningDB-iOS-${{ github.ref_name }}.zip LightningDB.xcframework LightningDB.podspec
+        
+    - name: Upload iOS Release
+      uses: actions/upload-artifact@v4
+      with:
+        name: LightningDB-iOS-Release
+        path: LightningDB-iOS-*.zip
