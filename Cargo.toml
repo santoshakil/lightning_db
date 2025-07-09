@@ -38,6 +38,7 @@ rand = "0.9"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "json"] }
 clap = { version = "4.5", features = ["derive"] }
 smallvec = "1.13"
+sys-info = { version = "0.9", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
