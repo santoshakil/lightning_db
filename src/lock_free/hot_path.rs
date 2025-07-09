@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 /// Lock-free hot path cache optimized for maximum performance
 pub struct HotPathCache<K: Clone + Eq + std::hash::Hash, V: Clone> {
     // Array of atomic pointers for fast access
-    slots: Box<[AtomicPtr<CacheEntry<K, V>>]>,
+    slots: Box<[Atomic<CacheEntry<K, V>>]>,
     capacity: usize,
     size: AtomicUsize,
     hits: AtomicU64,
@@ -26,7 +26,7 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> HotPathCache<K, V> {
 
         let mut slots = Vec::with_capacity(capacity);
         for _ in 0..capacity {
-            slots.push(AtomicPtr::new(ptr::null_mut()));
+            slots.push(Atomic::null());
         }
 
         Self {
@@ -43,14 +43,16 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> HotPathCache<K, V> {
         let hash = self.hash_key(key);
         let index = self.index_for(hash);
 
-        let ptr = self.slots[index].load(Ordering::Acquire);
-        if ptr.is_null() {
+        let guard = &epoch::pin();
+        let entry_ptr = self.slots[index].load(Ordering::Acquire, guard);
+        
+        if entry_ptr.is_null() {
             self.misses.fetch_add(1, Ordering::Relaxed);
             return None;
         }
 
         unsafe {
-            let entry = &*ptr;
+            let entry = entry_ptr.deref();
             if entry.hash == hash && entry.key == *key {
                 entry.access_count.fetch_add(1, Ordering::Relaxed);
                 self.hits.fetch_add(1, Ordering::Relaxed);
@@ -67,21 +69,22 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> HotPathCache<K, V> {
         let hash = self.hash_key(&key);
         let index = self.index_for(hash);
 
-        let new_entry = Box::into_raw(Box::new(CacheEntry {
+        let guard = &epoch::pin();
+        let new_entry = Owned::new(CacheEntry {
             key,
             value,
             hash,
             access_count: AtomicU64::new(1),
-        }));
+        });
 
-        let old_ptr = self.slots[index].swap(new_entry, Ordering::Release);
+        let old_entry = self.slots[index].swap(new_entry, Ordering::Release, guard);
 
-        if old_ptr.is_null() {
+        if old_entry.is_null() {
             self.size.fetch_add(1, Ordering::Relaxed);
         } else {
-            // Deallocate old entry
+            // Defer deallocation until safe
             unsafe {
-                let _ = Box::from_raw(old_ptr);
+                guard.defer_destroy(old_entry);
             }
         }
     }
@@ -116,11 +119,13 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> HotPathCache<K, V> {
 
 impl<K: Clone + Eq + std::hash::Hash, V: Clone> Drop for HotPathCache<K, V> {
     fn drop(&mut self) {
+        let guard = &epoch::pin();
         for slot in self.slots.iter() {
-            let ptr = slot.load(Ordering::Acquire);
-            if !ptr.is_null() {
+            let entry = slot.load(Ordering::Acquire, guard);
+            if !entry.is_null() {
                 unsafe {
-                    let _ = Box::from_raw(ptr);
+                    // Take ownership and drop immediately since we're in Drop
+                    let _ = entry.into_owned();
                 }
             }
         }
@@ -159,10 +164,13 @@ impl<T: Clone> WaitFreeReadBuffer<T> {
     where
         F: FnOnce(&[T]) -> R,
     {
+        let guard = &epoch::pin();
         let buffer_idx = self.active_buffer.load(Ordering::Acquire);
         let buffer_ptr = self.buffers[buffer_idx].load(Ordering::Acquire);
 
         unsafe {
+            // Buffer pointer should be valid during epoch
+            debug_assert!(!buffer_ptr.is_null(), "Buffer pointer is null");
             let buffer = &*buffer_ptr;
             f(buffer)
         }
@@ -170,6 +178,7 @@ impl<T: Clone> WaitFreeReadBuffer<T> {
 
     /// Update the buffer (not wait-free, but minimally blocking)
     pub fn update(&self, new_data: Vec<T>) {
+        let guard = &epoch::pin();
         let current_idx = self.active_buffer.load(Ordering::Acquire);
         let next_idx = 1 - current_idx;
 
@@ -185,6 +194,20 @@ impl<T: Clone> WaitFreeReadBuffer<T> {
         std::thread::yield_now(); // Give readers time to finish
         unsafe {
             let _ = Box::from_raw(old_ptr);
+        }
+    }
+}
+
+impl<T: Clone> Drop for WaitFreeReadBuffer<T> {
+    fn drop(&mut self) {
+        unsafe {
+            // Clean up both buffers
+            for buffer_ptr in &self.buffers {
+                let ptr = buffer_ptr.load(Ordering::Acquire);
+                if !ptr.is_null() {
+                    let _ = Box::from_raw(ptr);
+                }
+            }
         }
     }
 }
