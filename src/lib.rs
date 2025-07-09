@@ -90,6 +90,7 @@ pub mod replication;
 pub mod serialization;
 pub mod sharding;
 pub mod simd;
+pub mod optimizations;
 pub mod simple_batcher;
 pub mod simple_http_admin;
 pub mod statistics;
