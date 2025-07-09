@@ -36,7 +36,10 @@ fn main() {
         .get_one::<String>("port")
         .unwrap()
         .parse()
-        .expect("Invalid port number");
+        .unwrap_or_else(|_| {
+            eprintln!("Error: Invalid port number. Port must be between 0 and 65535.");
+            std::process::exit(1);
+        });
     let create = matches.get_flag("create");
 
     // Open or create database
