@@ -2,8 +2,11 @@
 // use std::path::PathBuf;
 
 fn main() {
-    // Generate protobuf code
-    prost_build::compile_protos(&["proto/database.proto"], &["proto/"]).unwrap();
+    // Generate protobuf code if protoc is available
+    if let Err(e) = prost_build::compile_protos(&["proto/database.proto"], &["proto/"]) {
+        println!("cargo:warning=Failed to compile protobuf files: {e}. Protobuf support will be disabled.");
+        println!("cargo:warning=To enable protobuf support, install protoc (protobuf compiler).");
+    }
 
     // C headers are generated in the lightning-db-ffi subdirectory via cbindgen
     // FFI implementation is complete in lightning-db-ffi/

@@ -28,8 +28,11 @@ pub enum Error {
     #[error("Transaction error: {0}")]
     Transaction(String),
 
-    #[error("Serialization error")]
-    Serialization,
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+    
+    #[error("Invalid format: {0}")]
+    InvalidFormat(String),
 
     #[error("Compression error: {0}")]
     Compression(String),
@@ -153,7 +156,8 @@ impl Error {
             Error::PageNotFound => -5,
             Error::KeyNotFound => -6,
             Error::Transaction(_) => -7,
-            Error::Serialization => -8,
+            Error::Serialization(_) => -8,
+            Error::InvalidFormat(_) => -33,
             Error::Compression(_) => -9,
             Error::Decompression(_) => -10,
             Error::Index(_) => -11,
@@ -242,20 +246,20 @@ impl<T> ErrorContext<T> for Result<T> {
 
 // Additional error conversions for common external errors
 impl From<bincode::error::EncodeError> for Error {
-    fn from(_err: bincode::error::EncodeError) -> Self {
-        Error::Serialization
+    fn from(err: bincode::error::EncodeError) -> Self {
+        Error::Serialization(err.to_string())
     }
 }
 
 impl From<bincode::error::DecodeError> for Error {
-    fn from(_err: bincode::error::DecodeError) -> Self {
-        Error::Serialization
+    fn from(err: bincode::error::DecodeError) -> Self {
+        Error::Serialization(err.to_string())
     }
 }
 
 impl From<std::string::FromUtf8Error> for Error {
-    fn from(_: std::string::FromUtf8Error) -> Self {
-        Error::Serialization
+    fn from(err: std::string::FromUtf8Error) -> Self {
+        Error::Serialization(format!("UTF-8 conversion error: {}", err))
     }
 }
 

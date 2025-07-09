@@ -2,6 +2,9 @@ pub mod recovery_fixes;
 
 pub use recovery_fixes::WALRecoveryContext;
 
+pub type LogSequenceNumber = u64;
+pub type WalEntry = WALEntry;
+
 use crate::error::{Error, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -100,6 +103,24 @@ impl WALEntry {
         copy.calculate_checksum();
         copy.checksum == self.checksum
     }
+    
+    pub fn read_from<R: std::io::Read>(reader: &mut R) -> Result<Self> {
+        // Read length prefix
+        let mut len_bytes = [0u8; 8];
+        reader.read_exact(&mut len_bytes)
+            .map_err(|e| Error::Io(e.to_string()))?;
+        let len = u64::from_le_bytes(len_bytes) as usize;
+        
+        // Read entry data
+        let mut data = vec![0u8; len];
+        reader.read_exact(&mut data)
+            .map_err(|e| Error::Io(e.to_string()))?;
+        
+        // Decode entry
+        bincode::decode_from_slice(&data, bincode::config::standard())
+            .map(|(entry, _)| entry)
+            .map_err(|e| Error::Serialization(e.to_string()))
+    }
 }
 
 /// Basic WriteAheadLog trait
@@ -168,7 +189,7 @@ impl WriteAheadLog for BasicWriteAheadLog {
 
         // Simple format: length + bincode serialized data
         let data = bincode::encode_to_vec(&entry, bincode::config::standard())
-            .map_err(|_| crate::error::Error::Serialization)?;
+            .map_err(|e| crate::error::Error::Serialization(e.to_string()))?;
 
         file.write_all(&(data.len() as u32).to_le_bytes())
             .map_err(|e| crate::error::Error::Io(e.to_string()))?;

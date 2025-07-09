@@ -10,15 +10,17 @@ use tracing;
 pub const PAGE_SIZE: usize = 4096;
 pub const MAGIC: u32 = 0x4C444200; // "LDB\0"
 
+pub type PageId = u32;
+
 #[derive(Debug, Clone)]
 pub struct Page {
-    pub id: u32,
+    pub id: PageId,
     pub data: Arc<[u8; PAGE_SIZE]>,
     pub dirty: bool,
 }
 
 impl Page {
-    pub fn new(id: u32) -> Self {
+    pub fn new(id: PageId) -> Self {
         Self {
             id,
             data: Arc::new([0u8; PAGE_SIZE]),
@@ -26,7 +28,7 @@ impl Page {
         }
     }
 
-    pub fn with_data(id: u32, data: [u8; PAGE_SIZE]) -> Self {
+    pub fn with_data(id: PageId, data: [u8; PAGE_SIZE]) -> Self {
         Self {
             id,
             data: Arc::new(data),
@@ -47,6 +49,10 @@ impl Page {
         let mut hasher = Hasher::new();
         hasher.update(&self.data[16..]); // Skip header including checksum field
         hasher.finalize()
+    }
+    
+    pub fn as_bytes(&self) -> &[u8] {
+        self.data.as_ref()
     }
 
     pub fn verify_checksum(&self) -> bool {
