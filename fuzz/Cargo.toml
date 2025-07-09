@@ -1,0 +1,20 @@
+[package]
+name = "lightning_db-fuzz"
+version = "0.0.0"
+authors = ["Lightning DB Contributors"]
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+lightning_db = { path = ".." }
+tempfile = "3"
+
+[[bin]]
+name = "unsafe_code_fuzzer"
+path = "fuzz_targets/unsafe_code_fuzzer.rs"
+test = false
+doc = false
