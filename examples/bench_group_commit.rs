@@ -11,8 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = dir.path().join("test.db");
 
     // Create database with async WAL
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = lightning_db::WalSyncMode::Async;
+    let config = LightningDbConfig {
+        wal_sync_mode: lightning_db::WalSyncMode::Async,
+        ..Default::default()
+    };
     let db = Arc::new(Database::create(&db_path, config)?);
 
     // Test 1: Single-threaded writes (baseline)

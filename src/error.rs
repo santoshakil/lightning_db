@@ -30,7 +30,7 @@ pub enum Error {
 
     #[error("Serialization error: {0}")]
     Serialization(String),
-    
+
     #[error("Invalid format: {0}")]
     InvalidFormat(String),
 

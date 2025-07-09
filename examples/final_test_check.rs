@@ -59,8 +59,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("\nTest 3: LSM Tree operations");
         let dir = tempdir()?;
-        let mut config = LightningDbConfig::default();
-        config.compression_enabled = true;
+        let config = LightningDbConfig {
+            compression_enabled: true,
+            ..Default::default()
+        };
         let db = Database::create(dir.path().join("lsm.db"), config)?;
 
         for i in 0..10 {
@@ -111,8 +113,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("\nTest 5: Sync WAL");
         let dir = tempdir()?;
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         let db = Database::create(dir.path().join("sync.db"), config)?;
 
         let start = Instant::now();

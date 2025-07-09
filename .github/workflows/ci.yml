@@ -219,19 +219,19 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         mkdir -p packages/lightning_db_dart/linux
-        cp lightning_db_ffi/target/release/liblightning_db_ffi.so packages/lightning_db_dart/linux/liblightning_db.so
+        cp lightning_db_ffi/target/release/liblightning_db_ffi.so packages/lightning_db_dart/linux/
     
     - name: Setup native libraries (macOS)
       if: matrix.os == 'macos-latest'
       run: |
         mkdir -p packages/lightning_db_dart/macos
-        cp lightning_db_ffi/target/release/liblightning_db_ffi.dylib packages/lightning_db_dart/macos/liblightning_db.dylib
+        cp lightning_db_ffi/target/release/liblightning_db_ffi.dylib packages/lightning_db_dart/macos/
     
     - name: Setup native libraries (Windows)
       if: matrix.os == 'windows-latest'
       run: |
         mkdir -p packages/lightning_db_dart/windows
-        cp lightning_db_ffi/target/release/lightning_db_ffi.dll packages/lightning_db_dart/windows/lightning_db.dll
+        cp lightning_db_ffi/target/release/lightning_db_ffi.dll packages/lightning_db_dart/windows/
       shell: bash
     
     - name: Install dependencies

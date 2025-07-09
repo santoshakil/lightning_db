@@ -103,19 +103,21 @@ impl WALEntry {
         copy.calculate_checksum();
         copy.checksum == self.checksum
     }
-    
+
     pub fn read_from<R: std::io::Read>(reader: &mut R) -> Result<Self> {
         // Read length prefix
         let mut len_bytes = [0u8; 8];
-        reader.read_exact(&mut len_bytes)
+        reader
+            .read_exact(&mut len_bytes)
             .map_err(|e| Error::Io(e.to_string()))?;
         let len = u64::from_le_bytes(len_bytes) as usize;
-        
+
         // Read entry data
         let mut data = vec![0u8; len];
-        reader.read_exact(&mut data)
+        reader
+            .read_exact(&mut data)
             .map_err(|e| Error::Io(e.to_string()))?;
-        
+
         // Decode entry
         bincode::decode_from_slice(&data, bincode::config::standard())
             .map(|(entry, _)| entry)

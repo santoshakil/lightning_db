@@ -50,7 +50,7 @@ impl Page {
         hasher.update(&self.data[16..]); // Skip header including checksum field
         hasher.finalize()
     }
-    
+
     pub fn as_bytes(&self) -> &[u8] {
         self.data.as_ref()
     }

@@ -278,8 +278,10 @@ fn test_concurrent_conflicts() -> Result<(), Box<dyn std::error::Error>> {
 fn test_resource_limits() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n6️⃣ Testing Resource Limits...");
 
-    let mut config = LightningDbConfig::default();
-    config.max_active_transactions = 10;
+    let config = LightningDbConfig {
+        max_active_transactions: 10,
+        ..Default::default()
+    };
 
     let db = Database::create("./edge_test_db/limits", config)?;
 

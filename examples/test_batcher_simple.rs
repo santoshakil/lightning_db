@@ -8,8 +8,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
     let db_path = dir.path().join("test.db");
 
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Async; // Use async to avoid sync delays
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async, // Use async to avoid sync delays
+        ..Default::default()
+    };
     let db = Arc::new(Database::create(&db_path, config)?);
 
     // Create write batcher

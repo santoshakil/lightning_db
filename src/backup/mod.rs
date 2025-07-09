@@ -513,7 +513,10 @@ impl BackupManager {
         // Check if WAL file modification time is before target timestamp
         let metadata = fs::metadata(wal_file)?;
         if let Ok(modified) = metadata.modified() {
-            let modified_timestamp = modified.duration_since(UNIX_EPOCH).unwrap_or_else(|_| Duration::from_secs(0)).as_secs();
+            let modified_timestamp = modified
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_else(|_| Duration::from_secs(0))
+                .as_secs();
             Ok(modified_timestamp <= target_timestamp)
         } else {
             Ok(true) // Include if we can't determine
@@ -682,7 +685,10 @@ impl BackupManager {
 
             // Throttle if necessary
             if throttle_bytes_per_ms < u64::MAX {
-                let elapsed_ms = start_time.elapsed().unwrap_or_else(|_| Duration::from_millis(0)).as_millis() as u64;
+                let elapsed_ms = start_time
+                    .elapsed()
+                    .unwrap_or_else(|_| Duration::from_millis(0))
+                    .as_millis() as u64;
                 let expected_bytes = elapsed_ms * throttle_bytes_per_ms;
 
                 if *bytes_copied > expected_bytes {
