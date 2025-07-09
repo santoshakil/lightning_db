@@ -7,7 +7,7 @@ use lightning_db::{Database, LightningDbConfig};
 use rand::{thread_rng, Rng};
 use std::fs;
 use std::panic;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -29,17 +29,17 @@ fn test_panic_safety() {
     // Create database and write some data
     {
         let db = create_test_db(db_path.to_str().unwrap(), LightningDbConfig::default());
-        let tx = db.begin_transaction().unwrap();
-        tx.put(b"key1", b"value1").unwrap();
-        tx.put(b"key2", b"value2").unwrap();
-        tx.commit().unwrap();
+        let tx_id = db.begin_transaction().unwrap();
+        db.put_tx(tx_id, b"key1", b"value1").unwrap();
+        db.put_tx(tx_id, b"key2", b"value2").unwrap();
+        db.commit_transaction(tx_id).unwrap();
     }
     
     // Simulate panic during transaction
     let result = panic::catch_unwind(|| {
         let db = Database::open(db_path.to_str().unwrap(), LightningDbConfig::default()).unwrap();
-        let tx = db.begin_transaction().unwrap();
-        tx.put(b"key3", b"value3").unwrap();
+        let tx_id = db.begin_transaction().unwrap();
+        db.put_tx(tx_id, b"key3", b"value3").unwrap();
         panic!("Simulated panic during transaction");
     });
     
@@ -48,10 +48,10 @@ fn test_panic_safety() {
     // Verify database is still readable and contains original data
     {
         let db = Database::open(db_path.to_str().unwrap(), LightningDbConfig::default()).unwrap();
-        let tx = db.begin_transaction().unwrap();
-        assert_eq!(tx.get(b"key1").unwrap(), Some(b"value1".to_vec()));
-        assert_eq!(tx.get(b"key2").unwrap(), Some(b"value2".to_vec()));
-        assert_eq!(tx.get(b"key3").unwrap(), None); // Panic'd transaction should not persist
+        let tx_id = db.begin_transaction().unwrap();
+        assert_eq!(db.get_tx(tx_id, b"key1").unwrap(), Some(b"value1".to_vec()));
+        assert_eq!(db.get_tx(tx_id, b"key2").unwrap(), Some(b"value2".to_vec()));
+        assert_eq!(db.get_tx(tx_id, b"key3").unwrap(), None); // Panic'd transaction should not persist
     }
 }
 
@@ -64,7 +64,6 @@ fn test_memory_pressure_stability() {
     // Create database with limited cache
     let mut config = LightningDbConfig::default();
     config.cache_size = 1024 * 1024; // 1MB cache
-    config.enable_mlock = false;
     
     let db = Arc::new(create_test_db(db_path.to_str().unwrap(), config));
     let barrier = Arc::new(Barrier::new(10));
@@ -89,8 +88,8 @@ fn test_memory_pressure_stability() {
                 let value = vec![i as u8; 1024]; // 1KB values
                 
                 match db.begin_transaction() {
-                    Ok(tx) => {
-                        if let Err(_) = tx.put(key.as_bytes(), &value).and_then(|_| tx.commit()) {
+                    Ok(tx_id) => {
+                        if let Err(_) = db.put_tx(tx_id, key.as_bytes(), &value).and_then(|_| db.commit_transaction(tx_id)) {
                             error_count.fetch_add(1, Ordering::Relaxed);
                         }
                     }
@@ -118,13 +117,13 @@ fn test_memory_pressure_stability() {
             let mut rng = thread_rng();
             
             while !stop.load(Ordering::Relaxed) {
-                let writer_id = rng.gen_range(0..5);
-                let key_id = rng.gen_range(0..100);
+                let writer_id = rng.random_range(0..5);
+                let key_id = rng.random_range(0..100);
                 let key = format!("key_{}_{}", writer_id, key_id);
                 
                 match db.begin_transaction() {
-                    Ok(tx) => {
-                        match tx.get(key.as_bytes()) {
+                    Ok(tx_id) => {
+                        match db.get_tx(tx_id, key.as_bytes()) {
                             Ok(Some(value)) => {
                                 // Verify value integrity
                                 if value.len() != 1024 || !value.iter().all(|&b| b == writer_id) {
@@ -167,13 +166,12 @@ fn test_memory_pressure_stability() {
 #[cfg(unix)]
 fn test_crash_recovery_kill_9() {
     use std::process::Stdio;
-    use std::io::Write;
     
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().join("crash_test.db");
     
     // Write a test program that will be killed
-    let test_program = r#"
+    let _test_program = r#"
         use lightning_db::{Database, LightningDbConfig};
         use std::time::Duration;
         use std::thread;
@@ -183,29 +181,29 @@ fn test_crash_recovery_kill_9() {
             let db = Database::open(&db_path, LightningDbConfig::default()).unwrap();
             
             // Write marker that we started
-            let tx = db.begin_transaction().unwrap();
-            tx.put(b"started", b"true").unwrap();
-            tx.commit().unwrap();
+            let tx_id = db.begin_transaction().unwrap();
+            db.put_tx(tx_id, b"started", b"true").unwrap();
+            db.commit_transaction(tx_id).unwrap();
             
             // Start a long transaction
-            let tx = db.begin_transaction().unwrap();
+            let tx_id = db.begin_transaction().unwrap();
             for i in 0..1000 {
-                tx.put(format!("key_{}", i).as_bytes(), b"value").unwrap();
+                db.put_tx(tx_id, format!("key_{}", i).as_bytes(), b"value").unwrap();
                 thread::sleep(Duration::from_millis(10));
             }
             
             // This should never complete
-            tx.put(b"completed", b"true").unwrap();
-            tx.commit().unwrap();
+            db.put_tx(tx_id, b"completed", b"true").unwrap();
+            db.commit_transaction(tx_id).unwrap();
         }
     "#;
     
     // Create initial database
     {
         let db = create_test_db(db_path.to_str().unwrap(), LightningDbConfig::default());
-        let tx = db.begin_transaction().unwrap();
-        tx.put(b"initial", b"data").unwrap();
-        tx.commit().unwrap();
+        let tx_id = db.begin_transaction().unwrap();
+        db.put_tx(tx_id, b"initial", b"data").unwrap();
+        db.commit_transaction(tx_id).unwrap();
     }
     
     // Run child process
@@ -225,20 +223,20 @@ fn test_crash_recovery_kill_9() {
     
     // Verify database can recover
     let db = Database::open(db_path.to_str().unwrap(), LightningDbConfig::default()).unwrap();
-    let tx = db.begin_transaction().unwrap();
+    let tx_id = db.begin_transaction().unwrap();
     
     // Should have initial data
-    assert_eq!(tx.get(b"initial").unwrap(), Some(b"data".to_vec()));
+    assert_eq!(db.get_tx(tx_id, b"initial").unwrap(), Some(b"data".to_vec()));
     
     // Should have started marker
-    assert_eq!(tx.get(b"started").unwrap(), Some(b"true".to_vec()));
+    assert_eq!(db.get_tx(tx_id, b"started").unwrap(), Some(b"true".to_vec()));
     
     // Should NOT have completion marker
-    assert_eq!(tx.get(b"completed").unwrap(), None);
+    assert_eq!(db.get_tx(tx_id, b"completed").unwrap(), None);
     
     // Should be able to write new data
-    tx.put(b"recovered", b"true").unwrap();
-    tx.commit().unwrap();
+    db.put_tx(tx_id, b"recovered", b"true").unwrap();
+    db.commit_transaction(tx_id).unwrap();
 }
 
 /// Test resource exhaustion handling
@@ -247,8 +245,7 @@ fn test_resource_exhaustion() {
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().join("resource_test.db");
     
-    let mut config = LightningDbConfig::default();
-    config.max_open_files = 10; // Very low limit
+    let config = LightningDbConfig::default();
     
     let db = Arc::new(create_test_db(db_path.to_str().unwrap(), config));
     let barrier = Arc::new(Barrier::new(20));
@@ -269,8 +266,8 @@ fn test_resource_exhaustion() {
                 let key = format!("key_{}_{}", i, j);
                 
                 match db.begin_transaction() {
-                    Ok(tx) => {
-                        match tx.put(key.as_bytes(), b"value").and_then(|_| tx.commit()) {
+                    Ok(tx_id) => {
+                        match db.put_tx(tx_id, key.as_bytes(), b"value").and_then(|_| db.commit_transaction(tx_id)) {
                             Ok(_) => {}
                             Err(e) => {
                                 // Resource exhaustion errors are expected
@@ -315,9 +312,9 @@ fn test_transaction_isolation_stress() {
     
     // Initialize counter
     {
-        let tx = db.begin_transaction().unwrap();
-        tx.put(b"counter", b"0").unwrap();
-        tx.commit().unwrap();
+        let tx_id = db.begin_transaction().unwrap();
+        db.put_tx(tx_id, b"counter", b"0").unwrap();
+        db.commit_transaction(tx_id).unwrap();
     }
     
     let mut handles = vec![];
@@ -332,10 +329,10 @@ fn test_transaction_isolation_stress() {
             barrier.wait();
             
             for _ in 0..100 {
-                let tx = db.begin_transaction().unwrap();
+                let tx_id = db.begin_transaction().unwrap();
                 
                 // Read current value
-                let current = match tx.get(b"counter").unwrap() {
+                let current = match db.get_tx(tx_id, b"counter").unwrap() {
                     Some(val) => {
                         let s = String::from_utf8(val).unwrap();
                         s.parse::<u64>().unwrap()
@@ -351,10 +348,10 @@ fn test_transaction_isolation_stress() {
                 
                 // Write incremented value
                 let new_val = (current + 1).to_string();
-                tx.put(b"counter", new_val.as_bytes()).unwrap();
+                db.put_tx(tx_id, b"counter", new_val.as_bytes()).unwrap();
                 
                 // Try to commit - may fail due to conflicts
-                let _ = tx.commit();
+                let _ = db.commit_transaction(tx_id);
             }
         });
         
@@ -366,8 +363,8 @@ fn test_transaction_isolation_stress() {
     }
     
     // Verify final state
-    let tx = db.begin_transaction().unwrap();
-    let final_value = match tx.get(b"counter").unwrap() {
+    let tx_id = db.begin_transaction().unwrap();
+    let final_value = match db.get_tx(tx_id, b"counter").unwrap() {
         Some(val) => {
             let s = String::from_utf8(val).unwrap();
             s.parse::<u64>().unwrap()
@@ -389,10 +386,10 @@ fn test_wal_corruption_recovery() {
     // Create database and write data
     {
         let db = create_test_db(db_path.to_str().unwrap(), LightningDbConfig::default());
-        let tx = db.begin_transaction().unwrap();
-        tx.put(b"key1", b"value1").unwrap();
-        tx.put(b"key2", b"value2").unwrap();
-        tx.commit().unwrap();
+        let tx_id = db.begin_transaction().unwrap();
+        db.put_tx(tx_id, b"key1", b"value1").unwrap();
+        db.put_tx(tx_id, b"key2", b"value2").unwrap();
+        db.commit_transaction(tx_id).unwrap();
     }
     
     // Corrupt the WAL file
@@ -412,15 +409,15 @@ fn test_wal_corruption_recovery() {
     
     // Try to open database - should recover
     let db = Database::open(db_path.to_str().unwrap(), LightningDbConfig::default()).unwrap();
-    let tx = db.begin_transaction().unwrap();
+    let tx_id = db.begin_transaction().unwrap();
     
     // Should still have data that was committed
-    assert_eq!(tx.get(b"key1").unwrap(), Some(b"value1".to_vec()));
-    assert_eq!(tx.get(b"key2").unwrap(), Some(b"value2".to_vec()));
+    assert_eq!(db.get_tx(tx_id, b"key1").unwrap(), Some(b"value1".to_vec()));
+    assert_eq!(db.get_tx(tx_id, b"key2").unwrap(), Some(b"value2".to_vec()));
     
     // Should be able to write new data
-    tx.put(b"key3", b"value3").unwrap();
-    tx.commit().unwrap();
+    db.put_tx(tx_id, b"key3", b"value3").unwrap();
+    db.commit_transaction(tx_id).unwrap();
 }
 
 /// Test rapid open/close cycles
@@ -432,9 +429,9 @@ fn test_rapid_open_close() {
     // Initial creation
     {
         let db = create_test_db(db_path.to_str().unwrap(), LightningDbConfig::default());
-        let tx = db.begin_transaction().unwrap();
-        tx.put(b"persistent", b"data").unwrap();
-        tx.commit().unwrap();
+        let tx_id = db.begin_transaction().unwrap();
+        db.put_tx(tx_id, b"persistent", b"data").unwrap();
+        db.commit_transaction(tx_id).unwrap();
     }
     
     // Rapid open/close cycles
@@ -442,13 +439,13 @@ fn test_rapid_open_close() {
         let db = Database::open(db_path.to_str().unwrap(), LightningDbConfig::default()).unwrap();
         
         // Verify data
-        let tx = db.begin_transaction().unwrap();
-        assert_eq!(tx.get(b"persistent").unwrap(), Some(b"data".to_vec()));
+        let tx_id = db.begin_transaction().unwrap();
+        assert_eq!(db.get_tx(tx_id, b"persistent").unwrap(), Some(b"data".to_vec()));
         
         // Write iteration-specific data
         let key = format!("iter_{}", i);
-        tx.put(key.as_bytes(), b"value").unwrap();
-        tx.commit().unwrap();
+        db.put_tx(tx_id, key.as_bytes(), b"value").unwrap();
+        db.commit_transaction(tx_id).unwrap();
         
         // Explicit drop
         drop(db);
@@ -456,9 +453,9 @@ fn test_rapid_open_close() {
     
     // Final verification
     let db = Database::open(db_path.to_str().unwrap(), LightningDbConfig::default()).unwrap();
-    let tx = db.begin_transaction().unwrap();
-    assert_eq!(tx.get(b"persistent").unwrap(), Some(b"data".to_vec()));
-    assert_eq!(tx.get(b"iter_99").unwrap(), Some(b"value".to_vec()));
+    let tx_id = db.begin_transaction().unwrap();
+    assert_eq!(db.get_tx(tx_id, b"persistent").unwrap(), Some(b"data".to_vec()));
+    assert_eq!(db.get_tx(tx_id, b"iter_99").unwrap(), Some(b"value".to_vec()));
 }
 
 /// Test behavior under disk space exhaustion
@@ -472,8 +469,7 @@ fn test_disk_space_exhaustion() {
     let db_path = temp_dir.path().join("disk_full_test.db");
     
     // Create a small database
-    let mut config = LightningDbConfig::default();
-    config.max_file_size = 1024 * 1024; // 1MB max
+    let config = LightningDbConfig::default();
     
     let db = create_test_db(db_path.to_str().unwrap(), config);
     
@@ -482,11 +478,11 @@ fn test_disk_space_exhaustion() {
     let mut last_error = None;
     
     for i in 0..10000 {
-        let tx = db.begin_transaction().unwrap();
+        let tx_id = db.begin_transaction().unwrap();
         let key = format!("key_{:06}", i);
         let value = vec![0u8; 1024]; // 1KB values
         
-        match tx.put(key.as_bytes(), &value).and_then(|_| tx.commit()) {
+        match db.put_tx(tx_id, key.as_bytes(), &value).and_then(|_| db.commit_transaction(tx_id)) {
             Ok(_) => write_count += 1,
             Err(e) => {
                 last_error = Some(e.to_string());
@@ -500,8 +496,8 @@ fn test_disk_space_exhaustion() {
     assert!(last_error.is_some());
     
     // Database should still be readable
-    let tx = db.begin_transaction().unwrap();
-    assert!(tx.get(b"key_000000").unwrap().is_some());
+    let tx_id = db.begin_transaction().unwrap();
+    assert!(db.get_tx(tx_id, b"key_000000").unwrap().is_some());
 }
 
 /// Main test runner

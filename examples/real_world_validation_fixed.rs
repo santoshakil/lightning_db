@@ -62,10 +62,10 @@ fn validate_cache_pattern() -> Result<(), Box<dyn std::error::Error>> {
             let mut misses = 0;
 
             for _ in 0..operations_per_thread {
-                let key_id = rng.gen_range(0..key_space);
+                let key_id = rng.random_range(0..key_space);
                 let key = format!("cache:key:{}", key_id);
 
-                if rng.gen::<f64>() < 0.9 {
+                if rng.random::<f64>() < 0.9 {
                     // Read operation
                     match db_clone.get(key.as_bytes()) {
                         Ok(Some(_)) => hits += 1,
@@ -262,7 +262,7 @@ fn validate_session_pattern() -> Result<(), Box<dyn std::error::Error>> {
 
             for i in 0..sessions_per_thread {
                 let session_id = format!("session:{}:{}", thread_id, i);
-                let user_id = rng.gen_range(1..10000);
+                let user_id = rng.random_range(1..10000);
 
                 // Create session
                 let session_data = format!(
@@ -277,7 +277,7 @@ fn validate_session_pattern() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap();
 
                 // Simulate session access pattern
-                for _ in 0..rng.gen_range(1..5) {
+                for _ in 0..rng.random_range(1..5) {
                     if let Ok(Some(data)) = db_clone.get(session_id.as_bytes()) {
                         // Update last_access
                         let updated = String::from_utf8_lossy(&data).replace(
@@ -292,7 +292,7 @@ fn validate_session_pattern() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 // Simulate session expiry
-                if rng.gen::<f64>() < 0.1 {
+                if rng.random::<f64>() < 0.1 {
                     let _ = db_clone.delete(session_id.as_bytes());
                 }
             }

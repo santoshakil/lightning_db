@@ -1,0 +1,210 @@
+name: Android Build
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+env:
+  CARGO_TERM_COLOR: always
+  NDK_VERSION: r26d
+
+jobs:
+  android-build:
+    name: Build Android Libraries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - aarch64-linux-android
+          - armv7-linux-androideabi
+          - i686-linux-android
+          - x86_64-linux-android
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.target }}
+      
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          add-to-path: true
+      
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+      
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android-${{ matrix.target }}
+      
+      - name: Build for Android
+        run: |
+          cargo ndk -t ${{ matrix.target }} build --release -p lightning_db_ffi
+      
+      - name: Verify library output
+        run: |
+          ls -la target/${{ matrix.target }}/release/*.so
+          file target/${{ matrix.target }}/release/liblightning_db_ffi.so
+      
+      - name: Upload Android library
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/liblightning_db_ffi.so
+
+  android-aar:
+    name: Build Android AAR
+    needs: android-build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all Android libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: android-*
+          path: android-libs
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      
+      - name: Create AAR structure
+        run: |
+          mkdir -p aar-build/jni/{arm64-v8a,armeabi-v7a,x86,x86_64}
+          
+          # Copy libraries to correct JNI folders
+          cp android-libs/android-aarch64-linux-android/liblightning_db_ffi.so aar-build/jni/arm64-v8a/
+          cp android-libs/android-armv7-linux-androideabi/liblightning_db_ffi.so aar-build/jni/armeabi-v7a/
+          cp android-libs/android-i686-linux-android/liblightning_db_ffi.so aar-build/jni/x86/
+          cp android-libs/android-x86_64-linux-android/liblightning_db_ffi.so aar-build/jni/x86_64/
+          
+          # Create AndroidManifest.xml
+          cat > aar-build/AndroidManifest.xml <<EOF
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.lightning_db.ffi">
+              <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
+          </manifest>
+          EOF
+          
+          # Create classes.jar (empty for native library)
+          mkdir -p aar-build/classes
+          cd aar-build/classes && jar cf ../classes.jar . && cd ../..
+          
+          # Create AAR
+          cd aar-build
+          zip -r ../lightning_db.aar .
+      
+      - name: Upload AAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: lightning_db-android-aar
+          path: lightning_db.aar
+
+  flutter-android-test:
+    name: Flutter Android Tests
+    needs: android-build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.0'
+          channel: 'stable'
+      
+      - name: Download Android libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: android-*
+          path: android-libs
+      
+      - name: Setup Android libraries for Flutter
+        run: |
+          # Create directory structure expected by Flutter
+          mkdir -p packages/lightning_db_dart/android/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86,x86_64}
+          
+          # Copy libraries
+          cp android-libs/android-aarch64-linux-android/liblightning_db_ffi.so \
+             packages/lightning_db_dart/android/src/main/jniLibs/arm64-v8a/liblightning_db.so
+          cp android-libs/android-armv7-linux-androideabi/liblightning_db_ffi.so \
+             packages/lightning_db_dart/android/src/main/jniLibs/armeabi-v7a/liblightning_db.so
+          cp android-libs/android-i686-linux-android/liblightning_db_ffi.so \
+             packages/lightning_db_dart/android/src/main/jniLibs/x86/liblightning_db.so
+          cp android-libs/android-x86_64-linux-android/liblightning_db_ffi.so \
+             packages/lightning_db_dart/android/src/main/jniLibs/x86_64/liblightning_db.so
+      
+      - name: Run Flutter tests
+        run: |
+          cd packages/lightning_db/example
+          flutter pub get
+          flutter test
+      
+      - name: Build APK
+        run: |
+          cd packages/lightning_db/example
+          flutter build apk --release
+      
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lightning_db-example-android
+          path: packages/lightning_db/example/build/app/outputs/flutter-apk/app-release.apk
+
+  android-ndk-cross-compile:
+    name: Android NDK Cross Compilation Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            host_target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            host_target: x86_64-apple-darwin
+          - os: windows-latest
+            host_target: x86_64-pc-windows-msvc
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          add-to-path: true
+      
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+      
+      - name: Test cross-compilation from ${{ matrix.os }}
+        run: |
+          cargo ndk -t aarch64-linux-android build --release -p lightning_db_ffi
+        shell: bash
+      
+      - name: Verify build
+        run: |
+          ls -la target/aarch64-linux-android/release/
+        shell: bash

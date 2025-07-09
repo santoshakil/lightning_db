@@ -514,6 +514,7 @@ impl RecoveryStats {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+    use std::collections::HashMap;
     
     #[test]
     fn test_double_write_buffer() {

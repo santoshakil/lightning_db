@@ -276,7 +276,7 @@ fn test_concurrent_operations() -> Result<TestResults, Box<dyn std::error::Error
                 let value = format!("value_{}_{}", thread_id, i);
 
                 // Mix of operations
-                match rng.gen_range(0..10) {
+                match rng.random_range(0..10) {
                     0..=5 => {
                         // 60% writes
                         if let Err(_) = db_clone.put(key.as_bytes(), value.as_bytes()) {
@@ -373,7 +373,7 @@ fn test_large_dataset() -> Result<TestResults, Box<dyn std::error::Error>> {
     let mut read_errors = 0;
 
     for _ in 0..read_count {
-        let random_key = format!("large_dataset_key_{:08}", rng.gen_range(0..num_records));
+        let random_key = format!("large_dataset_key_{:08}", rng.random_range(0..num_records));
         match db.get(random_key.as_bytes()) {
             Ok(Some(value)) => {
                 if value.len() != value_size {
@@ -572,7 +572,7 @@ fn test_data_integrity_stress() -> Result<TestResults, Box<dyn std::error::Error
     let verify_handle = thread::spawn(move || {
         let mut rng = StdRng::seed_from_u64(12345);
         while !stop_clone.load(Ordering::Relaxed) {
-            let random_key = format!("integrity_{:06}", rng.gen_range(0..num_keys));
+            let random_key = format!("integrity_{:06}", rng.random_range(0..num_keys));
 
             match db_clone.get(random_key.as_bytes()) {
                 Ok(Some(value)) => {
@@ -767,13 +767,13 @@ fn test_transaction_consistency() -> Result<TestResults, Box<dyn std::error::Err
             let mut rng = StdRng::seed_from_u64(thread_id as u64);
 
             for _ in 0..transfers_per_thread {
-                let from_account = rng.gen_range(0..num_accounts);
-                let mut to_account = rng.gen_range(0..num_accounts);
+                let from_account = rng.random_range(0..num_accounts);
+                let mut to_account = rng.random_range(0..num_accounts);
                 while to_account == from_account {
-                    to_account = rng.gen_range(0..num_accounts);
+                    to_account = rng.random_range(0..num_accounts);
                 }
 
-                let transfer_amount = rng.gen_range(1..100);
+                let transfer_amount = rng.random_range(1..100);
 
                 // Perform transfer transaction
                 match transfer_money(&db_clone, from_account, to_account, transfer_amount) {

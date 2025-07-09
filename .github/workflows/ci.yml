@@ -134,9 +134,10 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
     
-    - uses: dart-lang/setup-dart@v1
+    - uses: subosito/flutter-action@v2
       with:
-        sdk: stable
+        flutter-version: '3.22.0'
+        channel: 'stable'
     
     - name: Build FFI library
       run: |
@@ -148,7 +149,7 @@ jobs:
       run: |
         # Copy Linux library
         mkdir -p packages/lightning_db_dart/linux
-        cp target/release/liblightning_db.so packages/lightning_db_dart/linux/ || true
+        cp lightning_db_ffi/target/release/liblightning_db_ffi.so packages/lightning_db_dart/linux/liblightning_db.so || true
         
         # Create dummy libraries for analysis (not execution)
         mkdir -p packages/lightning_db_dart/macos
@@ -163,7 +164,7 @@ jobs:
         cd ../lightning_db_freezed
         dart pub get
         cd ../lightning_db
-        dart pub get
+        flutter pub get
     
     - name: Analyze Dart code
       run: |
@@ -172,7 +173,7 @@ jobs:
         cd ../lightning_db_freezed
         dart analyze
         cd ../lightning_db
-        dart analyze
+        flutter analyze
 
   flutter-test:
     name: Flutter Tests
@@ -218,19 +219,19 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         mkdir -p packages/lightning_db_dart/linux
-        cp target/release/liblightning_db.so packages/lightning_db_dart/linux/
+        cp lightning_db_ffi/target/release/liblightning_db_ffi.so packages/lightning_db_dart/linux/liblightning_db.so
     
     - name: Setup native libraries (macOS)
       if: matrix.os == 'macos-latest'
       run: |
         mkdir -p packages/lightning_db_dart/macos
-        cp target/release/liblightning_db.dylib packages/lightning_db_dart/macos/
+        cp lightning_db_ffi/target/release/liblightning_db_ffi.dylib packages/lightning_db_dart/macos/liblightning_db.dylib
     
     - name: Setup native libraries (Windows)
       if: matrix.os == 'windows-latest'
       run: |
         mkdir -p packages/lightning_db_dart/windows
-        cp target/release/lightning_db.dll packages/lightning_db_dart/windows/
+        cp lightning_db_ffi/target/release/lightning_db_ffi.dll packages/lightning_db_dart/windows/lightning_db.dll
       shell: bash
     
     - name: Install dependencies
@@ -330,3 +331,45 @@ jobs:
         cargo build --release
         cargo test --release
       shell: bash
+
+  android-build:
+    name: Android Build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+    
+    - name: Setup Android NDK
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r26d
+        add-to-path: true
+    
+    - name: Install cargo-ndk
+      run: cargo install cargo-ndk
+    
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: android-build
+    
+    - name: Build for all Android targets
+      run: |
+        cargo ndk -t aarch64-linux-android build --release -p lightning_db_ffi
+        cargo ndk -t armv7-linux-androideabi build --release -p lightning_db_ffi
+        cargo ndk -t i686-linux-android build --release -p lightning_db_ffi
+        cargo ndk -t x86_64-linux-android build --release -p lightning_db_ffi
+    
+    - name: Verify Android libraries
+      run: |
+        echo "ARM64 library:"
+        ls -la target/aarch64-linux-android/release/liblightning_db_ffi.so
+        echo "ARMv7 library:"
+        ls -la target/armv7-linux-androideabi/release/liblightning_db_ffi.so
+        echo "x86 library:"
+        ls -la target/i686-linux-android/release/liblightning_db_ffi.so
+        echo "x86_64 library:"
+        ls -la target/x86_64-linux-android/release/liblightning_db_ffi.so
