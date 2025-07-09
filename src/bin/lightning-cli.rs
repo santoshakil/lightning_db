@@ -304,7 +304,10 @@ fn run_command(matches: ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
         Some(("compact", sub_matches)) => cmd_compact(sub_matches),
         Some(("bench", sub_matches)) => cmd_bench(sub_matches),
         Some(("check", sub_matches)) => cmd_check(sub_matches),
-        _ => unreachable!(),
+        _ => {
+            eprintln!("Error: Unknown command. Use --help to see available commands.");
+            std::process::exit(1);
+        }
     }
 }
 

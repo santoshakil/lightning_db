@@ -46,12 +46,12 @@ impl FileGuard {
         }
     }
 
-    pub fn file(&self) -> &std::fs::File {
-        self.file.as_ref().expect("File already closed")
+    pub fn file(&self) -> Option<&std::fs::File> {
+        self.file.as_ref()
     }
 
-    pub fn file_mut(&mut self) -> &mut std::fs::File {
-        self.file.as_mut().expect("File already closed")
+    pub fn file_mut(&mut self) -> Option<&mut std::fs::File> {
+        self.file.as_mut()
     }
 
     pub fn close(&mut self) -> std::io::Result<()> {
