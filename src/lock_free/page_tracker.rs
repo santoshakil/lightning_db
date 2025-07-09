@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 /// Lock-free page allocation tracker
-/// Replaces RwLock<HashSet<u32>> for free page tracking
+/// Replaces `RwLock<HashSet<u32>>` for free page tracking
 pub struct LockFreePageTracker {
     // Free pages stored in a lock-free queue
     free_pages: Arc<SegQueue<u32>>,

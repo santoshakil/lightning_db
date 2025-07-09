@@ -68,7 +68,7 @@ impl Key {
         !self.0.spilled()
     }
 
-    /// Convert to owned Vec<u8>
+    /// Convert to owned `Vec<u8>`
     #[inline]
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.to_vec()

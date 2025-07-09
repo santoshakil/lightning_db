@@ -26,7 +26,7 @@ impl LockUtils {
         })
     }
 
-    /// Try to acquire a read lock on an Arc<RwLock<T>> with retry
+    /// Try to acquire a read lock on an `Arc<RwLock<T>>` with retry
     pub fn arc_read_with_retry<T>(lock: &Arc<RwLock<T>>) -> Result<RwLockReadGuard<T>> {
         RetryableOperations::lock_operation(|| {
             lock.try_read().ok_or_else(|| Error::LockFailed {
@@ -35,7 +35,7 @@ impl LockUtils {
         })
     }
 
-    /// Try to acquire a write lock on an Arc<RwLock<T>> with retry
+    /// Try to acquire a write lock on an `Arc<RwLock<T>>` with retry
     pub fn arc_write_with_retry<T>(lock: &Arc<RwLock<T>>) -> Result<RwLockWriteGuard<T>> {
         RetryableOperations::lock_operation(|| {
             lock.try_write().ok_or_else(|| Error::LockFailed {
@@ -106,7 +106,7 @@ impl<T> RwLockExt<T> for RwLock<T> {
     }
 }
 
-/// Extension trait for Arc<RwLock<T>> to add retry methods
+/// Extension trait for `Arc<RwLock<T>>` to add retry methods
 pub trait ArcRwLockExt<T> {
     fn read_retry(&self) -> Result<RwLockReadGuard<T>>;
     fn write_retry(&self) -> Result<RwLockWriteGuard<T>>;
