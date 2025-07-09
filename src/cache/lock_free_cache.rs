@@ -136,28 +136,27 @@ impl LockFreeCache {
             if let Some(&page_id) = access_order.get(hand) {
                 drop(access_order); // Release read lock
 
-                if let Some(entry) = self.cache.get(&page_id) {
-                    let cached_page = entry.value();
+                // Use remove_if to atomically check and remove
+                let removed = self.cache.remove_if(&page_id, |_key, cached_page| {
                     let access_count = cached_page.access_count.load(Ordering::Relaxed);
-
                     if access_count == 0 {
-                        // Found a victim - remove it
-                        drop(entry); // Release the entry reference
-
-                        if self.cache.remove(&page_id).is_some() {
-                            self.size.fetch_sub(1, Ordering::Relaxed);
-                            self.stats.record_eviction();
-
-                            // Remove from access order
-                            let mut access_order_mut = self.access_order.write();
-                            access_order_mut.retain(|&id| id != page_id);
-
-                            return Ok(());
-                        }
+                        true // Remove this entry
                     } else {
                         // Give it a second chance - decrement reference count
                         cached_page.access_count.fetch_sub(1, Ordering::Relaxed);
+                        false // Don't remove
                     }
+                });
+
+                if removed.is_some() {
+                    self.size.fetch_sub(1, Ordering::Relaxed);
+                    self.stats.record_eviction();
+
+                    // Remove from access order
+                    let mut access_order_mut = self.access_order.write();
+                    access_order_mut.retain(|&id| id != page_id);
+
+                    return Ok(());
                 }
             }
 
