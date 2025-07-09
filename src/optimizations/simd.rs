@@ -1,3 +1,4 @@
+#[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
 /// SIMD-optimized operations for high-performance database operations
@@ -5,6 +6,7 @@ pub struct SimdOps;
 
 impl SimdOps {
     /// Compare two byte arrays using SIMD instructions for maximum speed
+    #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse4.2")]
     #[inline]
     pub unsafe fn compare_keys_simd(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
@@ -50,6 +52,7 @@ impl SimdOps {
     }
     
     /// Fast checksum calculation using SIMD CRC32 instructions
+    #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse4.2")]
     #[inline]
     pub unsafe fn crc32_simd(data: &[u8]) -> u32 {
@@ -80,6 +83,7 @@ impl SimdOps {
     }
     
     /// Vectorized memory operations for bulk data movement
+    #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
     #[inline]
     pub unsafe fn bulk_copy_avx2(src: &[u8], dst: &mut [u8]) {
@@ -110,6 +114,7 @@ impl SimdOps {
     }
     
     /// SIMD-accelerated search for key prefixes
+    #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse4.2")]
     #[inline]
     pub unsafe fn search_prefix_simd(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -149,6 +154,7 @@ impl SimdOps {
     }
     
     /// High-performance hash calculation using SIMD
+    #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
     #[inline]
     pub unsafe fn hash_simd(data: &[u8], seed: u64) -> u64 {
@@ -182,6 +188,7 @@ impl SimdOps {
     }
     
     /// Parallel compression ratio estimation using SIMD
+    #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
     #[inline]
     pub unsafe fn estimate_compression_ratio_simd(data: &[u8]) -> f32 {

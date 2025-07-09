@@ -1,5 +1,6 @@
 use lightning_db::optimizations::*;
-use lightning_db::optimizations::simd_ops;
+use lightning_db::optimizations::simd::safe as simd_ops;
+use lightning_db::optimizations::cache_friendly::CacheFriendlyLRU;
 use std::time::Instant;
 use rand::Rng;
 
@@ -117,7 +118,7 @@ fn benchmark_memory_layout() {
     println!("B-tree node insertions: {:?} (1k ops)", insert_time);
     
     // Test object pool
-    let mut pool = ObjectPool::new(|| Vec::with_capacity(1024), 100);
+    let mut pool = ObjectPool::new(|| Vec::<u8>::with_capacity(1024), 100);
     let start = Instant::now();
     
     for _ in 0..10000 {
@@ -129,7 +130,7 @@ fn benchmark_memory_layout() {
     println!("Object pool operations: {:?} (10k get/return cycles)", pool_time);
     
     // Test memory-mapped buffer
-    let mut buffer = MappedBuffer::new(1024 * 1024).unwrap();
+    let buffer = MappedBuffer::new(1024 * 1024).unwrap();
     let start = Instant::now();
     
     for i in 0..1000 {
@@ -208,7 +209,7 @@ fn benchmark_cache_friendly_algorithms() {
     println!("Boyer-Moore search: {:?} (found {} matches)", search_time, matches.len());
     
     // Test cache-friendly LRU
-    let mut lru = CacheFriendlyAlgorithms::CacheFriendlyLRU::new(1000);
+    let mut lru = CacheFriendlyLRU::new(1000);
     let start = Instant::now();
     
     for i in 0..10000 {
@@ -309,7 +310,7 @@ fn benchmark_workload_configurations() {
             WorkloadType::WriteHeavy => {
                 // Simulate write-heavy workload
                 for i in 0..1000 {
-                    let node = manager.get_btree_node();
+                    let mut node = manager.get_btree_node();
                     let key = format!("key_{}", i);
                     let _ = node.insert_key_value(key.as_bytes(), i as u64);
                     manager.return_btree_node(node);
@@ -322,7 +323,7 @@ fn benchmark_workload_configurations() {
                     let _ = manager.calculate_hash(key.as_bytes(), 42);
                     
                     if i % 10 == 0 {
-                        let node = manager.get_btree_node();
+                        let mut node = manager.get_btree_node();
                         let _ = node.insert_key_value(key.as_bytes(), i as u64);
                         manager.return_btree_node(node);
                     }

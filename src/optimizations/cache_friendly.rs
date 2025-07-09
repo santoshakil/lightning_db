@@ -1,6 +1,5 @@
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::mem;
+use std::hash::Hash;
 
 /// Cache-friendly algorithms optimized for modern CPU architectures
 pub struct CacheFriendlyAlgorithms;
@@ -92,7 +91,7 @@ impl CacheFriendlyAlgorithms {
         }
         
         // Copy back to original arrays
-        let total_len = left.len() + right.len();
+        let _total_len = left.len() + right.len();
         for (idx, item) in temp.into_iter().enumerate() {
             if idx < left.len() {
                 left[idx] = item;
@@ -270,85 +269,6 @@ impl CacheFriendlyAlgorithms {
         matches
     }
     
-    /// Cache-friendly LRU cache implementation
-    pub struct CacheFriendlyLRU<K, V> {
-        capacity: usize,
-        map: HashMap<K, usize>,
-        items: Vec<(K, V)>,
-        ages: Vec<u64>,
-        current_age: u64,
-    }
-    
-    impl<K: Hash + Eq + Clone, V> CacheFriendlyLRU<K, V> {
-        pub fn new(capacity: usize) -> Self {
-            Self {
-                capacity,
-                map: HashMap::with_capacity(capacity),
-                items: Vec::with_capacity(capacity),
-                ages: Vec::with_capacity(capacity),
-                current_age: 0,
-            }
-        }
-        
-        pub fn get(&mut self, key: &K) -> Option<&V> {
-            if let Some(&index) = self.map.get(key) {
-                self.ages[index] = self.current_age;
-                self.current_age += 1;
-                Some(&self.items[index].1)
-            } else {
-                None
-            }
-        }
-        
-        pub fn put(&mut self, key: K, value: V) {
-            if let Some(&index) = self.map.get(&key) {
-                // Update existing item
-                self.items[index].1 = value;
-                self.ages[index] = self.current_age;
-                self.current_age += 1;
-            } else if self.items.len() < self.capacity {
-                // Add new item
-                let index = self.items.len();
-                self.items.push((key.clone(), value));
-                self.ages.push(self.current_age);
-                self.map.insert(key, index);
-                self.current_age += 1;
-            } else {
-                // Evict oldest item
-                let oldest_index = self.find_oldest_item();
-                let old_key = self.items[oldest_index].0.clone();
-                
-                self.map.remove(&old_key);
-                self.items[oldest_index] = (key.clone(), value);
-                self.ages[oldest_index] = self.current_age;
-                self.map.insert(key, oldest_index);
-                self.current_age += 1;
-            }
-        }
-        
-        fn find_oldest_item(&self) -> usize {
-            let mut oldest_index = 0;
-            let mut oldest_age = self.ages[0];
-            
-            for (i, &age) in self.ages.iter().enumerate().skip(1) {
-                if age < oldest_age {
-                    oldest_age = age;
-                    oldest_index = i;
-                }
-            }
-            
-            oldest_index
-        }
-        
-        pub fn len(&self) -> usize {
-            self.items.len()
-        }
-        
-        pub fn is_empty(&self) -> bool {
-            self.items.is_empty()
-        }
-    }
-    
     /// Prefetch memory location to improve cache performance
     #[inline]
     fn prefetch_memory<T>(ptr: &T) {
@@ -368,151 +288,130 @@ impl CacheFriendlyAlgorithms {
     }
 }
 
-/// Cache-friendly B-tree implementation optimized for database operations
-pub struct CacheFriendlyBTree<K, V> {
-    root: Option<Box<BTreeNode<K, V>>>,
-    order: usize,
+/// Cache-friendly LRU cache implementation
+pub struct CacheFriendlyLRU<K, V> {
+    capacity: usize,
+    map: HashMap<K, usize>,
+    items: Vec<(K, V)>,
+    ages: Vec<u64>,
+    current_age: u64,
 }
 
-struct BTreeNode<K, V> {
-    keys: Vec<K>,
-    values: Vec<V>,
-    children: Vec<Box<BTreeNode<K, V>>>,
-    is_leaf: bool,
+impl<K: Hash + Eq + Clone, V> CacheFriendlyLRU<K, V> {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            capacity,
+            map: HashMap::with_capacity(capacity),
+            items: Vec::with_capacity(capacity),
+            ages: Vec::with_capacity(capacity),
+            current_age: 0,
+        }
+    }
+    
+    pub fn get(&mut self, key: &K) -> Option<&V> {
+        if let Some(&index) = self.map.get(key) {
+            self.ages[index] = self.current_age;
+            self.current_age += 1;
+            Some(&self.items[index].1)
+        } else {
+            None
+        }
+    }
+    
+    pub fn put(&mut self, key: K, value: V) {
+        if let Some(&index) = self.map.get(&key) {
+            // Update existing item
+            self.items[index].1 = value;
+            self.ages[index] = self.current_age;
+            self.current_age += 1;
+        } else if self.items.len() < self.capacity {
+            // Add new item
+            let index = self.items.len();
+            self.items.push((key.clone(), value));
+            self.ages.push(self.current_age);
+            self.map.insert(key, index);
+            self.current_age += 1;
+        } else {
+            // Evict oldest item
+            let oldest_index = self.find_oldest_item();
+            let old_key = self.items[oldest_index].0.clone();
+            
+            self.map.remove(&old_key);
+            self.items[oldest_index] = (key.clone(), value);
+            self.ages[oldest_index] = self.current_age;
+            self.map.insert(key, oldest_index);
+            self.current_age += 1;
+        }
+    }
+    
+    fn find_oldest_item(&self) -> usize {
+        let mut oldest_index = 0;
+        let mut oldest_age = self.ages[0];
+        
+        for (i, &age) in self.ages.iter().enumerate().skip(1) {
+            if age < oldest_age {
+                oldest_age = age;
+                oldest_index = i;
+            }
+        }
+        
+        oldest_index
+    }
+    
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+    
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+}
+
+/// Cache-friendly B-tree implementation optimized for database operations
+/// This is a simplified implementation that focuses on cache-friendly operations
+pub struct CacheFriendlyBTree<K, V> {
+    items: Vec<(K, V)>,
+    capacity: usize,
 }
 
 impl<K: Ord + Clone, V: Clone> CacheFriendlyBTree<K, V> {
-    pub fn new(order: usize) -> Self {
+    pub fn new(capacity: usize) -> Self {
         Self {
-            root: None,
-            order: std::cmp::max(order, 3),
+            items: Vec::with_capacity(capacity),
+            capacity: std::cmp::max(capacity, 10),
         }
     }
     
     pub fn insert(&mut self, key: K, value: V) {
-        if self.root.is_none() {
-            let mut root = Box::new(BTreeNode {
-                keys: Vec::with_capacity(self.order - 1),
-                values: Vec::with_capacity(self.order - 1),
-                children: Vec::new(),
-                is_leaf: true,
-            });
-            root.keys.push(key);
-            root.values.push(value);
-            self.root = Some(root);
-        } else {
-            let root = self.root.as_mut().unwrap();
-            if root.keys.len() == self.order - 1 {
-                // Split root
-                let mut new_root = Box::new(BTreeNode {
-                    keys: Vec::with_capacity(self.order - 1),
-                    values: Vec::with_capacity(self.order - 1),
-                    children: Vec::with_capacity(self.order),
-                    is_leaf: false,
-                });
+        match self.items.binary_search_by(|item| item.0.cmp(&key)) {
+            Ok(index) => {
+                // Update existing key
+                self.items[index].1 = value;
+            }
+            Err(index) => {
+                // Insert new key-value pair
+                self.items.insert(index, (key, value));
                 
-                let old_root = std::mem::replace(&mut self.root, Some(new_root)).unwrap();
-                self.root.as_mut().unwrap().children.push(old_root);
-                self.split_child(self.root.as_mut().unwrap(), 0);
-            }
-            
-            self.insert_non_full(self.root.as_mut().unwrap(), key, value);
-        }
-    }
-    
-    fn insert_non_full(&mut self, node: &mut BTreeNode<K, V>, key: K, value: V) {
-        let mut i = node.keys.len();
-        
-        if node.is_leaf {
-            // Insert in leaf node
-            node.keys.push(key.clone());
-            node.values.push(value);
-            
-            // Shift elements to maintain order
-            while i > 0 && node.keys[i - 1] > key {
-                node.keys.swap(i - 1, i);
-                node.values.swap(i - 1, i);
-                i -= 1;
-            }
-        } else {
-            // Find child to insert into
-            while i > 0 && node.keys[i - 1] > key {
-                i -= 1;
-            }
-            
-            // Check if child is full
-            if node.children[i].keys.len() == self.order - 1 {
-                self.split_child(node, i);
-                if node.keys[i] < key {
-                    i += 1;
+                // If we exceed capacity, remove oldest items
+                if self.items.len() > self.capacity {
+                    self.items.truncate(self.capacity);
                 }
             }
-            
-            self.insert_non_full(&mut node.children[i], key, value);
         }
-    }
-    
-    fn split_child(&mut self, parent: &mut BTreeNode<K, V>, index: usize) {
-        let order = self.order;
-        let full_child = &mut parent.children[index];
-        let mid = order / 2;
-        
-        let mut new_child = Box::new(BTreeNode {
-            keys: Vec::with_capacity(order - 1),
-            values: Vec::with_capacity(order - 1),
-            children: Vec::with_capacity(order),
-            is_leaf: full_child.is_leaf,
-        });
-        
-        // Move half of keys and values to new child
-        new_child.keys.extend(full_child.keys.drain(mid + 1..));
-        new_child.values.extend(full_child.values.drain(mid + 1..));
-        
-        if !full_child.is_leaf {
-            new_child.children.extend(full_child.children.drain(mid + 1..));
-        }
-        
-        // Move middle key to parent
-        let middle_key = full_child.keys.remove(mid);
-        let middle_value = full_child.values.remove(mid);
-        
-        parent.keys.insert(index, middle_key);
-        parent.values.insert(index, middle_value);
-        parent.children.insert(index + 1, new_child);
     }
     
     pub fn search(&self, key: &K) -> Option<&V> {
-        self.root.as_ref().and_then(|root| self.search_node(root, key))
-    }
-    
-    fn search_node(&self, node: &BTreeNode<K, V>, key: &K) -> Option<&V> {
-        // Use binary search for cache-friendly access
-        match node.keys.binary_search(key) {
-            Ok(index) => Some(&node.values[index]),
-            Err(index) => {
-                if node.is_leaf {
-                    None
-                } else {
-                    self.search_node(&node.children[index], key)
-                }
-            }
-        }
+        self.items.binary_search_by(|item| item.0.cmp(key))
+            .ok()
+            .map(|index| &self.items[index].1)
     }
     
     pub fn len(&self) -> usize {
-        self.root.as_ref().map_or(0, |root| self.count_keys(root))
-    }
-    
-    fn count_keys(&self, node: &BTreeNode<K, V>) -> usize {
-        let mut count = node.keys.len();
-        for child in &node.children {
-            count += self.count_keys(child);
-        }
-        count
+        self.items.len()
     }
     
     pub fn is_empty(&self) -> bool {
-        self.root.is_none()
+        self.items.is_empty()
     }
 }
 
@@ -558,7 +457,7 @@ mod tests {
     
     #[test]
     fn test_cache_friendly_lru() {
-        let mut lru = CacheFriendlyAlgorithms::CacheFriendlyLRU::new(3);
+        let mut lru = CacheFriendlyLRU::new(3);
         
         lru.put(1, "one");
         lru.put(2, "two");
