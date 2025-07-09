@@ -102,10 +102,9 @@ fn test_optimized_page_manager_performance() {
     let sync_duration = sync_start.elapsed();
 
     // Read pages back in random order
-    use rand::rng;
-    use rand::seq::SliceRandom;
+    use rand::{thread_rng, seq::SliceRandom};
 
-    let mut rng = rng();
+    let mut rng = thread_rng();
     page_ids.shuffle(&mut rng);
 
     let read_start = Instant::now();

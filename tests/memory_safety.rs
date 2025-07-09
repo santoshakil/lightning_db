@@ -60,9 +60,9 @@ fn test_transaction_cleanup() {
     {
         let db = Database::open(&db_path, config).unwrap();
 
-        let tx = db.begin_transaction().unwrap();
-        db.put_tx(tx, b"test", b"value").unwrap();
-        db.commit_transaction(tx).unwrap();
+        let tx_id = db.begin_transaction().unwrap();
+        db.put_tx(tx_id, b"test", b"value").unwrap();
+        db.commit_transaction(tx_id).unwrap();
 
         // Verify the write
         assert_eq!(db.get(b"test").unwrap(), Some(b"value".to_vec()));

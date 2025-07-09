@@ -4,10 +4,9 @@
 use lightning_db::{Database, LightningDbConfig, WalSyncMode};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::collections::HashMap;
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tempfile::TempDir;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -89,14 +88,14 @@ fn test_ecommerce_workload() -> Result<(), Box<dyn std::error::Error>> {
     let mut read_count = 0;
 
     for _ in 0..50_000 {
-        if rng.gen_bool(0.9) {
+        if rng.random_bool(0.9) {
             // Product lookup
-            let product_id = rng.gen_range(0..num_products);
+            let product_id = rng.random_range(0..num_products);
             let key = format!("product:{}", product_id);
             let _ = db.get(key.as_bytes())?;
         } else {
             // Category listing (range scan simulation)
-            let category = rng.gen_range(0..num_categories);
+            let category = rng.random_range(0..num_categories);
             let prefix = format!("category:{}:", category);
 
             // Simulate scanning first 20 products in category
@@ -236,7 +235,7 @@ fn test_session_store() -> Result<(), Box<dyn std::error::Error>> {
 
             for i in 0u32..sessions_per_thread {
                 let session_id = format!("session:{}:{}", thread_id, i);
-                let user_id = rng.gen_range(1..10000);
+                let user_id = rng.random_range(1..10000);
 
                 // Create session
                 let session_data = format!(
@@ -244,8 +243,8 @@ fn test_session_store() -> Result<(), Box<dyn std::error::Error>> {
                     user_id,
                     Instant::now().elapsed().as_secs(),
                     Instant::now().elapsed().as_secs(),
-                    rng.gen_range(0..10),
-                    rng.gen_range(1..100)
+                    rng.random_range(0..10),
+                    rng.random_range(1..100)
                 );
 
                 if db_clone
@@ -256,17 +255,17 @@ fn test_session_store() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 // Random reads (session lookups)
-                if rng.gen_bool(0.7) {
+                if rng.random_bool(0.7) {
                     let random_session = format!(
                         "session:{}:{}",
-                        rng.gen_range(0..num_threads),
-                        rng.gen_range(0..i.max(1))
+                        rng.random_range(0..num_threads),
+                        rng.random_range(0..i.max(1))
                     );
                     let _ = db_clone.get(random_session.as_bytes());
                 }
 
                 // Occasional deletes (session expiry)
-                if rng.gen_bool(0.1) {
+                if rng.random_bool(0.1) {
                     let old_session = format!("session:{}:{}", thread_id, i.saturating_sub(100));
                     let _ = db_clone.delete(old_session.as_bytes());
                 }
@@ -366,12 +365,12 @@ fn test_hot_keys() -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
 
     for _ in 0..operations {
-        let key_id = if rng.gen_bool(0.9) {
+        let key_id = if rng.random_bool(0.9) {
             // Hot key
-            rng.gen_range(0..hot_keys)
+            rng.random_range(0..hot_keys)
         } else {
             // Cold key
-            rng.gen_range(hot_keys..total_keys)
+            rng.random_range(hot_keys..total_keys)
         };
 
         let key = format!("key:{:06}", key_id);
@@ -467,7 +466,7 @@ fn test_memory_pressure() -> Result<(), Box<dyn std::error::Error>> {
     let num_reads = 10_000;
 
     for _ in 0..num_reads {
-        let key_id = rng.gen_range(0..num_entries);
+        let key_id = rng.random_range(0..num_entries);
         let key = format!("mem_test:{:08}", key_id);
         let _ = db.get(key.as_bytes())?;
     }
@@ -524,7 +523,7 @@ fn test_concurrent_transactions() -> Result<(), Box<dyn std::error::Error>> {
             barrier_clone.wait();
 
             for _ in 0..ops_per_thread {
-                let counter_id = rng.gen_range(0..num_counters);
+                let counter_id = rng.random_range(0..num_counters);
                 let key = format!("counter:{}", counter_id);
 
                 // Try to increment counter

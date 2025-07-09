@@ -1,0 +1,105 @@
+group 'com.lightning_db.dart'
+version '1.0'
+
+buildscript {
+    ext.kotlin_version = '1.8.10'
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:7.4.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    compileSdkVersion 33
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+        test.java.srcDirs += 'src/test/kotlin'
+        
+        // Configure native libraries location
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 33
+        
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+        
+        ndk {
+            // Specify supported ABIs
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'
+        }
+    }
+
+    lintOptions {
+        disable 'InvalidPackage'
+        disable 'MissingClass'
+    }
+    
+    // Ensure native libraries are packaged
+    packagingOptions {
+        pickFirst '**/*.so'
+    }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+}
+
+// Task to copy native libraries from Rust build
+task copyNativeLibs(type: Copy) {
+    def rustTarget = System.getenv('RUST_TARGET_DIR') ?: '../../../target'
+    
+    from("$rustTarget/aarch64-linux-android/release") {
+        include 'liblightning_db_ffi.so'
+        into 'arm64-v8a'
+    }
+    from("$rustTarget/armv7-linux-androideabi/release") {
+        include 'liblightning_db_ffi.so'
+        into 'armeabi-v7a'
+    }
+    from("$rustTarget/i686-linux-android/release") {
+        include 'liblightning_db_ffi.so'
+        into 'x86'
+    }
+    from("$rustTarget/x86_64-linux-android/release") {
+        include 'liblightning_db_ffi.so'
+        into 'x86_64'
+    }
+    
+    into 'src/main/jniLibs'
+    
+    // Rename to remove _ffi suffix
+    rename 'liblightning_db_ffi.so', 'liblightning_db.so'
+}
+
+// Run copyNativeLibs before building
+preBuild.dependsOn copyNativeLibs

@@ -18,7 +18,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   Starting cache pattern test...");
     validate_cache_pattern()?;
 
-    /* // Temporarily disable other tests to debug
     // Test 2: Time-Series Database Pattern
     println!("\n2️⃣ Time-Series Database Pattern");
     println!("   Starting time-series pattern test...");
@@ -38,7 +37,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n5️⃣ Queue/Stream Pattern");
     println!("   Starting queue pattern test...");
     validate_queue_pattern()?;
-    */
 
     println!("\n✅ ALL REAL-WORLD VALIDATION TESTS COMPLETED!");
 

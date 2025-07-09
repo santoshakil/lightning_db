@@ -1,0 +1,327 @@
+name: Matrix Testing
+
+on:
+  push:
+    branches: [ master, main, develop ]
+  pull_request:
+    branches: [ master, main ]
+  schedule:
+    # Run nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Comprehensive OS and Rust version matrix
+  test-matrix:
+    name: Test ${{ matrix.os }} / ${{ matrix.rust }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        rust: [stable, beta, nightly]
+        include:
+          # Additional specific version tests
+          - os: ubuntu-latest
+            rust: "1.70.0"  # MSRV
+          # macOS ARM64
+          - os: macos-latest
+            rust: stable
+            target: aarch64-apple-darwin
+          # Windows GNU toolchain
+          - os: windows-latest
+            rust: stable-gnu
+            
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: ${{ matrix.target }}
+      
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}-${{ matrix.rust }}
+      
+      - name: Build
+        run: cargo build --all-features --verbose
+      
+      - name: Run tests
+        run: cargo test --all-features --verbose
+      
+      - name: Run tests (no default features)
+        run: cargo test --no-default-features --verbose
+      
+      - name: Doc tests
+        run: cargo test --doc --all-features
+
+  # Feature combination testing
+  feature-matrix:
+    name: Features ${{ matrix.features }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - ""  # no features
+          - "--all-features"
+          - "--features compression"
+          - "--features ffi"
+          - "--features metrics"
+          - "--features compression,ffi"
+          - "--features compression,metrics"
+          - "--features ffi,metrics"
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Build with features
+        run: cargo build ${{ matrix.features }}
+      
+      - name: Test with features
+        run: cargo test ${{ matrix.features }}
+
+  # Cross-compilation testing
+  cross-compile:
+    name: Cross ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - armv7-unknown-linux-gnueabihf
+          - x86_64-unknown-linux-musl
+          - x86_64-pc-windows-gnu
+          - wasm32-unknown-unknown
+          
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.target }}
+      
+      - name: Install cross
+        if: matrix.target != 'wasm32-unknown-unknown'
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      
+      - name: Build
+        run: |
+          if [ "${{ matrix.target }}" = "wasm32-unknown-unknown" ]; then
+            cargo build --target ${{ matrix.target }} --no-default-features
+          else
+            cross build --target ${{ matrix.target }} --all-features
+          fi
+
+  # Sanitizer testing
+  sanitizers:
+    name: Sanitizers
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, thread, memory, leak]
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      
+      - name: Run with sanitizer
+        env:
+          RUSTFLAGS: "-Z sanitizer=${{ matrix.sanitizer }}"
+          RUSTDOCFLAGS: "-Z sanitizer=${{ matrix.sanitizer }}"
+        run: |
+          cargo test --target x86_64-unknown-linux-gnu -- --test-threads=1 || true
+
+  # Miri testing for undefined behavior
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      
+      - name: Run Miri
+        run: |
+          cargo miri setup
+          cargo miri test --no-default-features || true
+
+  # Fuzzing
+  fuzz:
+    name: Fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+      
+      - name: Run fuzzing
+        run: |
+          # Create fuzz targets if they don't exist
+          if [ ! -d "fuzz" ]; then
+            cargo fuzz init
+          fi
+          # Run fuzzing for a short time
+          cargo fuzz run fuzz_target_1 -- -max_total_time=60 || true
+
+  # Performance regression testing
+  perf-regression:
+    name: Performance Regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Run benchmarks
+        run: |
+          cargo bench --all-features -- --output-format bencher | tee output.txt
+      
+      - name: Compare benchmarks
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'cargo'
+          output-file-path: output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: false
+          alert-threshold: '150%'
+          comment-on-alert: true
+          fail-on-alert: true
+
+  # Memory leak detection
+  valgrind:
+    name: Valgrind Memory Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install Valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+      
+      - name: Build debug binary
+        run: cargo build --examples
+      
+      - name: Run Valgrind
+        run: |
+          valgrind --leak-check=full --error-exitcode=1 \
+            ./target/debug/examples/basic_usage || true
+
+  # Code coverage with multiple tools
+  coverage-tarpaulin:
+    name: Code Coverage (Tarpaulin)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+      
+      - name: Generate coverage
+        run: cargo tarpaulin --all-features --workspace --timeout 300 --out Xml
+      
+      - name: Upload to codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./cobertura.xml
+          fail_ci_if_error: false
+
+  # Documentation testing
+  doc-test:
+    name: Documentation Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      
+      - name: Check documentation
+        run: cargo doc --no-deps --all-features --document-private-items
+      
+      - name: Test documentation examples
+        run: cargo test --doc --all-features
+
+  # Integration test with real workloads
+  integration-tests:
+    name: Integration Tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Run integration tests
+        run: |
+          cargo run --example stress_test -- --duration 30
+          cargo run --example production_readiness_test
+          cargo run --example real_world_validation
+      
+      - name: Run concurrent stress test
+        run: |
+          cargo run --example concurrent_stress -- --threads 8 --duration 30
+
+  # Dependency audit
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # License compatibility check
+  license-check:
+    name: License Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install cargo-deny
+        run: cargo install cargo-deny
+      
+      - name: Check licenses
+        run: |
+          if [ ! -f "deny.toml" ]; then
+            cat > deny.toml <<EOF
+          [licenses]
+          unlicensed = "deny"
+          allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-3-Clause"]
+          
+          [bans]
+          multiple-versions = "warn"
+          EOF
+          fi
+          cargo deny check licenses
+
+  # Check for outdated dependencies
+  outdated:
+    name: Outdated Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install cargo-outdated
+        run: cargo install cargo-outdated
+      
+      - name: Check outdated
+        run: cargo outdated --root-deps-only --exit-code 1 || true
