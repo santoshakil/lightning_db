@@ -5,10 +5,48 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.2.3 or patch/minor/major)'
+        required: true
+        default: 'patch'
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --all-features --verbose
+
+      - name: Build documentation
+        run: cargo doc --all-features --no-deps
+
   build-macos:
     name: Build macOS
+    needs: validate
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
@@ -42,6 +80,7 @@ jobs:
 
   build-ios:
     name: Build iOS
+    needs: validate
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
@@ -92,6 +131,7 @@ jobs:
 
   build-android:
     name: Build Android
+    needs: validate
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -132,6 +172,7 @@ jobs:
 
   build-linux:
     name: Build Linux
+    needs: validate
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -158,6 +199,7 @@ jobs:
 
   build-windows:
     name: Build Windows
+    needs: validate
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
@@ -208,3 +250,77 @@ jobs:
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-crate:
+    name: Publish to crates.io
+    needs: [validate, build-macos, build-ios, build-android, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Login to crates.io
+        run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
+
+      - name: Publish to crates.io
+        run: cargo publish --all-features
+
+  update-documentation:
+    name: Update Documentation
+    needs: publish-crate
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build and publish docs
+        run: |
+          cargo doc --all-features --no-deps
+          echo '<meta http-equiv="refresh" content="0; url=lightning_db">' > target/doc/index.html
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/doc
+
+  notify-completion:
+    name: Notify Release Completion
+    needs: [create-release, publish-crate, update-documentation]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Get version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create completion summary
+        run: |
+          echo "# Release ${{ steps.version.outputs.version }} Completed Successfully! 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## What was released:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GitHub Release created with platform binaries" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ FFI libraries built for all platforms" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Published to crates.io" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Documentation updated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Links:" >> $GITHUB_STEP_SUMMARY
+          echo "- [GitHub Release](https://github.com/santoshakil/lightning_db/releases/tag/v${{ steps.version.outputs.version }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [Crates.io Package](https://crates.io/crates/lightning_db)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Documentation](https://docs.rs/lightning_db/${{ steps.version.outputs.version }})" >> $GITHUB_STEP_SUMMARY
