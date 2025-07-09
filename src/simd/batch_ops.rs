@@ -76,6 +76,10 @@ unsafe fn simd_batch_hash_sse42(keys: &[&[u8]]) -> Vec<u64> {
             // Process 8-byte chunks with CRC32
             for i in 0..chunks {
                 let offset = i * 8;
+                debug_assert!(offset + 8 <= k.len(), "SIMD bounds check failed");
+                if offset + 8 > k.len() {
+                    break;
+                }
                 let chunk = *(k.as_ptr().add(offset) as *const u64);
                 hash = _mm_crc32_u64(hash, chunk);
             }
