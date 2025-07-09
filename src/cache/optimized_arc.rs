@@ -123,7 +123,7 @@ impl OptimizedArcCache {
                 // Clone entry before removing to avoid race condition
                 let entry_clone = entry.clone();
                 drop(entry); // Drop the reference before removal
-                
+
                 // Use remove_if to ensure atomic removal
                 if let Some(removed_entry) = self.t1.remove_if(&hash, |_, e| e.key == key) {
                     self.t2.insert(hash, removed_entry.1);

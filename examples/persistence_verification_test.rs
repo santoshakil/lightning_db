@@ -11,8 +11,10 @@ fn main() {
     // Test 1: Basic persistence
     println!("\n📝 Test 1: Basic Put/Get Persistence");
     {
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
 
         let db = Database::create(&db_path, config).unwrap();
 

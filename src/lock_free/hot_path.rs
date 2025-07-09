@@ -44,7 +44,7 @@ impl<K: Clone + Eq + std::hash::Hash, V: Clone> HotPathCache<K, V> {
 
         let guard = &epoch::pin();
         let entry_ptr = self.slots[index].load(Ordering::Acquire, guard);
-        
+
         if entry_ptr.is_null() {
             self.misses.fetch_add(1, Ordering::Relaxed);
             return None;

@@ -1,17 +1,17 @@
 //! Chaos Engineering Test Suite for Lightning DB
-//! 
+//!
 //! This suite implements various chaos scenarios to test database resilience
 //! under extreme and unpredictable conditions.
 
 use lightning_db::{Database, LightningDbConfig};
-use rand::{thread_rng, Rng};
 use rand::prelude::*;
+use rand::{thread_rng, Rng};
+use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
 use tempfile::TempDir;
 
 /// Chaos action that can be performed
@@ -49,7 +49,7 @@ impl ChaosContext {
             chaos_events: Arc::new(Mutex::new(Vec::new())),
         }
     }
-    
+
     fn record_chaos_event(&self, action: ChaosAction) {
         let mut events = self.chaos_events.lock().unwrap();
         events.push((Instant::now(), action));
@@ -60,7 +60,7 @@ impl ChaosContext {
 fn workload_thread(ctx: Arc<ChaosContext>, thread_id: u64) {
     let mut rng = thread_rng();
     let mut local_data: HashMap<String, String> = HashMap::new();
-    
+
     while !ctx.stop_flag.load(Ordering::Relaxed) {
         if let Some(db) = ctx.db.lock().unwrap().as_ref() {
             // Random operation
@@ -69,10 +69,13 @@ fn workload_thread(ctx: Arc<ChaosContext>, thread_id: u64) {
                     // Write operation
                     let key = format!("thread_{}_key_{}", thread_id, rng.random::<u64>());
                     let value = format!("value_{}", rng.random::<u64>());
-                    
+
                     match db.begin_transaction() {
-                    Ok(tx_id) => {
-                            match db.put_tx(tx_id, key.as_bytes(), value.as_bytes()).and_then(|_| db.commit_transaction(tx_id)) {
+                        Ok(tx_id) => {
+                            match db
+                                .put_tx(tx_id, key.as_bytes(), value.as_bytes())
+                                .and_then(|_| db.commit_transaction(tx_id))
+                            {
                                 Ok(_) => {
                                     local_data.insert(key, value);
                                     ctx.operation_count.fetch_add(1, Ordering::Relaxed);
@@ -93,24 +96,22 @@ fn workload_thread(ctx: Arc<ChaosContext>, thread_id: u64) {
                     if let Some(key) = keys.choose(&mut rng) {
                         let expected_value = local_data.get(key).unwrap();
                         match db.begin_transaction() {
-                    Ok(tx_id) => {
-                                match db.get_tx(tx_id, key.as_bytes()) {
-                                    Ok(Some(value)) => {
-                                        if value != expected_value.as_bytes() {
-                                            eprintln!("Data corruption detected!");
-                                            ctx.error_count.fetch_add(1, Ordering::Relaxed);
-                                        }
-                                        ctx.operation_count.fetch_add(1, Ordering::Relaxed);
-                                    }
-                                    Ok(None) => {
-                                        eprintln!("Missing data!");
+                            Ok(tx_id) => match db.get_tx(tx_id, key.as_bytes()) {
+                                Ok(Some(value)) => {
+                                    if value != expected_value.as_bytes() {
+                                        eprintln!("Data corruption detected!");
                                         ctx.error_count.fetch_add(1, Ordering::Relaxed);
                                     }
-                                    Err(_) => {
-                                        ctx.error_count.fetch_add(1, Ordering::Relaxed);
-                                    }
+                                    ctx.operation_count.fetch_add(1, Ordering::Relaxed);
                                 }
-                            }
+                                Ok(None) => {
+                                    eprintln!("Missing data!");
+                                    ctx.error_count.fetch_add(1, Ordering::Relaxed);
+                                }
+                                Err(_) => {
+                                    ctx.error_count.fetch_add(1, Ordering::Relaxed);
+                                }
+                            },
                             Err(_) => {
                                 ctx.error_count.fetch_add(1, Ordering::Relaxed);
                             }
@@ -136,8 +137,11 @@ fn workload_thread(ctx: Arc<ChaosContext>, thread_id: u64) {
                     let keys: Vec<String> = local_data.keys().cloned().collect();
                     if let Some(key) = keys.choose(&mut rng) {
                         match db.begin_transaction() {
-                    Ok(tx_id) => {
-                                match db.delete_tx(tx_id, key.as_bytes()).and_then(|_| db.commit_transaction(tx_id)) {
+                            Ok(tx_id) => {
+                                match db
+                                    .delete_tx(tx_id, key.as_bytes())
+                                    .and_then(|_| db.commit_transaction(tx_id))
+                                {
                                     Ok(_) => {
                                         local_data.remove(key);
                                         ctx.operation_count.fetch_add(1, Ordering::Relaxed);
@@ -155,7 +159,7 @@ fn workload_thread(ctx: Arc<ChaosContext>, thread_id: u64) {
                 }
             }
         }
-        
+
         // Small delay
         thread::sleep(Duration::from_micros(rng.random_range(10..100)));
     }
@@ -171,14 +175,14 @@ fn chaos_thread(ctx: Arc<ChaosContext>) {
         ChaosAction::SlowIO,
         ChaosAction::MemoryPressure,
     ];
-    
+
     while !ctx.stop_flag.load(Ordering::Relaxed) {
         // Wait random interval
         thread::sleep(Duration::from_millis(rng.random_range(500..2000)));
-        
+
         // Choose random chaos action
         let action = chaos_actions.choose(&mut rng).unwrap();
-        
+
         match action {
             ChaosAction::CorruptFile => {
                 corrupt_random_file(&ctx.db_path);
@@ -208,13 +212,13 @@ fn chaos_thread(ctx: Arc<ChaosContext>) {
 /// Corrupt a random file in the database directory
 fn corrupt_random_file(db_path: &str) {
     let mut rng = thread_rng();
-    
+
     if let Ok(entries) = fs::read_dir(db_path) {
         let files: Vec<_> = entries
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_file())
             .collect();
-            
+
         if let Some(entry) = files.choose(&mut rng) {
             if let Ok(mut data) = fs::read(&entry.path()) {
                 if !data.is_empty() {
@@ -234,7 +238,7 @@ fn corrupt_random_file(db_path: &str) {
 /// Delete a random file (except critical ones)
 fn delete_random_file(db_path: &str) {
     let mut rng = thread_rng();
-    
+
     if let Ok(entries) = fs::read_dir(db_path) {
         let files: Vec<_> = entries
             .filter_map(|e| e.ok())
@@ -243,7 +247,7 @@ fn delete_random_file(db_path: &str) {
                 path.is_file() && !path.to_str().unwrap_or("").contains("metadata")
             })
             .collect();
-            
+
         if let Some(entry) = files.choose(&mut rng) {
             let _ = fs::remove_file(&entry.path());
         }
@@ -253,13 +257,13 @@ fn delete_random_file(db_path: &str) {
 /// Truncate a random file
 fn truncate_random_file(db_path: &str) {
     let mut rng = thread_rng();
-    
+
     if let Ok(entries) = fs::read_dir(db_path) {
         let files: Vec<_> = entries
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_file())
             .collect();
-            
+
         if let Some(entry) = files.choose(&mut rng) {
             if let Ok(metadata) = entry.metadata() {
                 let new_len = rng.random_range(0..metadata.len());
@@ -285,18 +289,18 @@ fn inject_memory_pressure() {
     let mut allocations = Vec::new();
     for _ in 0..10 {
         let mut block = vec![0u8; 10 * 1024 * 1024]; // 10MB
-        
+
         // Touch pages to ensure allocation
         for i in (0..block.len()).step_by(4096) {
             block[i] = 1;
         }
-        
+
         allocations.push(block);
     }
-    
+
     // Hold for a moment
     thread::sleep(Duration::from_millis(100));
-    
+
     // Drop to release
     drop(allocations);
 }
@@ -304,14 +308,14 @@ fn inject_memory_pressure() {
 /// Run a chaos test scenario
 fn run_chaos_scenario(name: &str, duration: Duration, thread_count: usize) {
     println!("\n=== Running Chaos Scenario: {} ===", name);
-    
+
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().to_str().unwrap().to_string();
-    
+
     // Create initial database
     let config = LightningDbConfig::default();
     let db = Database::create(&db_path, config).unwrap();
-    
+
     // Initialize some data
     let tx_id = db.begin_transaction().unwrap();
     for i in 0..100 {
@@ -320,57 +324,60 @@ fn run_chaos_scenario(name: &str, duration: Duration, thread_count: usize) {
         db.put_tx(tx_id, key.as_bytes(), value.as_bytes()).unwrap();
     }
     db.commit_transaction(tx_id).unwrap();
-    
+
     // Create chaos context
     let ctx = Arc::new(ChaosContext::new(db_path.clone()));
     *ctx.db.lock().unwrap() = Some(Arc::new(db));
-    
+
     // Start workload threads
     let mut handles = vec![];
     for i in 0..thread_count {
         let ctx = ctx.clone();
         handles.push(thread::spawn(move || workload_thread(ctx, i as u64)));
     }
-    
+
     // Start chaos thread
     let chaos_ctx = ctx.clone();
     handles.push(thread::spawn(move || chaos_thread(chaos_ctx)));
-    
+
     // Run for specified duration
     let start = Instant::now();
     thread::sleep(duration);
-    
+
     // Stop all threads
     ctx.stop_flag.store(true, Ordering::Relaxed);
-    
+
     // Wait for threads
     for handle in handles {
         handle.join().unwrap();
     }
-    
+
     let elapsed = start.elapsed();
-    
+
     // Report results
     let total_ops = ctx.operation_count.load(Ordering::Relaxed);
     let total_errors = ctx.error_count.load(Ordering::Relaxed);
     let chaos_events = ctx.chaos_events.lock().unwrap();
-    
+
     println!("Duration: {:?}", elapsed);
     println!("Total operations: {}", total_ops);
     println!("Total errors: {}", total_errors);
-    println!("Error rate: {:.2}%", (total_errors as f64 / total_ops as f64) * 100.0);
+    println!(
+        "Error rate: {:.2}%",
+        (total_errors as f64 / total_ops as f64) * 100.0
+    );
     println!("Chaos events: {}", chaos_events.len());
-    
+
     for (time, action) in chaos_events.iter() {
         println!("  {:?}: {:?}", time.duration_since(start), action);
     }
-    
+
     // Verify database can still be opened
     *ctx.db.lock().unwrap() = None;
     match Database::open(&db_path, LightningDbConfig::default()) {
         Ok(db) => {
             println!("Database recovery: SUCCESS");
-            
+
             // Verify some data
             let tx_id = db.begin_transaction().unwrap();
             let mut found = 0;
@@ -408,20 +415,20 @@ fn test_chaos_long_running() {
 fn test_chaos_recovery_chain() {
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().to_str().unwrap();
-    
+
     println!("\n=== Chaos Recovery Chain Test ===");
-    
+
     // Create and corrupt database multiple times
     for round in 0..5 {
         println!("\nRound {}", round + 1);
-        
+
         // Open/create database
         let db = if round == 0 {
             Database::create(db_path, LightningDbConfig::default()).unwrap()
         } else {
             Database::open(db_path, LightningDbConfig::default()).unwrap()
         };
-        
+
         // Write data
         let tx_id = db.begin_transaction().unwrap();
         for i in 0..10 {
@@ -430,18 +437,18 @@ fn test_chaos_recovery_chain() {
             db.put_tx(tx_id, key.as_bytes(), value.as_bytes()).unwrap();
         }
         db.commit_transaction(tx_id).unwrap();
-        
+
         // Close database
         drop(db);
-        
+
         // Inject chaos
         corrupt_random_file(db_path);
-        
+
         // Try to recover
         match Database::open(db_path, LightningDbConfig::default()) {
             Ok(db) => {
                 println!("Recovery successful");
-                
+
                 // Verify data from all rounds
                 let tx_id = db.begin_transaction().unwrap();
                 for r in 0..=round {

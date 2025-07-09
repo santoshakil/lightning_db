@@ -14,9 +14,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let db_path = dir.path().join("test.db");
 
     // Create database with optimized config
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 100 * 1024 * 1024; // 100MB cache
-    config.compression_enabled = false; // Disable for fair comparison
+    let config = LightningDbConfig {
+        cache_size: 100 * 1024 * 1024, // 100MB cache
+        compression_enabled: false, // Disable for fair comparison
+        ..Default::default()
+    };
 
     println!("=== Write Batch Performance Benchmark ===\n");
     let db = Database::create(db_path, config)?;
