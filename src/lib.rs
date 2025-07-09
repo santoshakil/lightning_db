@@ -84,6 +84,7 @@ pub mod prefetch;
 pub mod profiling;
 pub mod query_planner;
 pub mod realtime_stats;
+pub mod recovery;
 pub mod replication;
 pub mod serialization;
 pub mod sharding;
