@@ -18,7 +18,7 @@ pub use memory_layout::{
     ObjectPool, MappedBuffer, CompactRecord
 };
 pub use cache_friendly::{
-    CacheFriendlyAlgorithms, CacheFriendlyBTree
+    CacheFriendlyAlgorithms, CacheFriendlyBTree, CacheFriendlyLRU
 };
 
 /// Performance optimization configuration
@@ -335,6 +335,7 @@ pub mod utils {
         }
         
         // Adjust pool sizes based on available memory
+        #[cfg(feature = "sys-info")]
         if let Ok(memory_info) = sys_info::mem_info() {
             let total_memory_gb = memory_info.total / (1024 * 1024);
             
@@ -419,7 +420,8 @@ mod tests {
         
         // Test object pool
         let node = manager.get_btree_node();
-        assert_eq!(node.header.node_id, 0);
+        let node_id = node.header.node_id;
+        assert_eq!(node_id, 0);
         manager.return_btree_node(node);
         
         // Test buffer pool

@@ -1,6 +1,10 @@
 use std::alloc::{alloc, dealloc, Layout};
 use std::ptr::NonNull;
 
+/// Custom allocation error type for stable Rust
+#[derive(Debug, Clone, Copy)]
+pub struct AllocError;
+
 /// Cache-friendly memory layout optimizations for high-performance database operations
 pub struct MemoryLayoutOps;
 
@@ -40,12 +44,12 @@ pub struct CacheAlignedAllocator;
 
 impl CacheAlignedAllocator {
     /// Allocate memory aligned to cache line boundaries
-    pub fn allocate(size: usize) -> Result<NonNull<u8>, std::alloc::AllocError> {
+    pub fn allocate(size: usize) -> Result<NonNull<u8>, AllocError> {
         let layout = Layout::from_size_align(size, MemoryLayoutOps::CACHE_LINE_SIZE)
-            .map_err(|_| std::alloc::AllocError)?;
+            .map_err(|_| AllocError)?;
         
         let ptr = unsafe { alloc(layout) };
-        NonNull::new(ptr).ok_or(std::alloc::AllocError)
+        NonNull::new(ptr).ok_or(AllocError)
     }
     
     /// Deallocate cache-aligned memory
@@ -273,7 +277,7 @@ impl<T> ObjectPool<T> {
     }
     
     /// Return an object to the pool
-    pub fn return_object(&mut self, mut obj: Box<T>) {
+    pub fn return_object(&mut self, obj: Box<T>) {
         if self.free_objects.len() < self.max_pool_size {
             // Reset object to default state if needed
             // This would be customized per object type
@@ -308,16 +312,16 @@ pub struct MappedBuffer {
 
 impl MappedBuffer {
     /// Create a new memory-mapped buffer aligned for optimal performance
-    pub fn new(size: usize) -> Result<Self, std::alloc::AllocError> {
+    pub fn new(size: usize) -> Result<Self, AllocError> {
         // Round size up to page boundary
         let aligned_size = (size + MemoryLayoutOps::OPTIMAL_PAGE_SIZE - 1) 
             & !(MemoryLayoutOps::OPTIMAL_PAGE_SIZE - 1);
         
         let layout = Layout::from_size_align(aligned_size, MemoryLayoutOps::OPTIMAL_PAGE_SIZE)
-            .map_err(|_| std::alloc::AllocError)?;
+            .map_err(|_| AllocError)?;
         
         let ptr = unsafe { alloc(layout) };
-        let ptr = NonNull::new(ptr).ok_or(std::alloc::AllocError)?;
+        let ptr = NonNull::new(ptr).ok_or(AllocError)?;
         
         Ok(Self {
             ptr,
@@ -409,11 +413,11 @@ impl CompactRecord {
     }
     
     /// Create a new compact record in the provided buffer
-    pub unsafe fn create_in_buffer(
-        buffer: &mut [u8],
+    pub unsafe fn create_in_buffer<'a>(
+        buffer: &'a mut [u8],
         key: &[u8],
         value: &[u8],
-    ) -> Result<&mut CompactRecord, &'static str> {
+    ) -> Result<&'a mut CompactRecord, &'static str> {
         let total_size = Self::calculate_size(key.len(), value.len());
         
         if buffer.len() < total_size {
@@ -520,16 +524,20 @@ mod tests {
     fn test_optimized_btree_node() {
         let mut node = OptimizedBTreeNode::new(0, 1);
         
-        assert_eq!(node.header.node_id, 1);
-        assert_eq!(node.header.key_count, 0);
+        let node_id = node.header.node_id;
+        let key_count = node.header.key_count;
+        assert_eq!(node_id, 1);
+        assert_eq!(key_count, 0);
         assert!(node.is_leaf());
         
         // Test key insertion
         assert!(node.insert_key_value(b"key1", 100).is_ok());
-        assert_eq!(node.header.key_count, 1);
+        let key_count = node.header.key_count;
+        assert_eq!(key_count, 1);
         
         assert!(node.insert_key_value(b"key2", 200).is_ok());
-        assert_eq!(node.header.key_count, 2);
+        let key_count = node.header.key_count;
+        assert_eq!(key_count, 2);
         
         // Test key retrieval
         assert_eq!(node.get_key_at_index(0), b"key1");
@@ -554,7 +562,7 @@ mod tests {
         pool.return_object(obj2);
         assert_eq!(pool.stats().free_objects, 2);
         
-        let obj3 = pool.get();
+        let _obj3 = pool.get();
         assert_eq!(pool.stats().free_objects, 1);
     }
     
@@ -589,9 +597,12 @@ mod tests {
         unsafe {
             let record = CompactRecord::create_in_buffer(&mut buffer, key, value).unwrap();
             
-            assert_eq!(record.header.size, record_size as u32);
-            assert_eq!(record.header.key_len, key.len() as u16);
-            assert_eq!(record.header.value_len, value.len() as u32);
+            let size = record.header.size;
+            let key_len = record.header.key_len;
+            let value_len = record.header.value_len;
+            assert_eq!(size, record_size as u32);
+            assert_eq!(key_len, key.len() as u16);
+            assert_eq!(value_len, value.len() as u32);
             
             assert_eq!(record.key(), key);
             assert_eq!(record.value(), value);
