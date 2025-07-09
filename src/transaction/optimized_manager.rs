@@ -140,7 +140,7 @@ impl OptimizedTransactionManager {
             ));
         }
 
-        let tx_id = self.next_tx_id.fetch_add(1, Ordering::Relaxed); // Relaxed ordering for better performance
+        let tx_id = self.next_tx_id.fetch_add(1, Ordering::AcqRel); // Ensure proper transaction ID ordering
         let read_timestamp = self.commit_timestamp.load(Ordering::Acquire);
 
         // Try to reuse transaction object from pool

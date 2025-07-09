@@ -38,10 +38,10 @@ impl VersionCleanupThread {
     }
 
     fn run(&self) {
-        while !self.should_stop.load(Ordering::Relaxed) {
+        while !self.should_stop.load(Ordering::Acquire) {
             thread::sleep(self.cleanup_interval);
 
-            if self.should_stop.load(Ordering::Relaxed) {
+            if self.should_stop.load(Ordering::Acquire) {
                 break;
             }
 
@@ -59,7 +59,7 @@ impl VersionCleanupThread {
                     e
                 );
                 // Return last cleanup time + interval as fallback
-                self.last_cleanup.load(Ordering::Relaxed) + self.cleanup_interval.as_micros() as u64
+                self.last_cleanup.load(Ordering::Acquire) + self.cleanup_interval.as_micros() as u64
             });
 
         // Clean up versions older than retention_duration
@@ -78,7 +78,7 @@ impl VersionCleanupThread {
     }
 
     pub fn stop(&self) {
-        self.should_stop.store(true, Ordering::Relaxed);
+        self.should_stop.store(true, Ordering::Release);
     }
 }
 
