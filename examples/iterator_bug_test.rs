@@ -7,10 +7,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let db_path = dir.path().join("test.db");
 
     // Create a minimal config for testing
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = false; // Disable compression to disable LSM tree
-    config.cache_size = 0; // Disable cache
-    config.use_optimized_transactions = false;
+    let config = LightningDbConfig {
+        compression_enabled: false, // Disable compression to disable LSM tree
+        cache_size: 0, // Disable cache
+        use_optimized_transactions: false,
+        ..Default::default()
+    };
 
     let db = Database::create(db_path, config)?;
 

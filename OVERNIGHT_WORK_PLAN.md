@@ -13,11 +13,11 @@ This document outlines the comprehensive work plan for improving Lightning DB's 
 - [x] Fix deprecated rand methods
 **Commit 1**: `fix: resolve compilation errors in tests` ✓
 
-#### 1.2 Fix FFI Path Issues
-- [ ] Verify FFI library build paths
-- [ ] Update CI to use correct library names
-- [ ] Test FFI builds locally
-**Commit 2**: `fix: correct FFI library paths in CI`
+#### 1.2 Fix FFI Path Issues ✓
+- [x] Verify FFI library build paths
+- [x] Update CI to use correct library names  
+- [x] Test FFI builds locally
+**Commit 2**: `fix: correct FFI library paths in CI` ✓
 
 #### 1.3 Fix Flutter/Dart CI
 - [ ] Update Dart analysis to use Flutter

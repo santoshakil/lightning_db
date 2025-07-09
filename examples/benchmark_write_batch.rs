@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Create database with optimized config
     let config = LightningDbConfig {
         cache_size: 100 * 1024 * 1024, // 100MB cache
-        compression_enabled: false, // Disable for fair comparison
+        compression_enabled: false,    // Disable for fair comparison
         ..Default::default()
     };
 
