@@ -9,8 +9,10 @@ fn main() {
 
     // Phase 1: Write data with sync mode
     {
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let mut config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         // Disable compression for simplicity
         config.compression_enabled = false;
 
@@ -35,8 +37,10 @@ fn main() {
 
     // Phase 2: Reopen and verify
     {
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let mut config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         // Disable compression for simplicity
         config.compression_enabled = false;
 

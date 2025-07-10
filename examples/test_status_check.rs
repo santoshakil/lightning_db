@@ -59,8 +59,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 4: LSM tree
     {
         print!("Test 4: LSM tree...");
-        let mut config = LightningDbConfig::default();
-        config.compression_enabled = true;
+        let config = LightningDbConfig {
+            compression_enabled: true,
+            ..Default::default()
+        };
         let db = Database::create(dir.path().join("lsm.db"), config)?;
         db.put(b"lsm_key", b"lsm_value")?;
         let result = db.get(b"lsm_key")?;

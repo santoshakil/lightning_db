@@ -27,8 +27,10 @@ fn run_child_process(db_path: &str, operation: &str, kill_point: &str) {
     println!("🧒 Child process started: {} at {}", operation, kill_point);
 
     // Configure for maximum durability
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Sync;
+    let mut config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Sync,
+        ..Default::default()
+    };
     config.use_improved_wal = true;
 
     let db = Database::create(db_path, config).unwrap();
@@ -219,7 +221,7 @@ fn run_single_kill_test(operation: &str, kill_point: &str) -> TestResult {
 
     // Spawn child process
     let mut child = Command::new(&exe_path)
-        .args(&["child", db_path.to_str().unwrap(), operation, kill_point])
+        .args(["child", db_path.to_str().unwrap(), operation, kill_point])
         .spawn()
         .expect("Failed to spawn child process");
 

@@ -45,8 +45,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn validate_cache_pattern() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 100 * 1024 * 1024; // 100MB cache
+    let config = LightningDbConfig {
+        cache_size: 100 * 1024 * 1024,
+        ..Default::default()
+    }; // 100MB cache
 
     let db = Arc::new(Database::create(temp_dir.path(), config)?);
 
@@ -121,8 +123,10 @@ fn validate_cache_pattern() -> Result<(), Box<dyn std::error::Error>> {
 
 fn validate_timeseries_pattern() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = true; // Important for time series
+    let config = LightningDbConfig {
+        compression_enabled: true,
+        ..Default::default()
+    }; // Important for time series
 
     let db = Database::create(temp_dir.path(), config)?;
 

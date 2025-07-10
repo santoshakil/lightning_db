@@ -43,6 +43,12 @@ impl<T> HandleRegistry<T> {
         let handles = self.handles.read();
         handles.len()
     }
+
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        let handles = self.handles.read();
+        handles.is_empty()
+    }
 }
 
 // Special registry for mutable types like iterators

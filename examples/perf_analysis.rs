@@ -31,8 +31,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (name, sync_mode, disable_compression) in configs {
         let db_path = dir.path().join(format!("{}.db", name.replace(" ", "_")));
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = sync_mode;
+        let mut config = LightningDbConfig {
+            wal_sync_mode: sync_mode,
+            ..Default::default()
+        };
         if disable_compression {
             config.compression_enabled = false;
         }
@@ -76,8 +78,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "-".repeat(75));
 
     let db_path = dir.path().join("auto_batcher.db");
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Async;
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async,
+        ..Default::default()
+    };
     let db = Arc::new(Database::create(&db_path, config)?);
     let batcher = Database::create_auto_batcher(db);
 
@@ -107,8 +111,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n\nTesting read performance (100K reads):\n");
 
     let db_path = dir.path().join("read_test.db");
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Async;
+    let mut config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async,
+        ..Default::default()
+    };
     config.compression_enabled = false; // Disable compression for direct B+Tree access
     let db = Database::create(&db_path, config)?;
 

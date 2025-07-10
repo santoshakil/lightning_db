@@ -5,7 +5,7 @@
 
 use lightning_db::{Database, LightningDbConfig};
 use rand::prelude::*;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -16,6 +16,7 @@ use tempfile::TempDir;
 
 /// Chaos action that can be performed
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 enum ChaosAction {
     CorruptFile,
     DeleteFile,
@@ -58,7 +59,7 @@ impl ChaosContext {
 
 /// Workload generator thread
 fn workload_thread(ctx: Arc<ChaosContext>, thread_id: u64) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let mut local_data: HashMap<String, String> = HashMap::new();
 
     while !ctx.stop_flag.load(Ordering::Relaxed) {
@@ -121,7 +122,7 @@ fn workload_thread(ctx: Arc<ChaosContext>, thread_id: u64) {
                 81..=90 => {
                     // Range scan
                     match db.begin_transaction() {
-                        Ok(tx_id) => {
+                        Ok(_tx_id) => {
                             let _start_key = format!("thread_{}_", thread_id);
                             // Note: scan API not available via transaction ID
                             // Skip range scan for now
@@ -167,7 +168,7 @@ fn workload_thread(ctx: Arc<ChaosContext>, thread_id: u64) {
 
 /// Chaos injection thread
 fn chaos_thread(ctx: Arc<ChaosContext>) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let chaos_actions = [
         ChaosAction::CorruptFile,
         ChaosAction::DeleteFile,
@@ -211,7 +212,7 @@ fn chaos_thread(ctx: Arc<ChaosContext>) {
 
 /// Corrupt a random file in the database directory
 fn corrupt_random_file(db_path: &str) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     if let Ok(entries) = fs::read_dir(db_path) {
         let files: Vec<_> = entries
@@ -237,7 +238,7 @@ fn corrupt_random_file(db_path: &str) {
 
 /// Delete a random file (except critical ones)
 fn delete_random_file(db_path: &str) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     if let Ok(entries) = fs::read_dir(db_path) {
         let files: Vec<_> = entries
@@ -256,7 +257,7 @@ fn delete_random_file(db_path: &str) {
 
 /// Truncate a random file
 fn truncate_random_file(db_path: &str) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     if let Ok(entries) = fs::read_dir(db_path) {
         let files: Vec<_> = entries

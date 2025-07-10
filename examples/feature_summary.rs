@@ -418,9 +418,9 @@ fn test_lsm(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn test_performance(
-    path: &std::path::Path,
-) -> Result<((f64, f64), (f64, f64)), Box<dyn std::error::Error>> {
+type PerformanceResult = Result<((f64, f64), (f64, f64)), Box<dyn std::error::Error>>;
+
+fn test_performance(path: &std::path::Path) -> PerformanceResult {
     let db = Database::create(path, LightningDbConfig::default())?;
 
     // Warm up

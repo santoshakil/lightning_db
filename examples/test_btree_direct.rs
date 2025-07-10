@@ -6,8 +6,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = dir.path().join("test.db");
 
     // Create database without LSM tree to force B+Tree usage
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = false; // This disables LSM tree
+    let config = LightningDbConfig {
+        compression_enabled: false,
+        ..Default::default()
+    }; // This disables LSM tree
 
     let db = Database::create(&db_path, config.clone())?;
 

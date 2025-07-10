@@ -12,8 +12,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 1: Baseline with sync WAL
     {
         let db_path = dir.path().join("test_sync.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
 
         println!("Test 1: Individual puts with sync WAL (baseline)");
@@ -33,8 +35,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 2: Async WAL (our solution)
     {
         let db_path = dir.path().join("test_async.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
 
         println!("\nTest 2: Individual puts with async WAL (SOLUTION)");

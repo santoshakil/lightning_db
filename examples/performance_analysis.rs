@@ -21,6 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔬 Lightning DB Performance Analysis\n");
 
     let _ = std::fs::remove_dir_all("./perf_test_db");
+    #[allow(clippy::vec_init_then_push)]
     let mut results = Vec::new();
 
     // Test 1: Sequential vs Random Writes
@@ -116,8 +117,10 @@ fn test_write_patterns() -> Result<PerformanceResult, Box<dyn std::error::Error>
 fn test_cache_effectiveness() -> Result<PerformanceResult, Box<dyn std::error::Error>> {
     println!("📊 Testing Cache Effectiveness...");
 
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 10 * 1024 * 1024; // 10MB cache
+    let config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024,
+        ..Default::default()
+    }; // 10MB cache
 
     let db = Database::create("./perf_test_db/cache", config)?;
     let mut observations = Vec::new();
@@ -266,8 +269,10 @@ fn test_compression_impact() -> Result<PerformanceResult, Box<dyn std::error::Er
     let mut observations = Vec::new();
 
     // Test without compression
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = false;
+    let mut config = LightningDbConfig {
+        compression_enabled: false,
+        ..Default::default()
+    };
 
     let db_no_comp = Database::create("./perf_test_db/no_compression", config.clone())?;
 
@@ -623,8 +628,10 @@ fn test_iterator_performance() -> Result<PerformanceResult, Box<dyn std::error::
 fn test_memory_pressure() -> Result<PerformanceResult, Box<dyn std::error::Error>> {
     println!("📊 Testing Memory Pressure...");
 
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 50 * 1024 * 1024; // 50MB cache
+    let config = LightningDbConfig {
+        cache_size: 50 * 1024 * 1024,
+        ..Default::default()
+    }; // 50MB cache
 
     let db = Database::create("./perf_test_db/memory", config)?;
     let mut observations = Vec::new();

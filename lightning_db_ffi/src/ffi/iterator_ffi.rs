@@ -51,7 +51,7 @@ impl KeyValueResult {
 /// - start_key/end_key must be valid for their respective lengths (can be null for unbounded)
 /// - Returns 0 on success with iterator handle stored in out_handle, error code on failure
 #[no_mangle]
-pub extern "C" fn lightning_db_scan(
+pub unsafe extern "C" fn lightning_db_scan(
     db_handle: u64,
     start_key: *const u8,
     start_key_len: usize,

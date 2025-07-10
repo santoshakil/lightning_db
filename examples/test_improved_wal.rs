@@ -14,8 +14,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let db_path = dir.path();
 
         // Create database with improved WAL
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            ..Default::default()
+        };
 
         let db = Database::create(db_path, config.clone())?;
 
@@ -41,8 +43,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempdir()?;
         let db_path = dir.path();
 
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            ..Default::default()
+        };
 
         let db = Arc::new(Database::create(db_path, config.clone())?);
 
@@ -77,8 +81,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempdir()?;
         let db_path = dir.path();
 
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            ..Default::default()
+        };
 
         let db = Arc::new(Database::create(db_path, config)?);
 
@@ -124,8 +130,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempdir()?;
         let db_path = dir.path();
 
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            ..Default::default()
+        };
 
         let db = Database::create(db_path, config.clone())?;
 
@@ -157,8 +165,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let dir = tempdir()?;
         let db_path = dir.path();
 
-        let mut config = LightningDbConfig::default();
-        config.use_improved_wal = true;
+        let config = LightningDbConfig {
+            use_improved_wal: true,
+            ..Default::default()
+        };
 
         let db = Database::create(db_path, config)?;
 

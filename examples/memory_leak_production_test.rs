@@ -14,9 +14,11 @@ fn main() {
     let db_path = temp_dir.path();
 
     // Configure for production-like workload
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 50 * 1024 * 1024; // 50MB cache
-    config.compression_enabled = true;
+    let config = LightningDbConfig {
+        cache_size: 50 * 1024 * 1024, // 50MB cache
+        compression_enabled: true,
+        ..Default::default()
+    };
 
     let db = Arc::new(Database::create(db_path, config).unwrap());
 
@@ -106,7 +108,7 @@ fn main() {
             while monitor_start.elapsed() < monitor_duration {
                 // Get memory info (approximation using process info)
                 if let Ok(output) = std::process::Command::new("ps")
-                    .args(&["-o", "rss=", "-p", &std::process::id().to_string()])
+                    .args(&["-o", "rss=", "-p", std::process::id().to_string().as_str()])
                     .output()
                 {
                     if let Ok(memory_str) = String::from_utf8(output.stdout) {

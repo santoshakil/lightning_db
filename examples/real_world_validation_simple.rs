@@ -38,8 +38,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn validate_cache_pattern() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 10 * 1024 * 1024; // 10MB cache
+    let config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024,
+        ..Default::default()
+    }; // 10MB cache
 
     let db = Arc::new(Database::create(temp_dir.path(), config)?);
 
@@ -119,8 +121,10 @@ fn validate_cache_pattern() -> Result<(), Box<dyn std::error::Error>> {
 
 fn validate_timeseries_pattern() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = true; // Important for time series
+    let config = LightningDbConfig {
+        compression_enabled: true,
+        ..Default::default()
+    }; // Important for time series
 
     let db = Database::create(temp_dir.path(), config)?;
 
@@ -348,15 +352,13 @@ fn validate_queue_pattern() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         if let Ok(iter) = scan_result {
-            for result in iter.take(10) {
+            for (key, _value) in iter.take(10).flatten() {
                 // Process up to 10 messages at a time
-                if let Ok((key, _value)) = result {
-                    // Process message
-                    if db.delete(&key).is_ok() {
-                        consumed += 1;
-                        last_key = String::from_utf8_lossy(&key).to_string();
-                        found = true;
-                    }
+                // Process message
+                if db.delete(&key).is_ok() {
+                    consumed += 1;
+                    last_key = String::from_utf8_lossy(&key).to_string();
+                    found = true;
                 }
             }
         }

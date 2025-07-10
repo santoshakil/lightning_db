@@ -20,8 +20,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 2: B+Tree only (no LSM)
     {
         let db_path = dir.path().join("test_btree.db");
-        let mut config = LightningDbConfig::default();
-        config.compression_enabled = false; // This disables LSM
+        let config = LightningDbConfig {
+            compression_enabled: false, // This disables LSM
+            ..Default::default()
+        };
         let db = Database::create(&db_path, config)?;
 
         println!("\nTest 2: B+Tree only (compression_enabled=false)");
@@ -31,8 +33,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 3: Async WAL mode
     {
         let db_path = dir.path().join("test_async.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = lightning_db::WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: lightning_db::WalSyncMode::Async,
+            ..Default::default()
+        };
         let db = Database::create(&db_path, config)?;
 
         println!("\nTest 3: With async WAL");

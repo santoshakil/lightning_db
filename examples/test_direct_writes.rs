@@ -11,8 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 1: Direct puts without AutoBatcher
     {
         println!("Test 1: Direct puts (no AutoBatcher)");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
 
         let db_path = dir.path().join("direct.db");
         let db = Database::create(&db_path, config)?;
@@ -32,8 +34,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 2: Direct puts without LSM
     {
         println!("\nTest 2: Direct puts without LSM");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let mut config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         config.compression_enabled = false;
 
         let db_path = dir.path().join("direct_no_lsm.db");
@@ -68,8 +72,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 3: Transactional batch
     {
         println!("\nTest 3: Single transaction with 10K puts");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
 
         let db_path = dir.path().join("tx_batch.db");
         let db = Database::create(&db_path, config)?;
@@ -91,8 +97,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 4: Multiple smaller transactions
     {
         println!("\nTest 4: 100 transactions with 100 puts each");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
 
         let db_path = dir.path().join("multi_tx.db");
         let db = Database::create(&db_path, config)?;

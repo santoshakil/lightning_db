@@ -11,8 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Test 1: No WAL");
         let temp_dir = tempfile::tempdir()?;
 
-        let mut config = LightningDbConfig::default();
-        config.use_optimized_transactions = false;
+        let mut config = LightningDbConfig {
+            use_optimized_transactions: false,
+            ..Default::default()
+        };
         config.use_improved_wal = false;
         config.compression_enabled = false;
         config.cache_size = 0;
@@ -41,8 +43,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\nTest 3: Standard WAL (old implementation)");
         let temp_dir = tempfile::tempdir()?;
 
-        let mut config = LightningDbConfig::default();
-        config.use_optimized_transactions = false;
+        let mut config = LightningDbConfig {
+            use_optimized_transactions: false,
+            ..Default::default()
+        };
         config.use_improved_wal = false; // Use old WAL
         config.compression_enabled = false;
         config.cache_size = 0;

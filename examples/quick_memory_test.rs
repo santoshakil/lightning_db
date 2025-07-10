@@ -13,8 +13,10 @@ fn main() {
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path();
 
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 10 * 1024 * 1024; // 10MB cache
+    let mut config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024,
+        ..Default::default()
+    }; // 10MB cache
     config.compression_enabled = true;
 
     let db = Arc::new(Database::create(db_path, config).unwrap());

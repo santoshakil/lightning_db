@@ -7,8 +7,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let db_path = dir.path().join("test.db");
 
     // Test with compression enabled (LSM tree enabled)
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = true; // Enable compression to enable LSM tree
+    let mut config = LightningDbConfig {
+        compression_enabled: true,
+        ..Default::default()
+    }; // Enable compression to enable LSM tree
     config.cache_size = 0; // Disable cache
     config.use_optimized_transactions = false;
 

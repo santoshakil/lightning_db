@@ -46,7 +46,7 @@ impl LockFreeCache {
             access_order: Arc::new(RwLock::new(VecDeque::with_capacity(capacity))),
             stats: Arc::new(CacheStats::new()),
             timestamp: AtomicU64::new(0),
-            eviction_queue: ArrayQueue::new(capacity / 10), // Batch eviction queue
+            eviction_queue: ArrayQueue::new((capacity / 10).max(1)), // Batch eviction queue
         }
     }
 

@@ -61,8 +61,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     total += 1;
     if test_with_timeout("LSM Operations", 10, || {
         let dir = tempdir()?;
-        let mut config = LightningDbConfig::default();
-        config.compression_enabled = true;
+        let config = LightningDbConfig {
+            compression_enabled: true,
+            ..Default::default()
+        };
         let db = Database::create(dir.path().join("lsm.db"), config)?;
         for i in 0..100 {
             db.put(format!("key_{}", i).as_bytes(), b"value")?;
@@ -97,8 +99,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     total += 1;
     if test_with_timeout("Sync WAL Transaction", 15, || {
         let dir = tempdir()?;
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         let db = Database::create(dir.path().join("sync.db"), config)?;
 
         let tx_id = db.begin_transaction()?;
@@ -115,8 +119,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     total += 1;
     if test_with_timeout("Optimized Transactions", 20, || {
         let dir = tempdir()?;
-        let mut config = LightningDbConfig::default();
-        config.use_optimized_transactions = true;
+        let config = LightningDbConfig {
+            use_optimized_transactions: true,
+            ..Default::default()
+        };
         let db = Database::create(dir.path().join("opt.db"), config)?;
 
         for i in 0..50 {

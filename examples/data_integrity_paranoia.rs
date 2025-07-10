@@ -39,8 +39,8 @@ impl DataRecord {
         let mut hasher = Sha256::new();
         hasher.update(&key);
         hasher.update(&value);
-        hasher.update(&timestamp.to_le_bytes());
-        hasher.update(&version.to_le_bytes());
+        hasher.update(timestamp.to_le_bytes());
+        hasher.update(version.to_le_bytes());
         let checksum = hasher.finalize().to_vec();
 
         Self {
@@ -56,8 +56,8 @@ impl DataRecord {
         let mut hasher = Sha256::new();
         hasher.update(&self.key);
         hasher.update(&self.value);
-        hasher.update(&self.timestamp.to_le_bytes());
-        hasher.update(&self.version.to_le_bytes());
+        hasher.update(self.timestamp.to_le_bytes());
+        hasher.update(self.version.to_le_bytes());
         let calculated = hasher.finalize().to_vec();
 
         calculated == self.checksum

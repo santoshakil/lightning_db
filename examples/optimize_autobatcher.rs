@@ -22,8 +22,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (batch_size, delay_ms) in batch_configs {
         println!("Testing batch_size={}, delay={}ms", batch_size, delay_ms);
 
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
 
         let db_path = dir.path().join(format!("batch_{}.db", batch_size));
         let db = Arc::new(Database::create(&db_path, config)?);
@@ -87,8 +89,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (name, wal_mode) in wal_configs {
         println!("Testing {}", name);
 
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = wal_mode;
+        let config = LightningDbConfig {
+            wal_sync_mode: wal_mode,
+            ..Default::default()
+        };
 
         let db_path = dir
             .path()

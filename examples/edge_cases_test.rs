@@ -315,8 +315,10 @@ fn test_resource_limits() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Test memory pressure with small cache
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 1024 * 1024; // 1MB cache
+    let config = LightningDbConfig {
+        cache_size: 1024 * 1024,
+        ..Default::default()
+    }; // 1MB cache
 
     let db_small = Database::create("./edge_test_db/small_cache", config)?;
 
@@ -447,18 +449,16 @@ fn test_database_recovery() -> Result<(), Box<dyn std::error::Error>> {
 
     // Corrupt a file (simulate)
     if let Ok(entries) = std::fs::read_dir(corrupted_path) {
-        for entry in entries {
-            if let Ok(entry) = entry {
-                if entry.path().extension().map(|e| e == "db").unwrap_or(false) {
-                    // Truncate file to simulate corruption
-                    if let Ok(file) = std::fs::OpenOptions::new()
-                        .write(true)
-                        .truncate(true)
-                        .open(entry.path())
-                    {
-                        drop(file);
-                        break;
-                    }
+        for entry in entries.flatten() {
+            if entry.path().extension().map(|e| e == "db").unwrap_or(false) {
+                // Truncate file to simulate corruption
+                if let Ok(file) = std::fs::OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .open(entry.path())
+                {
+                    drop(file);
+                    break;
                 }
             }
         }

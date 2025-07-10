@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
 
+type CacheGetter = Box<dyn Fn(u32) -> Option<Arc<Page>> + Send + Sync>;
+
 fn benchmark_cache<F>(name: &str, cache_fn: F, num_threads: usize, operations: usize)
 where
     F: Fn(u32) -> Option<()> + Send + Sync + 'static,
@@ -174,27 +176,27 @@ fn main() {
         println!("\n{} access pattern:", pattern_name);
 
         // Test each cache type
-        let caches: Vec<(&str, Box<dyn Fn(u32) -> Option<Arc<_>> + Send + Sync>)> = vec![
+        let caches: Vec<(&str, CacheGetter)> = vec![
             ("ArcCache", {
                 let cache = Arc::new(ArcCache::new(cache_size));
                 for i in 0..cache_size {
                     let _ = cache.insert(i as u32, test_pages[i].1.clone());
                 }
-                Box::new(move |key| cache.get(key))
+                Box::new(move |key| cache.get(key).map(|cached| cached.page.clone()))
             }),
             ("LockFreeCache", {
                 let cache = Arc::new(LockFreeCache::new(cache_size));
                 for i in 0..cache_size {
                     let _ = cache.insert(i as u32, test_pages[i].1.clone());
                 }
-                Box::new(move |key| cache.get(key))
+                Box::new(move |key| cache.get(key).map(|cached| cached.page.clone()))
             }),
             ("SegmentedCache", {
                 let cache = Arc::new(SegmentedLockFreeCache::new(cache_size, 16));
                 for i in 0..cache_size {
                     let _ = cache.insert(i as u32, test_pages[i].1.clone());
                 }
-                Box::new(move |key| cache.get(key))
+                Box::new(move |key| cache.get(key).map(|cached| cached.page.clone()))
             }),
         ];
 

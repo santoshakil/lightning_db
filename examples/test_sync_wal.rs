@@ -7,9 +7,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempfile::tempdir()?;
     let db_path = temp_dir.path();
 
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Sync;
-    config.use_optimized_transactions = false; // Make sure this is off
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Sync,
+        use_optimized_transactions: false, // Make sure this is off
+        ..Default::default()
+    };
 
     let db = Database::create(db_path, config)?;
 

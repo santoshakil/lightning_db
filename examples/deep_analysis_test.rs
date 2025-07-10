@@ -390,8 +390,10 @@ fn test_memory_pressure() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
 
     // Create database with small cache
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 1024 * 1024; // 1MB cache
+    let config = LightningDbConfig {
+        cache_size: 1024 * 1024,
+        ..Default::default()
+    }; // 1MB cache
 
     let db = Database::create(temp_dir.path(), config)?;
 

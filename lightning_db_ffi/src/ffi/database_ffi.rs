@@ -18,7 +18,7 @@ lazy_static::lazy_static! {
 /// - path must be a valid null-terminated UTF-8 string
 /// - Returns 0 on success with handle stored in out_handle, error code on failure
 #[no_mangle]
-pub extern "C" fn lightning_db_create(path: *const c_char, out_handle: *mut u64) -> i32 {
+pub unsafe extern "C" fn lightning_db_create(path: *const c_char, out_handle: *mut u64) -> i32 {
     if path.is_null() || out_handle.is_null() {
         set_last_error(
             ErrorCode::InvalidArgument,
@@ -50,7 +50,7 @@ pub extern "C" fn lightning_db_create(path: *const c_char, out_handle: *mut u64)
 /// - path must be a valid null-terminated UTF-8 string
 /// - Returns 0 on success with handle stored in out_handle, error code on failure
 #[no_mangle]
-pub extern "C" fn lightning_db_open(path: *const c_char, out_handle: *mut u64) -> i32 {
+pub unsafe extern "C" fn lightning_db_open(path: *const c_char, out_handle: *mut u64) -> i32 {
     if path.is_null() || out_handle.is_null() {
         set_last_error(
             ErrorCode::InvalidArgument,
@@ -82,7 +82,7 @@ pub extern "C" fn lightning_db_open(path: *const c_char, out_handle: *mut u64) -
 /// - path must be a valid null-terminated UTF-8 string
 /// - Returns 0 on success with handle stored in out_handle, error code on failure
 #[no_mangle]
-pub extern "C" fn lightning_db_create_with_config(
+pub unsafe extern "C" fn lightning_db_create_with_config(
     path: *const c_char,
     cache_size: u64,
     compression_type: CompressionType,
@@ -100,19 +100,21 @@ pub extern "C" fn lightning_db_create_with_config(
     let path_str =
         ffi_try!(unsafe { c_str_to_string(path) }.map_err(|e| { lightning_db::Error::Generic(e) }));
 
-    let mut config = LightningDbConfig::default();
-    config.cache_size = cache_size;
-    config.compression_enabled = compression_type != CompressionType::None;
-    config.compression_type = match compression_type {
-        CompressionType::None => 0,
-        CompressionType::Zstd => 1,
-        CompressionType::Lz4 => 2,
-        CompressionType::Snappy => 3,
-    };
-    config.wal_sync_mode = match wal_sync_mode {
-        WalSyncMode::Sync => lightning_db::WalSyncMode::Sync,
-        WalSyncMode::Periodic => lightning_db::WalSyncMode::Periodic { interval_ms: 1000 },
-        WalSyncMode::Async => lightning_db::WalSyncMode::Async,
+    let config = LightningDbConfig {
+        cache_size,
+        compression_enabled: compression_type != CompressionType::None,
+        compression_type: match compression_type {
+            CompressionType::None => 0,
+            CompressionType::Zstd => 1,
+            CompressionType::Lz4 => 2,
+            CompressionType::Snappy => 3,
+        },
+        wal_sync_mode: match wal_sync_mode {
+            WalSyncMode::Sync => lightning_db::WalSyncMode::Sync,
+            WalSyncMode::Periodic => lightning_db::WalSyncMode::Periodic { interval_ms: 1000 },
+            WalSyncMode::Async => lightning_db::WalSyncMode::Async,
+        },
+        ..Default::default()
     };
 
     let db = ffi_try!(Database::create(Path::new(&path_str), config));
@@ -156,7 +158,7 @@ pub extern "C" fn lightning_db_close(handle: u64) -> i32 {
 /// - key must be valid for key_len bytes
 /// - value must be valid for value_len bytes
 #[no_mangle]
-pub extern "C" fn lightning_db_put(
+pub unsafe extern "C" fn lightning_db_put(
     handle: u64,
     key: *const u8,
     key_len: usize,
@@ -197,7 +199,11 @@ pub extern "C" fn lightning_db_put(
 /// - key must be valid for key_len bytes
 /// - The returned ByteResult must be freed using lightning_db_free_bytes
 #[no_mangle]
-pub extern "C" fn lightning_db_get(handle: u64, key: *const u8, key_len: usize) -> ByteResult {
+pub unsafe extern "C" fn lightning_db_get(
+    handle: u64,
+    key: *const u8,
+    key_len: usize,
+) -> ByteResult {
     if key.is_null() {
         set_last_error(
             ErrorCode::InvalidArgument,
@@ -242,7 +248,7 @@ pub extern "C" fn lightning_db_get(handle: u64, key: *const u8, key_len: usize) 
 /// - key must be valid for key_len bytes
 /// - Returns 0 on success (key deleted), 1 if key not found, negative on error
 #[no_mangle]
-pub extern "C" fn lightning_db_delete(handle: u64, key: *const u8, key_len: usize) -> i32 {
+pub unsafe extern "C" fn lightning_db_delete(handle: u64, key: *const u8, key_len: usize) -> i32 {
     if key.is_null() {
         set_last_error(
             ErrorCode::InvalidArgument,
@@ -333,7 +339,7 @@ pub extern "C" fn lightning_db_checkpoint(handle: u64) -> i32 {
 /// - key must be valid for key_len bytes
 /// - value must be valid for value_len bytes
 #[no_mangle]
-pub extern "C" fn lightning_db_put_with_consistency(
+pub unsafe extern "C" fn lightning_db_put_with_consistency(
     handle: u64,
     key: *const u8,
     key_len: usize,
@@ -380,7 +386,7 @@ pub extern "C" fn lightning_db_put_with_consistency(
 /// - key must be valid for key_len bytes
 /// - The returned ByteResult must be freed using lightning_db_free_bytes
 #[no_mangle]
-pub extern "C" fn lightning_db_get_with_consistency(
+pub unsafe extern "C" fn lightning_db_get_with_consistency(
     handle: u64,
     key: *const u8,
     key_len: usize,

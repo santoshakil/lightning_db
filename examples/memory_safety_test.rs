@@ -8,8 +8,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⚡ Lightning DB Memory Safety Test\n");
 
     let dir = tempdir()?;
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Async;
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async,
+        ..Default::default()
+    };
 
     // Test 1: Basic memory leak detection
     println!("Test 1: Memory leak detection");

@@ -155,8 +155,10 @@ fn test_basic_functionality_stress() -> Result<TestResults, Box<dyn std::error::
     let result = TestResults::new("Basic Functionality Under Load");
 
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 50 * 1024 * 1024; // 50MB cache
+    let mut config = LightningDbConfig {
+        cache_size: 50 * 1024 * 1024,
+        ..Default::default()
+    }; // 50MB cache
     config.compression_enabled = true;
 
     let db = Database::create(temp_dir.path(), config)?;
@@ -279,19 +281,19 @@ fn test_concurrent_operations() -> Result<TestResults, Box<dyn std::error::Error
                 match rng.random_range(0..10) {
                     0..=5 => {
                         // 60% writes
-                        if let Err(_) = db_clone.put(key.as_bytes(), value.as_bytes()) {
+                        if db_clone.put(key.as_bytes(), value.as_bytes()).is_err() {
                             error_count_clone.fetch_add(1, Ordering::Relaxed);
                         }
                     }
                     6..=8 => {
                         // 30% reads
-                        if let Err(_) = db_clone.get(key.as_bytes()) {
+                        if db_clone.get(key.as_bytes()).is_err() {
                             error_count_clone.fetch_add(1, Ordering::Relaxed);
                         }
                     }
                     9 => {
                         // 10% deletes
-                        if let Err(_) = db_clone.delete(key.as_bytes()) {
+                        if db_clone.delete(key.as_bytes()).is_err() {
                             error_count_clone.fetch_add(1, Ordering::Relaxed);
                         }
                     }
@@ -329,8 +331,10 @@ fn test_large_dataset() -> Result<TestResults, Box<dyn std::error::Error>> {
     let result = TestResults::new("Large Dataset (100MB+)");
 
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 20 * 1024 * 1024; // 20MB cache (smaller than dataset)
+    let mut config = LightningDbConfig {
+        cache_size: 20 * 1024 * 1024,
+        ..Default::default()
+    }; // 20MB cache (smaller than dataset)
     config.compression_enabled = true;
 
     let db = Database::create(temp_dir.path(), config)?;
@@ -411,8 +415,10 @@ fn test_memory_pressure() -> Result<TestResults, Box<dyn std::error::Error>> {
     let result = TestResults::new("Memory Pressure");
 
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 10 * 1024 * 1024; // Small cache
+    let config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024,
+        ..Default::default()
+    }; // Small cache
 
     let db = Database::create(temp_dir.path(), config)?;
 
@@ -470,8 +476,10 @@ fn test_crash_recovery() -> Result<TestResults, Box<dyn std::error::Error>> {
     let result = TestResults::new("Crash Recovery");
 
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.use_improved_wal = true;
+    let mut config = LightningDbConfig {
+        use_improved_wal: true,
+        ..Default::default()
+    };
     config.wal_sync_mode = WalSyncMode::Sync; // Ensure durability
 
     // Phase 1: Write data

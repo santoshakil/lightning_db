@@ -595,19 +595,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let metadata = RedundantMetadata::new(temp_dir.path());
 
-        let header = Header {
-            magic: Header::MAGIC,
-            version: 1,
-            page_size: 4096,
-            checksum: 0,
-        };
+        let header = Header::new(4096);
 
         // Write header
         metadata.write_header(&header).unwrap();
 
         // Read back
         let read_header = metadata.read_header().unwrap();
-        assert_eq!(read_header.version, 1);
+        assert_eq!(read_header.version, Header::VERSION);
         assert_eq!(read_header.page_size, 4096);
 
         // Corrupt primary
@@ -615,6 +610,6 @@ mod tests {
 
         // Should still read from backup
         let read_header = metadata.read_header().unwrap();
-        assert_eq!(read_header.version, 1);
+        assert_eq!(read_header.version, Header::VERSION);
     }
 }

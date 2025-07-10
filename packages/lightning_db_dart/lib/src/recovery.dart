@@ -1,10 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:meta/meta.dart';
 import 'database.dart';
 import 'errors.dart';
-import 'init.dart';
-import 'native/lightning_db_bindings.dart';
 
 /// Database recovery utilities
 class DatabaseRecovery {

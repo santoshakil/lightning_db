@@ -9,8 +9,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = dir.path().join("test.db");
 
     // Test with fully optimized config but async writes
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = lightning_db::WalSyncMode::Async; // Disable sync on every write
+    let config = LightningDbConfig {
+        wal_sync_mode: lightning_db::WalSyncMode::Async, // Disable sync on every write
+        ..Default::default()
+    };
 
     let db = Database::create(&db_path, config)?;
 
