@@ -11,8 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = dir.path().join("test.db");
     println!("DB path: {:?}", db_path);
 
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Async;
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async,
+        ..Default::default()
+    };
     println!("Config created");
 
     println!("About to create database...");

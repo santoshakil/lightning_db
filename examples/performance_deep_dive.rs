@@ -211,8 +211,10 @@ fn analyze_compaction_impact() -> Result<(), Box<dyn std::error::Error>> {
 
 fn analyze_memory_patterns() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 50 * 1024 * 1024; // 50MB cache
+    let config = LightningDbConfig {
+        cache_size: 50 * 1024 * 1024,
+        ..Default::default()
+    }; // 50MB cache
 
     let db = Database::create(temp_dir.path(), config)?;
 

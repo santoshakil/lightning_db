@@ -11,8 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 1: Regular put with sync WAL
     {
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
 
         println!("Test 1: Single writes with sync WAL");
@@ -33,8 +35,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 2: Batch writes in transaction
     {
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(db_path.with_extension("tx"), config)?);
 
         println!("Test 2: Batch writes in transaction");

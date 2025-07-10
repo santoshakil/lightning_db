@@ -4,7 +4,7 @@
 //! under extreme conditions.
 
 use lightning_db::{Database, LightningDbConfig};
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use std::fs;
 use std::panic;
 use std::process::Command;
@@ -109,7 +109,7 @@ fn test_memory_pressure_stability() {
     }
 
     // Spawn reader threads
-    for i in 0..5 {
+    for _i in 0..5 {
         let db = db.clone();
         let barrier = barrier.clone();
         let stop = stop.clone();
@@ -117,7 +117,7 @@ fn test_memory_pressure_stability() {
 
         let handle = thread::spawn(move || {
             barrier.wait();
-            let mut rng = thread_rng();
+            let mut rng = rng();
 
             while !stop.load(Ordering::Relaxed) {
                 let writer_id = rng.random_range(0..5);
@@ -506,9 +506,6 @@ fn test_rapid_open_close() {
 #[test]
 #[cfg(unix)]
 fn test_disk_space_exhaustion() {
-    use std::fs::OpenOptions;
-    use std::io::Write;
-
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().join("disk_full_test.db");
 

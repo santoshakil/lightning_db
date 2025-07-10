@@ -15,10 +15,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = dir.path();
 
     // Configure database with all optimizations
-    let mut config = LightningDbConfig::default();
-    config.use_improved_wal = true;
-    config.use_optimized_transactions = true;
-    config.use_optimized_page_manager = true;
+    let config = LightningDbConfig {
+        use_improved_wal: true,
+        use_optimized_transactions: true,
+        use_optimized_page_manager: true,
+        ..Default::default()
+    };
 
     // Create database
     let db = Arc::new(Database::create(db_path, config)?);

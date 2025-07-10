@@ -34,11 +34,9 @@ pub fn string_to_c_str(s: &str) -> *mut c_char {
 /// - The pointer must have been allocated by this library
 /// - The pointer must not be used after calling this function
 #[no_mangle]
-pub extern "C" fn lightning_db_free_string(ptr: *mut c_char) {
+pub unsafe extern "C" fn lightning_db_free_string(ptr: *mut c_char) {
     if !ptr.is_null() {
-        unsafe {
-            let _ = CString::from_raw(ptr);
-        }
+        let _ = CString::from_raw(ptr);
     }
 }
 
@@ -71,11 +69,9 @@ pub fn vec_to_bytes(data: Vec<u8>) -> (*mut u8, usize) {
 /// - The pointer must have been allocated by this library with the given length
 /// - The pointer must not be used after calling this function
 #[no_mangle]
-pub extern "C" fn lightning_db_free_bytes(ptr: *mut u8, len: usize) {
+pub unsafe extern "C" fn lightning_db_free_bytes(ptr: *mut u8, len: usize) {
     if !ptr.is_null() && len > 0 {
-        unsafe {
-            let _ = Vec::from_raw_parts(ptr, len, len);
-        }
+        let _ = Vec::from_raw_parts(ptr, len, len);
     }
 }
 

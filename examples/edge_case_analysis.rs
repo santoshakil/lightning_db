@@ -377,8 +377,10 @@ fn test_database_reopen() -> Result<(), Box<dyn std::error::Error>> {
 
 fn test_memory_limits() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 1024 * 1024; // 1MB cache only
+    let config = LightningDbConfig {
+        cache_size: 1024 * 1024,
+        ..Default::default()
+    }; // 1MB cache only
 
     let db = Database::create(temp_dir.path(), config)?;
 

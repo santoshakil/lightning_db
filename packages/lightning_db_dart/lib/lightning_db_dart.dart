@@ -8,12 +8,13 @@
 library lightning_db_dart;
 
 export 'src/database.dart';
-export 'src/transaction.dart';
-export 'src/iterator.dart';
 export 'src/errors.dart';
 export 'src/types.dart';
 export 'src/batch.dart';
-export 'src/recovery.dart';
-export 'src/migration.dart';
 export 'src/encryption.dart';
-export 'src/monitoring.dart';
+// Temporarily disabled due to API mismatches - need to be fixed:
+// export 'src/transaction.dart';
+// export 'src/iterator.dart'; 
+// export 'src/recovery.dart';
+// export 'src/migration.dart';
+// export 'src/monitoring.dart';

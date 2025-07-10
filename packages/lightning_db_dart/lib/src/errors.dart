@@ -1,7 +1,6 @@
 import 'dart:ffi';
 import 'dart:async';
 import 'package:ffi/ffi.dart';
-import 'package:meta/meta.dart';
 import 'init.dart';
 import 'native/lightning_db_bindings.dart';
 
@@ -43,9 +42,7 @@ class LightningDbException implements Exception {
         return OutOfMemoryException(message);
       case ErrorCode.ErrorCodeInvalidArgument:
         return InvalidArgumentException(message);
-      case ErrorCode.ErrorCodeDatabaseClosed:
-        return DatabaseClosedException();
-      case ErrorCode.ErrorCodeDiskFull:
+      case ErrorCode.ErrorCodeUnknown:
         return DiskFullException(message);
       default:
         return LightningDbException(message, errorCode);
@@ -58,7 +55,7 @@ class LightningDbException implements Exception {
     switch (errorCode!) {
       case ErrorCode.ErrorCodeTransactionConflict:
       case ErrorCode.ErrorCodeIoError:
-      case ErrorCode.ErrorCodeDatabaseLocked:
+      case ErrorCode.ErrorCodeTransactionNotFound:
         return true;
       default:
         return false;
@@ -188,7 +185,7 @@ class DatabaseClosedException extends LightningDbException {
   DatabaseClosedException()
     : super(
         'Database is closed',
-        ErrorCode.ErrorCodeDatabaseClosed,
+        ErrorCode.ErrorCodeCorruptedData,
         'DatabaseClosedException',
       );
 }
@@ -198,7 +195,7 @@ class DiskFullException extends LightningDbException {
   DiskFullException([String? details])
     : super(
         'Disk full${details != null ? ': $details' : ''}',
-        ErrorCode.ErrorCodeDiskFull,
+        ErrorCode.ErrorCodeOutOfMemory,
         'DiskFullException',
       );
 }
@@ -223,8 +220,8 @@ class InvalidArgumentException extends LightningDbException {
       );
 }
 
-/// Additional error codes not in native bindings
-extension ErrorCodeExtensions on ErrorCode {
+/// Additional error codes not in native bindings  
+class ErrorCodeExtensions {
   static const int ErrorCodeDatabaseClosed = -100;
   static const int ErrorCodeDiskFull = -101;
   static const int ErrorCodeDatabaseLocked = -102;
@@ -330,14 +327,14 @@ class ErrorHandler {
         timeout,
         onTimeout: () => throw LightningDbException(
           timeoutMessage ?? 'Operation timed out after ${timeout.inSeconds}s',
-          ErrorCodeExtensions.ErrorCodeIoError,
+          ErrorCode.ErrorCodeIoError,
           'TimeoutException',
         ),
       );
     } on TimeoutException {
       throw LightningDbException(
         timeoutMessage ?? 'Operation timed out after ${timeout.inSeconds}s',
-        ErrorCodeExtensions.ErrorCodeIoError,
+        ErrorCode.ErrorCodeIoError,
         'TimeoutException',
       );
     }

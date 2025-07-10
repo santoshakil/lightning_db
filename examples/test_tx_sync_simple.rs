@@ -9,9 +9,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
     let db_path = dir.path().join("test_tx_sync.db");
 
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Sync;
-    config.use_improved_wal = true;
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Sync,
+        use_improved_wal: true,
+        ..Default::default()
+    };
     let db = Arc::new(Database::create(&db_path, config)?);
 
     println!("Starting transaction test with sync WAL...");

@@ -30,8 +30,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("Test 2: Direct puts with Async WAL");
         let db_path = dir.path().join("async.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         let db = Database::create(&db_path, config)?;
 
         let count = 1000;
@@ -48,8 +50,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("Test 3: Using SyncWriteBatcher");
         let db_path = dir.path().join("sync_batcher.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
         let batcher = Database::create_with_batcher(db);
 
@@ -68,8 +72,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("Test 4: Using AutoBatcher");
         let db_path = dir.path().join("auto_batcher.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
         let batcher = Database::create_auto_batcher(db.clone());
 
@@ -96,8 +102,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("Test 5: Read performance (cached)");
         let db_path = dir.path().join("read_test.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let mut config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         config.compression_enabled = false; // Direct B+Tree access
         let db = Database::create(&db_path, config)?;
 

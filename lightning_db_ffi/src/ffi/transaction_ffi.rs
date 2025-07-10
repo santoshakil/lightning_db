@@ -122,7 +122,7 @@ pub extern "C" fn lightning_db_abort_transaction(tx_handle: u64) -> i32 {
 /// - key must be valid for key_len bytes
 /// - value must be valid for value_len bytes
 #[no_mangle]
-pub extern "C" fn lightning_db_put_tx(
+pub unsafe extern "C" fn lightning_db_put_tx(
     tx_handle: u64,
     key: *const u8,
     key_len: usize,
@@ -174,7 +174,7 @@ pub extern "C" fn lightning_db_put_tx(
 /// - key must be valid for key_len bytes
 /// - The returned ByteResult must be freed using lightning_db_free_bytes
 #[no_mangle]
-pub extern "C" fn lightning_db_get_tx(
+pub unsafe extern "C" fn lightning_db_get_tx(
     tx_handle: u64,
     key: *const u8,
     key_len: usize,

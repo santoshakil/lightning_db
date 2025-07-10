@@ -115,7 +115,7 @@ class Batch {
         if (op is BatchPut) {
           results[op.key] = true;
         } else if (op is BatchDelete) {
-          results[(op as BatchDelete).key] = true;
+          results[op.key] = true;
         }
       } catch (e) {
         final key = op is BatchPut ? op.key : (op as BatchDelete).key;

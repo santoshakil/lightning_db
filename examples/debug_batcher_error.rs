@@ -6,8 +6,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
     let db_path = dir.path().join("test.db");
 
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Sync;
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Sync,
+        ..Default::default()
+    };
     let db = Arc::new(Database::create(&db_path, config)?);
 
     // Try a single transaction

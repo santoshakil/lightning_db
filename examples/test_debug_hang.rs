@@ -8,8 +8,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let db_path = temp_dir.path();
 
     // Create minimal config
-    let mut config = LightningDbConfig::default();
-    config.prefetch_enabled = false; // Disable prefetch
+    let mut config = LightningDbConfig {
+        prefetch_enabled: false,
+        ..Default::default()
+    }; // Disable prefetch
     config.use_optimized_transactions = false; // Disable optimized tx
     config.use_improved_wal = false; // Use simple WAL
     config.cache_size = 0; // Disable cache

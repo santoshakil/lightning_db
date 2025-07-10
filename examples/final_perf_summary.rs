@@ -12,8 +12,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Solution 1: Use Async WAL for single writes
     {
         let db_path = dir.path().join("async_wal.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         let db = Arc::new(Database::create(&db_path, config)?);
 
         println!("Solution 1: Single writes with async WAL");
@@ -43,8 +45,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Solution 2: Manual batching with transactions
     {
         let db_path = dir.path().join("batched.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync; // Even with sync WAL
+        let mut config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        }; // Even with sync WAL
         config.compression_enabled = false; // Disable LSM
         let db = Arc::new(Database::create(&db_path, config)?);
 

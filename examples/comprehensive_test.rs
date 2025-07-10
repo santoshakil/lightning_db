@@ -448,8 +448,10 @@ fn test_batch_operations(path: &std::path::Path) -> Result<TestResult, Box<dyn s
 fn test_compression(path: &std::path::Path) -> Result<TestResult, Box<dyn std::error::Error>> {
     println!("Testing Compression...");
 
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = true;
+    let mut config = LightningDbConfig {
+        compression_enabled: true,
+        ..Default::default()
+    };
     config.compression_type = 1; // Zstd
 
     let db = Database::create(path, config)?;
@@ -505,8 +507,10 @@ fn test_memory_management(
 ) -> Result<TestResult, Box<dyn std::error::Error>> {
     println!("Testing Memory Management & Caching...");
 
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 10 * 1024 * 1024; // 10MB cache
+    let config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024,
+        ..Default::default()
+    }; // 10MB cache
 
     let db = Database::create(path, config)?;
     let mut issues = Vec::new();
@@ -901,8 +905,10 @@ fn test_edge_cases(path: &std::path::Path) -> Result<TestResult, Box<dyn std::er
 fn test_lsm_features(path: &std::path::Path) -> Result<TestResult, Box<dyn std::error::Error>> {
     println!("Testing LSM Tree Features...");
 
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = true;
+    let config = LightningDbConfig {
+        compression_enabled: true,
+        ..Default::default()
+    };
 
     let db = Database::create(path, config)?;
     let mut issues = Vec::new();

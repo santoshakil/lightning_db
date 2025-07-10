@@ -8,8 +8,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
     println!("Created temp dir: {:?}", dir.path());
 
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Async;
+    let mut config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async,
+        ..Default::default()
+    };
     config.use_improved_wal = false; // Disable improved WAL
     config.use_optimized_transactions = false; // Disable optimized transactions
     config.prefetch_enabled = false; // Disable prefetch

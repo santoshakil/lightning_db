@@ -28,8 +28,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("Test 2: Async mode");
         let db_path = dir.path().join("test2.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         let db = Database::create(&db_path, config)?;
 
         let start = Instant::now();
@@ -45,8 +47,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("Test 3: Using AutoBatcher");
         let db_path = dir.path().join("test3.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         let db = std::sync::Arc::new(Database::create(&db_path, config)?);
 
         let batcher = Database::create_auto_batcher(db);

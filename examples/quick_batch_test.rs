@@ -14,8 +14,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let db_path = dir.path().join("test.db");
 
     // Create database with basic WAL (no group commit) for fair comparison
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = false; // Disable for fair comparison
+    let mut config = LightningDbConfig {
+        compression_enabled: false,
+        ..Default::default()
+    }; // Disable for fair comparison
     config.cache_size = 10 * 1024 * 1024; // 10MB cache
     config.wal_sync_mode = lightning_db::WalSyncMode::Sync; // Force sync mode
     config.use_improved_wal = false; // Use basic WAL without group commit

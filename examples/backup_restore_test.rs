@@ -431,8 +431,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut data = fs::read(&btree_backup)?;
             if data.len() > 1000 {
                 // Corrupt some bytes in the middle
-                for i in 500..600 {
-                    data[i] = !data[i];
+                for byte in data.iter_mut().skip(500).take(100) {
+                    *byte = !*byte;
                 }
                 fs::write(&btree_backup, data)?;
             }

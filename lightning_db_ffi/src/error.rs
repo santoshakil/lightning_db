@@ -104,8 +104,8 @@ macro_rules! ffi_try {
         match $expr {
             Ok(val) => val,
             Err(e) => {
-                crate::error::set_last_error(crate::error::error_to_code(&e), format!("{}", e));
-                return crate::error::error_to_code(&e) as i32;
+                $crate::error::set_last_error($crate::error::error_to_code(&e), format!("{}", e));
+                return $crate::error::error_to_code(&e) as i32;
             }
         }
     };
@@ -113,7 +113,7 @@ macro_rules! ffi_try {
         match $expr {
             Ok(val) => val,
             Err(e) => {
-                crate::error::set_last_error(crate::error::error_to_code(&e), format!("{}", e));
+                $crate::error::set_last_error($crate::error::error_to_code(&e), format!("{}", e));
                 return $default;
             }
         }

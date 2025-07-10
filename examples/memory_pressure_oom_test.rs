@@ -271,7 +271,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         // Very small cache to force thrashing
         let config = LightningDbConfig {
-            cache_size: 1 * 1024 * 1024, // Only 1MB cache
+            cache_size: 1024 * 1024, // Only 1MB cache
             ..Default::default()
         };
 

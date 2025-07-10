@@ -12,8 +12,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 1: Individual puts with sync WAL (baseline)
     {
         let db_path = dir.path().join("test_individual.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let mut config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         config.compression_enabled = false; // Disable LSM to force B+Tree
         let db = Arc::new(Database::create(&db_path, config)?);
 
@@ -34,8 +36,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 2: Manual transaction batching
     {
         let db_path = dir.path().join("test_manual.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let mut config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         config.compression_enabled = false;
         let db = Arc::new(Database::create(&db_path, config)?);
 
@@ -72,8 +76,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 3: Simple batcher
     {
         let db_path = dir.path().join("test_simple.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let mut config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         config.compression_enabled = false;
         let db = Arc::new(Database::create(&db_path, config)?);
 
@@ -106,8 +112,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 4: Async WAL for comparison
     {
         let db_path = dir.path().join("test_async.db");
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Async;
+        let mut config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Async,
+            ..Default::default()
+        };
         config.compression_enabled = false;
         let db = Arc::new(Database::create(&db_path, config)?);
 

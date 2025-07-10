@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Create a minimal config for testing
     let config = LightningDbConfig {
         compression_enabled: false, // Disable compression to disable LSM tree
-        cache_size: 0, // Disable cache
+        cache_size: 0,              // Disable cache
         use_optimized_transactions: false,
         ..Default::default()
     };

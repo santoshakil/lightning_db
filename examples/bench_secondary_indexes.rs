@@ -10,8 +10,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = dir.path().join("indexed.db");
 
     // Create database with optimized config
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Async;
+    let mut config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async,
+        ..Default::default()
+    };
     config.compression_enabled = false; // Disable LSM for direct B+Tree
     let db = Arc::new(Database::create(&db_path, config)?);
 

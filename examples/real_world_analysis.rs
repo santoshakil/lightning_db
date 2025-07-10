@@ -50,8 +50,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn test_ecommerce_workload() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 50 * 1024 * 1024; // 50MB cache for product data
+    let config = LightningDbConfig {
+        cache_size: 50 * 1024 * 1024,
+        ..Default::default()
+    }; // 50MB cache for product data
 
     let db = Database::create(temp_dir.path(), config)?;
     let start = Instant::now();
@@ -132,8 +134,10 @@ fn test_ecommerce_workload() -> Result<(), Box<dyn std::error::Error>> {
 
 fn test_timeseries_workload() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = true; // Enable compression for time series
+    let mut config = LightningDbConfig {
+        compression_enabled: true,
+        ..Default::default()
+    }; // Enable compression for time series
     config.prefetch_enabled = true; // Enable prefetching for better read performance
 
     let db = Database::create(temp_dir.path(), config)?;
@@ -210,8 +214,10 @@ fn test_timeseries_workload() -> Result<(), Box<dyn std::error::Error>> {
 
 fn test_session_store() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Async; // Sessions can tolerate some data loss
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async,
+        ..Default::default()
+    }; // Sessions can tolerate some data loss
 
     let db = Arc::new(Database::create(temp_dir.path(), config)?);
 
@@ -345,8 +351,10 @@ fn test_analytics_counters() -> Result<(), Box<dyn std::error::Error>> {
 
 fn test_hot_keys() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 100 * 1024 * 1024; // 100MB cache for hot keys
+    let config = LightningDbConfig {
+        cache_size: 100 * 1024 * 1024,
+        ..Default::default()
+    }; // 100MB cache for hot keys
 
     let db = Database::create(temp_dir.path(), config)?;
 
@@ -398,8 +406,10 @@ fn test_hot_keys() -> Result<(), Box<dyn std::error::Error>> {
 
 fn test_large_values() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = true;
+    let config = LightningDbConfig {
+        compression_enabled: true,
+        ..Default::default()
+    };
 
     let db = Database::create(temp_dir.path(), config)?;
 
@@ -441,8 +451,10 @@ fn test_large_values() -> Result<(), Box<dyn std::error::Error>> {
 
 fn test_memory_pressure() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 10 * 1024 * 1024; // Small 10MB cache
+    let config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024,
+        ..Default::default()
+    }; // Small 10MB cache
 
     let db = Database::create(temp_dir.path(), config)?;
 

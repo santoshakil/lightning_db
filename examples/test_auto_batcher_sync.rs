@@ -10,8 +10,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test: Auto batcher with sync WAL
     let db_path = dir.path().join("test_auto_batch.db");
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Sync;
+    let mut config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Sync,
+        ..Default::default()
+    };
     config.compression_enabled = true; // Ensure LSM is enabled
     println!("Creating database with sync WAL...");
     let db = Arc::new(Database::create(&db_path, config)?);

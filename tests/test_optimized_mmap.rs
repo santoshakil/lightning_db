@@ -75,7 +75,6 @@ fn test_optimized_page_manager_performance() {
     let manager = OptimizedPageManager::create(&path, 1024 * 1024 * 64, config).unwrap();
 
     const NUM_PAGES: u32 = 1000;
-    const PAGE_DATA_SIZE: usize = 1024;
 
     // Allocate and write pages
     let mut page_ids = Vec::with_capacity(NUM_PAGES as usize);
@@ -102,10 +101,10 @@ fn test_optimized_page_manager_performance() {
     let sync_duration = sync_start.elapsed();
 
     // Read pages back in random order
-    use rand::{seq::SliceRandom, thread_rng};
+    use rand::{rng, seq::SliceRandom};
 
-    let mut rng = thread_rng();
-    page_ids.shuffle(&mut rng);
+    let mut random = rng();
+    page_ids.shuffle(&mut random);
 
     let read_start = Instant::now();
     for &page_id in &page_ids {

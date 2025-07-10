@@ -9,12 +9,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
 
     // Test with most features disabled
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = false; // Disable LSM
-    config.cache_size = 0; // Disable cache
-    config.use_improved_wal = false; // Use old WAL
-    config.prefetch_enabled = false; // Disable prefetch
-    config.use_optimized_transactions = false; // Disable optimized transactions
+    let config = LightningDbConfig {
+        compression_enabled: false,        // Disable LSM
+        cache_size: 0,                     // Disable cache
+        use_improved_wal: false,           // Use old WAL
+        prefetch_enabled: false,           // Disable prefetch
+        use_optimized_transactions: false, // Disable optimized transactions
+        ..Default::default()
+    };
 
     println!("Creating database with minimal config...");
     let start = Instant::now();

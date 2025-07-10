@@ -10,8 +10,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let value = vec![0u8; 100];
 
     let db_path = dir.path().join("test.db");
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Async;
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async,
+        ..Default::default()
+    };
 
     let db = Arc::new(Database::create(&db_path, config)?);
     let batcher = Database::create_fast_auto_batcher(db.clone());

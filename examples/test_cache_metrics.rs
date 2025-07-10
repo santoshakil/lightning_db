@@ -7,8 +7,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let db_path = dir.path().join("test.db");
 
     // Test with cache enabled
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 10 * 1024 * 1024; // 10MB cache
+    let mut config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024,
+        ..Default::default()
+    }; // 10MB cache
     config.compression_enabled = false; // Disable compression/LSM for simpler test
 
     println!("=== Testing Cache Metrics ===");
