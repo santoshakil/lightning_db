@@ -167,9 +167,13 @@ pub extern "C" fn lightning_db_iterator_close(iter_handle: u64) -> i32 {
 #[no_mangle]
 pub extern "C" fn lightning_db_free_key_value(result: KeyValueResult) {
     if !result.key.is_null() && result.key_len > 0 {
-        crate::utils::lightning_db_free_bytes(result.key, result.key_len);
+        unsafe {
+            crate::utils::lightning_db_free_bytes(result.key, result.key_len);
+        }
     }
     if !result.value.is_null() && result.value_len > 0 {
-        crate::utils::lightning_db_free_bytes(result.value, result.value_len);
+        unsafe {
+            crate::utils::lightning_db_free_bytes(result.value, result.value_len);
+        }
     }
 }

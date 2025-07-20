@@ -163,7 +163,8 @@ jobs:
       
       - name: Build WASM
         run: |
-          cargo build --release --target wasm32-unknown-unknown --no-default-features
+          # Build library only (not the CLI binary which isn't suitable for WASM)
+          cargo build --release --target wasm32-unknown-unknown --no-default-features --features wasm --lib
           
           # Create WASM package
           mkdir -p wasm-pkg
