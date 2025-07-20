@@ -99,6 +99,7 @@ impl RetryPolicy {
         );
 
         // Apply jitter if enabled
+        #[cfg(feature = "rand")]
         if self.jitter {
             use rand::Rng;
             let mut rng = rand::rng();

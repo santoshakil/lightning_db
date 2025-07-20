@@ -148,38 +148,6 @@ jobs:
           path: ./target/${{ matrix.target }}/release/${{ env.ASSET }}
           retention-days: 30
 
-  build-wasm:
-    name: Build WebAssembly
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          target: wasm32-unknown-unknown
-      
-      - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-      
-      - name: Build WASM
-        run: |
-          # Build library only (not the CLI binary which isn't suitable for WASM)
-          cargo build --release --target wasm32-unknown-unknown --no-default-features --features wasm --lib
-          
-          # Create WASM package
-          mkdir -p wasm-pkg
-          cp target/wasm32-unknown-unknown/release/*.wasm wasm-pkg/ || true
-          cp README.md wasm-pkg/
-          
-          # Create archive
-          tar czf lightning_db-wasm32.tar.gz -C wasm-pkg .
-      
-      - name: Upload WASM Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lightning_db-wasm32
-          path: ./lightning_db-wasm32.tar.gz
-          retention-days: 30
 
   build-universal-macos:
     name: Build Universal macOS Binary
