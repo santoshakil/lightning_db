@@ -246,8 +246,11 @@ jobs:
       
       - name: Create Android libraries archive
         run: |
-          mkdir -p android-libs
-          cp -r target/*/release/*.so android-libs/
+          mkdir -p android-libs/{arm64-v8a,armeabi-v7a,x86,x86_64}
+          cp target/aarch64-linux-android/release/*.so android-libs/arm64-v8a/
+          cp target/armv7-linux-androideabi/release/*.so android-libs/armeabi-v7a/
+          cp target/i686-linux-android/release/*.so android-libs/x86/
+          cp target/x86_64-linux-android/release/*.so android-libs/x86_64/
           tar czf lightning_db-android-libs.tar.gz android-libs/
       
       - name: Upload Android libraries
