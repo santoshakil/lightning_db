@@ -40,6 +40,9 @@ clap = { version = "4.5", features = ["derive"] }
 smallvec = "1.13"
 sys-info = { version = "0.9", optional = true }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 
@@ -64,6 +67,7 @@ prost-build = "0.14"
 default = ["zstd-compression"]
 zstd-compression = ["zstd"]
 ios = []  # iOS build without zstd
+wasm = []  # WASM build without incompatible features
 opentelemetry = []
 compression = []
 async = []
