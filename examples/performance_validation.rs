@@ -14,21 +14,29 @@ fn main() {
     // Test different configurations
     test_configuration("Default", LightningDbConfig::default());
 
-    let mut async_config = LightningDbConfig::default();
-    async_config.wal_sync_mode = WalSyncMode::Async;
+    let async_config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Async,
+        ..Default::default()
+    };
     test_configuration("Async WAL", async_config);
 
-    let mut sync_config = LightningDbConfig::default();
-    sync_config.wal_sync_mode = WalSyncMode::Sync;
+    let sync_config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Sync,
+        ..Default::default()
+    };
     test_configuration("Sync WAL", sync_config);
 
-    let mut cache_config = LightningDbConfig::default();
-    cache_config.cache_size = 100 * 1024 * 1024; // 100MB
+    let cache_config = LightningDbConfig {
+        cache_size: 100 * 1024 * 1024, // 100MB
+        ..Default::default()
+    };
     test_configuration("With Cache", cache_config);
 
-    let mut compressed_config = LightningDbConfig::default();
-    compressed_config.compression_enabled = true;
-    compressed_config.compression_type = 1; // Zstd
+    let compressed_config = LightningDbConfig {
+        compression_enabled: true,
+        compression_type: 1, // Zstd
+        ..Default::default()
+    };
     test_configuration("With Compression", compressed_config);
 }
 

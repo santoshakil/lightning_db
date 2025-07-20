@@ -294,7 +294,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         use std::io::Read;
         let mut buffer = [0; 1];
 
-        if let Ok(_) = stdin.lock().read_exact(&mut buffer) {
+        if stdin.lock().read_exact(&mut buffer).is_ok() {
             match buffer[0] {
                 b'\n' => {
                     // Print status

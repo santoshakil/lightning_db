@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("  ✓ Final counter value: {} (started at 0)", final_value);
 
-        if final_value <= successes as i32 {
+        if final_value <= successes {
             println!("  ✓ Counter consistency maintained");
         } else {
             panic!(

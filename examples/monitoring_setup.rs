@@ -123,6 +123,12 @@ pub enum AlertSeverity {
     Critical,
 }
 
+impl Default for DatabaseMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DatabaseMonitor {
     pub fn new() -> Self {
         Self {

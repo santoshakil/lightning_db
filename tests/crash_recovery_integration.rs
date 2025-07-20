@@ -170,12 +170,12 @@ fn test_concurrent_crash_recovery() {
         // Count recovered entries per thread
         let mut thread_counts = [0; 4];
 
-        for thread_id in 0..4 {
+        for (thread_id, count) in thread_counts.iter_mut().enumerate() {
             let mut i = 0;
             loop {
                 let key = format!("thread_{}_key_{:06}", thread_id, i);
                 if db.get(key.as_bytes()).unwrap().is_some() {
-                    thread_counts[thread_id] += 1;
+                    *count += 1;
                     i += 1;
                 } else {
                     break;

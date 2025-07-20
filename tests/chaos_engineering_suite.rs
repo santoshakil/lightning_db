@@ -221,7 +221,7 @@ fn corrupt_random_file(db_path: &str) {
             .collect();
 
         if let Some(entry) = files.choose(&mut rng) {
-            if let Ok(mut data) = fs::read(&entry.path()) {
+            if let Ok(mut data) = fs::read(entry.path()) {
                 if !data.is_empty() {
                     // Corrupt random bytes
                     let corrupt_count = rng.random_range(1..10);
@@ -229,7 +229,7 @@ fn corrupt_random_file(db_path: &str) {
                         let pos = rng.random_range(0..data.len());
                         data[pos] = rng.random();
                     }
-                    let _ = fs::write(&entry.path(), data);
+                    let _ = fs::write(entry.path(), data);
                 }
             }
         }
@@ -250,7 +250,7 @@ fn delete_random_file(db_path: &str) {
             .collect();
 
         if let Some(entry) = files.choose(&mut rng) {
-            let _ = fs::remove_file(&entry.path());
+            let _ = fs::remove_file(entry.path());
         }
     }
 }
@@ -270,7 +270,7 @@ fn truncate_random_file(db_path: &str) {
                 let new_len = rng.random_range(0..metadata.len());
                 let _ = fs::OpenOptions::new()
                     .write(true)
-                    .open(&entry.path())
+                    .open(entry.path())
                     .and_then(|f| f.set_len(new_len));
             }
         }

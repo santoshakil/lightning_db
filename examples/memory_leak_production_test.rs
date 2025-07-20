@@ -108,7 +108,7 @@ fn main() {
             while monitor_start.elapsed() < monitor_duration {
                 // Get memory info (approximation using process info)
                 if let Ok(output) = std::process::Command::new("ps")
-                    .args(&["-o", "rss=", "-p", std::process::id().to_string().as_str()])
+                    .args(["-o", "rss=", "-p", std::process::id().to_string().as_str()])
                     .output()
                 {
                     if let Ok(memory_str) = String::from_utf8(output.stdout) {

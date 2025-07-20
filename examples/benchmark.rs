@@ -219,8 +219,8 @@ fn run_benchmark(
     println!("  Running delete benchmark...");
     let delete_count = num_keys / 10; // Delete 10% of keys
     let start = Instant::now();
-    for i in 0..delete_count {
-        db.delete(&keys[i])?;
+    for key in keys.iter().take(delete_count) {
+        db.delete(key)?;
     }
     let delete_duration = start.elapsed();
     results.delete_ops_per_sec = delete_count as f64 / delete_duration.as_secs_f64();
@@ -232,9 +232,8 @@ fn run_benchmark(
     let start = Instant::now();
     for _ in 0..scan_count {
         let scan = db.scan(None, None)?;
-        let mut _count = 0;
         for _ in scan.take(100) {
-            _count += 1;
+            // Just iterate through 100 items
         }
     }
     let scan_duration = start.elapsed();

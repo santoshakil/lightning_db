@@ -357,15 +357,12 @@ fn validate_queue_pattern() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         if let Ok(iter) = scan_result {
-            for result in iter.take(10) {
-                // Process up to 10 messages at a time
-                if let Ok((key, _value)) = result {
-                    // Process message
-                    if db.delete(&key).is_ok() {
-                        consumed += 1;
-                        last_key = String::from_utf8_lossy(&key).to_string();
-                        found = true;
-                    }
+            for (key, _value) in iter.take(10).flatten() {
+                // Process message
+                if db.delete(&key).is_ok() {
+                    consumed += 1;
+                    last_key = String::from_utf8_lossy(&key).to_string();
+                    found = true;
                 }
             }
         }

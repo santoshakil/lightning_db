@@ -397,16 +397,14 @@ fn validate_queue_pattern() -> Result<(), Box<dyn std::error::Error>> {
                 );
 
                 if let Ok(iter) = scan_result {
-                    for result in iter {
-                        if let Ok((key, _value)) = result {
-                            // Process message
-                            if db_clone.delete(&key).is_ok() {
-                                processed += 1;
-                                consumed_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                last_key = String::from_utf8_lossy(&key).to_string();
-                                found = true;
-                                break;
-                            }
+                    for (key, _value) in iter.flatten() {
+                        // Process message
+                        if db_clone.delete(&key).is_ok() {
+                            processed += 1;
+                            consumed_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            last_key = String::from_utf8_lossy(&key).to_string();
+                            found = true;
+                            break;
                         }
                     }
                 }

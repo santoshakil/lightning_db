@@ -115,8 +115,8 @@ fn main() {
 
 fn generate_random_data(size: usize) -> Vec<u8> {
     let mut data = vec![0u8; size];
-    for i in 0..size {
-        data[i] = ((i * 7 + 13) % 256) as u8;
+    for (i, byte) in data.iter_mut().enumerate() {
+        *byte = ((i * 7 + 13) % 256) as u8;
     }
     data
 }
@@ -144,10 +144,10 @@ fn generate_compressed_like_data(size: usize) -> Vec<u8> {
     let mut data = vec![0u8; size];
     let mut state = 0x12345678u32;
 
-    for i in 0..size {
+    for byte in data.iter_mut() {
         // Simple linear congruential generator
         state = state.wrapping_mul(1664525).wrapping_add(1013904223);
-        data[i] = (state >> 24) as u8;
+        *byte = (state >> 24) as u8;
     }
 
     data

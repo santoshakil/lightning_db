@@ -348,7 +348,7 @@ fn test_concurrent_safety() -> Result<bool, Box<dyn std::error::Error>> {
                     deadlock_count_clone.fetch_add(1, Ordering::Relaxed);
                 }
 
-                if let Err(_) = result {
+                if result.is_err() {
                     error_count_clone.fetch_add(1, Ordering::Relaxed);
                 }
             }
@@ -469,7 +469,7 @@ fn test_transaction_consistency() -> Result<bool, Box<dyn std::error::Error>> {
         }
         let amount = rng.random_range(1..50);
 
-        if let Err(_) = transfer_money(&db, from, to, amount) {
+        if transfer_money(&db, from, to, amount).is_err() {
             transfer_errors += 1;
         }
     }
