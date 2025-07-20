@@ -21,32 +21,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔬 Lightning DB Performance Analysis\n");
 
     let _ = std::fs::remove_dir_all("./perf_test_db");
-    #[allow(clippy::vec_init_then_push)]
-    let mut results = Vec::new();
-
-    // Test 1: Sequential vs Random Writes
-    results.push(test_write_patterns()?);
-
-    // Test 2: Read Performance with Different Cache Hit Rates
-    results.push(test_cache_effectiveness()?);
-
-    // Test 3: Transaction Overhead
-    results.push(test_transaction_overhead()?);
-
-    // Test 4: Compression Impact
-    results.push(test_compression_impact()?);
-
-    // Test 5: Concurrent Access Patterns
-    results.push(test_concurrent_patterns()?);
-
-    // Test 6: Large Value Performance
-    results.push(test_value_size_impact()?);
-
-    // Test 7: Iterator Performance
-    results.push(test_iterator_performance()?);
-
-    // Test 8: Memory Pressure
-    results.push(test_memory_pressure()?);
+    
+    let results = vec![
+        // Test 1: Sequential vs Random Writes
+        test_write_patterns()?,
+        // Test 2: Read Performance with Different Cache Hit Rates
+        test_cache_effectiveness()?,
+        // Test 3: Transaction Overhead
+        test_transaction_overhead()?,
+        // Test 4: Compression Impact
+        test_compression_impact()?,
+        // Test 5: Concurrent Access Patterns
+        test_concurrent_patterns()?,
+        // Test 6: Large Value Performance
+        test_value_size_impact()?,
+        // Test 7: Iterator Performance
+        test_iterator_performance()?,
+        // Test 8: Memory Pressure
+        test_memory_pressure()?,
+    ];
 
     // Print Analysis
     print_analysis(&results);

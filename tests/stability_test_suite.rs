@@ -62,8 +62,10 @@ fn test_memory_pressure_stability() {
     let db_path = temp_dir.path().join("memory_test.db");
 
     // Create database with limited cache
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 1024 * 1024; // 1MB cache
+    let config = LightningDbConfig {
+        cache_size: 1024 * 1024, // 1MB cache
+        ..Default::default()
+    };
 
     let db = Arc::new(create_test_db(db_path.to_str().unwrap(), config));
     let barrier = Arc::new(Barrier::new(10));
@@ -89,9 +91,10 @@ fn test_memory_pressure_stability() {
 
                 match db.begin_transaction() {
                     Ok(tx_id) => {
-                        if let Err(_) = db
+                        if db
                             .put_tx(tx_id, key.as_bytes(), &value)
                             .and_then(|_| db.commit_transaction(tx_id))
+                            .is_err()
                         {
                             error_count.fetch_add(1, Ordering::Relaxed);
                         }
@@ -215,7 +218,7 @@ fn test_crash_recovery_kill_9() {
 
     // Run child process
     let mut child = Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--example",
             "crash_test",
@@ -434,8 +437,8 @@ fn test_wal_corruption_recovery() {
 
         // Corrupt some bytes in the middle
         if wal_data.len() > 100 {
-            for i in 50..60 {
-                wal_data[i] = 0xFF;
+            for byte in wal_data.iter_mut().skip(50).take(10) {
+                *byte = 0xFF;
             }
         }
 

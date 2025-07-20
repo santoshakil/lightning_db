@@ -1,0 +1,21 @@
+# Minimal Alpine-based image
+FROM rust:1.75-alpine AS builder
+
+RUN apk add --no-cache musl-dev protoc
+
+WORKDIR /build
+COPY . .
+
+# Build statically linked binary
+RUN RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-musl --bin lightning-cli
+
+# Scratch image for minimal size
+FROM scratch
+
+# Copy statically linked binary
+COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/lightning-cli /lightning-cli
+
+# Copy SSL certificates for HTTPS (if needed)
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+ENTRYPOINT ["/lightning-cli"]

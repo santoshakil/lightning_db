@@ -805,15 +805,12 @@ fn test_transaction_consistency() -> Result<TestResults, Box<dyn std::error::Err
     let mut total_balance = 0;
     for i in 0..num_accounts {
         let key = format!("account_{}", i);
-        match db.get(key.as_bytes()) {
-            Ok(Some(balance_bytes)) => {
-                if let Ok(balance_str) = std::str::from_utf8(&balance_bytes) {
-                    if let Ok(balance) = balance_str.parse::<i32>() {
-                        total_balance += balance;
-                    }
+        if let Ok(Some(balance_bytes)) = db.get(key.as_bytes()) {
+            if let Ok(balance_str) = std::str::from_utf8(&balance_bytes) {
+                if let Ok(balance) = balance_str.parse::<i32>() {
+                    total_balance += balance;
                 }
             }
-            _ => {}
         }
     }
 

@@ -1,7 +1,7 @@
 use lightning_db::{Database, LightningDbConfig};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -122,14 +122,14 @@ fn worker_main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn spawn_worker(
     worker_id: usize,
-    db_path: &PathBuf,
+    db_path: &Path,
     operation_count: usize,
     operation_type: &str,
     temp_dir: &TempDir,
 ) -> Result<Child, Box<dyn std::error::Error>> {
     let config = WorkerConfig {
         worker_id,
-        db_path: db_path.clone(),
+        db_path: db_path.to_path_buf(),
         operation_count,
         operation_type: operation_type.to_string(),
     };

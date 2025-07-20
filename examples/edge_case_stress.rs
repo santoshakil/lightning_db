@@ -74,7 +74,7 @@ fn test_extreme_key_sizes(db: Arc<Database>) {
     }
 
     // Keys with special patterns
-    let special_keys = vec![
+    let special_keys = [
         vec![0x00; 100],               // All zeros
         vec![0xFF; 100],               // All ones
         (0..255).collect::<Vec<u8>>(), // Sequential bytes
@@ -99,7 +99,7 @@ fn test_extreme_value_sizes(db: Arc<Database>) {
     println!("  ✓ 100 empty values");
 
     // Very large values
-    let large_value_sizes = vec![
+    let large_value_sizes = [
         1024 * 1024,      // 1MB
         10 * 1024 * 1024, // 10MB
         50 * 1024 * 1024, // 50MB
