@@ -124,6 +124,15 @@ pub enum Error {
 
     #[error("Operation throttled for {0:?}")]
     Throttled(std::time::Duration),
+    
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
+    
+    #[error("WAL not available")]
+    WalNotAvailable,
+    
+    #[error("Corruption unrecoverable: {0}")]
+    CorruptionUnrecoverable(String),
 }
 
 impl From<std::io::Error> for Error {
@@ -151,7 +160,7 @@ impl Error {
             Error::Io(_) => -1,
             Error::InvalidDatabase => -2,
             Error::CorruptedPage => -3,
-            Error::CorruptedDatabase(_) => -38,
+            Error::CorruptedDatabase(_) => -41,
             Error::InvalidPageId => -4,
             Error::PageNotFound => -5,
             Error::KeyNotFound => -6,
@@ -188,6 +197,9 @@ impl Error {
             Error::PageOverflow => -35,
             Error::ResourceLimitExceeded(_) => -36,
             Error::Throttled(_) => -37,
+            Error::NotImplemented(_) => -38,
+            Error::WalNotAvailable => -39,
+            Error::CorruptionUnrecoverable(_) => -40,
         }
     }
 

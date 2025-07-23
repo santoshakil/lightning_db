@@ -69,6 +69,7 @@ pub mod btree_write_buffer;
 pub mod cache;
 pub mod compression;
 pub mod consistency;
+pub mod corruption_detection;
 pub mod error;
 pub mod fast_auto_batcher;
 pub mod fast_path;
