@@ -60,6 +60,7 @@
 //! | Batch Write | 500K+ ops/sec | <2 μs | - | ✅ |
 //! | Range Scan | 2M+ entries/sec | - | - | ✅ |
 
+pub mod admin;
 pub mod async_db;
 pub mod auto_batcher;
 pub mod backup;
