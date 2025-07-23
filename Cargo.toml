@@ -39,6 +39,8 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "jso
 clap = { version = "4.5", features = ["derive"] }
 smallvec = "1.13"
 sys-info = { version = "0.9", optional = true }
+prettytable-rs = "0.10"
+chrono = "0.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -78,6 +80,10 @@ crate-type = ["rlib"]
 [[bin]]
 name = "lightning-cli"
 path = "src/bin/lightning-cli.rs"
+
+[[bin]]
+name = "lightning-admin"
+path = "src/bin/lightning-admin.rs"
 
 [[bin]]
 name = "lightning-admin-server"
