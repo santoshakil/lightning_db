@@ -4,6 +4,7 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Wrapper enum to support both standard and optimized page managers
+#[derive(Debug)]
 pub enum PageManagerWrapper {
     Standard(Arc<RwLock<PageManager>>),
     Optimized(Arc<OptimizedPageManager>),
