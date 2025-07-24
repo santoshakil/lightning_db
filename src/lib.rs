@@ -89,6 +89,7 @@ pub mod profiling;
 pub mod profiling_legacy;
 pub mod property_testing;
 pub mod query_planner;
+pub mod repl;
 pub mod realtime_stats;
 pub mod recovery;
 pub mod replication;

@@ -97,7 +97,7 @@ impl ReferenceModel {
 }
 
 /// Result from reference model operation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum ModelResult {
     Success,
     Value(Option<Vec<u8>>),
@@ -363,7 +363,7 @@ impl MutationStrategy for BitFlipMutation {
                 // Mutate key
                 if !key.is_empty() {
                     let mut mutated_key = key.clone();
-                    let bit_pos = fastrand::usize(0..key.len() * 8);
+                    let bit_pos = fastrand::usize(0, key.len() * 8);
                     let byte_pos = bit_pos / 8;
                     let bit_offset = bit_pos % 8;
                     mutated_key[byte_pos] ^= 1 << bit_offset;
@@ -377,7 +377,7 @@ impl MutationStrategy for BitFlipMutation {
                 // Mutate value
                 if !value.is_empty() {
                     let mut mutated_value = value.clone();
-                    let bit_pos = fastrand::usize(0..value.len() * 8);
+                    let bit_pos = fastrand::usize(0, value.len() * 8);
                     let byte_pos = bit_pos / 8;
                     let bit_offset = bit_pos % 8;
                     mutated_value[byte_pos] ^= 1 << bit_offset;
@@ -484,7 +484,7 @@ impl FuzzTester {
                 if corpus.is_empty() {
                     continue;
                 }
-                corpus[fastrand::usize(0..corpus.len())].clone()
+                corpus[fastrand::usize(0, corpus.len())].clone()
             };
 
             // Apply mutations

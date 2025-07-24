@@ -108,7 +108,7 @@ pub struct PerformanceMetrics {
 /// Trait for defining invariant checks
 pub trait InvariantCheck {
     fn name(&self) -> String;
-    fn check(&self, db: &Database, operations: &[Operation]) -> Result<(), InvariantViolation>;
+    fn check(&self, db: &Database, operations: &[Operation]) -> std::result::Result<(), InvariantViolation>;
 }
 
 /// Trait for generating test operations
@@ -252,7 +252,7 @@ impl PropertyTester {
             
             // Create a fresh database for this test
             let test_db_path = db_path.join(format!("test_{}", iteration));
-            std::fs::create_dir_all(&test_db_path).map_err(|e| Error::IoError(e.to_string()))?;
+            std::fs::create_dir_all(&test_db_path).map_err(|e| Error::Io(e.to_string()))?;
             
             let config = LightningDbConfig::default();
             let db = Database::create(&test_db_path, config)?;
@@ -425,7 +425,7 @@ impl InvariantCheck for DataIntegrityCheck {
         "data_integrity".to_string()
     }
 
-    fn check(&self, db: &Database, operations: &[Operation]) -> Result<(), InvariantViolation> {
+    fn check(&self, db: &Database, operations: &[Operation]) -> std::result::Result<(), InvariantViolation> {
         // Verify that all put operations can be retrieved
         for operation in operations {
             if let Operation::Put { key, value } = operation {
@@ -474,7 +474,7 @@ impl InvariantCheck for ConsistencyCheck {
         "consistency".to_string()
     }
 
-    fn check(&self, db: &Database, operations: &[Operation]) -> Result<(), InvariantViolation> {
+    fn check(&self, db: &Database, operations: &[Operation]) -> std::result::Result<(), InvariantViolation> {
         // Build expected state from operations
         let mut expected_state = HashMap::new();
         
@@ -548,7 +548,7 @@ impl InvariantCheck for DurabilityCheck {
         "durability".to_string()
     }
 
-    fn check(&self, db: &Database, operations: &[Operation]) -> Result<(), InvariantViolation> {
+    fn check(&self, db: &Database, operations: &[Operation]) -> std::result::Result<(), InvariantViolation> {
         // For now, assume durability is maintained if operations complete successfully
         // In a real implementation, this would test database recovery after crashes
         
@@ -583,7 +583,7 @@ impl InvariantCheck for AtomicityCheck {
         "atomicity".to_string()
     }
 
-    fn check(&self, _db: &Database, operations: &[Operation]) -> Result<(), InvariantViolation> {
+    fn check(&self, _db: &Database, operations: &[Operation]) -> std::result::Result<(), InvariantViolation> {
         // For transaction operations, verify all-or-none semantics
         for operation in operations {
             if let Operation::Transaction { operations: tx_ops } = operation {
@@ -614,7 +614,7 @@ impl InvariantCheck for IsolationCheck {
         "isolation".to_string()
     }
 
-    fn check(&self, _db: &Database, _operations: &[Operation]) -> Result<(), InvariantViolation> {
+    fn check(&self, _db: &Database, _operations: &[Operation]) -> std::result::Result<(), InvariantViolation> {
         // Isolation checks would require concurrent execution testing
         // For now, this is a placeholder that always passes
         Ok(())
@@ -629,7 +629,7 @@ impl InvariantCheck for PerformanceInvariantCheck {
         "performance".to_string()
     }
 
-    fn check(&self, _db: &Database, operations: &[Operation]) -> Result<(), InvariantViolation> {
+    fn check(&self, _db: &Database, operations: &[Operation]) -> std::result::Result<(), InvariantViolation> {
         // Check if operations completed in reasonable time
         // This is a simplified check - real implementation would track actual timing
         
@@ -664,10 +664,10 @@ impl OperationGenerator for BasicOperationGenerator {
 
     fn generate(&self, config: &PropertyTestConfig) -> Vec<Operation> {
         let mut operations = Vec::new();
-        let op_count = fastrand::usize(1..config.max_operations_per_sequence);
+        let op_count = fastrand::usize(1, config.max_operations_per_sequence);
 
         for _ in 0..op_count {
-            let op_type = fastrand::usize(0..3);
+            let op_type = fastrand::usize(0, 3);
             match op_type {
                 0 => {
                     // Put operation
@@ -703,13 +703,13 @@ impl OperationGenerator for ConcurrentOperationGenerator {
 
     fn generate(&self, config: &PropertyTestConfig) -> Vec<Operation> {
         let mut operations = Vec::new();
-        let op_count = fastrand::usize(10..config.max_operations_per_sequence);
+        let op_count = fastrand::usize(10, config.max_operations_per_sequence);
 
         // Generate operations that would be executed concurrently
         for i in 0..op_count {
             let key = format!("concurrent_key_{}", i % 10).into_bytes(); // Overlapping keys
             
-            match fastrand::usize(0..2) {
+            match fastrand::usize(0, 2) {
                 0 => {
                     let value = format!("value_{}", i).into_bytes();
                     operations.push(Operation::Put { key, value });
@@ -768,17 +768,17 @@ impl OperationGenerator for TransactionGenerator {
 
     fn generate(&self, config: &PropertyTestConfig) -> Vec<Operation> {
         let mut operations = Vec::new();
-        let tx_count = fastrand::usize(1..5);
+        let tx_count = fastrand::usize(1, 5);
 
         for _ in 0..tx_count {
             let mut tx_operations = Vec::new();
-            let op_count = fastrand::usize(2..10);
+            let op_count = fastrand::usize(2, 10);
 
             for i in 0..op_count {
                 let key = format!("tx_key_{}", i).into_bytes();
                 let value = format!("tx_value_{}", i).into_bytes();
                 
-                match fastrand::usize(0..3) {
+                match fastrand::usize(0, 3) {
                     0 => tx_operations.push(Operation::Put { key, value }),
                     1 => tx_operations.push(Operation::Get { key }),
                     2 => tx_operations.push(Operation::Delete { key }),
@@ -836,10 +836,10 @@ impl OperationGenerator for StressTestGenerator {
         for i in 0..op_count {
             let key = format!("stress_key_{}", i % 100).into_bytes(); // Some key overlap
             
-            match fastrand::usize(0..4) {
+            match fastrand::usize(0, 4) {
                 0 | 1 => {
                     // Heavy on writes (50% of operations)
-                    let value = vec![0xAA; fastrand::usize(1..config.max_value_size / 10)];
+                    let value = vec![0xAA; fastrand::usize(1, config.max_value_size / 10)];
                     operations.push(Operation::Put { key, value });
                 }
                 2 => {
@@ -860,13 +860,13 @@ impl OperationGenerator for StressTestGenerator {
 
 /// Generate a random key
 fn generate_key(max_size: usize) -> Vec<u8> {
-    let size = fastrand::usize(1..max_size.max(1));
+    let size = fastrand::usize(1, max_size.max(1));
     (0..size).map(|_| fastrand::u8(32, 127)).collect() // Printable ASCII
 }
 
 /// Generate a random value
 fn generate_value(max_size: usize) -> Vec<u8> {
-    let size = fastrand::usize(0..max_size.max(1));
+    let size = fastrand::usize(0, max_size.max(1));
     (0..size).map(|_| fastrand::u8(0, 255)).collect()
 }
 

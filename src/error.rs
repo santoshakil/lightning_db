@@ -1,8 +1,9 @@
 use thiserror::Error;
+use serde::Serialize;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug, Clone, Serialize)]
 pub enum Error {
     #[error("IO error: {0}")]
     Io(String),
