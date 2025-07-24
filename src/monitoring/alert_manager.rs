@@ -10,7 +10,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Serialize, Deserialize};
 use tracing::{info, warn, error, debug};
 
-use super::{DatabaseMetrics, HealthStatus, PerformanceData, ResourceUsage};
+use super::health_checker::HealthStatus;
+use super::metrics_collector::DatabaseMetrics;
+use super::performance_monitor::PerformanceData;
+use super::resource_tracker::ResourceUsage;
 
 /// Alert manager for Lightning DB
 pub struct AlertManager {
@@ -96,7 +99,7 @@ pub struct Alert {
 }
 
 /// Alert severity levels
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AlertSeverity {
     Info,
     Warning,
@@ -743,7 +746,7 @@ impl AlertManager {
         let event = AlertEvent {
             event_id: format!("event_{}_{}", alert.id, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()),
             alert_id: alert.id.clone(),
-            event_type,
+            event_type: event_type.clone(),
             timestamp: SystemTime::now(),
             message: format!("Alert {} {:?}", alert.name, event_type),
             metadata: HashMap::new(),
@@ -869,22 +872,10 @@ mod tests {
     #[test]
     fn test_alert_condition_evaluation() {
         let manager = AlertManager::new();
-        let metrics = DatabaseMetrics::default();
+        let metrics = super::metrics_collector::DatabaseMetrics::default();
         let health = HealthStatus::Healthy;
-        let performance = PerformanceData {
-            read_throughput: 1000.0,
-            write_throughput: 500.0,
-            transaction_success_rate: 0.99,
-            compaction_efficiency: 0.85,
-            index_utilization: 0.75,
-        };
-        let resources = ResourceUsage {
-            cpu_usage_percent: 50.0,
-            memory_usage_bytes: 1024 * 1024 * 512,
-            disk_usage_bytes: 1024 * 1024 * 1024,
-            network_io_bytes: 0,
-            open_file_descriptors: 10,
-        };
+        let performance = super::performance_monitor::PerformanceData::default();
+        let resources = super::resource_tracker::ResourceUsage::default();
 
         let condition = AlertCondition::MetricThreshold {
             metric: "cpu_usage_percent".to_string(),

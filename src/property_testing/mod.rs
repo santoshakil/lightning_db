@@ -170,7 +170,7 @@ impl PropertyTester {
     /// Create a new property tester with comprehensive test suite
     pub fn new(config: PropertyTestConfig) -> Self {
         let mut tester = Self {
-            config,
+            config: config.clone(),
             invariant_checks: Vec::new(),
             operation_generators: Vec::new(),
             test_results: Arc::new(Mutex::new(Vec::new())),
@@ -372,6 +372,8 @@ impl PropertyTester {
             }
         }
 
+        let recommendations = self.generate_recommendations(&results);
+        
         PropertyTestReport {
             total_tests,
             passed_tests,
@@ -380,7 +382,7 @@ impl PropertyTester {
             success_rate: (passed_tests as f64 / total_tests as f64) * 100.0,
             violations_by_type,
             detailed_results: results,
-            recommendations: self.generate_recommendations(&results),
+            recommendations,
         }
     }
 
@@ -748,7 +750,7 @@ impl OperationGenerator for EdgeCaseGenerator {
         operations.push(Operation::Get { key: max_key });
 
         // Special characters in keys
-        let special_key = "key\x00\xFF\x01special".as_bytes().to_vec();
+        let special_key = b"key\x00\x01special".to_vec();
         operations.push(Operation::Put { key: special_key.clone(), value: b"special".to_vec() });
         operations.push(Operation::Get { key: special_key });
 

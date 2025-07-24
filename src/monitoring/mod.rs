@@ -1,4 +1,10 @@
 pub mod production_hooks;
+pub mod otel_integration;
+pub mod metrics_collector;
+pub mod health_checker;
+pub mod alert_manager;
+pub mod performance_monitor;
+pub mod resource_tracker;
 
 use crate::error::Result;
 use lazy_static::lazy_static;
@@ -8,6 +14,14 @@ use prometheus::{
 };
 use std::net::TcpStream;
 use std::time::Instant;
+
+// Re-export key monitoring components
+pub use otel_integration::{OpenTelemetryProvider, TelemetryConfig};
+pub use metrics_collector::{MetricsCollector, DatabaseMetrics as CollectedDatabaseMetrics, OperationMetrics};
+pub use health_checker::{HealthChecker, HealthStatus, HealthCheck, HealthReport};
+pub use alert_manager::{AlertManager, Alert, AlertSeverity, AlertCondition, AlertRule};
+pub use performance_monitor::{PerformanceMonitor, PerformanceData, PerformanceTrend};
+pub use resource_tracker::{ResourceTracker, ResourceUsage, ResourceThreshold};
 
 lazy_static! {
     // Operation counters
