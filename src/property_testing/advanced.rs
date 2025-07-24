@@ -274,7 +274,7 @@ impl ModelBasedTester {
         match operation {
             Operation::Put { key, value } => db.put(key, value),
             Operation::Get { key } => { db.get(key)?; Ok(()) }
-            Operation::Delete { key } => db.delete(key),
+            Operation::Delete { key } => { db.delete(key)?; Ok(()) }
             Operation::Transaction { operations } => {
                 let tx_id = db.begin_transaction()?;
                 for op in operations {

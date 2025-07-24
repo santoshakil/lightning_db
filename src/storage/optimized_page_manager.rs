@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tracing::{debug, info};
 
 /// Page manager that uses optimized memory-mapped file I/O
+#[derive(Debug)]
 pub struct OptimizedPageManager {
     mmap_manager: Arc<OptimizedMmapManager>,
     free_pages: Arc<RwLock<HashSet<u32>>>,
