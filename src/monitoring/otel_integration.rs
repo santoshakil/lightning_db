@@ -11,7 +11,7 @@ use serde::{Serialize, Deserialize};
 use tracing::{info, warn, error, debug};
 
 // Import common telemetry types from other modules
-use super::metrics_collector::DatabaseMetrics;
+use super::metrics_collector::{DatabaseMetrics, CompactionStats, MemoryStats, IoStats};
 use super::health_checker::HealthStatus;
 use super::performance_monitor::PerformanceData;
 use super::resource_tracker::ResourceUsage;
@@ -545,9 +545,17 @@ impl OpenTelemetryProvider {
             total_operations: 0,
             operations_per_second: 0.0,
             average_latency: Duration::from_millis(0),
+            p95_latency: Duration::from_millis(0),
+            p99_latency: Duration::from_millis(0),
             error_rate: 0.0,
             cache_hit_rate: 0.0,
             storage_size_bytes: 0,
+            wal_size_bytes: 0,
+            active_transactions: 0,
+            compaction_stats: CompactionStats::default(),
+            memory_stats: MemoryStats::default(),
+            io_stats: IoStats::default(),
+            timestamp: SystemTime::now(),
         })
     }
 
@@ -558,9 +566,17 @@ impl OpenTelemetryProvider {
             total_operations: 0,
             operations_per_second: 0.0,
             average_latency: Duration::from_millis(0),
+            p95_latency: Duration::from_millis(0),
+            p99_latency: Duration::from_millis(0),
             error_rate: 0.0,
             cache_hit_rate: 0.0,
             storage_size_bytes: 0,
+            wal_size_bytes: 0,
+            active_transactions: 0,
+            compaction_stats: CompactionStats::default(),
+            memory_stats: MemoryStats::default(),
+            io_stats: IoStats::default(),
+            timestamp: SystemTime::now(),
         })
     }
 
@@ -571,9 +587,17 @@ impl OpenTelemetryProvider {
             total_operations: 0,
             operations_per_second: 0.0,
             average_latency: Duration::from_millis(0),
+            p95_latency: Duration::from_millis(0),
+            p99_latency: Duration::from_millis(0),
             error_rate: 0.0,
             cache_hit_rate: 0.0,
             storage_size_bytes: 0,
+            wal_size_bytes: 0,
+            active_transactions: 0,
+            compaction_stats: CompactionStats::default(),
+            memory_stats: MemoryStats::default(),
+            io_stats: IoStats::default(),
+            timestamp: SystemTime::now(),
         })
     }
 
