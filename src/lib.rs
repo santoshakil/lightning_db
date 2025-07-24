@@ -229,6 +229,7 @@ impl Default for LightningDbConfig {
     }
 }
 
+#[derive(Debug)]
 pub struct Database {
     page_manager: storage::PageManagerWrapper,
     _page_manager_arc: Arc<RwLock<PageManager>>, // Keep for legacy compatibility

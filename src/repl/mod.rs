@@ -334,13 +334,13 @@ impl DatabaseRepl {
                 CommandResult::Success {
                     data: Some(self.convert_formattable_to_command_data(data)),
                     message: exec_result.message,
-                    metadata: exec_result.metadata.unwrap_or_else(|| HashMap::new()),
+                    metadata: exec_result.metadata,
                 }
             } else {
                 CommandResult::Success {
                     data: None,
                     message: exec_result.message,
-                    metadata: exec_result.metadata.unwrap_or_else(|| HashMap::new()),
+                    metadata: exec_result.metadata,
                 }
             }
         } else {
