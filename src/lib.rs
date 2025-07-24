@@ -86,6 +86,8 @@ pub mod metrics;
 pub mod optimizations;
 pub mod prefetch;
 pub mod profiling;
+pub mod profiling_legacy;
+pub mod property_testing;
 pub mod query_planner;
 pub mod realtime_stats;
 pub mod recovery;
