@@ -77,6 +77,7 @@ impl Page {
     }
 }
 
+#[derive(Debug)]
 pub struct PageManager {
     file: std::fs::File,
     mmap: MmapMut,

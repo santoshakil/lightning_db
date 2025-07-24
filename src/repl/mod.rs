@@ -365,7 +365,8 @@ impl DatabaseRepl {
                 }
                 
                 if let Some(data) = data {
-                    let formatted = self.formatter.format_data(&data);
+                    let formattable_data = self.convert_command_data_to_formattable(&data);
+                    let formatted = self.formatter.format_data(&formattable_data);
                     
                     if self.config.enable_paging && formatted.lines().count() > self.config.page_size {
                         self.display_paged(&formatted);
@@ -391,7 +392,8 @@ impl DatabaseRepl {
             CommandResult::Warning { message, data } => {
                 self.print_warning(&message);
                 if let Some(data) = data {
-                    let formatted = self.formatter.format_data(&data);
+                    let formattable_data = self.convert_command_data_to_formattable(&data);
+                    let formatted = self.formatter.format_data(&formattable_data);
                     println!("{}", formatted);
                 }
             }
@@ -619,6 +621,20 @@ impl DatabaseRepl {
             FormattableData::Message(msg) => CommandData::Value(msg),
             FormattableData::Statistics(_) => CommandData::Value("Statistics data".to_string()),
             FormattableData::Empty => CommandData::Value("No data".to_string()),
+        }
+    }
+
+    /// Convert CommandData back to FormattableData for formatting
+    fn convert_command_data_to_formattable(&self, data: &CommandData) -> FormattableData {
+        match data {
+            CommandData::KeyValue { key, value } => FormattableData::KeyValue {
+                key: key.clone(),
+                value: Some(value.as_bytes().to_vec()),
+            },
+            CommandData::List(items) => FormattableData::List(
+                items.iter().map(|s| s.as_bytes().to_vec()).collect()
+            ),
+            CommandData::Value(value) => FormattableData::Message(value.clone()),
         }
     }
 }
