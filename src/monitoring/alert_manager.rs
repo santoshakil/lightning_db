@@ -57,7 +57,7 @@ impl Default for AlertConfig {
         Self {
             max_active_alerts: 1000,
             max_history_entries: 10000,
-            default_alert_timeout: Duration::from_hours(24),
+            default_alert_timeout: Duration::from_secs(24 * 3600),
             evaluation_interval: Duration::from_secs(30),
             enable_aggregation: true,
             aggregation_window: Duration::from_secs(300), // 5 minutes
@@ -872,10 +872,10 @@ mod tests {
     #[test]
     fn test_alert_condition_evaluation() {
         let manager = AlertManager::new();
-        let metrics = super::metrics_collector::DatabaseMetrics::default();
+        let metrics = DatabaseMetrics::default();
         let health = HealthStatus::Healthy;
-        let performance = super::performance_monitor::PerformanceData::default();
-        let resources = super::resource_tracker::ResourceUsage::default();
+        let performance = PerformanceData::default();
+        let resources = ResourceUsage::default();
 
         let condition = AlertCondition::MetricThreshold {
             metric: "cpu_usage_percent".to_string(),

@@ -638,7 +638,7 @@ mod tests {
         }];
 
         // Should not panic
-        let result = exporter.export(metrics);
+        let result = MetricExporter::export(&exporter, metrics);
         assert!(result.is_ok());
     }
 }
