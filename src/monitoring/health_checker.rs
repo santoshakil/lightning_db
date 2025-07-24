@@ -240,7 +240,7 @@ impl HealthChecker {
 
         // Determine overall health status
         let overall_status = if !critical_failures.is_empty() {
-            HealthStatus::Unhealthy(critical_failures)
+            HealthStatus::Unhealthy(critical_failures.clone())
         } else if !warnings.is_empty() {
             HealthStatus::Degraded(warnings)
         } else {
