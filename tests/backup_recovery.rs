@@ -4,7 +4,6 @@
 //! can recover to any point in time with full data consistency.
 
 use lightning_db::{Database, LightningDbConfig};
-use lightning_db::admin::{BackupStats, RestoreStats};
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;

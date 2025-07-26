@@ -4,13 +4,9 @@
 //! including CPU profiling, memory tracking, I/O monitoring, and flamegraph generation.
 //! Designed for production use with minimal overhead.
 
-use std::sync::{Arc, Mutex, RwLock};
-use std::collections::HashMap;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::thread;
-use std::fs::{File, OpenOptions};
-use std::io::{Write, BufWriter};
-use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
 use tracing::{info, warn, error, instrument};
 
@@ -75,7 +71,7 @@ impl Default for ProfilingConfig {
             output_directory: PathBuf::from("./profiles"),
             enable_flamegraphs: true,
             enable_regression_detection: true,
-            retention_period: Duration::from_days(7),
+            retention_period: Duration::from_secs(7 * 24 * 60 * 60), // 7 days
             max_memory_usage: 100 * 1024 * 1024, // 100MB
             overhead_limit: 1.0, // 1% CPU overhead
         }

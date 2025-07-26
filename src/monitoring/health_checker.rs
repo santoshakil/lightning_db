@@ -3,12 +3,12 @@
 //! Comprehensive health monitoring including connectivity, performance,
 //! data integrity, and system resource health checks.
 
-use crate::{Database, Result, Error};
+use crate::{Database, Result};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime};
 use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use tracing::info;
 
 /// Health checker for Lightning DB
 pub struct HealthChecker {

@@ -126,7 +126,7 @@ impl WALEntry {
 }
 
 /// Basic WriteAheadLog trait
-pub trait WriteAheadLog: Send + Sync {
+pub trait WriteAheadLog: Send + Sync + std::fmt::Debug {
     fn append(&self, operation: WALOperation) -> Result<u64>;
     fn sync(&self) -> Result<()>;
     fn replay(&self) -> Result<Vec<WALOperation>>;
@@ -138,6 +138,14 @@ pub trait WriteAheadLog: Send + Sync {
 pub struct BasicWriteAheadLog {
     file: std::sync::Mutex<std::fs::File>,
     next_lsn: std::sync::atomic::AtomicU64,
+}
+
+impl std::fmt::Debug for BasicWriteAheadLog {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BasicWriteAheadLog")
+            .field("next_lsn", &self.next_lsn.load(std::sync::atomic::Ordering::Relaxed))
+            .finish()
+    }
 }
 
 impl BasicWriteAheadLog {

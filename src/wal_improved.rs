@@ -301,6 +301,20 @@ pub struct ImprovedWriteAheadLog {
     group_commit_enabled: bool,
 }
 
+impl std::fmt::Debug for ImprovedWriteAheadLog {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImprovedWriteAheadLog")
+            .field("base_path", &self.base_path)
+            .field("next_lsn", &self.next_lsn.load(std::sync::atomic::Ordering::Relaxed))
+            .field("next_segment_id", &self.next_segment_id.load(std::sync::atomic::Ordering::Relaxed))
+            .field("last_checkpoint_lsn", &self.last_checkpoint_lsn.load(std::sync::atomic::Ordering::Relaxed))
+            .field("max_segment_size", &self.max_segment_size)
+            .field("sync_on_commit", &self.sync_on_commit)
+            .field("group_commit_enabled", &self.group_commit_enabled)
+            .finish()
+    }
+}
+
 impl ImprovedWriteAheadLog {
     pub fn create<P: AsRef<Path>>(path: P) -> Result<Arc<Self>> {
         Self::create_with_config(path, true, true)

@@ -3,14 +3,15 @@
 //! Comprehensive metrics collection covering operations, performance, resources,
 //! and business metrics with OpenTelemetry integration.
 
-use crate::{Database, Result, Error};
+use crate::{Database, Result};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock, atomic::{AtomicU64, AtomicBool, Ordering}};
 use std::time::{Duration, Instant, SystemTime};
 use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use tracing::{info, debug};
 
 /// Comprehensive metrics collector for Lightning DB
+#[derive(Debug)]
 pub struct MetricsCollector {
     /// Current aggregated metrics
     current_metrics: Arc<RwLock<DatabaseMetrics>>,
@@ -119,6 +120,7 @@ pub struct OperationMetrics {
 }
 
 /// Performance counters for various subsystems
+#[derive(Debug)]
 pub struct PerformanceCounters {
     pub read_operations: AtomicU64,
     pub write_operations: AtomicU64,
@@ -723,8 +725,8 @@ fn calculate_duration_trend(from: Duration, to: Duration) -> TrendDirection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-    use crate::LightningDbConfig;
+    
+    
 
     #[test]
     fn test_metrics_collector_creation() {

@@ -8,7 +8,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock, atomic::{AtomicU64, Ordering}};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use tracing::{info, error, debug};
 
 use super::health_checker::HealthStatus;
 use super::metrics_collector::DatabaseMetrics;
@@ -381,7 +381,7 @@ impl AlertManager {
 
     /// Create alert manager with custom configuration
     pub fn with_config(config: AlertConfig) -> Self {
-        let mut manager = Self {
+        let manager = Self {
             alert_rules: Arc::new(RwLock::new(Vec::new())),
             active_alerts: Arc::new(RwLock::new(HashMap::new())),
             alert_history: Arc::new(RwLock::new(VecDeque::new())),
@@ -673,7 +673,7 @@ impl AlertManager {
 
     /// Handle when a condition is not met
     fn handle_condition_not_met(&self, rule: &AlertRule) -> Result<()> {
-        if let Some(resolve_condition) = &rule.resolve_condition {
+        if let Some(_resolve_condition) = &rule.resolve_condition {
             let alert_key = format!("{}_{}", rule.name, "default");
             
             let mut active_alerts = self.active_alerts.write().unwrap();
@@ -859,8 +859,8 @@ impl ToString for AlertSeverity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-    use crate::LightningDbConfig;
+    
+    
 
     #[test]
     fn test_alert_manager_creation() {

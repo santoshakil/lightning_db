@@ -40,7 +40,27 @@ clap = { version = "4.5", features = ["derive"] }
 smallvec = "1.13"
 sys-info = { version = "0.9", optional = true }
 prettytable-rs = "0.10"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+tempfile = "3.20"
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+hex = "0.4"
+
+# Data import/export dependencies
+csv = "1.3"
+regex = "1.10"
+base64 = "0.22"
+uuid = { version = "1.11", features = ["v4"] }
+crossbeam-channel = "0.5"
+encoding_rs = "0.8"
+
+# Encryption dependencies
+aes-gcm = "0.10"
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+pbkdf2 = "0.12"
+sha2 = "0.10"
+blake3 = "1.5"
+zeroize = { version = "1.8", features = ["derive"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -52,7 +72,7 @@ tempfile = "3.20"
 rand = "0.9"
 env_logger = "0.11"
 serial_test = "3.2"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.33"
 flate2 = "1.0"
 sha2 = "0.10"
@@ -88,6 +108,9 @@ path = "src/bin/lightning-admin.rs"
 [[bin]]
 name = "lightning-admin-server"
 path = "src/bin/lightning-admin-server.rs"
+[[bin]]
+name = "lightning-migrate"
+path = "src/bin/lightning-migrate.rs"
 
 [profile.release]
 lto = true
@@ -122,6 +145,18 @@ path = "examples/critical_production_test.rs"
 name = "debug_transaction_issue"
 path = "examples/debug_transaction_issue.rs"
 
+[[example]]
+name = "encryption_example"
+path = "examples/encryption_example.rs"
+
 [[bench]]
 name = "mmap_benchmark"
+harness = false
+
+[[bench]]
+name = "basic_benchmarks"
+harness = false
+
+[[bench]]
+name = "encryption_benchmarks"
 harness = false

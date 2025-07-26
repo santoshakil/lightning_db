@@ -8,9 +8,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime};
 use serde::{Serialize, Deserialize};
-use tracing::{debug, warn, error, info};
+use tracing::{debug, warn, info};
 
-use super::parser::{ParsedCommand, CommandType, ParameterValue, WhereClause, OrderByClause, SortDirection, Condition, CommandParameter, ParameterType};
+use super::parser::{ParsedCommand, CommandType, ParameterValue, WhereClause, OrderByClause};
 use super::formatter::{FormattableData, DatabaseStats};
 
 /// Command executor for parsed REPL commands
@@ -264,7 +264,7 @@ impl CommandExecutor {
     }
 
     /// Execute GET command
-    fn execute_get(&self, params: &[ParameterValue], where_clause: &Option<WhereClause>) -> Result<CommandExecutionResult> {
+    fn execute_get(&self, params: &[ParameterValue], _where_clause: &Option<WhereClause>) -> Result<CommandExecutionResult> {
         if params.is_empty() {
             return Err(Error::Generic("GET requires a key parameter".to_string()));
         }
@@ -328,7 +328,7 @@ impl CommandExecutor {
     }
 
     /// Execute DELETE command
-    fn execute_delete(&self, params: &[ParameterValue], where_clause: &Option<WhereClause>) -> Result<CommandExecutionResult> {
+    fn execute_delete(&self, params: &[ParameterValue], _where_clause: &Option<WhereClause>) -> Result<CommandExecutionResult> {
         if params.is_empty() {
             return Err(Error::Generic("DELETE requires a key parameter".to_string()));
         }
@@ -401,7 +401,7 @@ impl CommandExecutor {
     }
 
     /// Execute SCAN command
-    fn execute_scan(&self, params: &[ParameterValue], where_clause: &Option<WhereClause>, order_by: &Option<OrderByClause>, limit: Option<u64>) -> Result<CommandExecutionResult> {
+    fn execute_scan(&self, params: &[ParameterValue], _where_clause: &Option<WhereClause>, _order_by: &Option<OrderByClause>, limit: Option<u64>) -> Result<CommandExecutionResult> {
         // This is a simplified implementation - real implementation would use iterator
         let prefix = if !params.is_empty() {
             Some(self.extract_string_param(&params[0], "prefix")?)
@@ -789,7 +789,7 @@ impl CommandExecutor {
         })
     }
 
-    fn execute_set(&self, params: &[ParameterValue], context: &ExecutionContext) -> Result<CommandExecutionResult> {
+    fn execute_set(&self, params: &[ParameterValue], _context: &ExecutionContext) -> Result<CommandExecutionResult> {
         if params.len() < 2 {
             return Err(Error::Generic("SET requires variable name and value".to_string()));
         }
@@ -1008,6 +1008,7 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
     use crate::LightningDbConfig;
+    use crate::repl::parser::{CommandParameter, ParameterType};
 
     fn create_test_executor() -> CommandExecutor {
         let test_dir = TempDir::new().unwrap();

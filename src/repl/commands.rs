@@ -2,12 +2,11 @@
 //!
 //! Defines available commands, their execution, and result handling.
 
-use crate::{Database, Result, Error};
+use crate::Database;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, Instant};
-use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use std::time::{Duration, Instant};
+use serde::Serialize;
 
 /// Command registry that manages all available commands
 pub struct CommandRegistry {
@@ -37,7 +36,7 @@ pub trait Command {
     fn execute(&self, args: &[String], context: &CommandContext) -> CommandResult;
     
     /// Get command completion suggestions
-    fn complete(&self, args: &[String], context: &CommandContext) -> Vec<String> {
+    fn complete(&self, _args: &[String], _context: &CommandContext) -> Vec<String> {
         Vec::new() // Default: no completion
     }
     
@@ -99,7 +98,7 @@ pub enum CommandData {
     List(Vec<String>),
     /// Table data
     Table {
-        headers: Vec<String>,
+        _headers: Vec<String>,
         rows: Vec<Vec<String>>,
     },
     /// JSON data
@@ -250,7 +249,7 @@ impl Command for PutCommand {
         }
     }
     
-    fn complete(&self, args: &[String], context: &CommandContext) -> Vec<String> {
+    fn complete(&self, args: &[String], _context: &CommandContext) -> Vec<String> {
         if args.len() == 1 {
             vec!["<key>".to_string()]
         } else if args.len() == 2 {
@@ -754,7 +753,7 @@ impl Command for InfoCommand {
     fn usage(&self) -> &str { "INFO" }
     fn category(&self) -> CommandCategory { CommandCategory::Admin }
     
-    fn execute(&self, _args: &[String], context: &CommandContext) -> CommandResult {
+    fn execute(&self, _args: &[String], _context: &CommandContext) -> CommandResult {
         // Placeholder implementation
         let mut info = HashMap::new();
         info.insert("version".to_string(), serde_json::Value::String(env!("CARGO_PKG_VERSION").to_string()));
@@ -778,7 +777,7 @@ impl Command for StatsCommand {
     fn usage(&self) -> &str { "STATS" }
     fn category(&self) -> CommandCategory { CommandCategory::Admin }
     
-    fn execute(&self, _args: &[String], context: &CommandContext) -> CommandResult {
+    fn execute(&self, _args: &[String], _context: &CommandContext) -> CommandResult {
         // Placeholder implementation
         let mut stats = HashMap::new();
         stats.insert("total_keys".to_string(), serde_json::Value::Number(1000.into()));
@@ -803,7 +802,7 @@ impl Command for CompactCommand {
     fn category(&self) -> CommandCategory { CommandCategory::Admin }
     fn is_read_only(&self) -> bool { false }
     
-    fn execute(&self, _args: &[String], context: &CommandContext) -> CommandResult {
+    fn execute(&self, _args: &[String], _context: &CommandContext) -> CommandResult {
         // Placeholder implementation
         CommandResult::Success {
             data: None,
@@ -822,7 +821,7 @@ impl Command for BackupCommand {
     fn usage(&self) -> &str { "BACKUP <path>" }
     fn category(&self) -> CommandCategory { CommandCategory::Admin }
     
-    fn execute(&self, args: &[String], context: &CommandContext) -> CommandResult {
+    fn execute(&self, args: &[String], _context: &CommandContext) -> CommandResult {
         if args.len() != 1 {
             return CommandResult::Error {
                 error: "BACKUP requires exactly 1 argument: path".to_string(),
@@ -848,7 +847,7 @@ impl Command for HealthCommand {
     fn usage(&self) -> &str { "HEALTH" }
     fn category(&self) -> CommandCategory { CommandCategory::Admin }
     
-    fn execute(&self, _args: &[String], context: &CommandContext) -> CommandResult {
+    fn execute(&self, _args: &[String], _context: &CommandContext) -> CommandResult {
         // Placeholder implementation
         CommandResult::Success {
             data: Some(CommandData::Value("Healthy".to_string())),
@@ -867,7 +866,7 @@ impl Command for HelpCommand {
     fn usage(&self) -> &str { "HELP [command]" }
     fn category(&self) -> CommandCategory { CommandCategory::Meta }
     
-    fn execute(&self, _args: &[String], context: &CommandContext) -> CommandResult {
+    fn execute(&self, _args: &[String], _context: &CommandContext) -> CommandResult {
         // This would be handled by the REPL itself
         CommandResult::Success {
             data: None,
@@ -886,7 +885,7 @@ impl Command for HistoryCommand {
     fn usage(&self) -> &str { "HISTORY [count]" }
     fn category(&self) -> CommandCategory { CommandCategory::Meta }
     
-    fn execute(&self, _args: &[String], context: &CommandContext) -> CommandResult {
+    fn execute(&self, _args: &[String], _context: &CommandContext) -> CommandResult {
         // This would be handled by the REPL itself
         CommandResult::Success {
             data: None,
@@ -905,7 +904,7 @@ impl Command for ClearCommand {
     fn usage(&self) -> &str { "CLEAR" }
     fn category(&self) -> CommandCategory { CommandCategory::Meta }
     
-    fn execute(&self, _args: &[String], context: &CommandContext) -> CommandResult {
+    fn execute(&self, _args: &[String], _context: &CommandContext) -> CommandResult {
         // This would be handled by the REPL itself
         CommandResult::Success {
             data: None,

@@ -100,6 +100,7 @@ pub struct IndexStats {
 }
 
 /// Query planner that analyzes queries and selects optimal execution plans
+#[derive(Debug)]
 pub struct QueryPlanner {
     index_stats: HashMap<String, IndexStats>,
 }

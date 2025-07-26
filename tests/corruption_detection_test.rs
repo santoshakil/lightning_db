@@ -5,7 +5,7 @@
 
 use lightning_db::{Database, LightningDbConfig};
 use lightning_db::corruption_detection::{
-    CorruptionDetector, IntegrityMonitor, CorruptionType
+    CorruptionDetector, IntegrityMonitor
 };
 use std::sync::Arc;
 use std::time::Duration;

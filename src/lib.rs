@@ -70,8 +70,14 @@ pub mod cache;
 pub mod compression;
 pub mod consistency;
 pub mod corruption_detection;
+pub mod data_import_export;
+pub mod distributed_tracing;
+pub mod performance_regression;
+pub mod encryption;
 pub mod error;
 pub mod fast_auto_batcher;
+pub mod resource_quotas;
+pub mod schema_migration;
 pub mod fast_path;
 pub mod header;
 pub mod index;
@@ -204,6 +210,8 @@ pub struct LightningDbConfig {
     pub use_improved_wal: bool,
     pub wal_sync_mode: WalSyncMode,
     pub write_batch_size: usize,
+    pub encryption_config: encryption::EncryptionConfig,
+    pub quota_config: resource_quotas::QuotaConfig,
 }
 
 impl Default for LightningDbConfig {
@@ -225,6 +233,8 @@ impl Default for LightningDbConfig {
             use_improved_wal: true,
             wal_sync_mode: WalSyncMode::Async, // Default to async for better performance
             write_batch_size: 1000,            // Batch up to 1000 writes
+            encryption_config: encryption::EncryptionConfig::default(),
+            quota_config: resource_quotas::QuotaConfig::default(),
         }
     }
 }
@@ -250,6 +260,8 @@ pub struct Database {
     query_planner: Arc<RwLock<query_planner::QueryPlanner>>,
     production_monitor: Arc<monitoring::production_hooks::ProductionMonitor>,
     _version_cleanup_thread: Option<Arc<VersionCleanupThread>>,
+    encryption_manager: Option<Arc<encryption::EncryptionManager>>,
+    quota_manager: Option<Arc<resource_quotas::QuotaManager>>,
     _config: LightningDbConfig,
 }
 
@@ -265,8 +277,25 @@ impl Database {
 
         let initial_size = config.page_size * 16; // Start with 16 pages
 
+        // Initialize encryption manager if enabled (before creating page managers)
+        let encryption_manager = if config.encryption_config.enabled {
+            let manager = Arc::new(encryption::EncryptionManager::new(config.encryption_config.clone())?);
+            // TODO: Initialize with master key from environment or key management system
+            // For now, we'll leave the key uninitialized until explicitly set
+            Some(manager)
+        } else {
+            None
+        };
+        
+        // Initialize quota manager if enabled
+        let quota_manager = if config.quota_config.enabled {
+            Some(Arc::new(resource_quotas::QuotaManager::new(config.quota_config.clone())?))
+        } else {
+            None
+        };
+
         // Create either standard or optimized page manager based on config
-        let (page_manager_wrapper, page_manager_arc, btree) = if config.use_optimized_page_manager {
+        let (mut page_manager_wrapper, page_manager_arc) = if config.use_optimized_page_manager {
             if let Some(mmap_config) = config.mmap_config.clone() {
                 // Create optimized page manager
                 let opt_page_manager = Arc::new(storage::OptimizedPageManager::create(
@@ -275,7 +304,6 @@ impl Database {
                     mmap_config,
                 )?);
                 let wrapper = storage::PageManagerWrapper::optimized(opt_page_manager);
-                let btree = BPlusTree::new_with_wrapper(wrapper.clone())?;
 
                 // Create a dummy standard page manager for legacy compatibility
                 let std_page_manager = Arc::new(RwLock::new(PageManager::create(
@@ -283,22 +311,28 @@ impl Database {
                     initial_size,
                 )?));
 
-                (wrapper, std_page_manager, btree)
+                (wrapper, std_page_manager)
             } else {
                 // Fall back to standard if no mmap config provided
                 let page_manager =
                     Arc::new(RwLock::new(PageManager::create(&btree_path, initial_size)?));
                 let wrapper = storage::PageManagerWrapper::standard(page_manager.clone());
-                let btree = BPlusTree::new(page_manager.clone())?;
-                (wrapper, page_manager, btree)
+                (wrapper, page_manager)
             }
         } else {
             let page_manager =
                 Arc::new(RwLock::new(PageManager::create(&btree_path, initial_size)?));
             let wrapper = storage::PageManagerWrapper::standard(page_manager.clone());
-            let btree = BPlusTree::new(page_manager.clone())?;
-            (wrapper, page_manager, btree)
+            (wrapper, page_manager)
         };
+
+        // Wrap with encryption if enabled
+        if let Some(ref enc_manager) = encryption_manager {
+            page_manager_wrapper = storage::PageManagerWrapper::encrypted(page_manager_wrapper, enc_manager.clone());
+        }
+
+        // Create BPlusTree with the final wrapper
+        let btree = BPlusTree::new_with_wrapper(page_manager_wrapper.clone())?;
 
         // Optional memory pool
         let memory_pool = if config.cache_size > 0 {
@@ -462,6 +496,8 @@ impl Database {
             query_planner,
             production_monitor: Arc::new(monitoring::production_hooks::ProductionMonitor::new()),
             _version_cleanup_thread: Some(version_cleanup_thread),
+            encryption_manager,
+            quota_manager,
             _config: config,
         })
     }
@@ -475,8 +511,25 @@ impl Database {
         if db_path.exists() && btree_path.exists() {
             let lsm_path = db_path.join("lsm");
 
+            // Initialize encryption manager if enabled (before creating page managers)
+            let encryption_manager = if config.encryption_config.enabled {
+                let manager = Arc::new(encryption::EncryptionManager::new(config.encryption_config.clone())?);
+                // TODO: Initialize with master key from environment or key management system
+                // For now, we'll leave the key uninitialized until explicitly set
+                Some(manager)
+            } else {
+                None
+            };
+            
+            // Initialize quota manager if enabled
+            let quota_manager = if config.quota_config.enabled {
+                Some(Arc::new(resource_quotas::QuotaManager::new(config.quota_config.clone())?))
+            } else {
+                None
+            };
+
             // Open either standard or optimized page manager based on config
-            let (page_manager_wrapper, page_manager_arc, mut btree) =
+            let (mut page_manager_wrapper, page_manager_arc) =
                 if config.use_optimized_page_manager {
                     if let Some(mmap_config) = config.mmap_config.clone() {
                         // Open optimized page manager
@@ -485,27 +538,32 @@ impl Database {
                             mmap_config,
                         )?);
                         let wrapper = storage::PageManagerWrapper::optimized(opt_page_manager);
-                        let btree = BPlusTree::from_existing_with_wrapper(wrapper.clone(), 1, 1);
 
                         // Create a dummy standard page manager for legacy compatibility
                         let std_page_manager = Arc::new(RwLock::new(PageManager::open(
                             &btree_path.with_extension("legacy"),
                         )?));
 
-                        (wrapper, std_page_manager, btree)
+                        (wrapper, std_page_manager)
                     } else {
                         // Fall back to standard if no mmap config provided
                         let page_manager = Arc::new(RwLock::new(PageManager::open(&btree_path)?));
                         let wrapper = storage::PageManagerWrapper::standard(page_manager.clone());
-                        let btree = BPlusTree::from_existing(page_manager.clone(), 1, 1);
-                        (wrapper, page_manager, btree)
+                        (wrapper, page_manager)
                     }
                 } else {
                     let page_manager = Arc::new(RwLock::new(PageManager::open(&btree_path)?));
                     let wrapper = storage::PageManagerWrapper::standard(page_manager.clone());
-                    let btree = BPlusTree::from_existing(page_manager.clone(), 1, 1);
-                    (wrapper, page_manager, btree)
+                    (wrapper, page_manager)
                 };
+
+            // Wrap with encryption if enabled
+            if let Some(ref enc_manager) = encryption_manager {
+                page_manager_wrapper = storage::PageManagerWrapper::encrypted(page_manager_wrapper, enc_manager.clone());
+            }
+
+            // Create BPlusTree with the final wrapper
+            let mut btree = BPlusTree::from_existing_with_wrapper(page_manager_wrapper.clone(), 1, 1);
 
             // Similar setup for memory pool and LSM tree
             let memory_pool = if config.cache_size > 0 {
@@ -768,6 +826,8 @@ impl Database {
                 query_planner,
                 production_monitor: Arc::new(monitoring::production_hooks::ProductionMonitor::new()),
                 _version_cleanup_thread: Some(version_cleanup_thread),
+                encryption_manager,
+                quota_manager,
                 _config: config,
             })
         } else {
@@ -842,6 +902,13 @@ impl Database {
         }
 
         let _timer = logging::OperationTimer::with_key("put", key);
+        
+        // Check resource quotas
+        if let Some(ref quota_manager) = self.quota_manager {
+            let size_bytes = key.len() as u64 + value.len() as u64;
+            quota_manager.check_write_allowed(None, size_bytes)?;
+        }
+        
         // Check if we have a write batcher
         if let Some(ref batcher) = self.write_batcher {
             return batcher.put(key.to_vec(), value.to_vec());
@@ -1161,6 +1228,12 @@ impl Database {
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let _timer = logging::OperationTimer::with_key("get", key);
+        
+        // Check resource quotas
+        if let Some(ref quota_manager) = self.quota_manager {
+            quota_manager.check_read_allowed(None, key.len() as u64)?;
+        }
+        
         // Fast path: try cache first with minimal metrics overhead
         if let Some(ref memory_pool) = self.memory_pool {
             if let Ok(Some(cached_value)) = memory_pool.cache_get(key) {
@@ -1290,6 +1363,11 @@ impl Database {
 
     // Transactional operations
     pub fn begin_transaction(&self) -> Result<u64> {
+        // Check resource quotas for transaction
+        if let Some(ref quota_manager) = self.quota_manager {
+            quota_manager.check_connection_allowed(None)?; // Treat transaction as a connection for quota purposes
+        }
+        
         if let Some(ref opt_manager) = self.optimized_transaction_manager {
             opt_manager.begin()
         } else {
@@ -1887,6 +1965,11 @@ impl Database {
         start_key: Option<Vec<u8>>,
         end_key: Option<Vec<u8>>,
     ) -> Result<RangeIterator> {
+        // Check resource quotas for scan operation
+        if let Some(ref quota_manager) = self.quota_manager {
+            quota_manager.check_read_allowed(None, 1)?; // Scan is a single read operation for quota purposes
+        }
+        
         let read_timestamp = if let Some(ref opt_manager) = self.optimized_transaction_manager {
             opt_manager.get_read_timestamp()
         } else {
@@ -2276,6 +2359,54 @@ impl Database {
     /// Get a reference to the memory pool (for testing/debugging)
     pub fn get_memory_pool(&self) -> Option<Arc<MemoryPool>> {
         self.memory_pool.clone()
+    }
+
+    // Encryption management methods
+
+    /// Initialize encryption with a master key
+    pub fn initialize_encryption(&self, master_key: &[u8]) -> Result<()> {
+        if let Some(ref manager) = self.encryption_manager {
+            manager.initialize(master_key)
+        } else {
+            Err(Error::Config("Encryption not enabled".to_string()))
+        }
+    }
+
+    /// Check if encryption is enabled
+    pub fn is_encryption_enabled(&self) -> bool {
+        self.encryption_manager.is_some()
+    }
+
+    /// Get encryption statistics
+    pub fn get_encryption_stats(&self) -> Option<encryption::EncryptionStats> {
+        self.encryption_manager.as_ref().map(|m| m.get_stats())
+    }
+
+    /// Check if key rotation is needed
+    pub fn needs_key_rotation(&self) -> Result<bool> {
+        if let Some(ref manager) = self.encryption_manager {
+            manager.needs_rotation()
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Perform key rotation
+    pub fn rotate_encryption_keys(&self) -> Result<()> {
+        if let Some(ref manager) = self.encryption_manager {
+            manager.rotate_keys()
+        } else {
+            Err(Error::Config("Encryption not enabled".to_string()))
+        }
+    }
+
+    /// Get key rotation history
+    pub fn get_key_rotation_history(&self) -> Vec<encryption::key_rotation::RotationEvent> {
+        if let Some(ref manager) = self.encryption_manager {
+            manager.rotation_manager.get_rotation_history()
+        } else {
+            Vec::new()
+        }
     }
 }
 

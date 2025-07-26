@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::fs::File;
 use std::io::{Write, BufWriter};
-use serde::{Serialize, Deserialize};
+use serde::Deserialize;
 
 /// Generate a flamegraph from CPU profile data
 pub fn generate_flamegraph(profile_path: &Path, output_path: &Path) -> Result<(), super::ProfilingError> {

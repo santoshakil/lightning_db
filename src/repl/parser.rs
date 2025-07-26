@@ -465,7 +465,7 @@ impl QueryParser {
                         "SET" | "SHOW" | "HELP" | "EXIT" | "QUIT" | "CLEAR" | "HISTORY" |
                         "SELECT" | "INSERT" | "UPDATE" | "DROP" | "CREATE" |
                         "WHERE" | "ORDER" | "BY" | "LIMIT" | "ASC" | "DESC" |
-                        "AND" | "OR" | "NOT" | "LIKE" | "IN" | "IS" | "NULL" |
+                        "AND" | "OR" | "NOT" | "LIKE" | "IN" | "IS" |
                         "IF" | "THEN" | "ELSE" | "WHILE" | "FOR" | "DO" => TokenType::Keyword,
                         "TRUE" | "FALSE" => TokenType::Boolean,
                         "NULL" => TokenType::Null,
@@ -679,12 +679,12 @@ impl QueryParser {
             return Err(Error::Generic("Empty statement".to_string()));
         }
         
-        let token = state.peek()?;
-        match token.value.to_uppercase().as_str() {
+        let token_value = state.peek()?.value.clone();
+        match token_value.to_uppercase().as_str() {
             "IF" => self.parse_if_statement(state),
             "WHILE" => self.parse_while_statement(state),
             _ => {
-                let command = self.parse_command(state, &token.value)?;
+                let command = self.parse_command(state, &token_value)?;
                 Ok(AstNode::Command(command))
             }
         }
@@ -1167,8 +1167,8 @@ mod tests {
         
         if let Some(where_clause) = command.where_clause {
             if let Condition::And { left, right } = where_clause.condition {
-                assert!(matches!(**left, Condition::Equals { .. }));
-                assert!(matches!(**right, Condition::GreaterThan { .. }));
+                assert!(matches!(*left, Condition::Equals { .. }));
+                assert!(matches!(*right, Condition::GreaterThan { .. }));
             } else {
                 panic!("Expected AND condition");
             }

@@ -17,6 +17,17 @@ pub struct MetricsCollector {
     collection_thread: Arc<RwLock<Option<thread::JoinHandle<()>>>>,
 }
 
+impl std::fmt::Debug for MetricsCollector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MetricsCollector")
+            .field("collection_interval", &self.collection_interval)
+            .field("history_size", &self.history_size)
+            .field("shutdown", &self.shutdown.load(std::sync::atomic::Ordering::Relaxed))
+            .field("has_collection_thread", &self.collection_thread.read().is_some())
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TimestampedSnapshot {
     pub timestamp: Instant,

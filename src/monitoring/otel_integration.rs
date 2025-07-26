@@ -3,12 +3,12 @@
 //! Provides comprehensive telemetry integration including metrics, traces, and logs
 //! for production observability with industry-standard tools.
 
-use crate::{Database, Result, Error};
+use crate::{Result, Error};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use tracing::{info, error, debug};
 
 // Import common telemetry types from other modules
 use super::metrics_collector::{DatabaseMetrics, CompactionStats, MemoryStats, IoStats};
@@ -339,7 +339,7 @@ impl TraceExporter for ConsoleExporter {
             println!("Span: {} ({})", span.name, span.span_id);
             println!("  Trace ID: {}", span.trace_id);
             println!("  Duration: {:?}", 
-                span.end_time.and_then(|end| span.start_time.elapsed().ok())
+                span.end_time.and_then(|_end| span.start_time.elapsed().ok())
                     .unwrap_or(Duration::from_secs(0)));
         }
         Ok(())

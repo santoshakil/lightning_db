@@ -20,6 +20,17 @@ pub struct MemoryPool {
     shutdown: Arc<AtomicUsize>, // 0 = running, 1 = shutdown
 }
 
+impl std::fmt::Debug for MemoryPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MemoryPool")
+            .field("config", &self.config)
+            .field("shutdown", &self.shutdown.load(std::sync::atomic::Ordering::Relaxed))
+            .field("prefetch_thread", &self.prefetch_thread.is_some())
+            .field("eviction_thread", &self.eviction_thread.is_some())
+            .finish()
+    }
+}
+
 impl MemoryPool {
     pub fn new(page_manager: Arc<RwLock<PageManager>>, config: MemoryConfig) -> Self {
         let cache_capacity = config.hot_cache_size / crate::storage::PAGE_SIZE;

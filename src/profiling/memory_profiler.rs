@@ -11,7 +11,7 @@ use std::path::Path;
 use std::fs::File;
 use std::io::{Write, BufWriter};
 use serde::{Serialize, Deserialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Memory profiler that tracks allocations and usage patterns
 pub struct MemoryProfiler {

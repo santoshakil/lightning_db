@@ -14,10 +14,9 @@ use crate::{Database, Result, Error};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime};
-use std::io::{self, Write, BufRead, BufReader, stdin, stdout};
-use std::fs::File;
+use std::io::{Write, stdin, stdout};
 use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use tracing::{info, warn, error};
 
 // Re-export key components
 pub use commands::{Command, CommandResult, CommandContext, CommandRegistry, CommandData};
@@ -32,9 +31,9 @@ pub struct DatabaseRepl {
     /// Database instance
     database: Arc<Database>,
     /// Command registry
-    command_registry: Arc<CommandRegistry>,
+    _command_registry: Arc<CommandRegistry>,
     /// Command completion engine
-    completion_engine: Arc<CompletionEngine>,
+    _completion_engine: Arc<CompletionEngine>,
     /// Command history manager
     history_manager: Arc<RwLock<HistoryManager>>,
     /// Output formatter
@@ -48,7 +47,7 @@ pub struct DatabaseRepl {
     /// Session state
     session: Arc<RwLock<SessionState>>,
     /// Active connections/transactions
-    connections: Arc<RwLock<HashMap<String, ConnectionState>>>,
+    _connections: Arc<RwLock<HashMap<String, ConnectionState>>>,
 }
 
 /// Configuration for the REPL
@@ -172,15 +171,15 @@ impl DatabaseRepl {
 
         Ok(Self {
             database,
-            command_registry,
-            completion_engine,
+            _command_registry: command_registry,
+            _completion_engine: completion_engine,
             history_manager,
             formatter,
             parser,
             executor,
             config,
             session,
-            connections: Arc::new(RwLock::new(HashMap::new())),
+            _connections: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -614,13 +613,12 @@ impl DatabaseRepl {
                 key,
                 value: value.map(|v| String::from_utf8_lossy(&v).to_string()).unwrap_or_default(),
             },
-            FormattableData::List(items) => CommandData::List(
-                items.into_iter().map(|s| String::from_utf8_lossy(&s).to_string()).collect()
-            ),
-            FormattableData::Table { headers: _, rows: _ } => CommandData::Value("Table data".to_string()),
+            FormattableData::Keys(items) => CommandData::List(items),
+            FormattableData::Single(record) => CommandData::Value(format!("{:?}", record)),
+            FormattableData::Multiple(records) => CommandData::Value(format!("{} records", records.len())),
             FormattableData::Message(msg) => CommandData::Value(msg),
-            FormattableData::Statistics(_) => CommandData::Value("Statistics data".to_string()),
-            FormattableData::Empty => CommandData::Value("No data".to_string()),
+            FormattableData::Error(err) => CommandData::Value(format!("Error: {}", err)),
+            FormattableData::Stats(stats) => CommandData::Value(format!("Stats: {} keys", stats.total_keys)),
         }
     }
 
@@ -631,10 +629,23 @@ impl DatabaseRepl {
                 key: key.clone(),
                 value: Some(value.as_bytes().to_vec()),
             },
-            CommandData::List(items) => FormattableData::List(
-                items.iter().map(|s| s.as_bytes().to_vec()).collect()
-            ),
+            CommandData::List(items) => FormattableData::Keys(items.clone()),
             CommandData::Value(value) => FormattableData::Message(value.clone()),
+            CommandData::Table { _headers: _, rows } => {
+                // Convert table to a simple message representation
+                FormattableData::Message(format!("Table with {} rows", rows.len()))
+            },
+            CommandData::Json(json_value) => {
+                FormattableData::Message(json_value.to_string())
+            },
+            CommandData::Binary(binary_data) => {
+                FormattableData::Message(format!("Binary data ({} bytes)", binary_data.len()))
+            },
+            CommandData::Stats(stats_map) => {
+                // Convert stats to a simple representation
+                let stats_count = stats_map.len();
+                FormattableData::Message(format!("Statistics ({} entries)", stats_count))
+            },
         }
     }
 }

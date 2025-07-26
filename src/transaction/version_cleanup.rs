@@ -7,6 +7,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Automatic version cleanup for MVCC
+#[derive(Debug)]
 pub struct VersionCleanupThread {
     store: Arc<VersionStore>,
     should_stop: Arc<AtomicBool>,
