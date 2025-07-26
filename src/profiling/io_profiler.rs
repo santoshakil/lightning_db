@@ -5,13 +5,13 @@
 
 use std::sync::{Arc, Mutex, RwLock};
 use std::collections::HashMap;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::thread;
 use std::path::Path;
 use std::fs::File;
 use std::io::{Write, BufWriter};
 use serde::{Serialize, Deserialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// I/O profiler that tracks file system operations
 pub struct IoProfiler {

@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// Write buffer for B+Tree to handle burst writes when LSM is disabled
+#[derive(Debug)]
 pub struct BTreeWriteBuffer {
     buffer: Arc<Mutex<BTreeMap<Vec<u8>, Vec<u8>>>>,
     btree: Arc<RwLock<BPlusTree>>,

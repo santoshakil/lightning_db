@@ -134,6 +134,45 @@ pub enum Error {
     
     #[error("Corruption unrecoverable: {0}")]
     CorruptionUnrecoverable(String),
+    
+    #[error("Encryption error: {0}")]
+    Encryption(String),
+    
+    #[error("Quota exceeded: {0}")]
+    QuotaExceeded(String),
+    
+    #[error("Parse error: {0}")]
+    Parse(String),
+    
+    #[error("Validation error: {0}")]
+    Validation(String),
+    
+    #[error("Resource locked: {0}")]
+    Locked(String),
+    
+    #[error("Parse error: {0}")]
+    ParseError(String),
+    
+    #[error("Validation failed: {0}")]
+    ValidationFailed(String),
+    
+    #[error("Processing error: {0}")]
+    ProcessingError(String),
+    
+    #[error("Thread panic: {0}")]
+    ThreadPanic(String),
+    
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+    
+    #[error("Conversion error: {0}")]
+    ConversionError(String),
+    
+    #[error("Schema validation failed: {0}")]
+    SchemaValidationFailed(String),
+    
+    #[error("IO error: {0}")]
+    IoError(String),
 }
 
 impl From<std::io::Error> for Error {
@@ -161,7 +200,7 @@ impl Error {
             Error::Io(_) => -1,
             Error::InvalidDatabase => -2,
             Error::CorruptedPage => -3,
-            Error::CorruptedDatabase(_) => -41,
+            Error::CorruptedDatabase(_) => -3,
             Error::InvalidPageId => -4,
             Error::PageNotFound => -5,
             Error::KeyNotFound => -6,
@@ -201,6 +240,19 @@ impl Error {
             Error::NotImplemented(_) => -38,
             Error::WalNotAvailable => -39,
             Error::CorruptionUnrecoverable(_) => -40,
+            Error::Encryption(_) => -41,
+            Error::QuotaExceeded(_) => -42,
+            Error::Parse(_) => -43,
+            Error::Validation(_) => -44,
+            Error::Locked(_) => -45,
+            Error::ParseError(_) => -46,
+            Error::ValidationFailed(_) => -47,
+            Error::ProcessingError(_) => -48,
+            Error::ThreadPanic(_) => -49,
+            Error::InvalidInput(_) => -50,
+            Error::ConversionError(_) => -51,
+            Error::SchemaValidationFailed(_) => -52,
+            Error::IoError(_) => -53,
         }
     }
 
@@ -279,6 +331,24 @@ impl From<std::string::FromUtf8Error> for Error {
 impl From<std::num::TryFromIntError> for Error {
     fn from(err: std::num::TryFromIntError) -> Self {
         Error::Generic(format!("Integer conversion error: {}", err))
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(err: serde_json::Error) -> Self {
+        Error::ParseError(format!("JSON error: {}", err))
+    }
+}
+
+impl From<csv::Error> for Error {
+    fn from(err: csv::Error) -> Self {
+        Error::ParseError(format!("CSV error: {}", err))
+    }
+}
+
+impl From<regex::Error> for Error {
+    fn from(err: regex::Error) -> Self {
+        Error::ParseError(format!("Regex error: {}", err))
     }
 }
 

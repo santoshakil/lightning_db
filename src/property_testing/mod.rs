@@ -6,13 +6,12 @@
 pub mod advanced;
 
 use crate::{Database, LightningDbConfig, Result, Error};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, Instant};
 use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use tracing::info;
 
 // Re-export from advanced module
 pub use advanced::{ModelBasedTester, FuzzTester, FuzzConfig, ModelBasedTestResult, FuzzTestResult};
@@ -22,7 +21,7 @@ pub struct PropertyTester {
     config: PropertyTestConfig,
     invariant_checks: Vec<Box<dyn InvariantCheck + Send + Sync>>,
     operation_generators: Vec<Box<dyn OperationGenerator + Send + Sync>>,
-    test_results: Arc<Mutex<Vec<TestResult>>>,
+    _test_results: Arc<Mutex<Vec<TestResult>>>,
 }
 
 /// Configuration for property-based testing
@@ -173,7 +172,7 @@ impl PropertyTester {
             config: config.clone(),
             invariant_checks: Vec::new(),
             operation_generators: Vec::new(),
-            test_results: Arc::new(Mutex::new(Vec::new())),
+            _test_results: Arc::new(Mutex::new(Vec::new())),
         };
 
         // Add comprehensive invariant checks
@@ -766,7 +765,7 @@ impl OperationGenerator for TransactionGenerator {
         "transactions".to_string()
     }
 
-    fn generate(&self, config: &PropertyTestConfig) -> Vec<Operation> {
+    fn generate(&self, _config: &PropertyTestConfig) -> Vec<Operation> {
         let mut operations = Vec::new();
         let tx_count = fastrand::usize(1, 5);
 
@@ -801,7 +800,7 @@ impl OperationGenerator for CrashTestGenerator {
         "crash_testing".to_string()
     }
 
-    fn generate(&self, config: &PropertyTestConfig) -> Vec<Operation> {
+    fn generate(&self, _config: &PropertyTestConfig) -> Vec<Operation> {
         let mut operations = Vec::new();
         
         // Generate operations that test crash recovery
@@ -906,7 +905,7 @@ mod fastrand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    
 
     #[test]
     fn test_property_tester_creation() {

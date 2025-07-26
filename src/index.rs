@@ -86,6 +86,7 @@ impl IndexKey {
 }
 
 /// Secondary index implementation
+#[derive(Debug)]
 pub struct SecondaryIndex {
     config: IndexConfig,
     btree: Arc<RwLock<BPlusTree>>,
@@ -178,6 +179,7 @@ impl SecondaryIndex {
 }
 
 /// Index manager that handles multiple secondary indexes
+#[derive(Debug)]
 pub struct IndexManager {
     indexes: Arc<RwLock<HashMap<String, Arc<SecondaryIndex>>>>,
     page_manager: PageManagerWrapper,

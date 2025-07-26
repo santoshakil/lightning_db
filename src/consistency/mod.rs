@@ -40,6 +40,7 @@ impl Default for ConsistencyConfig {
 }
 
 /// Manager for handling consistency across operations
+#[derive(Debug)]
 pub struct ConsistencyManager {
     config: ConsistencyConfig,
     pub(crate) clock: Arc<HybridLogicalClock>,
@@ -161,6 +162,7 @@ impl ConsistencyManager {
 }
 
 /// Hybrid Logical Clock for distributed consistency
+#[derive(Debug)]
 pub(crate) struct HybridLogicalClock {
     physical_time: std::sync::atomic::AtomicU64,
     logical_time: std::sync::atomic::AtomicU64,
@@ -227,6 +229,7 @@ impl HybridLogicalClock {
 }
 
 /// Session manager for session consistency
+#[derive(Debug)]
 struct SessionManager {
     sessions: parking_lot::RwLock<std::collections::HashMap<u64, SessionState>>,
     #[cfg(test)]

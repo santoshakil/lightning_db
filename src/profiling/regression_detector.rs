@@ -4,9 +4,9 @@
 //! against historical baselines and identifying significant degradations.
 
 use std::collections::{HashMap, VecDeque};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Write};
 use serde::{Serialize, Deserialize};

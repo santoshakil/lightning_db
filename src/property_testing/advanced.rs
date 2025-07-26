@@ -3,19 +3,18 @@
 //! This module provides sophisticated testing strategies including fuzzing,
 //! model-based testing, and chaos engineering for Lightning DB.
 
-use super::{Operation, InvariantCheck, OperationGenerator, PropertyTestConfig, InvariantViolation, ViolationType};
+use super::Operation;
 use crate::{Database, Result};
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicUsize, Ordering}};
-use std::thread;
-use std::time::{Duration, Instant, SystemTime};
-use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}};
+use std::time::{Duration, Instant};
+use serde::Serialize;
+use tracing::{warn, debug};
 
 /// Model-based property testing framework
 pub struct ModelBasedTester {
     reference_model: Arc<Mutex<ReferenceModel>>,
-    operation_sequence: Arc<Mutex<Vec<Operation>>>,
+    _operation_sequence: Arc<Mutex<Vec<Operation>>>,
     divergence_detector: DivergenceDetector,
 }
 
@@ -25,7 +24,7 @@ pub struct ReferenceModel {
     /// In-memory representation of expected database state
     data: HashMap<Vec<u8>, Vec<u8>>,
     /// Active transactions
-    transactions: HashMap<u64, HashMap<Vec<u8>, Vec<u8>>>,
+    _transactions: HashMap<u64, HashMap<Vec<u8>, Vec<u8>>>,
     /// Next transaction ID
     next_tx_id: u64,
     /// Operation history for debugging
@@ -36,7 +35,7 @@ impl ReferenceModel {
     pub fn new() -> Self {
         Self {
             data: HashMap::new(),
-            transactions: HashMap::new(),
+            _transactions: HashMap::new(),
             next_tx_id: 1,
             operation_history: VecDeque::new(),
         }
@@ -63,7 +62,7 @@ impl ReferenceModel {
                 Ok(ModelResult::Success)
             }
             Operation::Transaction { operations } => {
-                let tx_id = self.next_tx_id;
+                let _tx_id = self.next_tx_id;
                 self.next_tx_id += 1;
                 
                 let mut tx_state = HashMap::new();
@@ -106,7 +105,7 @@ pub enum ModelResult {
 
 /// Detects divergence between actual database and reference model
 pub struct DivergenceDetector {
-    tolerance: f64,
+    _tolerance: f64,
     max_divergence_count: usize,
     current_divergences: AtomicUsize,
 }
@@ -114,7 +113,7 @@ pub struct DivergenceDetector {
 impl DivergenceDetector {
     pub fn new(tolerance: f64, max_divergence_count: usize) -> Self {
         Self {
-            tolerance,
+            _tolerance: tolerance,
             max_divergence_count,
             current_divergences: AtomicUsize::new(0),
         }
@@ -212,7 +211,7 @@ impl ModelBasedTester {
     pub fn new() -> Self {
         Self {
             reference_model: Arc::new(Mutex::new(ReferenceModel::new())),
-            operation_sequence: Arc::new(Mutex::new(Vec::new())),
+            _operation_sequence: Arc::new(Mutex::new(Vec::new())),
             divergence_detector: DivergenceDetector::new(0.01, 10), // 1% tolerance, max 10 divergences
         }
     }

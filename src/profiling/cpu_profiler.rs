@@ -3,7 +3,7 @@
 //! Provides statistical CPU profiling by sampling call stacks at regular intervals.
 //! Uses signal-based sampling for minimal overhead and accurate profiling data.
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use std::thread;
@@ -11,7 +11,7 @@ use std::path::Path;
 use std::fs::File;
 use std::io::{Write, BufWriter};
 use serde::{Serialize, Deserialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// CPU profiler that samples call stacks at regular intervals
 pub struct CpuProfiler {
@@ -19,7 +19,7 @@ pub struct CpuProfiler {
     samples: Arc<Mutex<Vec<CpuSample>>>,
     active: Arc<std::sync::atomic::AtomicBool>,
     total_samples: Arc<std::sync::atomic::AtomicU64>,
-    profiler_thread: Option<thread::JoinHandle<()>>,
+    _profiler_thread: Option<thread::JoinHandle<()>>,
 }
 
 /// A single CPU sample containing call stack information
@@ -28,7 +28,7 @@ pub struct CpuSample {
     pub timestamp: u64,
     pub thread_id: u64,
     pub stack_trace: Vec<StackFrame>,
-    pub cpu_usage: f64,
+    pub _cpu_usage: f64,
 }
 
 /// A single frame in a call stack
@@ -86,7 +86,7 @@ impl CpuProfiler {
             samples: Arc::new(Mutex::new(Vec::new())),
             active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             total_samples: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            profiler_thread: None,
+            _profiler_thread: None,
         })
     }
 
@@ -236,7 +236,7 @@ impl CpuProfiler {
             timestamp,
             thread_id,
             stack_trace,
-            cpu_usage,
+            _cpu_usage: cpu_usage,
         })
     }
 
@@ -434,7 +434,7 @@ mod tests {
                 timestamp: 1000,
                 thread_id: 1,
                 stack_trace: vec![],
-                cpu_usage: 50.0,
+                _cpu_usage: 50.0,
             });
         }
         

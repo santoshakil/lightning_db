@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 /// Optimized transaction manager with reduced lock contention
+#[derive(Debug)]
 pub struct OptimizedTransactionManager {
     // Core transaction management
     next_tx_id: Arc<AtomicU64>,

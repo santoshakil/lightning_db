@@ -14,7 +14,7 @@ use tracing::{debug, info, warn};
 pub struct MetricsCollector {
     metrics: Arc<RwLock<MetricsData>>,
     time_series: Arc<Mutex<HashMap<String, VecDeque<MetricPoint>>>>,
-    collection_thread: Option<thread::JoinHandle<()>>,
+    _collection_thread: Option<thread::JoinHandle<()>>,
     active: Arc<std::sync::atomic::AtomicBool>,
     start_time: Arc<Mutex<Option<Instant>>>,
 }
@@ -173,7 +173,7 @@ impl MetricsCollector {
         Self {
             metrics: Arc::new(RwLock::new(MetricsData::default())),
             time_series: Arc::new(Mutex::new(HashMap::new())),
-            collection_thread: None,
+            _collection_thread: None,
             active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             start_time: Arc::new(Mutex::new(None)),
         }

@@ -7,14 +7,14 @@ use crate::Result;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use serde::{Serialize, Deserialize};
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::commands::CommandRegistry;
 
 /// Command completion engine
 pub struct CompletionEngine {
     /// Command registry for available commands
-    command_registry: Arc<CommandRegistry>,
+    _command_registry: Arc<CommandRegistry>,
     /// Completion cache for performance
     completion_cache: Arc<RwLock<HashMap<String, Vec<CompletionCandidate>>>>,
     /// Key cache for dynamic completion
@@ -99,7 +99,7 @@ impl CompletionEngine {
     /// Create a new completion engine
     pub fn new(command_registry: Arc<CommandRegistry>) -> Self {
         Self {
-            command_registry,
+            _command_registry: command_registry,
             completion_cache: Arc::new(RwLock::new(HashMap::new())),
             key_cache: Arc::new(RwLock::new(HashSet::new())),
             config: CompletionConfig::default(),
@@ -109,7 +109,7 @@ impl CompletionEngine {
     /// Create completion engine with custom configuration
     pub fn with_config(command_registry: Arc<CommandRegistry>, config: CompletionConfig) -> Self {
         Self {
-            command_registry,
+            _command_registry: command_registry,
             completion_cache: Arc::new(RwLock::new(HashMap::new())),
             key_cache: Arc::new(RwLock::new(HashSet::new())),
             config,
@@ -174,9 +174,9 @@ impl CompletionEngine {
         };
 
         let previous_tokens = if input_up_to_cursor.ends_with(' ') {
-            tokens
+            tokens.clone()
         } else {
-            tokens.into_iter().take(tokens.len().saturating_sub(1)).collect()
+            tokens.iter().take(tokens.len().saturating_sub(1)).cloned().collect()
         };
 
         let current_command = previous_tokens.first().cloned();

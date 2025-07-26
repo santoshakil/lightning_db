@@ -103,6 +103,7 @@ impl Transaction {
     }
 }
 
+#[derive(Debug)]
 pub struct TransactionManager {
     next_tx_id: AtomicU64,
     active_transactions: Arc<SkipMap<u64, Arc<RwLock<Transaction>>>>,
@@ -406,6 +407,7 @@ impl VersionedValue {
     }
 }
 
+#[derive(Debug)]
 pub struct VersionStore {
     // key -> (timestamp -> value)
     versions: SkipMap<Vec<u8>, Arc<SkipMap<u64, VersionedValue>>>,

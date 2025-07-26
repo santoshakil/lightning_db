@@ -3,14 +3,12 @@
 //! This module contains comprehensive chaos tests that simulate real-world
 //! production failures to validate database resilience.
 
-use lightning_db::{Database, LightningDbConfig, Transaction};
+use lightning_db::{Database, LightningDbConfig};
 use std::sync::{Arc, Barrier, atomic::{AtomicBool, AtomicU64, Ordering}};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::fs;
-use std::path::Path;
 use rand::{Rng, thread_rng};
-use std::io::{self, Write};
 
 /// Chaos test results tracking
 #[derive(Default)]
@@ -59,13 +57,13 @@ fn test_random_crash_recovery() {
         let path_clone = db_path.clone();
         
         let writer_handle = thread::spawn(move || {
-            let config = LightningDbConfig::builder()
-                .path(&path_clone)
-                .cache_size(10 * 1024 * 1024)
-                .enable_wal(true)
-                .build();
+            let config = LightningDbConfig {
+                cache_size: 10 * 1024 * 1024,
+                use_improved_wal: true,
+                ..Default::default()
+            };
             
-            let db = Database::open(config).unwrap();
+            let db = Database::open(&path_clone, config).unwrap();
             let mut rng = thread_rng();
             
             for i in 0..1000 {
@@ -82,7 +80,7 @@ fn test_random_crash_recovery() {
                 let key = format!("crash_test_{}", i);
                 let value = format!("value_{}_integrity_check", i);
                 
-                match db.set(&key, &value) {
+                match db.put(key.as_bytes(), value.as_bytes()) {
                     Ok(_) => {},
                     Err(_) => {
                         metrics_clone.failed_operations.fetch_add(1, Ordering::Relaxed);
@@ -92,7 +90,7 @@ fn test_random_crash_recovery() {
                 // Simulate some reads too
                 if i > 0 && rng.gen_bool(0.3) {
                     let read_key = format!("crash_test_{}", rng.gen_range(0..i));
-                    let _ = db.get(&read_key);
+                    let _ = db.get(read_key.as_bytes());
                 }
             }
         });
@@ -104,14 +102,14 @@ fn test_random_crash_recovery() {
         println!("    🔧 Attempting recovery...");
         let metrics_clone = metrics.clone();
         
-        let recovery_result = std::panic::catch_unwind(|| {
-            let config = LightningDbConfig::builder()
-                .path(&db_path)
-                .cache_size(10 * 1024 * 1024)
-                .enable_wal(true)
-                .build();
+        let _recovery_result = std::panic::catch_unwind(|| {
+            let config = LightningDbConfig {
+                cache_size: 10 * 1024 * 1024,
+                use_improved_wal: true,
+                ..Default::default()
+            };
             
-            match Database::open(config) {
+            match Database::open(&db_path, config) {
                 Ok(db) => {
                     // Verify data integrity
                     let mut verified = 0;
@@ -119,7 +117,7 @@ fn test_random_crash_recovery() {
                     
                     for i in 0..1000 {
                         let key = format!("crash_test_{}", i);
-                        match db.get(&key) {
+                        match db.get(key.as_bytes()) {
                             Ok(Some(value)) => {
                                 let expected = format!("value_{}_integrity_check", i);
                                 if value == expected.as_bytes() {
@@ -168,13 +166,13 @@ fn test_memory_pressure_resilience() {
     let metrics = Arc::new(ChaosMetrics::default());
     
     // Create database with minimal cache
-    let config = LightningDbConfig::builder()
-        .path(test_dir.path())
-        .cache_size(1024 * 1024) // Only 1MB cache
-        .enable_compression(true)
-        .build();
+    let config = LightningDbConfig {
+        cache_size: 1024 * 1024, // Only 1MB cache
+        compression_enabled: true,
+        ..Default::default()
+    };
     
-    let db = Arc::new(Database::open(config).unwrap());
+    let db = Arc::new(Database::open(test_dir.path(), config).unwrap());
     let running = Arc::new(AtomicBool::new(true));
     
     // Spawn multiple threads doing heavy operations
@@ -198,10 +196,10 @@ fn test_memory_pressure_resilience() {
                 metrics_clone.total_operations.fetch_add(1, Ordering::Relaxed);
                 
                 // Try to write
-                match db_clone.set(&key, &value) {
+                match db_clone.put(key.as_bytes(), &value) {
                     Ok(_) => {
                         // Immediately try to read it back
-                        match db_clone.get(&key) {
+                        match db_clone.get(key.as_bytes()) {
                             Ok(Some(read_value)) => {
                                 if read_value != value {
                                     metrics_clone.data_corruptions.fetch_add(1, Ordering::Relaxed);
@@ -253,17 +251,17 @@ fn test_transaction_chaos() {
     let test_dir = tempfile::tempdir().unwrap();
     let metrics = Arc::new(ChaosMetrics::default());
     
-    let config = LightningDbConfig::builder()
-        .path(test_dir.path())
-        .cache_size(50 * 1024 * 1024)
-        .enable_wal(true)
-        .build();
+    let config = LightningDbConfig {
+        cache_size: 50 * 1024 * 1024,
+        use_improved_wal: true,
+        ..Default::default()
+    };
     
-    let db = Arc::new(Database::open(config).unwrap());
+    let db = Arc::new(Database::open(test_dir.path(), config).unwrap());
     
     // Initialize accounts
     for i in 0..100 {
-        db.set(&format!("account_{}", i), &1000u64.to_le_bytes()).unwrap();
+        db.put(format!("account_{}", i).as_bytes(), &1000u64.to_le_bytes()).unwrap();
     }
     
     let barrier = Arc::new(Barrier::new(16));
@@ -290,38 +288,52 @@ fn test_transaction_chaos() {
                 let amount = rng.gen_range(1..100);
                 
                 // Start transaction
-                let mut tx = Transaction::new();
-                let from_key = format!("account_{}", from);
-                let to_key = format!("account_{}", to);
-                
-                // Read balances
-                let from_balance = match db_clone.get(&from_key) {
-                    Ok(Some(data)) if data.len() == 8 => {
-                        u64::from_le_bytes(data[..8].try_into().unwrap())
-                    }
-                    _ => {
+                let tx_id = match db_clone.begin_transaction() {
+                    Ok(id) => id,
+                    Err(_) => {
                         metrics_clone.failed_operations.fetch_add(1, Ordering::Relaxed);
                         continue;
                     }
                 };
                 
-                let to_balance = match db_clone.get(&to_key) {
+                let from_key = format!("account_{}", from);
+                let to_key = format!("account_{}", to);
+                
+                // Read balances
+                let from_balance = match db_clone.get_tx(tx_id, from_key.as_bytes()) {
                     Ok(Some(data)) if data.len() == 8 => {
                         u64::from_le_bytes(data[..8].try_into().unwrap())
                     }
                     _ => {
+                        let _ = db_clone.abort_transaction(tx_id);
+                        metrics_clone.failed_operations.fetch_add(1, Ordering::Relaxed);
+                        continue;
+                    }
+                };
+                
+                let to_balance = match db_clone.get_tx(tx_id, to_key.as_bytes()) {
+                    Ok(Some(data)) if data.len() == 8 => {
+                        u64::from_le_bytes(data[..8].try_into().unwrap())
+                    }
+                    _ => {
+                        let _ = db_clone.abort_transaction(tx_id);
                         metrics_clone.failed_operations.fetch_add(1, Ordering::Relaxed);
                         continue;
                     }
                 };
                 
                 if from_balance < amount {
+                    let _ = db_clone.abort_transaction(tx_id);
                     continue; // Insufficient funds
                 }
                 
                 // Perform transfer
-                tx.set(&from_key, &(from_balance - amount).to_le_bytes());
-                tx.set(&to_key, &(to_balance + amount).to_le_bytes());
+                if db_clone.put_tx(tx_id, from_key.as_bytes(), &(from_balance - amount).to_le_bytes()).is_err() ||
+                   db_clone.put_tx(tx_id, to_key.as_bytes(), &(to_balance + amount).to_le_bytes()).is_err() {
+                    let _ = db_clone.abort_transaction(tx_id);
+                    metrics_clone.failed_operations.fetch_add(1, Ordering::Relaxed);
+                    continue;
+                }
                 
                 // Random delay to increase conflict probability
                 if rng.gen_bool(0.1) {
@@ -329,12 +341,12 @@ fn test_transaction_chaos() {
                 }
                 
                 // Try to commit
-                match db_clone.commit(tx) {
+                match db_clone.commit_transaction(tx_id) {
                     Ok(_) => {
                         // Verify invariant
                         let mut total = 0u64;
                         for i in 0..100 {
-                            if let Ok(Some(data)) = db_clone.get(&format!("account_{}", i)) {
+                            if let Ok(Some(data)) = db_clone.get(format!("account_{}", i).as_bytes()) {
                                 if data.len() == 8 {
                                     total += u64::from_le_bytes(data[..8].try_into().unwrap());
                                 }
@@ -363,7 +375,7 @@ fn test_transaction_chaos() {
     // Final verification
     let mut total = 0u64;
     for i in 0..100 {
-        if let Ok(Some(data)) = db.get(&format!("account_{}", i)) {
+        if let Ok(Some(data)) = db.get(format!("account_{}", i).as_bytes()) {
             if data.len() == 8 {
                 total += u64::from_le_bytes(data[..8].try_into().unwrap());
             }
@@ -388,18 +400,18 @@ fn test_disk_corruption_detection() {
     
     // Phase 1: Write test data
     {
-        let config = LightningDbConfig::builder()
-            .path(&db_path)
-            .cache_size(10 * 1024 * 1024)
-            .enable_wal(true)
-            .build();
+        let config = LightningDbConfig {
+            cache_size: 10 * 1024 * 1024,
+            use_improved_wal: true,
+            ..Default::default()
+        };
         
-        let db = Database::open(config).unwrap();
+        let db = Database::open(&db_path, config).unwrap();
         
         for i in 0..1000 {
             let key = format!("corruption_test_{}", i);
             let value = format!("value_{}_with_checksum", i);
-            db.set(&key, &value).unwrap();
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
             metrics.total_operations.fetch_add(1, Ordering::Relaxed);
         }
         
@@ -436,13 +448,13 @@ fn test_disk_corruption_detection() {
     // Phase 3: Try to open and recover
     println!("    🔧 Attempting to open corrupted database...");
     
-    let config = LightningDbConfig::builder()
-        .path(&db_path)
-        .cache_size(10 * 1024 * 1024)
-        .enable_wal(true)
-        .build();
+    let config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024,
+        use_improved_wal: true,
+        ..Default::default()
+    };
     
-    match Database::open(config) {
+    match Database::open(&db_path, config) {
         Ok(db) => {
             println!("    ✅ Database opened despite corruption");
             
@@ -452,7 +464,7 @@ fn test_disk_corruption_detection() {
             
             for i in 0..1000 {
                 let key = format!("corruption_test_{}", i);
-                match db.get(&key) {
+                match db.get(key.as_bytes()) {
                     Ok(Some(value)) => {
                         let expected = format!("value_{}_with_checksum", i);
                         if value == expected.as_bytes() {
@@ -508,12 +520,12 @@ fn test_rapid_lifecycle_chaos() {
     let writer_handle = thread::spawn(move || {
         let mut counter = 0;
         while writer_running.load(Ordering::Relaxed) {
-            let config = LightningDbConfig::builder()
-                .path(&writer_path)
-                .cache_size(5 * 1024 * 1024)
-                .build();
+            let config = LightningDbConfig {
+                cache_size: 5 * 1024 * 1024,
+                ..Default::default()
+            };
             
-            if let Ok(db) = Database::open(config) {
+            if let Ok(db) = Database::open(&writer_path, config) {
                 // Write some data
                 for _ in 0..100 {
                     let key = format!("lifecycle_{}", counter);
@@ -521,7 +533,7 @@ fn test_rapid_lifecycle_chaos() {
                     
                     writer_metrics.total_operations.fetch_add(1, Ordering::Relaxed);
                     
-                    if db.set(&key, &value).is_err() {
+                    if db.put(key.as_bytes(), value.as_bytes()).is_err() {
                         writer_metrics.failed_operations.fetch_add(1, Ordering::Relaxed);
                     }
                     counter += 1;
@@ -547,19 +559,19 @@ fn test_rapid_lifecycle_chaos() {
         
         let reader_handle = thread::spawn(move || {
             while reader_running.load(Ordering::Relaxed) {
-                let config = LightningDbConfig::builder()
-                    .path(&reader_path)
-                    .cache_size(5 * 1024 * 1024)
-                    .build();
+                let config = LightningDbConfig {
+                    cache_size: 5 * 1024 * 1024,
+                    ..Default::default()
+                };
                 
-                if let Ok(db) = Database::open(config) {
+                if let Ok(db) = Database::open(&reader_path, config) {
                     // Read random keys
                     for _ in 0..50 {
                         let key = format!("lifecycle_{}", thread_rng().gen_range(0..10000));
                         
                         reader_metrics.total_operations.fetch_add(1, Ordering::Relaxed);
                         
-                        match db.get(&key) {
+                        match db.get(key.as_bytes()) {
                             Ok(Some(value)) => {
                                 // Verify format
                                 if !value.starts_with(b"value_") {
@@ -593,12 +605,12 @@ fn test_rapid_lifecycle_chaos() {
     }
     
     // Final integrity check
-    let config = LightningDbConfig::builder()
-        .path(&db_path)
-        .cache_size(10 * 1024 * 1024)
-        .build();
+    let config = LightningDbConfig {
+        cache_size: 10 * 1024 * 1024,
+        ..Default::default()
+    };
     
-    if let Ok(db) = Database::open(config) {
+    if let Ok(_db) = Database::open(&db_path, config) {
         println!("    ✅ Database intact after chaos");
         metrics.successful_recoveries.fetch_add(1, Ordering::Relaxed);
     }
@@ -618,16 +630,16 @@ fn test_chaos_suite() {
     
     // Run all chaos tests
     test_random_crash_recovery();
-    println!("\n" + "=".repeat(80) + "\n");
+    println!("\n{}\n", "=".repeat(80));
     
     test_memory_pressure_resilience();
-    println!("\n" + "=".repeat(80) + "\n");
+    println!("\n{}\n", "=".repeat(80));
     
     test_transaction_chaos();
-    println!("\n" + "=".repeat(80) + "\n");
+    println!("\n{}\n", "=".repeat(80));
     
     test_disk_corruption_detection();
-    println!("\n" + "=".repeat(80) + "\n");
+    println!("\n{}\n", "=".repeat(80));
     
     test_rapid_lifecycle_chaos();
     

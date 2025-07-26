@@ -3,12 +3,12 @@
 //! Comprehensive system resource monitoring including CPU, memory, disk, network,
 //! and file descriptor usage with threshold-based alerting.
 
-use crate::{Database, Result, Error};
+use crate::{Database, Result};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock, atomic::{AtomicBool, Ordering}};
 use std::time::{Duration, Instant, SystemTime};
 use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use tracing::{info, debug};
 
 /// Resource tracker for Lightning DB
 pub struct ResourceTracker {
@@ -788,8 +788,8 @@ pub enum ResourceTrendDirection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-    use crate::LightningDbConfig;
+    
+    
 
     #[test]
     fn test_resource_tracker_creation() {

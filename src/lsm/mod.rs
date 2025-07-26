@@ -76,6 +76,20 @@ pub struct LSMTree {
     compaction_scheduler: Option<Arc<CompactionScheduler>>,
 }
 
+impl std::fmt::Debug for LSMTree {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LSMTree")
+            .field("config", &self.config)
+            .field("db_path", &self.db_path)
+            .field("next_file_number", &self.next_file_number.load(std::sync::atomic::Ordering::Relaxed))
+            .field("compaction_thread", &self.compaction_thread.is_some())
+            .field("shutdown", &self.shutdown.load(std::sync::atomic::Ordering::Relaxed))
+            .field("cache_hits", &self.cache_hits.load(std::sync::atomic::Ordering::Relaxed))
+            .field("cache_misses", &self.cache_misses.load(std::sync::atomic::Ordering::Relaxed))
+            .finish()
+    }
+}
+
 pub struct Level {
     level_num: usize,
     sstables: Vec<Arc<SSTable>>,

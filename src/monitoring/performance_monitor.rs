@@ -3,12 +3,12 @@
 //! Real-time performance monitoring with trend analysis, benchmarking,
 //! and performance regression detection.
 
-use crate::{Database, Result, Error};
+use crate::{Database, Result};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock, atomic::{AtomicU64, AtomicBool, Ordering}};
 use std::time::{Duration, Instant, SystemTime};
 use serde::{Serialize, Deserialize};
-use tracing::{info, warn, debug};
+use tracing::{info, debug};
 
 /// Performance monitor for Lightning DB
 pub struct PerformanceMonitor {
@@ -451,7 +451,7 @@ impl PerformanceMonitor {
     /// Collect throughput metrics
     fn collect_throughput_metrics(&self, _database: &Database, performance: &mut PerformanceData) -> Result<()> {
         // Calculate throughput from counters
-        let operations_completed = self.counters.operations_completed.load(Ordering::Relaxed);
+        let _operations_completed = self.counters.operations_completed.load(Ordering::Relaxed);
         let bytes_read = self.counters.bytes_read.load(Ordering::Relaxed);
         let bytes_written = self.counters.bytes_written.load(Ordering::Relaxed);
 
@@ -886,8 +886,8 @@ pub struct PerformanceRegression {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-    use crate::LightningDbConfig;
+    
+    
 
     #[test]
     fn test_performance_monitor_creation() {

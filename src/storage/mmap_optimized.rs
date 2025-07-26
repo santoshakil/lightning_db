@@ -41,6 +41,7 @@ impl Default for MmapConfig {
 }
 
 /// Optimized memory-mapped file manager with multiple regions
+#[derive(Debug)]
 pub struct OptimizedMmapManager {
     config: MmapConfig,
     regions: Arc<RwLock<HashMap<u64, MmapRegion>>>,
@@ -67,6 +68,20 @@ struct MmapRegion {
     last_access: Instant,
     dirty: bool,
     access_count: u64,
+}
+
+impl std::fmt::Debug for MmapRegion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MmapRegion")
+            .field("_region_id", &self._region_id)
+            .field("offset", &self.offset)
+            .field("size", &self.size)
+            .field("mmap", &"<MmapMut>")
+            .field("last_access", &self.last_access)
+            .field("dirty", &self.dirty)
+            .field("access_count", &self.access_count)
+            .finish()
+    }
 }
 
 impl OptimizedMmapManager {

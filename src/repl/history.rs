@@ -7,10 +7,10 @@ use crate::{Result, Error};
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write, BufWriter};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Serialize, Deserialize};
-use tracing::{debug, warn, error};
+use tracing::{debug, warn};
 
 /// Command history manager
 pub struct HistoryManager {
@@ -779,7 +779,7 @@ mod tests {
         
         manager.add_entry("command2".to_string()).unwrap();
         
-        let end_time = SystemTime::now();
+        let _end_time = SystemTime::now();
         
         let results = manager.get_entries_by_time_range(start_time, mid_time);
         assert_eq!(results.len(), 1);

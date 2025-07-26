@@ -56,6 +56,7 @@ impl KeyEntry {
     }
 }
 
+#[derive(Debug)]
 pub struct BPlusTree {
     page_manager: PageManagerWrapper,
     root_page_id: u32,

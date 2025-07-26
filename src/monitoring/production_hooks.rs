@@ -182,6 +182,15 @@ pub struct ProductionMonitor {
     metrics_collector: Arc<RwLock<MetricsCollector>>,
 }
 
+impl std::fmt::Debug for ProductionMonitor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProductionMonitor")
+            .field("hooks_count", &self.hooks.read().len())
+            .field("operation_thresholds", &*self.operation_thresholds.read())
+            .finish()
+    }
+}
+
 impl ProductionMonitor {
     pub fn new() -> Self {
         let mut thresholds = HashMap::new();

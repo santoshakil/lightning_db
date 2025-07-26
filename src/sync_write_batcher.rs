@@ -7,6 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 /// Synchronous write batcher for improving single put performance
+#[derive(Debug)]
 pub struct SyncWriteBatcher {
     sender: Sender<BatchCommand>,
     shutdown: Arc<AtomicBool>,
@@ -23,6 +24,7 @@ enum BatchCommand {
     Shutdown,
 }
 
+#[derive(Debug)]
 struct BatcherStats {
     writes_queued: AtomicU64,
     writes_completed: AtomicU64,
