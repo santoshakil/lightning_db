@@ -368,6 +368,18 @@ impl TransactionManager {
     }
 }
 
+impl Clone for TransactionManager {
+    fn clone(&self) -> Self {
+        Self {
+            next_tx_id: AtomicU64::new(self.next_tx_id.load(Ordering::SeqCst)),
+            active_transactions: self.active_transactions.clone(),
+            commit_timestamp: AtomicU64::new(self.commit_timestamp.load(Ordering::SeqCst)),
+            max_active_transactions: self.max_active_transactions,
+            version_store: self.version_store.clone(),
+        }
+    }
+}
+
 /// Statistics for version store and transaction cleanup
 #[derive(Debug, Clone)]
 pub struct CleanupStats {

@@ -287,10 +287,116 @@ impl TransformationPipeline {
     }
     
     /// Apply custom transformation
-    fn apply_custom_transformation(&self, value: &Value, _function_name: &str) -> Result<Value> {
-        // Placeholder for custom transformation functions
-        // In a real implementation, this would look up and execute custom functions
-        Ok(value.clone())
+    fn apply_custom_transformation(&self, value: &Value, function_name: &str) -> Result<Value> {
+        match function_name {
+            "capitalize" => {
+                if let Some(s) = value.as_str() {
+                    let mut chars: Vec<char> = s.chars().collect();
+                    if let Some(first_char) = chars.get_mut(0) {
+                        *first_char = first_char.to_uppercase().next().unwrap_or(*first_char);
+                    }
+                    Ok(Value::String(chars.into_iter().collect()))
+                } else {
+                    Ok(value.clone())
+                }
+            }
+            "reverse" => {
+                if let Some(s) = value.as_str() {
+                    Ok(Value::String(s.chars().rev().collect()))
+                } else {
+                    Ok(value.clone())
+                }
+            }
+            "hash" => {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                
+                let mut hasher = DefaultHasher::new();
+                value.to_string().hash(&mut hasher);
+                let hash_value = hasher.finish();
+                Ok(Value::String(format!("{:x}", hash_value)))
+            }
+            "length" => {
+                if let Some(s) = value.as_str() {
+                    Ok(Value::Number(serde_json::Number::from(s.len())))
+                } else {
+                    Ok(Value::Number(serde_json::Number::from(0)))
+                }
+            }
+            "abs" => {
+                if let Some(n) = value.as_f64() {
+                    Ok(Value::Number(serde_json::Number::from_f64(n.abs()).unwrap_or(serde_json::Number::from(0))))
+                } else {
+                    Ok(value.clone())
+                }
+            }
+            "round" => {
+                if let Some(n) = value.as_f64() {
+                    Ok(Value::Number(serde_json::Number::from(n.round() as i64)))
+                } else {
+                    Ok(value.clone())
+                }
+            }
+            "floor" => {
+                if let Some(n) = value.as_f64() {
+                    Ok(Value::Number(serde_json::Number::from(n.floor() as i64)))
+                } else {
+                    Ok(value.clone())
+                }
+            }
+            "ceil" => {
+                if let Some(n) = value.as_f64() {
+                    Ok(Value::Number(serde_json::Number::from(n.ceil() as i64)))
+                } else {
+                    Ok(value.clone())
+                }
+            }
+            "strip_whitespace" => {
+                if let Some(s) = value.as_str() {
+                    Ok(Value::String(s.chars().filter(|c| !c.is_whitespace()).collect()))
+                } else {
+                    Ok(value.clone())
+                }
+            }
+            "extract_domain" => {
+                if let Some(s) = value.as_str() {
+                    if let Some(at_pos) = s.rfind('@') {
+                        let domain = &s[at_pos + 1..];
+                        Ok(Value::String(domain.to_string()))
+                    } else {
+                        Ok(value.clone())
+                    }
+                } else {
+                    Ok(value.clone())
+                }
+            }
+            "mask_email" => {
+                if let Some(s) = value.as_str() {
+                    if let Some(at_pos) = s.find('@') {
+                        let (username, domain) = s.split_at(at_pos);
+                        if username.len() > 2 {
+                            let masked_username = format!(
+                                "{}{}{}",
+                                &username[..1],
+                                "*".repeat(username.len() - 2),
+                                &username[username.len() - 1..]
+                            );
+                            Ok(Value::String(format!("{}{}", masked_username, domain)))
+                        } else {
+                            Ok(Value::String(format!("**{}", domain)))
+                        }
+                    } else {
+                        Ok(value.clone())
+                    }
+                } else {
+                    Ok(value.clone())
+                }
+            }
+            _ => {
+                // Unknown function, return original value with error marker
+                Ok(Value::String(format!("CUSTOM_ERROR: Unknown function '{}'", function_name)))
+            }
+        }
     }
     
     /// Evaluate filter condition
@@ -348,14 +454,13 @@ impl TransformationPipeline {
         &self,
         record: &Value,
         field_name: &str,
-        _expression: &str,
+        expression: &str,
     ) -> Result<Option<Value>> {
         if let Value::Object(obj) = record {
             let mut new_obj = obj.clone();
             
-            // Placeholder for computed field logic
-            // In a real implementation, this would evaluate the expression
-            let computed_value = Value::String("computed_value".to_string());
+            // Evaluate expression to compute field value
+            let computed_value = self.evaluate_expression(expression, obj)?;
             new_obj.insert(field_name.to_string(), computed_value);
             
             Ok(Some(Value::Object(new_obj)))
@@ -368,11 +473,312 @@ impl TransformationPipeline {
     fn apply_data_cleaning(
         &self,
         record: &Value,
-        _operations: &[CleaningOperation],
+        operations: &[CleaningOperation],
     ) -> Result<Option<Value>> {
-        // Placeholder for data cleaning logic
-        // In a real implementation, this would apply various cleaning operations
-        Ok(Some(record.clone()))
+        let mut current_record = record.clone();
+        
+        for operation in operations {
+            match operation {
+                CleaningOperation::HandleNulls { strategy } => {
+                    current_record = self.handle_null_values(&current_record, strategy)?;
+                }
+                CleaningOperation::RemoveDuplicates { .. } => {
+                    // Note: This operation would typically be applied at the dataset level,
+                    // not per-record. For now, we just pass through.
+                    continue;
+                }
+                CleaningOperation::ValidateIntegrity { rules } => {
+                    if !self.validate_record_integrity(&current_record, rules)? {
+                        return Ok(None); // Filter out invalid records
+                    }
+                }
+                CleaningOperation::NormalizeFormats { field_types } => {
+                    current_record = self.normalize_field_formats(&current_record, field_types)?;
+                }
+            }
+        }
+        
+        Ok(Some(current_record))
+    }
+    
+    /// Evaluate expression for computed fields
+    fn evaluate_expression(&self, expression: &str, record: &Map<String, Value>) -> Result<Value> {
+        let expr = expression.trim();
+        
+        // Handle concat function: concat(field1, 'literal', field2)
+        if expr.starts_with("concat(") && expr.ends_with(")") {
+            return self.evaluate_concat_expression(expr, record);
+        }
+        
+        // Handle conditional function: if(condition, true_value, false_value)
+        if expr.starts_with("if(") && expr.ends_with(")") {
+            return self.evaluate_if_expression(expr, record);
+        }
+        
+        // Handle simple field reference
+        if let Some(value) = record.get(expr) {
+            return Ok(value.clone());
+        }
+        
+        // Handle string literal
+        if expr.starts_with('"') && expr.ends_with('"') {
+            return Ok(Value::String(expr[1..expr.len()-1].to_string()));
+        }
+        if expr.starts_with('\'') && expr.ends_with('\'') {
+            return Ok(Value::String(expr[1..expr.len()-1].to_string()));
+        }
+        
+        // Handle numeric literal
+        if let Ok(i) = expr.parse::<i64>() {
+            return Ok(Value::Number(serde_json::Number::from(i)));
+        }
+        if let Ok(f) = expr.parse::<f64>() {
+            return Ok(Value::Number(serde_json::Number::from_f64(f).unwrap_or(serde_json::Number::from(0))));
+        }
+        
+        // Default fallback
+        Ok(Value::String(format!("EXPR_ERROR: {}", expr)))
+    }
+    
+    /// Evaluate concat expression: concat(arg1, arg2, ...)
+    fn evaluate_concat_expression(&self, expr: &str, record: &Map<String, Value>) -> Result<Value> {
+        let inner = &expr[7..expr.len()-1]; // Remove "concat(" and ")"
+        let args = self.parse_function_arguments(inner)?;
+        
+        let mut result = String::new();
+        for arg in args {
+            let value = self.evaluate_expression(&arg, record)?;
+            match value {
+                Value::String(s) => result.push_str(&s),
+                Value::Number(n) => result.push_str(&n.to_string()),
+                Value::Bool(b) => result.push_str(&b.to_string()),
+                _ => result.push_str(&value.to_string()),
+            }
+        }
+        
+        Ok(Value::String(result))
+    }
+    
+    /// Evaluate if expression: if(condition, true_value, false_value)
+    fn evaluate_if_expression(&self, expr: &str, record: &Map<String, Value>) -> Result<Value> {
+        let inner = &expr[3..expr.len()-1]; // Remove "if(" and ")"
+        let args = self.parse_function_arguments(inner)?;
+        
+        if args.len() != 3 {
+            return Ok(Value::String("IF_ERROR: Expected 3 arguments".to_string()));
+        }
+        
+        let condition_result = self.evaluate_condition(&args[0], record)?;
+        
+        if condition_result {
+            self.evaluate_expression(&args[1], record)
+        } else {
+            self.evaluate_expression(&args[2], record)
+        }
+    }
+    
+    /// Parse function arguments, handling nested parentheses and quoted strings
+    fn parse_function_arguments(&self, args_str: &str) -> Result<Vec<String>> {
+        let mut args = Vec::new();
+        let mut current_arg = String::new();
+        let mut paren_depth = 0;
+        let mut in_quote = false;
+        let mut quote_char = '"';
+        
+        for ch in args_str.chars() {
+            match ch {
+                '"' | '\'' if !in_quote => {
+                    in_quote = true;
+                    quote_char = ch;
+                    current_arg.push(ch);
+                }
+                c if in_quote && c == quote_char => {
+                    in_quote = false;
+                    current_arg.push(ch);
+                }
+                '(' if !in_quote => {
+                    paren_depth += 1;
+                    current_arg.push(ch);
+                }
+                ')' if !in_quote => {
+                    paren_depth -= 1;
+                    current_arg.push(ch);
+                }
+                ',' if !in_quote && paren_depth == 0 => {
+                    args.push(current_arg.trim().to_string());
+                    current_arg.clear();
+                }
+                _ => {
+                    current_arg.push(ch);
+                }
+            }
+        }
+        
+        if !current_arg.trim().is_empty() {
+            args.push(current_arg.trim().to_string());
+        }
+        
+        Ok(args)
+    }
+    
+    /// Evaluate a condition (supports >, <, >=, <=, ==, !=)
+    fn evaluate_condition(&self, condition: &str, record: &Map<String, Value>) -> Result<bool> {
+        let condition = condition.trim();
+        
+        // Parse comparison operators
+        let operators = [">=", "<=", "==", "!=", ">", "<"];
+        
+        for op in &operators {
+            if let Some(pos) = condition.find(op) {
+                let left = condition[..pos].trim();
+                let right = condition[pos + op.len()..].trim();
+                
+                let left_val = self.evaluate_expression(left, record)?;
+                let right_val = self.evaluate_expression(right, record)?;
+                
+                return self.compare_values(&left_val, &right_val, op);
+            }
+        }
+        
+        // If no operator found, evaluate as expression and check truthiness
+        let value = self.evaluate_expression(condition, record)?;
+        Ok(self.is_truthy(&value))
+    }
+    
+    /// Compare two values using the given operator
+    fn compare_values(&self, left: &Value, right: &Value, op: &str) -> Result<bool> {
+        match (left, right) {
+            (Value::Number(l), Value::Number(r)) => {
+                let l_f = l.as_f64().unwrap_or(0.0);
+                let r_f = r.as_f64().unwrap_or(0.0);
+                
+                Ok(match op {
+                    ">" => l_f > r_f,
+                    "<" => l_f < r_f,
+                    ">=" => l_f >= r_f,
+                    "<=" => l_f <= r_f,
+                    "==" => (l_f - r_f).abs() < f64::EPSILON,
+                    "!=" => (l_f - r_f).abs() >= f64::EPSILON,
+                    _ => false,
+                })
+            }
+            (Value::String(l), Value::String(r)) => {
+                Ok(match op {
+                    ">" => l > r,
+                    "<" => l < r,
+                    ">=" => l >= r,
+                    "<=" => l <= r,
+                    "==" => l == r,
+                    "!=" => l != r,
+                    _ => false,
+                })
+            }
+            (Value::Bool(l), Value::Bool(r)) => {
+                Ok(match op {
+                    "==" => l == r,
+                    "!=" => l != r,
+                    _ => false,
+                })
+            }
+            _ => {
+                // Try to convert to strings for comparison
+                let l_str = left.to_string();
+                let r_str = right.to_string();
+                Ok(match op {
+                    "==" => l_str == r_str,
+                    "!=" => l_str != r_str,
+                    _ => false,
+                })
+            }
+        }
+    }
+    
+    /// Check if a value is considered "truthy"
+    fn is_truthy(&self, value: &Value) -> bool {
+        match value {
+            Value::Bool(b) => *b,
+            Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+            Value::String(s) => !s.is_empty() && s != "false" && s != "0",
+            Value::Null => false,
+            _ => true,
+        }
+    }
+    
+    /// Handle null values in record according to strategy
+    fn handle_null_values(&self, record: &Value, strategy: &NullHandlingStrategy) -> Result<Value> {
+        if let Value::Object(obj) = record {
+            let mut new_obj = obj.clone();
+            
+            match strategy {
+                NullHandlingStrategy::RemoveRecord => {
+                    // Check if any field is null
+                    for (_, value) in obj {
+                        if value.is_null() {
+                            return Ok(Value::Null); // Signal to filter this record
+                        }
+                    }
+                }
+                NullHandlingStrategy::ReplaceWithDefault { default_value } => {
+                    for (key, value) in new_obj.iter_mut() {
+                        if value.is_null() {
+                            *value = default_value.clone();
+                        }
+                    }
+                }
+                NullHandlingStrategy::ReplaceWithComputed { expression } => {
+                    for (key, value) in new_obj.iter_mut() {
+                        if value.is_null() {
+                            // Create a temporary record for expression evaluation
+                            let temp_record = obj.clone();
+                            *value = self.evaluate_expression(expression, &temp_record)?;
+                        }
+                    }
+                }
+                NullHandlingStrategy::Skip => {
+                    // Remove null fields
+                    new_obj.retain(|_, value| !value.is_null());
+                }
+            }
+            
+            Ok(Value::Object(new_obj))
+        } else {
+            Ok(record.clone())
+        }
+    }
+    
+    /// Validate record integrity according to rules
+    fn validate_record_integrity(&self, record: &Value, rules: &[String]) -> Result<bool> {
+        if let Value::Object(obj) = record {
+            for rule in rules {
+                if !self.evaluate_validation_rule(rule, obj)? {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+    
+    /// Evaluate a validation rule
+    fn evaluate_validation_rule(&self, rule: &str, record: &Map<String, Value>) -> Result<bool> {
+        // Simple validation rules like "field_name != null", "amount > 0", etc.
+        self.evaluate_condition(rule, record)
+    }
+    
+    /// Normalize field formats according to type specifications
+    fn normalize_field_formats(&self, record: &Value, field_types: &BTreeMap<String, String>) -> Result<Value> {
+        if let Value::Object(obj) = record {
+            let mut new_obj = obj.clone();
+            
+            for (field_name, target_type) in field_types {
+                if let Some(value) = new_obj.get_mut(field_name) {
+                    *value = self.convert_type(value, target_type)?;
+                }
+            }
+            
+            Ok(Value::Object(new_obj))
+        } else {
+            Ok(record.clone())
+        }
     }
 }
 

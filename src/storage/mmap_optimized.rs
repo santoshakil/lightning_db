@@ -1,6 +1,7 @@
 use crate::error::{Error, Result};
 use memmap2::{MmapMut, MmapOptions};
 use parking_lot::{Mutex, RwLock};
+use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
@@ -11,7 +12,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 /// Configuration for memory-mapped file optimizations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MmapConfig {
     pub enable_huge_pages: bool,
     pub enable_prefault: bool,
