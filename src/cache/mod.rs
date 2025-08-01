@@ -1,18 +1,29 @@
+pub mod adaptive_sizing;
+pub mod advanced_cache;
 pub mod arc_cache;
 pub mod batch_eviction;
 pub mod lock_free_cache;
 pub mod memory_pool;
 pub mod optimized_arc;
+pub mod prewarming;
 
 use crate::storage::Page;
 use dashmap::DashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+pub use adaptive_sizing::{
+    AdaptiveCacheSizer, AdaptiveSizingConfig, WorkloadPattern, CachePerformanceMetrics,
+    SizingDecision, SizingReason, CacheTier, CacheAllocation, AdaptiveSizingStats, CacheWarmer,
+};
 pub use arc_cache::ArcCache;
 pub use batch_eviction::{BatchEvictingArcCache, BatchEvictionConfig, BatchEvictionStats};
 pub use lock_free_cache::{LockFreeCache, SegmentedLockFreeCache};
 pub use memory_pool::MemoryPool;
+pub use prewarming::{
+    CachePrewarmer, PrewarmingConfig, WarmingPriority, AccessPattern, PatternType,
+    PrefetchRequest, WarmingStats,
+};
 
 #[derive(Debug, Clone)]
 pub struct MemoryConfig {

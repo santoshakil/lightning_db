@@ -1,9 +1,10 @@
 use crate::error::{Error, Result};
+use serde::{Serialize, Deserialize};
 use std::sync::Arc;
 use std::time::Duration;
 
 /// Consistency level for database operations
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConsistencyLevel {
     /// Eventually consistent - fastest, no guarantees
     Eventual,
@@ -16,7 +17,7 @@ pub enum ConsistencyLevel {
 }
 
 /// Configuration for consistency behavior
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsistencyConfig {
     /// Default consistency level
     pub default_level: ConsistencyLevel,

@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use crate::utils::retry::RetryableOperations;
+use crate::storage::PageType;
 use crc32fast::Hasher;
 use memmap2::{MmapMut, MmapOptions};
 use std::fs::OpenOptions;
@@ -17,6 +18,7 @@ pub struct Page {
     pub id: PageId,
     pub data: Arc<[u8; PAGE_SIZE]>,
     pub dirty: bool,
+    pub page_type: PageType,
 }
 
 impl Page {
@@ -25,14 +27,23 @@ impl Page {
             id,
             data: Arc::new([0u8; PAGE_SIZE]),
             dirty: false,
+            page_type: PageType::default(),
         }
     }
 
     pub fn with_data(id: PageId, data: [u8; PAGE_SIZE]) -> Self {
+        // Extract page type from data
+        let page_type = if data.len() > 8 {
+            PageType::from_byte(data[8]).unwrap_or_default()
+        } else {
+            PageType::default()
+        };
+        
         Self {
             id,
             data: Arc::new(data),
             dirty: false,
+            page_type,
         }
     }
 
@@ -376,6 +387,11 @@ impl PageManager {
 
     pub fn free_page_count(&self) -> usize {
         self.free_pages.len()
+    }
+    
+    /// Check if a page is in the free list
+    pub fn is_free_page(&self, page_id: PageId) -> bool {
+        self.free_pages.contains(&page_id)
     }
 }
 

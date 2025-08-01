@@ -60,6 +60,7 @@
 //! | Batch Write | 500K+ ops/sec | <2 μs | - | ✅ |
 //! | Range Scan | 2M+ entries/sec | - | - | ✅ |
 
+pub mod adaptive_compression;
 pub mod admin;
 pub mod async_db;
 pub mod auto_batcher;
@@ -67,7 +68,11 @@ pub mod backup;
 pub mod btree;
 pub mod btree_write_buffer;
 pub mod cache;
+pub mod cache_optimized;
+pub mod chaos_engineering;
 pub mod compression;
+pub mod config_management;
+pub mod io_uring;
 pub mod consistency;
 pub mod corruption_detection;
 pub mod data_import_export;
@@ -76,6 +81,7 @@ pub mod performance_regression;
 pub mod encryption;
 pub mod error;
 pub mod fast_auto_batcher;
+pub mod health_check;
 pub mod resource_quotas;
 pub mod schema_migration;
 pub mod fast_path;
@@ -93,6 +99,7 @@ pub mod optimizations;
 pub mod prefetch;
 pub mod profiling;
 pub mod profiling_legacy;
+pub mod production_validation;
 pub mod property_testing;
 pub mod query_planner;
 pub mod repl;
@@ -113,16 +120,22 @@ pub mod transaction;
 pub mod wal;
 pub mod wal_improved;
 pub mod write_batch;
+pub mod write_optimized;
 pub mod zero_copy;
 pub mod utils {
     pub mod lock_utils;
     pub mod resource_guard;
     pub mod retry;
 }
+pub mod vectorized_query;
+pub mod query_optimizer;
 pub mod integrity;
+pub mod raft;
 pub mod logging;
 pub mod monitoring;
+pub mod numa;
 pub mod observability;
+pub mod performance_tuning;
 pub mod resource_limits;
 pub mod safety_guards;
 // Async modules
@@ -182,7 +195,7 @@ pub struct RangeJoinParams {
     pub join_type: JoinType,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum WalSyncMode {
     /// Sync after every write (safest, slowest)
     Sync,
@@ -192,7 +205,7 @@ pub enum WalSyncMode {
     Async,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LightningDbConfig {
     pub page_size: u64,
     pub cache_size: u64,
@@ -239,7 +252,7 @@ impl Default for LightningDbConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Database {
     page_manager: storage::PageManagerWrapper,
     _page_manager_arc: Arc<RwLock<PageManager>>, // Keep for legacy compatibility
@@ -1679,36 +1692,38 @@ impl Database {
     // ===== DATA INTEGRITY METHODS =====
 
     /// Verify database integrity
-    pub fn verify_integrity(&self) -> Result<integrity::IntegrityReport> {
-        use integrity::{IntegrityVerifier, VerificationConfig};
+    pub async fn verify_integrity(&self) -> Result<integrity::IntegrityReport> {
+        use integrity::{IntegrityValidator, IntegrityConfig};
 
-        let config = VerificationConfig::default();
-        let verifier = IntegrityVerifier::new(self.page_manager.clone()).with_config(config);
+        let config = IntegrityConfig::default();
+        let validator = IntegrityValidator::new(Arc::new(self.clone()), config);
 
-        verifier.verify()
+        validator.validate().await
     }
 
     /// Verify integrity with custom configuration
-    pub fn verify_integrity_with_config(
+    pub async fn verify_integrity_with_config(
         &self,
-        config: integrity::VerificationConfig,
+        config: integrity::IntegrityConfig,
     ) -> Result<integrity::IntegrityReport> {
-        use integrity::IntegrityVerifier;
+        use integrity::IntegrityValidator;
 
-        let verifier = IntegrityVerifier::new(self.page_manager.clone()).with_config(config);
+        let validator = IntegrityValidator::new(Arc::new(self.clone()), config);
 
-        verifier.verify()
+        validator.validate().await
     }
 
     /// Attempt to repair integrity issues
-    pub fn repair_integrity(
+    pub async fn repair_integrity(
         &self,
         report: &integrity::IntegrityReport,
-    ) -> Result<integrity::RepairReport> {
-        use integrity::IntegrityRepairer;
+    ) -> Result<Vec<integrity::RepairAction>> {
+        use integrity::{IntegrityValidator, IntegrityConfig};
 
-        let repairer = IntegrityRepairer::new(self.page_manager.clone());
-        repairer.repair(report)
+        let mut config = IntegrityConfig::default();
+        config.enable_repair = true;
+        let validator = IntegrityValidator::new(Arc::new(self.clone()), config);
+        validator.repair().await
     }
 
     // ===== INDEX MANAGEMENT METHODS =====
@@ -2359,6 +2374,17 @@ impl Database {
     /// Get a reference to the memory pool (for testing/debugging)
     pub fn get_memory_pool(&self) -> Option<Arc<MemoryPool>> {
         self.memory_pool.clone()
+    }
+
+    /// Get a reference to the page manager
+    pub fn get_page_manager(&self) -> Arc<RwLock<PageManager>> {
+        self._page_manager_arc.clone()
+    }
+
+    /// Get the root page ID
+    pub fn get_root_page_id(&self) -> Result<u64> {
+        let btree = self.btree.read();
+        Ok(btree.get_root_page_id())
     }
 
     // Encryption management methods

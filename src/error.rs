@@ -173,6 +173,45 @@ pub enum Error {
     
     #[error("IO error: {0}")]
     IoError(String),
+    
+    // Raft-specific errors
+    #[error("Not leader - redirect to node {0:?}")]
+    NotLeader(Option<u64>),
+    
+    #[error("RPC error: {0}")]
+    Rpc(String),
+    
+    #[error("Node not found: {0}")]
+    NotFound(String),
+    
+    #[error("Election timeout")]
+    ElectionTimeout,
+    
+    #[error("Log inconsistent: expected {expected}, got {actual}")]
+    LogInconsistent { expected: u64, actual: u64 },
+    
+    #[error("Snapshot error: {0}")]
+    Snapshot(String),
+    
+    #[error("Cluster membership error: {0}")]
+    Membership(String),
+    
+    #[error("Request timeout")]
+    RequestTimeout,
+    
+    #[error("Invalid data: {0}")]
+    InvalidData(String),
+    
+    #[error("Internal error: {0}")]
+    Internal(String),
+    
+    // Distributed transaction errors
+    #[error("Transaction failed: {0}")]
+    TransactionFailed(String),
+    
+    #[error("Deadlock detected: {0}")]
+    Deadlock(String),
+    
 }
 
 impl From<std::io::Error> for Error {
@@ -253,6 +292,18 @@ impl Error {
             Error::ConversionError(_) => -51,
             Error::SchemaValidationFailed(_) => -52,
             Error::IoError(_) => -53,
+            Error::NotLeader(_) => -54,
+            Error::Rpc(_) => -55,
+            Error::NotFound(_) => -56,
+            Error::ElectionTimeout => -57,
+            Error::LogInconsistent { .. } => -58,
+            Error::Snapshot(_) => -59,
+            Error::Membership(_) => -60,
+            Error::RequestTimeout => -61,
+            Error::InvalidData(_) => -62,
+            Error::Internal(_) => -63,
+            Error::TransactionFailed(_) => -64,
+            Error::Deadlock(_) => -65,
         }
     }
 
@@ -349,6 +400,18 @@ impl From<csv::Error> for Error {
 impl From<regex::Error> for Error {
     fn from(err: regex::Error) -> Self {
         Error::ParseError(format!("Regex error: {}", err))
+    }
+}
+
+impl From<std::time::SystemTimeError> for Error {
+    fn from(err: std::time::SystemTimeError) -> Self {
+        Error::Generic(format!("System time error: {}", err))
+    }
+}
+
+impl From<snap::Error> for Error {
+    fn from(err: snap::Error) -> Self {
+        Error::Compression(format!("Snappy compression error: {}", err))
     }
 }
 

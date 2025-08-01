@@ -1,9 +1,14 @@
 mod delete;
 mod iterator;
+pub mod lock_free_btree;
 pub mod node;
 mod split_handler;
+pub mod simple_btree;
+#[cfg(test)]
+mod test_utils;
 
 pub use iterator::BTreeLeafIterator;
+pub use simple_btree::SimpleBTree;
 
 use crate::error::{Error, Result};
 #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
@@ -408,6 +413,11 @@ impl BPlusTree {
 
     pub fn root_page_id(&self) -> u32 {
         self.root_page_id
+    }
+    
+    /// Get root page ID (compatible with Database interface)
+    pub fn get_root_page_id(&self) -> u64 {
+        self.root_page_id as u64
     }
 
     pub fn height(&self) -> u32 {

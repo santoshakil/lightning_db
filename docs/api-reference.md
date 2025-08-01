@@ -7,18 +7,20 @@
 3. [Transaction API](#transaction-api)
 4. [Batch Operations](#batch-operations)
 5. [Range Queries](#range-queries)
-6. [Secondary Indexes](#secondary-indexes)
+6. [Backup & Recovery](#backup--recovery)
 7. [Configuration](#configuration)
 8. [Monitoring & Statistics](#monitoring--statistics)
-9. [Administrative Operations](#administrative-operations)
-10. [Error Handling](#error-handling)
+9. [Error Handling](#error-handling)
+10. [Advanced Features](#advanced-features)
+
+---
 
 ## Database Management
 
 ### Creating a Database
 
 ```rust
-use lightning_db::{Database, LightningDbConfig};
+use lightning_db::{Database, LightningDbConfig, Result};
 
 // Create with default configuration
 let db = Database::create("./mydb", LightningDbConfig::default())?;
@@ -28,6 +30,7 @@ let config = LightningDbConfig {
     cache_size: 100 * 1024 * 1024,  // 100MB cache
     compression_enabled: true,
     wal_sync_mode: WalSyncMode::Sync,
+    max_active_transactions: 1000,
     ..Default::default()
 };
 let db = Database::create("./mydb", config)?;
@@ -36,22 +39,35 @@ let db = Database::create("./mydb", config)?;
 ### Opening an Existing Database
 
 ```rust
-// Open with same configuration used when created
-let db = Database::open("./mydb", LightningDbConfig::default())?;
+// Open existing database
+let db = Database::open("./mydb", config)?;
+
+// Open read-only
+let db = Database::open_read_only("./mydb")?;
+
+// Open with repair if corrupted
+let db = Database::open_with_repair("./mydb", config)?;
 ```
 
 ### Database Lifecycle
 
 ```rust
-// Graceful shutdown (automatic on drop, but can be explicit)
-db.shutdown()?;
-
 // Create checkpoint (flush all data to disk)
 db.checkpoint()?;
 
 // Sync pending writes
 db.sync()?;
+
+// Get database statistics
+let stats = db.get_stats()?;
+println!("Total keys: {}", stats.total_keys);
+println!("Database size: {} bytes", stats.total_size);
+
+// Graceful shutdown (automatic on drop)
+db.shutdown()?;
 ```
+
+---
 
 ## Core Operations
 
@@ -60,666 +76,541 @@ db.sync()?;
 ```rust
 // Put operation
 db.put(b"key", b"value")?;
-db.put("user:123".as_bytes(), "Alice".as_bytes())?;
+
+// Put with options
+use lightning_db::PutOptions;
+db.put_with_options(
+    b"key", 
+    b"value",
+    PutOptions {
+        sync: true,
+        ttl: Some(Duration::from_secs(3600)), // 1 hour TTL
+    }
+)?;
 
 // Get operation
 if let Some(value) = db.get(b"key")? {
-    println!("Value: {:?}", value);
+    println!("Value: {:?}", String::from_utf8_lossy(&value));
 }
 
 // Delete operation
 let existed = db.delete(b"key")?;
-println!("Key existed: {}", existed);
+
+// Check existence
+if db.contains_key(b"key")? {
+    println!("Key exists");
+}
+
+// Conditional operations
+db.put_if_absent(b"key", b"value")?;
+db.compare_and_swap(b"key", Some(b"old_value"), b"new_value")?;
 ```
 
-### Consistency Levels
-
-```rust
-use lightning_db::ConsistencyLevel;
-
-// Put with specific consistency level
-db.put_with_consistency(b"key", b"value", ConsistencyLevel::Strong)?;
-
-// Get with specific consistency level
-let value = db.get_with_consistency(b"key", ConsistencyLevel::Eventual)?;
-```
+---
 
 ## Transaction API
 
-### Basic Transactions
+### MVCC Transactions
 
 ```rust
+use lightning_db::Transaction;
+
 // Begin transaction
-let tx_id = db.begin_transaction()?;
+let mut tx = db.begin_transaction()?;
 
 // Transactional operations
-db.put_tx(tx_id, b"key1", b"value1")?;
-db.put_tx(tx_id, b"key2", b"value2")?;
+tx.put(b"key1", b"value1")?;
+tx.put(b"key2", b"value2")?;
+tx.delete(b"key3")?;
 
-// Read within transaction (sees uncommitted changes)
-if let Some(value) = db.get_tx(tx_id, b"key1")? {
-    println!("Value in tx: {:?}", value);
+// Read within transaction
+if let Some(value) = tx.get(b"key1")? {
+    // Sees uncommitted changes
 }
 
-// Delete within transaction
-db.delete_tx(tx_id, b"old_key")?;
-
 // Commit transaction
-db.commit_transaction(tx_id)?;
+tx.commit()?;
 
-// OR abort transaction
-// db.abort_transaction(tx_id)?;
+// Or rollback
+// tx.rollback()?;
 ```
 
 ### Transaction Isolation
 
 ```rust
-// Start two concurrent transactions
-let tx1 = db.begin_transaction()?;
-let tx2 = db.begin_transaction()?;
+use lightning_db::{IsolationLevel, TransactionOptions};
 
-// Each transaction sees its own snapshot
-db.put_tx(tx1, b"key", b"value1")?;
-db.put_tx(tx2, b"key", b"value2")?;
-
-// Reads are isolated
-assert_eq!(db.get_tx(tx1, b"key")?, Some(b"value1".to_vec()));
-assert_eq!(db.get_tx(tx2, b"key")?, Some(b"value2".to_vec()));
-
-// First to commit wins
-db.commit_transaction(tx1)?;
-// This will fail with conflict error
-// db.commit_transaction(tx2)?;
+// Create transaction with specific isolation level
+let tx = db.begin_transaction_with_options(
+    TransactionOptions {
+        isolation_level: IsolationLevel::Serializable,
+        read_only: false,
+        timeout: Some(Duration::from_secs(30)),
+    }
+)?;
 ```
+
+### Optimistic Concurrency Control
+
+```rust
+// Read with version
+let (value, version) = db.get_with_version(b"key")?;
+
+// Update only if version matches
+db.put_if_version(b"key", b"new_value", version)?;
+```
+
+---
 
 ## Batch Operations
 
 ### Batch Writes
 
 ```rust
-// Prepare batch data
-let pairs = vec![
-    (b"user:1".to_vec(), b"Alice".to_vec()),
-    (b"user:2".to_vec(), b"Bob".to_vec()),
-    (b"user:3".to_vec(), b"Charlie".to_vec()),
-];
+use lightning_db::WriteBatch;
 
-// Batch put (atomic - all succeed or all fail)
-db.put_batch(&pairs)?;
-```
+// Create batch
+let mut batch = WriteBatch::new();
 
-### Batch Reads
+// Add operations to batch
+batch.put(b"key1", b"value1");
+batch.put(b"key2", b"value2");
+batch.delete(b"key3");
 
-```rust
-let keys = vec![
-    b"user:1".to_vec(),
-    b"user:2".to_vec(),
-    b"user:3".to_vec(),
-];
+// Apply batch atomically
+db.write_batch(&batch)?;
 
-let results = db.get_batch(&keys)?;
-for (i, result) in results.iter().enumerate() {
-    match result {
-        Some(value) => println!("Key {}: {:?}", i, value),
-        None => println!("Key {} not found", i),
+// Batch with options
+db.write_batch_with_options(
+    &batch,
+    WriteOptions {
+        sync: true,
+        disable_wal: false,
     }
-}
+)?;
 ```
 
-### Batch Deletes
+### Bulk Import
 
 ```rust
-let keys_to_delete = vec![
-    b"temp:1".to_vec(),
-    b"temp:2".to_vec(),
-    b"temp:3".to_vec(),
-];
+use lightning_db::BulkLoader;
 
-let results = db.delete_batch(&keys_to_delete)?;
-// Returns Vec<bool> indicating which keys existed
+// Create bulk loader for fast imports
+let loader = db.create_bulk_loader()?;
+
+// Load data (optimized for sequential writes)
+for (key, value) in large_dataset {
+    loader.add(key, value)?;
+}
+
+// Finish loading
+loader.finish()?;
 ```
+
+---
 
 ## Range Queries
 
-### Basic Range Scans
+### Range Scans
 
 ```rust
 // Scan all keys
-let iter = db.scan(None, None)?;
-for result in iter {
+for result in db.scan()? {
     let (key, value) = result?;
     println!("{:?} = {:?}", key, value);
 }
 
-// Scan with bounds
-let iter = db.scan(
-    Some(b"user:".to_vec()),      // start key (inclusive)
-    Some(b"user:~".to_vec())      // end key (exclusive)
-)?;
-```
-
-### Prefix Scans
-
-```rust
-// Scan all keys with prefix "user:"
-let iter = db.scan_prefix(b"user:")?;
-for result in iter {
+// Scan with prefix
+for result in db.scan_prefix(b"user:")? {
     let (key, value) = result?;
-    println!("{:?} = {:?}", key, value);
+    // Process user entries
 }
-```
 
-### Reverse Scans
-
-```rust
-// Scan in reverse order
-let iter = db.scan_reverse(
-    Some(b"user:999".to_vec()),   // start (highest)
-    Some(b"user:000".to_vec())    // end (lowest)
-)?;
-```
-
-### Limited Scans
-
-```rust
-// Scan with limit
-let iter = db.scan_limit(Some(b"user:".to_vec()), 10)?;
-// Returns at most 10 entries
-```
-
-### Transactional Scans
-
-```rust
-let tx_id = db.begin_transaction()?;
-
-// Add some data in transaction
-db.put_tx(tx_id, b"tx:1", b"value1")?;
-db.put_tx(tx_id, b"tx:2", b"value2")?;
-
-// Scan sees uncommitted changes
-let iter = db.scan_tx(tx_id, None, None)?;
-for result in iter {
+// Scan range
+for result in db.scan_range(b"a"..b"z")? {
     let (key, value) = result?;
-    // Will see both committed data and uncommitted changes
+    // Process entries between "a" and "z"
 }
 
-db.commit_transaction(tx_id)?;
+// Reverse scan
+for result in db.scan_reverse()? {
+    let (key, value) = result?;
+    // Process in reverse order
+}
 ```
 
-### Convenience Methods
+### Seek Operations
 
 ```rust
-// Get all keys as iterator
-let keys_iter = db.keys()?;
-for key_result in keys_iter {
-    let key = key_result?;
-    println!("Key: {:?}", key);
+// Create iterator
+let mut iter = db.iterator()?;
+
+// Seek to specific key
+iter.seek(b"start_key")?;
+
+// Seek to last
+iter.seek_to_last()?;
+
+// Navigate
+if let Some((key, value)) = iter.next()? {
+    // Process entry
 }
 
-// Get all values as iterator
-let values_iter = db.values()?;
-
-// Count entries in range
-let count = db.count_range(
-    Some(b"user:".to_vec()),
-    Some(b"user:~".to_vec())
-)?;
-
-// Get range as vector (for small result sets)
-let results = db.range(Some(b"user:"), Some(b"user:~"))?;
+if let Some((key, value)) = iter.prev()? {
+    // Process previous entry
+}
 ```
 
-## Secondary Indexes
+---
 
-### Creating Indexes
+## Backup & Recovery
+
+### Creating Backups
 
 ```rust
-use lightning_db::{IndexConfig, IndexType};
+use lightning_db::BackupEngine;
 
-// Simple index
-db.create_index("name_index", vec!["name".to_string()])?;
+// Create backup engine
+let backup_engine = BackupEngine::new("./backups")?;
 
-// Complex index configuration
-let config = IndexConfig {
-    name: "user_email_index".to_string(),
-    columns: vec!["email".to_string()],
-    unique: true,
-    index_type: IndexType::BTree,
-};
-db.create_index_with_config(config)?;
+// Create full backup
+let backup_id = backup_engine.create_backup(&db)?;
+
+// Create incremental backup
+let incremental_id = backup_engine.create_incremental_backup(&db)?;
+
+// List backups
+let backups = backup_engine.list_backups()?;
+for backup in backups {
+    println!("Backup {}: {} bytes", backup.id, backup.size);
+}
 ```
 
-### Querying Indexes
+### Restoring from Backup
 
 ```rust
-use lightning_db::IndexKey;
+// Restore latest backup
+backup_engine.restore_latest("./restored_db")?;
 
-// Query by index
-let index_key = IndexKey::single(b"alice@example.com".to_vec());
-let results = db.query_index("user_email_index", index_key.as_bytes())?;
+// Restore specific backup
+backup_engine.restore_backup(backup_id, "./restored_db")?;
 
-// Range query on index
-let results = db.range_index(
-    "name_index",
-    Some(b"A"),  // start
-    Some(b"B")   // end (exclusive)
-)?;
+// Verify backup integrity
+let is_valid = backup_engine.verify_backup(backup_id)?;
 ```
 
-### Indexed Operations
+### Point-in-Time Recovery
 
 ```rust
-use lightning_db::SimpleRecord;
+use lightning_db::PointInTimeRecovery;
 
-// Create a record that implements IndexableRecord
-let user_record = SimpleRecord::new()
-    .field("name", b"Alice")
-    .field("email", b"alice@example.com")
-    .field("age", b"25");
+// Enable PITR
+let pitr = PointInTimeRecovery::new(&db)?;
 
-// Put with automatic index updates
-db.put_indexed(b"user:123", b"user_data", &user_record)?;
-
-// Update with index maintenance
-let new_record = SimpleRecord::new()
-    .field("name", b"Alice Smith")
-    .field("email", b"alice.smith@example.com")
-    .field("age", b"26");
-
-db.update_indexed(
-    b"user:123",
-    b"new_user_data",
-    &user_record,    // old record
-    &new_record      // new record
-)?;
-
-// Delete with index cleanup
-db.delete_indexed(b"user:123", &new_record)?;
+// Restore to specific timestamp
+let target_time = SystemTime::now() - Duration::from_hours(2);
+pitr.restore_to_time("./restored_db", target_time)?;
 ```
 
-### Advanced Queries
-
-```rust
-use lightning_db::{JoinQuery, JoinType, QueryCondition};
-
-// Inner join between two indexes
-let results = db.inner_join(
-    "user_department_index",
-    IndexKey::single(b"engineering".to_vec()),
-    "department_budget_index", 
-    IndexKey::single(b"engineering".to_vec())
-)?;
-
-// Complex query with conditions
-let conditions = vec![
-    ("age", ">", b"18"),
-    ("department", "=", b"engineering"),
-];
-let plan = db.plan_query(&conditions)?;
-let results = db.execute_planned_query(&plan)?;
-```
+---
 
 ## Configuration
 
-### Configuration Options
+### Database Configuration
 
 ```rust
-use lightning_db::{LightningDbConfig, WalSyncMode, ConsistencyConfig, ConsistencyLevel};
+use lightning_db::{LightningDbConfig, WalSyncMode, CompressionType};
 
 let config = LightningDbConfig {
-    // Performance
-    page_size: 4096,                    // Page size in bytes
-    cache_size: 256 * 1024 * 1024,     // Cache size (256MB)
-    mmap_size: Some(1024 * 1024 * 1024), // Memory map size (1GB)
+    // Storage settings
+    page_size: 4096,
+    cache_size: 1024 * 1024 * 1024, // 1GB
+    
+    // Write-ahead log
+    wal_sync_mode: WalSyncMode::Sync,
+    use_improved_wal: true,
     
     // Compression
     compression_enabled: true,
-    compression_type: 1,                // 0=None, 1=Zstd, 2=LZ4
+    compression_type: CompressionType::Zstd,
+    compression_level: 3,
+    
+    // Performance
+    prefetch_enabled: true,
+    prefetch_distance: 32,
+    write_batch_size: 1000,
     
     // Transactions
-    max_active_transactions: 1000,
-    use_optimized_transactions: false,  // Disable if stability issues
+    max_active_transactions: 10000,
+    transaction_timeout: Duration::from_secs(300),
     
-    // WAL (Write-Ahead Log)
-    use_improved_wal: true,
-    wal_sync_mode: WalSyncMode::Async,  // Sync | Periodic | Async
-    
-    // Consistency
-    consistency_config: ConsistencyConfig {
-        default_level: ConsistencyLevel::Eventual,
-        enable_checksums: true,
-        verify_writes: true,
-        ..Default::default()
-    },
-    
-    // Performance features
-    prefetch_enabled: false,            // Disable for predictable latency
-    prefetch_distance: 8,
-    prefetch_workers: 2,
-    
-    // Write optimization
-    write_batch_size: 1000,
-    use_optimized_page_manager: false,  // Disable if deadlock issues
+    // Memory management
+    enable_memory_pools: true,
+    memory_pool_size: 64 * 1024 * 1024,
     
     ..Default::default()
 };
 ```
 
-### WAL Sync Modes
+### Runtime Configuration
 
 ```rust
-// Maximum durability (slowest)
-config.wal_sync_mode = WalSyncMode::Sync;
+// Update configuration at runtime
+db.set_cache_size(2 * 1024 * 1024 * 1024)?; // 2GB
 
-// Periodic sync (balanced)
-config.wal_sync_mode = WalSyncMode::Periodic { interval_ms: 100 };
+// Tune performance
+db.set_prefetch_distance(64)?;
+db.set_write_batch_size(5000)?;
 
-// No automatic sync (fastest, least durable)
-config.wal_sync_mode = WalSyncMode::Async;
+// Enable/disable features
+db.set_compression_enabled(true)?;
+db.set_statistics_enabled(true)?;
 ```
 
-### Memory Configuration
-
-```rust
-use lightning_db::storage::MmapConfig;
-
-config.mmap_config = Some(MmapConfig {
-    max_mmap_size: 2 * 1024 * 1024 * 1024,  // 2GB
-    enable_huge_pages: false,                 // OS-dependent
-    prefault_pages: false,                    // Eager loading
-    sync_on_write: true,                      // Immediate persistence
-});
-```
+---
 
 ## Monitoring & Statistics
 
 ### Database Statistics
 
 ```rust
-// Get basic statistics
-let stats = db.stats();
-println!("Pages: {}", stats.page_count);
-println!("Free pages: {}", stats.free_page_count);
-println!("Tree height: {}", stats.tree_height);
-println!("Active transactions: {}", stats.active_transactions);
+// Get overall statistics
+let stats = db.get_stats()?;
+println!("Operations: {}", stats.total_operations);
+println!("Cache hit rate: {:.2}%", stats.cache_hit_rate * 100.0);
+println!("Write amplification: {:.2}", stats.write_amplification);
+
+// Get detailed statistics
+let detailed = db.get_detailed_stats()?;
+println!("B+Tree height: {}", detailed.btree_height);
+println!("Page count: {}", detailed.page_count);
+println!("Free pages: {}", detailed.free_pages);
 ```
 
 ### Performance Metrics
 
 ```rust
-// Get comprehensive metrics
-let metrics = db.get_metrics();
-println!("Read ops/sec: {}", metrics.read_ops_per_sec);
-println!("Write ops/sec: {}", metrics.write_ops_per_sec);
-println!("Cache hit rate: {}%", metrics.cache_hit_rate * 100.0);
+use lightning_db::Metrics;
 
-// Get formatted metrics report
-let reporter = db.get_metrics_reporter();
-println!("{}", reporter.format_summary());
-println!("{}", reporter.format_detailed());
+// Enable metrics collection
+db.enable_metrics()?;
+
+// Get current metrics
+let metrics = db.get_metrics()?;
+println!("Read QPS: {}", metrics.read_qps);
+println!("Write QPS: {}", metrics.write_qps);
+println!("P99 latency: {:?}", metrics.p99_latency);
+
+// Export metrics in Prometheus format
+let prometheus_metrics = db.export_metrics_prometheus()?;
 ```
 
-### Cache Statistics
+### Health Checks
 
 ```rust
-if let Some(cache_stats) = db.cache_stats() {
-    println!("Cache statistics: {}", cache_stats);
+// Perform health check
+let health = db.health_check()?;
+if health.is_healthy() {
+    println!("Database is healthy");
+} else {
+    println!("Issues found: {:?}", health.issues);
+}
+
+// Verify data integrity
+let integrity_report = db.verify_integrity()?;
+if !integrity_report.errors.is_empty() {
+    println!("Integrity errors: {:?}", integrity_report.errors);
 }
 ```
 
-### LSM Tree Statistics
-
-```rust
-if let Some(lsm_stats) = db.lsm_stats() {
-    println!("LSM levels: {}", lsm_stats.level_count);
-    println!("Total size: {} bytes", lsm_stats.total_size);
-    println!("Compaction ratio: {:.2}", lsm_stats.compaction_ratio);
-}
-```
-
-### Production Health Checks
-
-```rust
-use lightning_db::monitoring::production_hooks::{HealthStatus, OperationType};
-use std::time::Duration;
-
-// Set performance thresholds
-db.set_operation_threshold(OperationType::Read, Duration::from_micros(100));
-db.set_operation_threshold(OperationType::Write, Duration::from_millis(1));
-
-// Health check
-match db.production_health_check() {
-    HealthStatus::Healthy => println!("Database is healthy"),
-    HealthStatus::Warning(issues) => println!("Warning: {:?}", issues),
-    HealthStatus::Critical(issues) => println!("Critical: {:?}", issues),
-}
-
-// Collect production metrics
-let prod_metrics = db.get_production_metrics();
-for (metric, value) in prod_metrics {
-    println!("{}: {}", metric, value);
-}
-```
-
-## Administrative Operations
-
-### Data Integrity
-
-```rust
-use lightning_db::integrity::{VerificationConfig, IntegrityReport};
-
-// Basic integrity check
-let report = db.verify_integrity()?;
-if !report.errors.is_empty() {
-    println!("Integrity errors found: {:?}", report.errors);
-}
-
-// Integrity check with custom config
-let config = VerificationConfig {
-    verify_checksums: true,
-    verify_key_order: true,
-    verify_references: true,
-    max_errors: 100,
-};
-let report = db.verify_integrity_with_config(config)?;
-
-// Attempt repair if issues found
-if !report.errors.is_empty() {
-    let repair_report = db.repair_integrity(&report)?;
-    println!("Repaired {} issues", repair_report.fixed_count);
-}
-```
-
-### Compaction
-
-```rust
-// Manual LSM compaction
-db.compact_lsm()?;
-
-// Flush in-memory data
-db.flush_lsm()?;
-db.flush_write_buffer()?;
-```
-
-### Cleanup Operations
-
-```rust
-// Clean up old transaction data
-db.cleanup_old_transactions(30 * 60 * 1000); // 30 minutes in ms
-
-// Clean up old MVCC versions
-let cutoff_timestamp = std::time::SystemTime::now()
-    .duration_since(std::time::UNIX_EPOCH)?
-    .as_millis() as u64 - (60 * 60 * 1000); // 1 hour ago
-db.cleanup_old_versions(cutoff_timestamp);
-```
-
-### Index Management
-
-```rust
-// List all indexes
-let indexes = db.list_indexes();
-for index_name in indexes {
-    println!("Index: {}", index_name);
-}
-
-// Drop an index
-db.drop_index("old_index")?;
-
-// Analyze indexes for query optimization
-db.analyze_indexes()?;
-```
-
-## Write Batchers
-
-### Auto Batcher (Recommended)
-
-```rust
-use std::sync::Arc;
-
-let db = Arc::new(Database::create("./db", LightningDbConfig::default())?);
-
-// Create auto batcher for optimal performance
-let batcher = Database::create_auto_batcher(db.clone());
-
-// Writes are automatically batched for efficiency
-for i in 0..10000 {
-    let key = format!("key:{}", i);
-    let value = format!("value:{}", i);
-    batcher.put(key.as_bytes(), value.as_bytes())?;
-}
-
-// Batcher automatically flushes based on size/time
-// Can force flush if needed
-batcher.flush()?;
-```
-
-### Fast Auto Batcher (Lower Latency)
-
-```rust
-// For latency-sensitive applications
-let fast_batcher = Database::create_fast_auto_batcher(db.clone());
-
-// Lower latency but potentially lower throughput
-fast_batcher.put(b"urgent_key", b"urgent_value")?;
-```
+---
 
 ## Error Handling
 
 ### Error Types
 
 ```rust
-use lightning_db::{Error, ErrorContext};
+use lightning_db::{Error, Result};
 
 match db.get(b"key") {
     Ok(Some(value)) => println!("Found: {:?}", value),
     Ok(None) => println!("Key not found"),
-    Err(Error::Io(io_error)) => {
-        eprintln!("I/O error: {}", io_error);
-    },
-    Err(Error::Transaction(tx_error)) => {
-        eprintln!("Transaction error: {}", tx_error);
-    },
-    Err(Error::Corruption(corruption_error)) => {
-        eprintln!("Data corruption: {}", corruption_error);
-        // Consider running integrity check
-    },
-    Err(Error::Generic(msg)) => {
-        eprintln!("Generic error: {}", msg);
-    },
+    Err(Error::Io(e)) => eprintln!("I/O error: {}", e),
+    Err(Error::Corruption { message, .. }) => eprintln!("Corruption: {}", message),
+    Err(Error::Transaction(msg)) => eprintln!("Transaction error: {}", msg),
+    Err(e) => eprintln!("Other error: {}", e),
 }
 ```
 
-### Error Context
+### Retry Logic
 
 ```rust
-// Errors include context for debugging
-if let Err(e) = db.put(b"key", b"value") {
-    eprintln!("Error: {}", e);
-    
-    // Print full error chain
-    let mut source = e.source();
-    while let Some(err) = source {
-        eprintln!("Caused by: {}", err);
-        source = err.source();
-    }
-}
-```
+use lightning_db::RetryPolicy;
 
-## Best Practices
-
-### Performance Tips
-
-```rust
-// 1. Use appropriate configuration for workload
-let config = LightningDbConfig {
-    // For read-heavy workloads
-    cache_size: 1024 * 1024 * 1024,  // Large cache
-    compression_enabled: false,       // Less CPU usage
-    
-    // For write-heavy workloads  
-    wal_sync_mode: WalSyncMode::Async, // Faster writes
-    write_batch_size: 5000,            // Larger batches
-    
-    ..Default::default()
+// Configure retry policy
+let retry_policy = RetryPolicy {
+    max_attempts: 3,
+    initial_delay: Duration::from_millis(100),
+    max_delay: Duration::from_secs(5),
+    exponential_base: 2.0,
 };
 
-// 2. Use batchers for high-throughput writes
-let batcher = Database::create_auto_batcher(Arc::new(db));
-
-// 3. Use transactions for consistency
-let tx_id = db.begin_transaction()?;
-// ... multiple operations ...
-db.commit_transaction(tx_id)?;
-
-// 4. Use appropriate consistency levels
-db.put_with_consistency(b"key", b"value", ConsistencyLevel::Eventual)?;
+// Apply retry policy to operations
+db.put_with_retry(b"key", b"value", &retry_policy)?;
 ```
 
-### Memory Management
+---
+
+## Advanced Features
+
+### Encryption
 
 ```rust
-// Set resource limits
-let config = LightningDbConfig {
-    cache_size: 512 * 1024 * 1024,    // 512MB cache limit
-    max_active_transactions: 100,      // Limit concurrent transactions
-    ..Default::default()
+use lightning_db::{EncryptionConfig, KeyProvider};
+
+// Configure encryption
+let encryption = EncryptionConfig {
+    enabled: true,
+    algorithm: EncryptionAlgorithm::AES256_GCM,
+    key_provider: Box::new(MyKeyProvider),
+    key_rotation_period: Duration::from_days(90),
 };
 
-// Monitor memory usage
-let metrics = db.get_metrics();
-if metrics.memory_usage > 0.8 * config.cache_size as f64 {
-    // Consider reducing cache size or clearing old data
-}
+// Create encrypted database
+let db = Database::create_encrypted("./mydb", config, encryption)?;
 ```
 
-### Error Recovery
+### Sharding
 
 ```rust
-// Handle transient errors with retry
-fn put_with_retry(db: &Database, key: &[u8], value: &[u8]) -> Result<(), Error> {
-    const MAX_RETRIES: usize = 3;
+use lightning_db::{ShardedDatabase, ShardingStrategy};
+
+// Create sharded database
+let sharded_db = ShardedDatabase::new(
+    vec!["shard1", "shard2", "shard3"],
+    ShardingStrategy::ConsistentHashing,
+)?;
+
+// Operations automatically routed to correct shard
+sharded_db.put(b"key", b"value")?;
+```
+
+### Async API
+
+```rust
+use lightning_db::AsyncDatabase;
+
+// Async operations
+let async_db = AsyncDatabase::open("./mydb").await?;
+
+// Async put
+async_db.put(b"key", b"value").await?;
+
+// Async get
+if let Some(value) = async_db.get(b"key").await? {
+    println!("Value: {:?}", value);
+}
+
+// Async transaction
+let mut tx = async_db.begin_transaction().await?;
+tx.put(b"key", b"value").await?;
+tx.commit().await?;
+```
+
+### Custom Comparators
+
+```rust
+use lightning_db::{Comparator, Database};
+
+// Define custom key comparator
+struct ReverseComparator;
+
+impl Comparator for ReverseComparator {
+    fn compare(&self, a: &[u8], b: &[u8]) -> Ordering {
+        b.cmp(a) // Reverse order
+    }
+}
+
+// Use custom comparator
+let db = Database::create_with_comparator(
+    "./mydb",
+    config,
+    Box::new(ReverseComparator),
+)?;
+```
+
+---
+
+## Examples
+
+### Complete Example
+
+```rust
+use lightning_db::{Database, LightningDbConfig, WriteBatch, Result};
+use std::time::Duration;
+
+fn main() -> Result<()> {
+    // Configure database
+    let config = LightningDbConfig {
+        cache_size: 100 * 1024 * 1024,
+        compression_enabled: true,
+        ..Default::default()
+    };
     
-    for attempt in 0..MAX_RETRIES {
-        match db.put(key, value) {
-            Ok(()) => return Ok(()),
-            Err(Error::Transaction(_)) if attempt < MAX_RETRIES - 1 => {
-                // Retry transaction conflicts
-                std::thread::sleep(std::time::Duration::from_millis(10));
-                continue;
-            },
-            Err(e) => return Err(e),
-        }
+    // Open database
+    let db = Database::open_or_create("./mydb", config)?;
+    
+    // Single operations
+    db.put(b"user:1", b"Alice")?;
+    db.put(b"user:2", b"Bob")?;
+    
+    // Batch operations
+    let mut batch = WriteBatch::new();
+    for i in 3..10 {
+        batch.put(format!("user:{}", i).as_bytes(), b"User");
+    }
+    db.write_batch(&batch)?;
+    
+    // Transaction
+    let mut tx = db.begin_transaction()?;
+    tx.put(b"counter", b"0")?;
+    tx.commit()?;
+    
+    // Range scan
+    println!("All users:");
+    for result in db.scan_prefix(b"user:")? {
+        let (key, value) = result?;
+        println!("  {} = {}", 
+            String::from_utf8_lossy(&key),
+            String::from_utf8_lossy(&value)
+        );
     }
     
-    unreachable!()
+    // Cleanup
+    db.checkpoint()?;
+    
+    Ok(())
 }
 ```
 
 ---
 
-This API reference covers the complete Lightning DB interface. For more examples and advanced usage patterns, see the examples directory in the repository.
+## Best Practices
 
-*Last Updated: API Reference v1.0*  
-*Next Review: After API changes*  
-*Owner: Lightning DB API Team*
+1. **Always handle errors** - Lightning DB operations return `Result<T>`
+2. **Use transactions for consistency** - Group related operations
+3. **Enable compression for large values** - Reduces storage and I/O
+4. **Monitor cache hit rate** - Tune cache size for workload
+5. **Use batch operations** - More efficient than individual puts
+6. **Regular checkpoints** - Ensures durability and bounds recovery time
+7. **Verify backups** - Test restore procedures regularly
+
+---
+
+## Version Compatibility
+
+- Lightning DB follows semantic versioning
+- Database format is forward-compatible within major versions
+- Breaking changes documented in [CHANGELOG.md](../CHANGELOG.md)
+
+For more examples, see the [examples directory](../examples/).
