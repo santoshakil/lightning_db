@@ -5,8 +5,7 @@
 //! database operations.
 
 use super::CACHE_LINE_SIZE;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::cell::UnsafeCell;
 
 /// Pad a type to cache line boundaries to prevent false sharing

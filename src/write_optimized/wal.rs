@@ -9,7 +9,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Write, Read, Seek, SeekFrom, BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use parking_lot::{RwLock, Mutex};
+use parking_lot::Mutex;
 use serde::{Serialize, Deserialize};
 use std::time::{SystemTime, UNIX_EPOCH, Instant};
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};

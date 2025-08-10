@@ -6,8 +6,8 @@
 use crate::{Result, Error};
 use super::{
     QueryOperation, FilterExpression, ExecutionPlan, VectorizedContext, ExecutionStats,
-    ColumnarTable, ColumnBatch, SIMDProcessor, SIMDOperations, DataType, ComparisonOperator,
-    Value, AggregateFunction, SortColumn, JoinType, JoinCondition, VECTOR_BATCH_SIZE
+    ColumnarTable, SIMDProcessor, SIMDOperations, DataType, ComparisonOperator,
+    Value, AggregateFunction, SortColumn, VECTOR_BATCH_SIZE
 };
 use std::collections::HashMap;
 use std::sync::Arc;

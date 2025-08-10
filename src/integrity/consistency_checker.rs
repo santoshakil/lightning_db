@@ -6,11 +6,11 @@
 //! - Tree depth consistency
 //! - Node occupancy rules
 
-use crate::{Database, Result, Error};
+use crate::{Database, Result};
 use crate::btree::{node::BTreeNode, MIN_KEYS_PER_NODE, MAX_KEYS_PER_NODE};
 use crate::storage::{PageManager, PageManagerAsync, PageId};
 use super::{ConsistencyError, ConsistencyErrorType, ErrorSeverity};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use parking_lot::RwLock;
 
@@ -50,7 +50,7 @@ impl ConsistencyChecker {
         }
         
         // Phase 1: Traverse tree and build metadata
-        self.traverse_tree(root_page_id, None, 0, &mut errors).await?;
+        self.traverse_tree(root_page_id as u32, None, 0, &mut errors).await?;
         
         // Phase 2: Validate tree properties
         self.validate_tree_properties(&mut errors).await?;
@@ -77,7 +77,7 @@ impl ConsistencyChecker {
             errors.push(ConsistencyError {
                 error_type: ConsistencyErrorType::CircularReference,
                 description: format!("Circular reference detected at page {}", page_id),
-                affected_pages: vec![page_id],
+                affected_pages: vec![page_id as u64],
                 severity: ErrorSeverity::Critical,
             });
             return Ok(());
@@ -92,13 +92,13 @@ impl ConsistencyChecker {
         self.depth_map.write().insert(page_id, depth);
         
         // Load page
-        let page = match self.page_manager.load_page(page_id).await {
+        let page = match self.page_manager.load_page(page_id as u64).await {
             Ok(page) => page,
             Err(_) => {
                 errors.push(ConsistencyError {
                     error_type: ConsistencyErrorType::MissingChild,
                     description: format!("Failed to load page {}", page_id),
-                    affected_pages: vec![page_id],
+                    affected_pages: vec![page_id as u64],
                     severity: ErrorSeverity::Critical,
                 });
                 return Ok(());
@@ -112,7 +112,7 @@ impl ConsistencyChecker {
                 errors.push(ConsistencyError {
                     error_type: ConsistencyErrorType::InvalidParentPointer,
                     description: format!("Failed to parse page {} as B+Tree node", page_id),
-                    affected_pages: vec![page_id],
+                    affected_pages: vec![page_id as u64],
                     severity: ErrorSeverity::Critical,
                 });
                 return Ok(());
@@ -129,7 +129,7 @@ impl ConsistencyChecker {
         if node.node_type == crate::btree::node::NodeType::Internal {
             for (i, &child_id) in node.children.iter().enumerate() {
                 if child_id != 0 {
-                    self.traverse_tree(child_id, Some(page_id), depth + 1, errors).await?;
+                    Box::pin(self.traverse_tree(child_id, Some(page_id), depth + 1, errors)).await?;
                 }
             }
         }
@@ -154,7 +154,7 @@ impl ConsistencyChecker {
                         "Node {} has {} keys, below minimum of {}",
                         page_id, node.entries.len(), MIN_KEYS_PER_NODE
                     ),
-                    affected_pages: vec![page_id],
+                    affected_pages: vec![page_id as u64],
                     severity: ErrorSeverity::Error,
                 });
             }
@@ -167,7 +167,7 @@ impl ConsistencyChecker {
                     "Node {} has {} keys, above maximum of {}",
                     page_id, node.entries.len(), MAX_KEYS_PER_NODE
                 ),
-                affected_pages: vec![page_id],
+                affected_pages: vec![page_id as u64],
                 severity: ErrorSeverity::Critical,
             });
         }
@@ -181,7 +181,7 @@ impl ConsistencyChecker {
                         "Keys not in ascending order at node {} (index {})",
                         page_id, i
                     ),
-                    affected_pages: vec![page_id],
+                    affected_pages: vec![page_id as u64],
                     severity: ErrorSeverity::Critical,
                 });
             }
@@ -199,7 +199,7 @@ impl ConsistencyChecker {
                         "Node {} has {} keys but {} children (expected {})",
                         page_id, node.entries.len(), actual_children, expected_children
                     ),
-                    affected_pages: vec![page_id],
+                    affected_pages: vec![page_id as u64],
                     severity: ErrorSeverity::Critical,
                 });
             }
@@ -247,11 +247,11 @@ impl ConsistencyChecker {
         let visited = self.visited_pages.read();
         
         for page_id in all_pages {
-            if !visited.contains(&page_id) && page_id != 0 {
+            if !visited.contains(&(page_id as u32)) && page_id != 0 {
                 errors.push(ConsistencyError {
                     error_type: ConsistencyErrorType::OrphanedPage,
                     description: format!("Page {} is allocated but not reachable from root", page_id),
-                    affected_pages: vec![page_id],
+                    affected_pages: vec![page_id as u64],
                     severity: ErrorSeverity::Error,
                 });
             }
@@ -266,7 +266,7 @@ impl ConsistencyChecker {
         
         // Collect all keys from leaf nodes
         for &page_id in self.visited_pages.read().iter() {
-            let page = self.page_manager.load_page(page_id).await?;
+            let page = self.page_manager.load_page(page_id as u64).await?;
             let node = BTreeNode::deserialize_from_page(&page)?;
             
             if node.node_type == crate::btree::node::NodeType::Leaf {
@@ -275,11 +275,11 @@ impl ConsistencyChecker {
                         errors.push(ConsistencyError {
                             error_type: ConsistencyErrorType::DuplicateKeys,
                             description: format!("Duplicate key found in pages {} and {}", existing_page, page_id),
-                            affected_pages: vec![existing_page, page_id],
+                            affected_pages: vec![existing_page, page_id as u64],
                             severity: ErrorSeverity::Critical,
                         });
                     } else {
-                        all_keys.insert(entry.key.clone(), page_id);
+                        all_keys.insert(entry.key.clone(), page_id as u64);
                     }
                 }
             }
@@ -311,7 +311,7 @@ impl ConsistencyChecker {
 
     /// Quick consistency check for a single page
     pub async fn quick_check_page(&self, page_id: PageId) -> Result<bool> {
-        let page = self.page_manager.load_page(page_id).await?;
+        let page = self.page_manager.load_page(page_id as u64).await?;
         let node = BTreeNode::deserialize_from_page(&page)?;
         
         // Basic checks

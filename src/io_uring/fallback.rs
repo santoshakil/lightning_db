@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 use std::fs::File;
-use std::io::{Read, Write, Seek, SeekFrom, ErrorKind, Error, Result as IoResult};
+use std::io::{Read, Write, Seek, SeekFrom, ErrorKind, Error};
 use std::thread;
 
 // Define error constants for fallback implementation
@@ -102,7 +102,7 @@ impl FallbackIo {
         
         // Use standard file operations instead of async for the fallback
         use std::io::{Read, Seek};
-        use std::fs::File as StdFile;
+        
         
         // Continue using the locked file guard
         
@@ -215,7 +215,7 @@ impl FallbackIo {
             },
         };
         
-        let mut file_guard = file.lock().unwrap();
+        let file_guard = file.lock().unwrap();
         
         let result = match file_guard.sync_all() {
             Ok(()) => 0,

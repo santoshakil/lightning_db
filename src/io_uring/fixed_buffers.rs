@@ -4,12 +4,12 @@
 //! IORING_OP_READ_FIXED and IORING_OP_WRITE_FIXED operations for true zero-copy I/O.
 
 use super::*;
-use super::zero_copy_buffer::{AlignedBuffer, BufferAlignment, RegisteredBuffer, RegisteredBufferManager};
+use super::zero_copy_buffer::{AlignedBuffer, BufferAlignment};
 use std::sync::{Arc, Mutex, RwLock};
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use std::collections::{HashMap, BTreeMap};
-use std::time::{Duration, Instant};
-use std::io::{Result, Error, ErrorKind};
+use std::time::Instant;
+use std::io::Result;
 
 /// Fixed buffer slot for io_uring
 pub struct FixedBufferSlot {

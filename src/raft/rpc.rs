@@ -2,6 +2,7 @@ use super::*;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{timeout, Duration};
+use tokio::sync::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::collections::HashMap;
@@ -167,12 +168,12 @@ impl RpcHandler {
             address: address.clone(),
             connected: true,
             last_seen: Instant::now(),
-            stream: Some(Arc::new(RwLock::new(stream))),
+            stream: Some(Arc::new(Mutex::new(stream))),
             request_id: AtomicU64::new(0),
             pending_requests: Arc::new(RwLock::new(HashMap::new())),
         };
         
-        self.peers.write().unwrap().insert(peer_id, peer_conn);
+        self.peers.write().insert(peer_id, peer_conn);
         
         println!("Connected to peer {} at {}", peer_id, address);
         
@@ -181,7 +182,7 @@ impl RpcHandler {
     
     /// Send request to peer
     async fn send_request(&self, peer_id: NodeId, message: RaftMessage) -> Result<RpcResponseType> {
-        let peer_conn = self.peers.read().unwrap().get(&peer_id).cloned()
+        let peer_conn = self.peers.read().get(&peer_id).cloned()
             .ok_or_else(|| Error::NotFound(format!("Peer {} not found", peer_id)))?;
         
         if !peer_conn.connected {
@@ -201,15 +202,20 @@ impl RpcHandler {
         
         // Send request
         if let Some(stream_arc) = &peer_conn.stream {
-            let mut stream = stream_arc.write();
+            // Prepare all data to write
+            let len_bytes = (message_bytes.len() as u32).to_be_bytes();
+            let mut all_data = Vec::with_capacity(4 + message_bytes.len());
+            all_data.extend_from_slice(&len_bytes);
+            all_data.extend_from_slice(&message_bytes);
             
-            // Write message length and data
-            stream.write_all(&(message_bytes.len() as u32).to_be_bytes()).await
-                .map_err(|e| Error::Io(e.to_string()))?;
-            stream.write_all(&message_bytes).await
-                .map_err(|e| Error::Io(e.to_string()))?;
-            stream.flush().await
-                .map_err(|e| Error::Io(e.to_string()))?;
+            // Write all data at once
+            {
+                let mut stream = stream_arc.lock().await;
+                stream.write_all(&all_data).await
+                    .map_err(|e| Error::Io(e.to_string()))?;
+                stream.flush().await
+                    .map_err(|e| Error::Io(e.to_string()))?;
+            }
         }
         
         // Wait for response with timeout
@@ -257,7 +263,7 @@ pub struct PeerConnection {
     pub address: String,
     pub connected: bool,
     pub last_seen: Instant,
-    pub stream: Option<Arc<RwLock<TcpStream>>>,
+    pub stream: Option<Arc<Mutex<TcpStream>>>,
     pub request_id: AtomicU64,
     pub pending_requests: Arc<RwLock<HashMap<u64, oneshot::Sender<RpcResponseType>>>>,
 }

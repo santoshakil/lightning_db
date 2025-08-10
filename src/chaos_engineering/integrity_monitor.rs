@@ -3,19 +3,15 @@
 //! Continuous monitoring and verification of database integrity including
 //! checksums, structural consistency, referential integrity, and anomaly detection.
 
-use crate::{Database, Result, Error};
-use crate::chaos_engineering::{
-    IntegrityViolation, IntegrityViolationType, ViolationSeverity,
-    IntegrityReport
-};
+use crate::{Database, Result};
+use crate::chaos_engineering::IntegrityReport;
 use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
-use std::path::{Path, PathBuf};
-use std::collections::{HashMap, HashSet, VecDeque};
-use parking_lot::{RwLock, Mutex};
+use std::collections::{HashMap, VecDeque};
+use parking_lot::RwLock;
 use rand::{Rng, thread_rng};
-use sha2::{Sha256, Digest};
+use sha2::Digest;
 
 /// Comprehensive integrity monitoring system
 pub struct IntegrityMonitor {
@@ -789,7 +785,7 @@ impl IntegrityMonitor {
         referential_checker: &Arc<ReferentialChecker>,
         anomaly_detector: &Arc<AnomalyDetector>,
     ) -> Result<IntegrityReport> {
-        let mut report = IntegrityReport {
+        let report = IntegrityReport {
             pages_verified: 0,
             corrupted_pages: 0,
             checksum_failures: 0,

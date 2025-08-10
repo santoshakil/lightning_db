@@ -3,13 +3,13 @@
 //! This module provides cost-based query optimization specifically designed
 //! for vectorized execution engines, including SIMD-aware optimization.
 
-use crate::{Result, Error};
+use crate::Result;
+use std::collections::{HashMap, HashSet};
 use super::{
     QueryOperation, ExecutionPlan, FilterExpression, AggregateFunction, SortColumn,
-    JoinType, JoinCondition, ColumnarTable, TableStatistics, ColumnStatistics,
-    DataType, ComparisonOperator, Value, SIMDSupport, VECTOR_BATCH_SIZE
+    JoinType, JoinCondition, TableStatistics,
+    DataType, ComparisonOperator, SIMDSupport, Value
 };
-use std::collections::HashMap;
 
 /// Query optimizer for vectorized execution
 pub struct VectorizedOptimizer {

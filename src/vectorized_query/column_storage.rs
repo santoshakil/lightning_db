@@ -5,7 +5,7 @@
 //! that maximize cache efficiency and enable efficient vectorization.
 
 use crate::{Result, Error};
-use super::{DataType, Value, VECTOR_BATCH_SIZE};
+use super::{DataType, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use serde::{Serialize, Deserialize};

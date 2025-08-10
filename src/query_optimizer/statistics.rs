@@ -3,10 +3,10 @@
 //! This module provides comprehensive statistics collection for the cost-based optimizer.
 //! It maintains detailed information about data distribution, cardinality, and access patterns.
 
-use crate::{Result, Error};
+use crate::Result;
 use super::{OptimizerConfig, Value};
 use serde::{Serialize, Deserialize};
-use std::collections::{HashMap, BTreeMap};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 

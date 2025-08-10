@@ -14,10 +14,12 @@ use crate::error::{Error, Result};
 #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
 use crate::simd::key_compare::simd_compare_keys;
 use crate::storage::{Page, PageManager, PageManagerWrapper};
+use crate::storage::page::PAGE_SIZE;
 use parking_lot::RwLock;
 use split_handler::SplitHandler;
 use std::cmp::Ordering;
 use std::sync::Arc;
+use std::cell::UnsafeCell;
 
 pub use node::*;
 
@@ -64,9 +66,13 @@ impl KeyEntry {
 #[derive(Debug)]
 pub struct BPlusTree {
     page_manager: PageManagerWrapper,
-    root_page_id: u32,
-    height: u32,
+    root_page_id: UnsafeCell<u32>,
+    height: UnsafeCell<u32>,
 }
+
+// Safe because we protect access with tree_lock
+unsafe impl Send for BPlusTree {}
+unsafe impl Sync for BPlusTree {}
 
 impl BPlusTree {
     pub fn new(page_manager: Arc<RwLock<PageManager>>) -> Result<Self> {
@@ -78,8 +84,8 @@ impl BPlusTree {
 
         let tree = Self {
             page_manager,
-            root_page_id,
-            height: 1,
+            root_page_id: UnsafeCell::new(root_page_id),
+            height: UnsafeCell::new(1),
         };
 
         tree.init_root_page()?;
@@ -105,14 +111,15 @@ impl BPlusTree {
     ) -> Self {
         Self {
             page_manager,
-            root_page_id,
-            height,
+            root_page_id: UnsafeCell::new(root_page_id),
+            height: UnsafeCell::new(height),
         }
     }
 
     pub fn init_root_page(&self) -> Result<()> {
-        let mut page = Page::new(self.root_page_id);
-        let node = BTreeNode::new_leaf(self.root_page_id);
+        let root_id = unsafe { *self.root_page_id.get() };
+        let mut page = Page::new(root_id);
+        let node = BTreeNode::new_leaf(root_id);
         node.serialize_to_page(&mut page)?;
 
         self.page_manager.write_page(&page)?;
@@ -149,10 +156,10 @@ impl BPlusTree {
 
         if let Some((new_key, new_page_id)) = split_info {
             // Temporarily store old root info
-            let old_root_id = self.root_page_id;
-            let old_height = self.height;
+            let old_root_id = unsafe { *self.root_page_id.get() };
+            let old_height = unsafe { *self.height.get() };
 
-            self.handle_root_split_unlocked(old_root_id, old_height, new_key, new_page_id)?;
+            self.handle_root_split(old_root_id, old_height, new_key, new_page_id)?;
         }
 
         Ok(())
@@ -160,8 +167,8 @@ impl BPlusTree {
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         // Navigate to leaf
-        let mut current_page_id = self.root_page_id;
-        let mut level = self.height;
+        let mut current_page_id = unsafe { *self.root_page_id.get() };
+        let mut level = unsafe { *self.height.get() };
 
         while level > 1 {
             let page = self.page_manager.get_page(current_page_id)?;
@@ -185,8 +192,8 @@ impl BPlusTree {
 
     fn find_leaf_path(&self, key: &[u8]) -> Result<Vec<u32>> {
         let mut path = Vec::new();
-        let mut current_page_id = self.root_page_id;
-        let mut level = self.height;
+        let mut current_page_id = unsafe { *self.root_page_id.get() };
+        let mut level = unsafe { *self.height.get() };
 
         while level > 0 {
             path.push(current_page_id);
@@ -224,7 +231,7 @@ impl BPlusTree {
                 if child_index < node.children.len() {
                     Ok(node.children[child_index])
                 } else {
-                    Err(Error::Index("Invalid child index".to_string()))
+                    Err(Error::Index(format!("Invalid child index: {} >= {}", child_index, node.children.len())))
                 }
             }
             NodeType::Leaf => Err(Error::Index("Cannot find child in leaf node".to_string())),
@@ -272,30 +279,20 @@ impl BPlusTree {
         }
 
         // Insert new entry
-        leaf_node.entries.insert(insert_pos, entry);
-
-        // Try to serialize the node to check if it fits
-        match leaf_node.serialize_to_page(&mut leaf_page) {
+        leaf_node.entries.insert(insert_pos, entry.clone());
+        
+        // Check if we can serialize the node
+        let mut test_page = Page::new(leaf_page_id);
+        match leaf_node.serialize_to_page(&mut test_page) {
             Ok(_) => {
-                // Check if we should split based on entry count
-                if leaf_node.entries.len() > MAX_KEYS_PER_NODE {
-                    let split_result = self.split_leaf_node(&mut leaf_node, leaf_page_id)?;
-
-                    // Handle propagation of split up the tree
-                    if let Some((split_key, new_page_id)) = split_result {
-                        self.propagate_split(path, split_key, new_page_id)
-                    } else {
-                        Ok(None)
-                    }
-                } else {
-                    self.page_manager.write_page(&leaf_page)?;
-                    Ok(None)
-                }
+                // Node fits, write it
+                self.page_manager.write_page(&test_page)?;
+                Ok(None)
             }
             Err(Error::PageOverflow) => {
-                // Page overflow - must split
+                // Node doesn't fit, need to split
                 let split_result = self.split_leaf_node(&mut leaf_node, leaf_page_id)?;
-
+                
                 // Handle propagation of split up the tree
                 if let Some((split_key, new_page_id)) = split_result {
                     self.propagate_split(path, split_key, new_page_id)
@@ -312,8 +309,36 @@ impl BPlusTree {
         node: &mut BTreeNode,
         page_id: u32,
     ) -> Result<Option<(Vec<u8>, u32)>> {
-        let mid = node.entries.len() / 2;
-        let right_entries = node.entries.split_off(mid);
+        // Find optimal split point based on actual sizes
+        let mut split_pos = node.entries.len() / 2;
+        let mut left_size = 64; // Base node overhead
+        
+        // Calculate split position to ensure both halves fit in pages
+        for (i, entry) in node.entries.iter().enumerate() {
+            let entry_size = 8 + entry.key.len() + entry.value.len() + 8;
+            left_size += entry_size;
+            
+            // If left side is getting close to page limit, split here
+            if left_size > PAGE_SIZE / 2 && i > 0 {
+                split_pos = i;
+                break;
+            }
+        }
+        
+        // Ensure we have at least one entry on each side
+        if split_pos == 0 {
+            split_pos = 1;
+        } else if split_pos >= node.entries.len() {
+            split_pos = node.entries.len() - 1;
+        }
+        
+        let right_entries = node.entries.split_off(split_pos);
+        
+        // If right_entries is empty, we have a single huge entry that can't be split
+        if right_entries.is_empty() {
+            return Err(Error::PageOverflow);
+        }
+        
         let split_key = right_entries[0].key.clone();
 
         // Create new right node
@@ -337,8 +362,8 @@ impl BPlusTree {
         Ok(Some((split_key, right_page_id)))
     }
 
-    fn handle_root_split_unlocked(
-        &mut self,
+    fn handle_root_split(
+        &self,
         old_root_id: u32,
         old_height: u32,
         split_key: Vec<u8>,
@@ -357,9 +382,11 @@ impl BPlusTree {
         new_root.serialize_to_page(&mut root_page)?;
         self.page_manager.write_page(&root_page)?;
 
-        // Update tree metadata
-        self.root_page_id = new_root_id;
-        self.height = old_height + 1;
+        // Update tree metadata (safe because we hold the write lock)
+        unsafe {
+            *self.root_page_id.get() = new_root_id;
+            *self.height.get() = old_height + 1;
+        }
 
         Ok(())
     }
@@ -412,16 +439,31 @@ impl BPlusTree {
     }
 
     pub fn root_page_id(&self) -> u32 {
-        self.root_page_id
+        unsafe { *self.root_page_id.get() }
     }
     
     /// Get root page ID (compatible with Database interface)
     pub fn get_root_page_id(&self) -> u64 {
-        self.root_page_id as u64
+        unsafe { *self.root_page_id.get() as u64 }
     }
 
     pub fn height(&self) -> u32 {
-        self.height
+        unsafe { *self.height.get() }
+    }
+
+    pub fn get_stats(&self) -> crate::DatabaseStats {
+        // For now, return basic stats
+        // TODO: Track free pages and actual page count properly
+        crate::DatabaseStats {
+            page_count: 0, // TODO: Implement proper page counting
+            free_page_count: 0, // TODO: Track this
+            tree_height: self.height(),
+            active_transactions: 0, // This is tracked elsewhere
+            cache_hit_rate: None,
+            memory_usage_bytes: 0,
+            disk_usage_bytes: 0,
+            active_connections: 0,
+        }
     }
 
     /// Range scan from start_key to end_key (exclusive end)

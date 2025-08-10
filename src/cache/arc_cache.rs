@@ -7,6 +7,16 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+#[derive(Debug, Clone)]
+pub struct ArcCacheStats {
+    pub recent_hits: u64,
+    pub frequent_hits: u64,
+    pub misses: u64,
+    pub recent_entries: usize,
+    pub frequent_entries: usize,
+    pub evictions: u64,
+}
+
 #[derive(Debug)]
 struct LruList {
     entries: VecDeque<u32>,
@@ -280,6 +290,21 @@ impl ArcCache {
 
     pub fn get_p(&self) -> usize {
         self.p.load(Ordering::Relaxed)
+    }
+
+    pub fn get_stats(&self) -> ArcCacheStats {
+        let t1_size = self.t1.lock().len();
+        let t2_size = self.t2.lock().len();
+        let stats = self.stats();
+        
+        ArcCacheStats {
+            recent_hits: t1_size as u64,  // Approximation - hits in recent cache
+            frequent_hits: t2_size as u64, // Approximation - hits in frequent cache
+            misses: stats.misses.load(Ordering::Relaxed) as u64,
+            recent_entries: t1_size,
+            frequent_entries: t2_size,
+            evictions: stats.evictions.load(Ordering::Relaxed) as u64,
+        }
     }
 
     pub fn get_dirty_pages(&self) -> Vec<(u32, Arc<CachedPage>)> {

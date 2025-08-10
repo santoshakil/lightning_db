@@ -168,7 +168,7 @@ impl WriteOptimizedEngine {
         self.compaction_manager.lock().start()?;
         
         // Start tiered storage manager
-        let mut tiered_storage = Arc::clone(&self.tiered_storage);
+        let tiered_storage = Arc::clone(&self.tiered_storage);
         // Note: We can't call start on immutable reference, would need different design
         
         // Start flush worker
@@ -495,7 +495,7 @@ impl WriteOptimizedEngine {
         let sstable_path = tier_path.join(format!("bg_sstable_{}.sst", timestamp));
         let mut builder = SSTableBuilder::new(&sstable_path, 0, config.base.compression_type)?;
         
-        let mut flushed_entries = 0;
+        let mut _flushed_entries = 0;
         
         // Write all entries from MemTable to SSTable
         for (key, entry) in request.memtable.iter() {
@@ -510,7 +510,7 @@ impl WriteOptimizedEngine {
                     builder.add(key, Vec::new())?;
                 }
             }
-            flushed_entries += 1;
+            _flushed_entries += 1;
         }
         
         // Finalize SSTable

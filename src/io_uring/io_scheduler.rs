@@ -5,8 +5,8 @@
 //! and adaptive batching.
 
 use super::*;
-use std::collections::{BinaryHeap, HashMap, VecDeque};
-use std::cmp::{Ordering, Reverse};
+use std::collections::{BinaryHeap, HashMap};
+use std::cmp::Ordering;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering as AtomicOrdering};
 use std::time::{Duration, Instant};
@@ -249,7 +249,7 @@ impl IoScheduler {
         
         // Check dependencies
         if !request.dependencies.is_empty() {
-            let mut completed = self.completed_requests.lock().unwrap();
+            let completed = self.completed_requests.lock().unwrap();
             let mut pending_deps = Vec::new();
             
             for dep in &request.dependencies {

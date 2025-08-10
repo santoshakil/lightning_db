@@ -5,16 +5,13 @@
 
 use crate::{Database, Result, Error};
 use crate::chaos_engineering::{
-    ChaosTest, ChaosTestResult, IntegrityReport, ChaosConfig,
-    IntegrityViolation, IntegrityViolationType, ViolationSeverity
+    ChaosTest, ChaosTestResult, IntegrityReport, ChaosConfig
 };
-use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
+use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use std::thread;
 use std::time::{Duration, SystemTime};
-use std::path::{Path, PathBuf};
-use std::fs::{File, OpenOptions};
-use std::io::{Write, Read, Seek, SeekFrom};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::io::{Write, Read};
+use std::collections::{HashMap, VecDeque};
 use parking_lot::{RwLock, Mutex};
 use rand::{Rng, thread_rng};
 use sha2::{Sha256, Digest};

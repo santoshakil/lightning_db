@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use parking_lot::RwLock;
 use std::time::{Duration, Instant, SystemTime};
 use bincode::{Decode, Encode};
 use crate::error::{Error, Result};
@@ -11,7 +12,6 @@ use rand::{thread_rng, Rng};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Sleep;
 use std::pin::Pin;
-use std::future::Future;
 
 pub mod leader_election;
 pub mod log_replication;
@@ -20,7 +20,7 @@ pub mod snapshot;
 pub mod state_machine;
 pub mod storage;
 
-pub use rpc::PeerConnection;
+pub use rpc::{PeerConnection, RpcResponseType};
 
 /// Unique identifier for a Raft node
 pub type NodeId = u64;
@@ -289,6 +289,26 @@ pub struct RaftNode {
     metrics: Arc<RaftMetrics>,
 }
 
+impl Clone for RaftNode {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            persistent: self.persistent.clone(),
+            volatile: self.volatile.clone(),
+            leader: self.leader.clone(),
+            state_machine: self.state_machine.clone(),
+            storage: self.storage.clone(),
+            rpc: self.rpc.clone(),
+            message_rx: self.message_rx.clone(),
+            message_tx: self.message_tx.clone(),
+            election_timer: self.election_timer.clone(),
+            heartbeat_timer: self.heartbeat_timer.clone(),
+            membership: self.membership.clone(),
+            metrics: self.metrics.clone(),
+        }
+    }
+}
+
 /// Cluster membership information
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct ClusterMembership {
@@ -545,19 +565,7 @@ pub struct RpcHandler {
     message_tx: mpsc::UnboundedSender<RaftMessage>,
 }
 
-impl RpcHandler {
-    /// Send install snapshot RPC
-    pub async fn send_install_snapshot(&self, peer_id: NodeId, args: InstallSnapshotArgs) -> Result<InstallSnapshotReply> {
-        // Simulate RPC call - in production this would be actual network communication
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        
-        // Simulate successful response
-        Ok(InstallSnapshotReply {
-            term: args.term,
-            bytes_received: args.data.len(),
-        })
-    }
-}
+
 
 // PeerConnection is defined in rpc.rs
 
@@ -758,7 +766,7 @@ impl RaftNode {
     
     /// Get current term
     pub fn current_term(&self) -> Term {
-        self.persistent.read().unwrap().current_term
+        self.persistent.read().current_term
     }
     
     /// Get current leader
@@ -784,19 +792,20 @@ impl RaftNode {
     
     /// Become follower (used by snapshot module)
     pub async fn become_follower(&self, new_term: Term) -> Result<()> {
-        let mut persistent = self.persistent.write().unwrap();
-        persistent.current_term = new_term;
-        persistent.voted_for = None;
-        
-        // Persist state
-        self.storage.save_state(&persistent)?;
+        {
+            let mut persistent = self.persistent.write();
+            persistent.current_term = new_term;
+            persistent.voted_for = None;
+            
+            // Persist state
+            self.storage.save_state(&persistent)?;
+        }
         
         // Update volatile state
         self.volatile.state.store(NodeState::Follower as u8, Ordering::Release);
-        *self.leader.write().unwrap() = None;
+        *self.leader.write() = None;
         
         // Reset election timer
-        drop(persistent); // Release lock before async call
         self.reset_election_timer().await;
         
         Ok(())

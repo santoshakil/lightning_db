@@ -2,7 +2,7 @@
 //! 
 //! Scans and validates the structure of database pages.
 
-use crate::{Database, Result, Error};
+use crate::{Database, Result};
 use crate::storage::{PageManager, Page, PageType, PAGE_SIZE, PageManagerAsync};
 use super::{StructureError, StructureErrorType, ErrorSeverity};
 use std::sync::Arc;

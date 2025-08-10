@@ -4,8 +4,6 @@
 //! and provides recommendations for optimal Lightning DB configuration.
 
 use crate::Result;
-use std::fs;
-use std::path::Path;
 use serde::{Serialize, Deserialize};
 
 /// Hardware detector
@@ -216,7 +214,7 @@ impl HardwareDetector {
 
     /// Detect CPU features
     fn detect_cpu_features(&self) -> Vec<String> {
-        let mut features = Vec::new();
+        let features = Vec::new();
 
         #[cfg(target_arch = "x86_64")]
         {

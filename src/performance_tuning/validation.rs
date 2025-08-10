@@ -6,10 +6,8 @@
 use crate::{Database, LightningDbConfig, Result};
 use super::{PerformanceMetrics, LatencyMetrics};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use std::thread;
-use parking_lot::RwLock;
 use rand::Rng;
 
 /// Performance validator
@@ -114,7 +112,7 @@ impl PerformanceValidator {
 
     /// Run warmup operations
     fn run_warmup(&self, db: &Arc<Database>, workload: &TestWorkload) -> Result<()> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         
         // Insert initial data
         for i in 0..self.warmup_operations {
@@ -135,7 +133,7 @@ impl PerformanceValidator {
         db: &Arc<Database>,
         workload: &TestWorkload,
     ) -> Result<MeasurementCycle> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut read_latencies = Vec::new();
         let mut write_latencies = Vec::new();
         let mut operations = 0u64;
@@ -260,13 +258,13 @@ impl PerformanceValidator {
     /// Estimate CPU usage (placeholder)
     fn estimate_cpu_usage(&self) -> f64 {
         // In production, would use actual CPU metrics
-        rand::thread_rng().gen_range(10.0..50.0)
+        rand::rng().gen_range(10.0..50.0)
     }
 
     /// Estimate memory usage (placeholder)
     fn estimate_memory_usage(&self) -> u64 {
         // In production, would use actual memory metrics
-        rand::thread_rng().gen_range(100..500)
+        rand::rng().gen_range(100..500)
     }
 
     /// Compare two configurations

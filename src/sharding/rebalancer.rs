@@ -1,5 +1,5 @@
 use super::*;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::cmp::Ordering as CmpOrdering;
 
 /// Default rebalancer implementation with intelligent load balancing

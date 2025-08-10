@@ -428,9 +428,16 @@ fn test_data_integrity_concurrent() {
     }
 
     // Run integrity verification
-    let verifier = db.verify_integrity().unwrap();
+    let verifier = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(db.verify_integrity())
+        .unwrap();
     assert_eq!(
-        verifier.errors.len(),
+        verifier.checksum_errors.len() + 
+        verifier.structure_errors.len() + 
+        verifier.consistency_errors.len() + 
+        verifier.transaction_errors.len() + 
+        verifier.cross_reference_errors.len(),
         0,
         "Should have no integrity errors initially"
     );
@@ -478,13 +485,23 @@ fn test_data_integrity_concurrent() {
     }
 
     // Verify integrity after concurrent modifications
-    let final_verification = db.verify_integrity().unwrap();
+    let final_verification = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(db.verify_integrity())
+        .unwrap();
     println!("Data integrity after concurrent modifications:");
-    println!("  Errors: {}", final_verification.errors.len());
-    println!("  Warnings: {}", final_verification.warnings.len());
+    let total_errors = final_verification.checksum_errors.len() + 
+                      final_verification.structure_errors.len() + 
+                      final_verification.consistency_errors.len() + 
+                      final_verification.transaction_errors.len() + 
+                      final_verification.cross_reference_errors.len();
+    println!("  Total errors: {}", total_errors);
+    println!("  Checksum errors: {}", final_verification.checksum_errors.len());
+    println!("  Structure errors: {}", final_verification.structure_errors.len());
+    println!("  Consistency errors: {}", final_verification.consistency_errors.len());
 
     assert_eq!(
-        final_verification.errors.len(),
+        total_errors,
         0,
         "Should maintain data integrity under concurrent modifications"
     );

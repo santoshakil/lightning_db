@@ -3,7 +3,7 @@
 //! Uses machine learning and heuristics to automatically optimize database
 //! configuration based on workload patterns and system performance.
 
-use crate::{Result, Error};
+use crate::Result;
 use super::{TuningConfig, HardwareInfo, WorkloadProfile};
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
@@ -192,7 +192,7 @@ impl AutoTuner {
         let tunable_params = self.get_tunable_parameters(hardware, workload);
 
         // Randomly select a parameter to modify
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         if let Some(param) = tunable_params.get(rng.gen_range(0..tunable_params.len())) {
             new_params.insert(
                 param.name.clone(),
@@ -217,7 +217,7 @@ impl AutoTuner {
         // Calculate temperature (decreases over time)
         let temperature = 1.0 / (self.tuning_history.len() as f64 + 1.0).sqrt();
         
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         
         // Potentially modify multiple parameters based on temperature
         for param in &tunable_params {
@@ -254,7 +254,7 @@ impl AutoTuner {
                 
                 // Add small random perturbations
                 let tunable_params = self.get_tunable_parameters(hardware, workload);
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 
                 if rng.gen::<f64>() < self.exploration_rate {
                     if let Some(param) = tunable_params.get(rng.gen_range(0..tunable_params.len())) {
@@ -347,7 +347,7 @@ impl AutoTuner {
         param: &ConfigParameter,
         magnitude: f64,
     ) -> Result<ParameterValue> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         match (current, &param.min_value, &param.max_value) {
             (

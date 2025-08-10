@@ -5,13 +5,13 @@
 //! loading data that is likely to be accessed.
 
 use crate::{Result, Error};
-use crate::performance_tuning::{WorkloadType, HardwareInfo};
+use crate::performance_tuning::WorkloadType;
 use crate::cache::adaptive_sizing::{WorkloadPattern, CacheAllocation};
 use std::sync::Arc;
 use parking_lot::{RwLock, Mutex};
-use std::sync::atomic::{AtomicUsize, AtomicU64, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
-use std::collections::{HashMap, VecDeque, HashSet, BTreeMap};
+use std::collections::{HashMap, VecDeque, BTreeMap};
 use serde::{Serialize, Deserialize};
 use std::thread;
 

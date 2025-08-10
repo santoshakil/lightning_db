@@ -6,11 +6,9 @@
 use crate::{Result, Error};
 use super::{
     CompressionAlgorithm, CompressionLevel, CompressionAlgorithmTrait, DataType,
-    AlgorithmPerformance, CompressionResult, DecompressionResult,
 };
 use std::collections::HashMap;
 use std::time::{Instant, Duration};
-use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 
 /// Benchmark configuration
@@ -661,6 +659,7 @@ impl CompressionBenchmark {
 
 /// Test dataset
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct TestDataset {
     data: Vec<u8>,
     data_type: DataType,
@@ -710,7 +709,7 @@ mod tests {
     fn test_benchmark_config() {
         let config = BenchmarkConfig::default();
         assert!(config.iterations > 0);
-        assert!(config.warmup_iterations >= 0);
+        // warmup_iterations is usize, so always >= 0
         assert!(!config.test_sizes.is_empty());
         assert!(!config.compression_levels.is_empty());
         assert!(!config.data_types.is_empty());

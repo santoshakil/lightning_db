@@ -3,15 +3,15 @@
 //! Simulates complex, unpredictable failures that could occur in distributed
 //! or adversarial environments including timing attacks, data races, and malformed inputs.
 
-use crate::{Database, Result, Error};
+use crate::{Database, Result};
 use crate::chaos_engineering::{
     ChaosTest, ChaosTestResult, IntegrityReport, ChaosConfig,
-    ByzantineFailureType, IntegrityViolation, IntegrityViolationType, ViolationSeverity
+    ByzantineFailureType, ViolationSeverity
 };
 use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::time::{Duration, SystemTime};
+use std::collections::HashMap;
 use parking_lot::{RwLock, Mutex};
 use rand::{Rng, thread_rng, seq::SliceRandom};
 
@@ -855,7 +855,7 @@ impl ByzantineFailuresTest {
         
         let inputs = self.generate_malformed_inputs(strategy)?;
         let mut errors = 0;
-        let mut crashes = 0;
+        let crashes = 0;
         
         for input in inputs {
             match strategy {
@@ -1282,7 +1282,7 @@ impl ByzantineFailuresTest {
         let mut score = 100u8;
         let mut critical = Vec::new();
         let mut high = Vec::new();
-        let mut medium = Vec::new();
+        let medium = Vec::new();
         let mut recommendations = Vec::new();
         
         // Assess timing vulnerabilities

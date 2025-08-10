@@ -6,7 +6,7 @@
 //! - Mixed workloads
 //! - Custom profiles based on workload analysis
 
-use crate::{LightningDbConfig, Result};
+use crate::LightningDbConfig;
 use crate::performance_tuning::hardware_detector::{HardwareInfo, CacheSizes, StorageType, ThermalState, PowerProfile, PowerSource};
 use crate::performance_tuning::workload_profiler::{WorkloadProfile, WorkloadType};
 use serde::{Deserialize, Serialize};

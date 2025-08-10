@@ -3,8 +3,8 @@
 //! This module provides intelligent load balancing across NUMA nodes
 //! to optimize memory locality and minimize cross-node traffic.
 
-use crate::{Result, Error};
-use crate::numa::topology::{NumaTopology, NumaNode};
+use crate::Result;
+use crate::numa::topology::NumaTopology;
 use std::sync::Arc;
 use std::collections::HashMap;
 use std::thread;
@@ -64,7 +64,7 @@ pub struct NodeMetrics {
 }
 
 mod instant_serde {
-    use std::time::{Instant, SystemTime, UNIX_EPOCH};
+    use std::time::Instant;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     
     pub fn serialize<S>(instant: &Instant, serializer: S) -> Result<S::Ok, S::Error>

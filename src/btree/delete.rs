@@ -24,12 +24,12 @@ impl BPlusTree {
     /// Find complete path from root to leaf for deletion
     fn find_deletion_path(&self, key: &[u8]) -> Result<Vec<(u32, usize)>> {
         let mut path = Vec::new();
-        let mut current_page_id = self.root_page_id;
-        let mut level = self.height;
+        let mut current_page_id = self.root_page_id();
+        let mut level = self.height();
 
         // Handle single-node tree (root is leaf)
-        if self.height == 1 {
-            path.push((self.root_page_id, 0));
+        if self.height() == 1 {
+            path.push((self.root_page_id(), 0));
             return Ok(path);
         }
 
@@ -337,6 +337,8 @@ impl BPlusTree {
                 // For leaf nodes, just concatenate entries
                 left_node.entries.extend(right_node.entries);
                 left_node.right_sibling = right_node.right_sibling;
+                // Remove separator from parent
+                parent_node.entries.remove(separator_index);
             }
             NodeType::Internal => {
                 // For internal nodes, include separator from parent
@@ -365,7 +367,7 @@ impl BPlusTree {
 
     /// Check if root needs adjustment after deletion
     fn check_root_adjustment(&mut self) -> Result<()> {
-        let root_page = self.page_manager.get_page(self.root_page_id)?;
+        let root_page = self.page_manager.get_page(self.root_page_id())?;
         let root_node = BTreeNode::deserialize_from_page(&root_page)?;
 
         // If root is internal and has only one child, make that child the new root
@@ -374,9 +376,11 @@ impl BPlusTree {
             && root_node.children.len() == 1
         {
             let new_root_id = root_node.children[0];
-            self.page_manager.free_page(self.root_page_id);
-            self.root_page_id = new_root_id;
-            self.height -= 1;
+            self.page_manager.free_page(self.root_page_id());
+            unsafe {
+                *self.root_page_id.get() = new_root_id;
+                *self.height.get() -= 1;
+            }
         }
 
         Ok(())

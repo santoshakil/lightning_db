@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use parking_lot::RwLock;
 use std::collections::BTreeMap;
-use std::cmp::Ordering as CmpOrdering;
 use serde::{Serialize, Deserialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 

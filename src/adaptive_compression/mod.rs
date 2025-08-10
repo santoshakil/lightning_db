@@ -22,12 +22,6 @@ pub use adaptive_selector::*;
 pub use benchmark::*;
 pub use streaming::*;
 
-// Import algorithm implementations
-use algorithms::{
-    NoCompression, LZ4Compression, ZstdCompression, SnappyCompression,
-    HardwareAcceleratedCompression,
-};
-
 /// Compression level settings
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CompressionLevel {
@@ -273,26 +267,26 @@ impl AdaptiveCompressionEngine {
         let mut algorithms: HashMap<CompressionAlgorithm, Box<dyn CompressionAlgorithmTrait + Send + Sync>> = HashMap::new();
         
         // Register available algorithms
-        algorithms.insert(CompressionAlgorithm::None, Box::new(NoCompression::new()));
-        algorithms.insert(CompressionAlgorithm::LZ4, Box::new(LZ4Compression::new()));
-        algorithms.insert(CompressionAlgorithm::Zstd, Box::new(ZstdCompression::new()));
-        algorithms.insert(CompressionAlgorithm::Snappy, Box::new(SnappyCompression::new()));
+        algorithms.insert(CompressionAlgorithm::None, Box::new(algorithms::NoCompression::new()));
+        algorithms.insert(CompressionAlgorithm::LZ4, Box::new(algorithms::LZ4Compression::new()));
+        algorithms.insert(CompressionAlgorithm::Zstd, Box::new(algorithms::ZstdCompression::new()));
+        algorithms.insert(CompressionAlgorithm::Snappy, Box::new(algorithms::SnappyCompression::new()));
         
         // Add hardware-accelerated algorithms if available
         if hardware.has_compression_acceleration() {
             algorithms.insert(
                 CompressionAlgorithm::HardwareAccelerated,
-                Box::new(HardwareAcceleratedCompression::new(&hardware)?)
+                Box::new(algorithms::HardwareAcceleratedCompression::new(&hardware)?)
             );
         }
         
         // Add LZMA if available
         #[cfg(feature = "lzma")]
-        algorithms.insert(CompressionAlgorithm::LZMA, Box::new(LZMACompression::new()));
+        algorithms.insert(CompressionAlgorithm::LZMA, Box::new(algorithms::LZMACompression::new()));
         
         // Add Brotli if available
         #[cfg(feature = "brotli")]
-        algorithms.insert(CompressionAlgorithm::Brotli, Box::new(BrotliCompression::new()));
+        algorithms.insert(CompressionAlgorithm::Brotli, Box::new(algorithms::BrotliCompression::new()));
         
         let stats = Arc::new(parking_lot::RwLock::new(CompressionStats::default()));
         let selector = AdaptiveSelector::new(Arc::clone(&stats));

@@ -5,9 +5,8 @@
 
 use crate::{Result, Error};
 use super::{
-    StatisticsManager, TableStatistics, ColumnStatistics, Histogram, HistogramType,
-    PhysicalOperator, LogicalQuery, Predicate, ComparisonOp, Value, JoinCondition, JoinType,
-    AggregateFunction, OptimizerConfig
+    StatisticsManager, Histogram,
+    PhysicalOperator, Predicate, ComparisonOp, Value, JoinCondition, JoinType, OptimizerConfig
 };
 use std::collections::HashMap;
 use std::sync::Arc;

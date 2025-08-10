@@ -1,8 +1,8 @@
 use super::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::collections::HashMap;
-use tokio::sync::{mpsc, oneshot, Mutex};
-use tokio::time::{timeout, Duration, Instant};
+use tokio::sync::{mpsc, Mutex};
+use tokio::time::{Duration, Instant};
 use uuid::Uuid;
 use futures::future;
 
@@ -504,6 +504,9 @@ impl TransactionCoordinator for TwoPhaseCommitCoordinator {
             response_tx: Some(response_tx),
         };
         
+        // Store number of shards before moving tx
+        let num_shards = tx.shards.len();
+        
         // Store transaction
         self.transactions.write().insert(tx_id.clone(), tx);
         
@@ -511,7 +514,7 @@ impl TransactionCoordinator for TwoPhaseCommitCoordinator {
         self.metrics.transactions_started.fetch_add(1, Ordering::Relaxed);
         self.metrics.active_transactions.fetch_add(1, Ordering::Relaxed);
         
-        println!("Started transaction {} with {} shards", tx_id, tx.shards.len());
+        println!("Started transaction {} with {} shards", tx_id, num_shards);
         
         Ok(tx_id)
     }
@@ -609,10 +612,12 @@ impl TransactionCoordinator for SimpleCoordinator {
         let (shard_id, ops) = operations.into_iter().next().unwrap();
         
         // Find leader node for shard
-        let nodes = self.nodes.read();
-        let leader_node = nodes.values().next()
-            .ok_or_else(|| Error::NotFound("No nodes available".to_string()))?
-            .clone();
+        let leader_node = {
+            let nodes = self.nodes.read();
+            nodes.values().next()
+                .ok_or_else(|| Error::NotFound("No nodes available".to_string()))?
+                .clone()
+        };
         
         // Execute operations
         for op in ops {

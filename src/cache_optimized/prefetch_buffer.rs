@@ -5,7 +5,7 @@
 
 use super::{CACHE_LINE_SIZE, PrefetchHints, CachePerformanceStats};
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 

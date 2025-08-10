@@ -8,6 +8,18 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+#[derive(Debug, Clone, Default)]
+pub struct MemoryPoolStats {
+    pub hot_cache_hits: u64,
+    pub cold_cache_hits: u64,
+    pub cache_misses: u64,
+    pub hot_cache_size: u64,
+    pub cold_cache_size: u64,
+    pub hot_cache_entries: u64,
+    pub cold_cache_entries: u64,
+    pub evictions: u64,
+}
+
 pub struct MemoryPool {
     arc_cache: Arc<ArcCache>,
     page_manager: Arc<RwLock<PageManager>>,
@@ -460,6 +472,20 @@ impl MemoryPool {
 
         page.set_data(&new_data)?;
         Ok(())
+    }
+
+    pub fn get_cache_stats(&self) -> MemoryPoolStats {
+        let stats = self.arc_cache.get_stats();
+        MemoryPoolStats {
+            hot_cache_hits: stats.recent_hits,
+            cold_cache_hits: stats.frequent_hits,
+            cache_misses: stats.misses,
+            hot_cache_size: (stats.recent_entries * crate::storage::PAGE_SIZE) as u64,
+            cold_cache_size: (stats.frequent_entries * crate::storage::PAGE_SIZE) as u64,
+            hot_cache_entries: stats.recent_entries as u64,
+            cold_cache_entries: stats.frequent_entries as u64,
+            evictions: stats.evictions,
+        }
     }
 
     pub fn shutdown(&mut self) {

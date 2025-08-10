@@ -4,7 +4,7 @@
 //! CPU cores for optimal NUMA locality and performance.
 
 use crate::{Result, Error};
-use crate::numa::topology::{NumaTopology, CpuInfo};
+use crate::numa::topology::NumaTopology;
 use std::sync::Arc;
 use std::collections::{HashMap, BTreeSet};
 use std::thread;

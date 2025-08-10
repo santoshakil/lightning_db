@@ -533,6 +533,15 @@ impl OptimizedTransactionManager {
     pub fn active_transaction_count(&self) -> usize {
         self.active_transactions.len()
     }
+
+    pub fn get_metrics(&self) -> crate::TransactionMetrics {
+        crate::TransactionMetrics {
+            active_transactions: self.active_transactions.len(),
+            successful_commits: self.commit_count.load(Ordering::Relaxed) as usize,
+            failed_commits: self.abort_count.load(Ordering::Relaxed) as usize,
+            conflicts: self.conflict_count.load(Ordering::Relaxed) as usize,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

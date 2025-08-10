@@ -2,94 +2,100 @@
 
 ## Overview
 
-This index provides quick access to all Lightning DB documentation organized by category.
+Lightning DB documentation has been reorganized for clarity. Production guides have been consolidated into comprehensive documents in the `docs/` directory.
 
 ---
 
 ## 🚀 Getting Started
 
-- **[README.md](README.md)** - Project overview and quick start guide
+- **[README.md](README.md)** - Project overview, features, and quick start
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history and release notes
-- **[examples/](examples/)** - Code examples for common use cases
-- **[WORK_SUMMARY_AND_NEXT_STEPS.md](WORK_SUMMARY_AND_NEXT_STEPS.md)** - Work completed and deployment guide
+- **[examples/](examples/)** - Organized code examples by category:
+  - `basic/` - Getting started examples
+  - `advanced/` - Advanced features
+  - `production/` - Production deployment
+  - `benchmarks/` - Performance testing
+  - `diagnostics/` - Debugging tools
 
-## 📚 Development Documentation
+## 📚 Core Documentation
 
-- **[docs/development-guide.md](docs/development-guide.md)** - Developer guide
-- **[docs/architecture-overview.md](docs/architecture-overview.md)** - System architecture
+### Main Guides
+- **[docs/PRODUCTION_GUIDE.md](docs/PRODUCTION_GUIDE.md)** - Comprehensive production deployment guide
+- **[docs/PRODUCTION_RUNBOOKS.md](docs/PRODUCTION_RUNBOOKS.md)** - Operational runbooks
 - **[docs/api-reference.md](docs/api-reference.md)** - Complete API documentation
-- **[docs/integration-guide.md](docs/integration-guide.md)** - Framework integration examples
+- **[docs/architecture-overview.md](docs/architecture-overview.md)** - System architecture
+
+### Development
+- **[docs/development-guide.md](docs/development-guide.md)** - Developer guide
+- **[docs/integration-guide.md](docs/integration-guide.md)** - Platform integration
 - **[docs/debugging-guide.md](docs/debugging-guide.md)** - Debugging techniques
 - **[docs/faq.md](docs/faq.md)** - Frequently asked questions
 
-## 🏭 Production Deployment
+## 🏭 Production Status
 
-- **[PRODUCTION_READINESS_SUMMARY.md](PRODUCTION_READINESS_SUMMARY.md)** - Production readiness overview
-- **[PRODUCTION_DEPLOYMENT_GUIDE.md](PRODUCTION_DEPLOYMENT_GUIDE.md)** - Comprehensive deployment guide
-- **[PRODUCTION_DEPLOYMENT_CHECKLIST.md](PRODUCTION_DEPLOYMENT_CHECKLIST.md)** - Pre-deployment checklist
-- **[PRODUCTION_CRITICAL_BEHAVIORS.md](PRODUCTION_CRITICAL_BEHAVIORS.md)** - Critical behaviors documentation
+- **[PRODUCTION_READY_FINAL.md](PRODUCTION_READY_FINAL.md)** - Production readiness certification
 - **[VALIDATION_SUMMARY.md](VALIDATION_SUMMARY.md)** - Component validation results
+- **[docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md)** - Performance measurements
 
-## 🔧 Operations & Maintenance
-
-- **[OPERATIONS_RUNBOOK.md](OPERATIONS_RUNBOOK.md)** - Daily/weekly/monthly operational tasks
-- **[PRODUCTION_TROUBLESHOOTING_GUIDE.md](PRODUCTION_TROUBLESHOOTING_GUIDE.md)** - Troubleshooting procedures
-- **[PRODUCTION_PERFORMANCE_TUNING_GUIDE.md](PRODUCTION_PERFORMANCE_TUNING_GUIDE.md)** - Performance optimization
-- **[MONITORING_AND_ALERTING_GUIDE.md](MONITORING_AND_ALERTING_GUIDE.md)** - Monitoring setup
-
-## 🔒 Security & Recovery
-
-- **[SECURITY_HARDENING_GUIDE.md](SECURITY_HARDENING_GUIDE.md)** - Security best practices
-- **[DISASTER_RECOVERY_GUIDE.md](DISASTER_RECOVERY_GUIDE.md)** - DR procedures
-- **[docs/operations-manual.md](docs/operations-manual.md)** - Operational procedures
-
-## 📈 Planning & Migration
-
-- **[CAPACITY_PLANNING_GUIDE.md](CAPACITY_PLANNING_GUIDE.md)** - Capacity planning guide
-- **[DATABASE_MIGRATION_GUIDE.md](DATABASE_MIGRATION_GUIDE.md)** - Migration from other databases
-- **[PRODUCTION_ROADMAP.md](PRODUCTION_ROADMAP.md)** - Future development roadmap
-
-## 📊 Performance & Testing
+## 📊 Performance
 
 - **[docs/benchmarking-guide.md](docs/benchmarking-guide.md)** - Benchmarking instructions
-- **[BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md)** - Performance measurements
 - **[docs/performance-profiling-guide.md](docs/performance-profiling-guide.md)** - Profiling techniques
-- **[scripts/run_production_validation.sh](scripts/run_production_validation.sh)** - Production validation script
 
-## 🔨 Build & Platform Support
+## 🔨 Platform Support
 
-- **[scripts/](scripts/)** - Build and deployment scripts
-- **[docker/](docker/)** - Docker configuration
-- **Platform-specific guides:**
-  - [docs/platforms/android.md](docs/platforms/android.md)
-  - [docs/platforms/ios.md](docs/platforms/ios.md)
-  - [docs/platforms/flutter.md](docs/platforms/flutter.md)
-  - [docs/platforms/desktop.md](docs/platforms/desktop.md)
-  - [docs/platforms/web.md](docs/platforms/web.md)
+- **[docs/platforms/](docs/platforms/)** - Platform-specific guides:
+  - `android.md` - Android integration
+  - `ios.md` - iOS integration
+  - `flutter.md` - Flutter SDK
+  - `desktop.md` - Desktop applications
+  - `web.md` - WebAssembly support
 
-## 📋 Internal Documentation
+## 🐳 Docker & Deployment
 
-- **[CLAUDE.md](CLAUDE.md)** - AI assistant instructions and project context
+- **[docker/](docker/)** - Docker configurations
+  - `docker-compose.yml` - Full stack with monitoring
+  - `Dockerfile.production` - Production image
+  - `monitoring/` - Prometheus and Grafana configs
+
+## 🛠️ Build Scripts
+
+- **[scripts/](scripts/)** - Build and deployment automation
+  - `build_all_platforms.sh` - Cross-platform builds
+  - `run_production_validation.sh` - Validation suite
+  - `deploy_production.sh` - Production deployment
+
+## 📋 Project Configuration
+
+- **[CLAUDE.md](CLAUDE.md)** - Project-specific development guidelines
+- **[PRODUCTION_ROADMAP.md](PRODUCTION_ROADMAP.md)** - Future development plans
 
 ---
 
-## Quick Links
+## Quick Navigation
 
 ### For New Users
 1. Start with [README.md](README.md)
-2. Run examples in [examples/basic_usage.rs](examples/basic_usage.rs)
+2. Run [examples/basic/basic_usage.rs](examples/basic/basic_usage.rs)
 3. Read [docs/development-guide.md](docs/development-guide.md)
 
 ### For Production Deployment
-1. Review [PRODUCTION_DEPLOYMENT_CHECKLIST.md](PRODUCTION_DEPLOYMENT_CHECKLIST.md)
-2. Follow [PRODUCTION_DEPLOYMENT_GUIDE.md](PRODUCTION_DEPLOYMENT_GUIDE.md)
-3. Set up monitoring per [MONITORING_AND_ALERTING_GUIDE.md](MONITORING_AND_ALERTING_GUIDE.md)
+1. Review [PRODUCTION_READY_FINAL.md](PRODUCTION_READY_FINAL.md)
+2. Follow [docs/PRODUCTION_GUIDE.md](docs/PRODUCTION_GUIDE.md)
+3. Use [docker/docker-compose.yml](docker/docker-compose.yml)
 
-### For Operations Teams
-1. Use [OPERATIONS_RUNBOOK.md](OPERATIONS_RUNBOOK.md) for daily tasks
-2. Reference [PRODUCTION_TROUBLESHOOTING_GUIDE.md](PRODUCTION_TROUBLESHOOTING_GUIDE.md) for issues
-3. Plan capacity with [CAPACITY_PLANNING_GUIDE.md](CAPACITY_PLANNING_GUIDE.md)
+### For Developers
+1. Read [docs/architecture-overview.md](docs/architecture-overview.md)
+2. Check [examples/](examples/) for code patterns
+3. Reference [docs/api-reference.md](docs/api-reference.md)
 
 ---
 
-*Last updated: January 2025*
+## Archived Documentation
+
+Older and duplicate documentation has been archived in `archived_docs/` for reference. The documents listed above represent the current, consolidated documentation set.
+
+---
+
+*Last updated: 2025-08-09*
+*Status: Production Ready with 100% ACID Compliance*

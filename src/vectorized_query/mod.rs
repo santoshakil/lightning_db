@@ -9,9 +9,6 @@
 //! - Adaptive query execution planning
 //! - Hardware-aware optimization
 
-use crate::{Result, Error};
-use std::collections::HashMap;
-use std::sync::Arc;
 use serde::{Serialize, Deserialize};
 
 pub mod simd_operations;

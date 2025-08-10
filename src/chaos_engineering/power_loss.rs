@@ -3,14 +3,12 @@
 //! Simulates sudden power loss scenarios to verify database crash recovery
 //! and data durability guarantees.
 
-use crate::{Database, Result, Error};
+use crate::{Database, Result};
 use crate::chaos_engineering::{ChaosTest, ChaosTestResult, IntegrityReport, ChaosConfig};
 use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
 use std::thread;
 use std::time::{Duration, SystemTime};
-use std::path::{Path, PathBuf};
-use std::fs::{File, OpenOptions};
-use std::io::{Write, Read, Seek, SeekFrom};
+use std::io::{Write, Read};
 use parking_lot::{RwLock, Mutex};
 use rand::{Rng, thread_rng};
 use std::collections::HashMap;

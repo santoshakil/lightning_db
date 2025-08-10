@@ -3,6 +3,7 @@ pub mod optimized_manager;
 pub mod version_cleanup;
 
 use crate::error::{Error, Result};
+use crate::TransactionMetrics;
 use crossbeam_skiplist::SkipMap;
 use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -232,7 +233,23 @@ impl TransactionManager {
         // Get commit timestamp first
         let commit_ts = self.commit_timestamp.fetch_add(1, Ordering::SeqCst) + 1;
 
-        // Try to atomically reserve all writes
+        // FIRST: Check for read-write conflicts BEFORE making reservations
+        for read_op in &tx.read_set {
+            // Use the version that includes reserved entries for proper conflict detection
+            let current_version = self
+                .version_store
+                .get_latest_version_including_reserved(&read_op.key)
+                .unwrap_or(0);
+
+            if current_version > read_op.version {
+                // Conflict detected - no reservations made yet, so just return error
+                return Err(Error::Transaction(
+                    "Read-write conflict detected during atomic validation".to_string(),
+                ));
+            }
+        }
+
+        // SECOND: Try to atomically reserve all writes
         let mut reserved_keys: Vec<Vec<u8>> = Vec::new();
 
         for write_op in &tx.write_set {
@@ -250,25 +267,6 @@ impl TransactionManager {
                 ));
             }
             reserved_keys.push(write_op.key.clone());
-        }
-
-        // Check for read-write conflicts while we have reservations
-        for read_op in &tx.read_set {
-            let current_version = self
-                .version_store
-                .get_latest_version(&read_op.key)
-                .unwrap_or(0);
-
-            if current_version > read_op.version {
-                // Conflict detected - cancel all reservations
-                for reserved_key in &reserved_keys {
-                    self.version_store
-                        .cancel_reserved_write(reserved_key, commit_ts);
-                }
-                return Err(Error::Transaction(
-                    "Read-write conflict detected during atomic validation".to_string(),
-                ));
-            }
         }
 
         // All validations passed, reservations are held
@@ -364,6 +362,17 @@ impl TransactionManager {
             active_transactions: self.active_transactions.len(),
             current_commit_timestamp: self.commit_timestamp.load(Ordering::SeqCst),
             min_active_timestamp: self.get_min_active_transaction_timestamp(),
+        }
+    }
+
+    pub fn get_metrics(&self) -> TransactionMetrics {
+        // For now, return basic metrics
+        // In a real implementation, we would track these values
+        TransactionMetrics {
+            active_transactions: self.active_transactions.len(),
+            successful_commits: 0, // TODO: Track this
+            failed_commits: 0,     // TODO: Track this
+            conflicts: 0,          // TODO: Track this
         }
     }
 }
@@ -477,6 +486,14 @@ impl VersionStore {
                 }
             }
             None
+        })
+    }
+    
+    /// Get the latest version including reserved entries (for conflict detection)
+    pub fn get_latest_version_including_reserved(&self, key: &[u8]) -> Option<u64> {
+        self.versions.get(key).and_then(|key_versions| {
+            // Get the absolute latest version, including reserved entries
+            key_versions.value().iter().next_back().map(|entry| *entry.key())
         })
     }
 

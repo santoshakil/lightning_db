@@ -5,11 +5,11 @@
 
 use crate::{Result, Error};
 use super::{
-    CardinalityEstimator, CostModel, LogicalQuery, LogicalJoin, PhysicalOperator,
-    JoinCondition, JoinType, Predicate, TableStatistics, ColumnStatistics, IndexStatistics,
-    OptimizerConfig, StatisticsManager, Value
+    CardinalityEstimator, CostModel, LogicalQuery, LogicalJoin,
+    JoinCondition, JoinType, Predicate,
+    OptimizerConfig, StatisticsManager
 };
-use std::collections::{HashMap, HashSet, BTreeSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 /// Join optimizer for multi-table query optimization
@@ -281,7 +281,7 @@ impl JoinOptimizer {
     /// Extract cross-table predicates that could be join conditions
     fn extract_cross_table_predicates(&self, predicate: &Predicate, graph: &mut JoinGraph) -> Result<()> {
         match predicate {
-            Predicate::Comparison { column, .. } => {
+            Predicate::Comparison {  .. } => {
                 // Would analyze if this comparison involves multiple tables
                 // For now, simplified implementation
             }
@@ -816,7 +816,7 @@ mod tests {
     #[test]
     fn test_join_optimizer_creation() {
         let config = OptimizerConfig::default();
-        let statistics = Arc::new(super::StatisticsManager::new(config.clone()));
+        let statistics = Arc::new(StatisticsManager::new(config.clone()));
         let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics));
         let cost_model = Arc::new(CostModel::new(config));
         
@@ -827,7 +827,7 @@ mod tests {
     #[test]
     fn test_join_algorithm_selection() {
         let config = OptimizerConfig::default();
-        let statistics = Arc::new(super::StatisticsManager::new(config.clone()));
+        let statistics = Arc::new(StatisticsManager::new(config.clone()));
         let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics));
         let cost_model = Arc::new(CostModel::new(config));
         let optimizer = JoinOptimizer::new(cardinality_estimator, cost_model);
@@ -853,7 +853,7 @@ mod tests {
     #[test]
     fn test_join_graph_construction() {
         let config = OptimizerConfig::default();
-        let statistics = Arc::new(super::StatisticsManager::new(config.clone()));
+        let statistics = Arc::new(StatisticsManager::new(config.clone()));
         let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics));
         let cost_model = Arc::new(CostModel::new(config));
         let optimizer = JoinOptimizer::new(cardinality_estimator, cost_model);
@@ -886,7 +886,7 @@ mod tests {
     #[test]
     fn test_optimization_strategy_selection() {
         let config = OptimizerConfig::default();
-        let statistics = Arc::new(super::StatisticsManager::new(config.clone()));
+        let statistics = Arc::new(StatisticsManager::new(config.clone()));
         let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics));
         let cost_model = Arc::new(CostModel::new(config));
         let optimizer = JoinOptimizer::new(cardinality_estimator, cost_model);

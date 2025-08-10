@@ -3,20 +3,20 @@
 //! Tests database behavior under various resource constraints including
 //! memory pressure, disk space exhaustion, file descriptor limits, and thread starvation.
 
-use crate::{Database, Result, Error};
+use crate::{Database, Result};
 use crate::chaos_engineering::{
     ChaosTest, ChaosTestResult, IntegrityReport, ChaosConfig,
-    ResourceLimits, IntegrityViolation, IntegrityViolationType, ViolationSeverity
+    ResourceLimits
 };
 use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
 use std::thread;
 use std::time::{Duration, SystemTime};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use parking_lot::{RwLock, Mutex};
 use rand::{Rng, thread_rng};
 use std::path::{Path, PathBuf};
-use std::fs::{File, OpenOptions};
-use std::io::{Write, Read, Seek};
+use std::fs::OpenOptions;
+use std::io::{Write, Read};
 
 /// Resource exhaustion test coordinator
 pub struct ResourceExhaustionTest {

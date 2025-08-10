@@ -1,6 +1,6 @@
 use super::*;
 use super::snapshot::FileRaftStorage;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use parking_lot::RwLock;
 use std::sync::Arc;
 

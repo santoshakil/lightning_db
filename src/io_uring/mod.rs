@@ -24,7 +24,6 @@ pub mod fixed_buffers;
 
 use std::io::{Result, Error, ErrorKind};
 use std::os::unix::io::RawFd;
-use std::sync::Arc;
 use std::time::Duration;
 
 /// Operation types supported by io_uring
@@ -256,7 +255,7 @@ impl LinkedOps {
     
     /// Add a read operation to the chain
     pub fn read(mut self, fd: RawFd, offset: u64, len: usize) -> Self {
-        let mut request = IoRequest {
+        let request = IoRequest {
             op_type: OpType::Read,
             fd,
             offset,
@@ -279,7 +278,7 @@ impl LinkedOps {
     
     /// Add a write operation to the chain
     pub fn write(mut self, fd: RawFd, offset: u64, data: Vec<u8>) -> Self {
-        let mut request = IoRequest {
+        let request = IoRequest {
             op_type: OpType::Write,
             fd,
             offset,

@@ -4,13 +4,13 @@
 //! based on access patterns, age, and data characteristics.
 
 use crate::{Result, Error};
-use crate::write_optimized::{SSTableReader, SSTableMetadata, CompactionManager};
-use std::path::{Path, PathBuf};
+use crate::write_optimized::SSTableReader;
+use std::path::PathBuf;
 use std::sync::Arc;
 use parking_lot::{RwLock, Mutex};
 use serde::{Serialize, Deserialize};
-use std::collections::{HashMap, BTreeMap, VecDeque};
-use std::time::{SystemTime, UNIX_EPOCH, Duration, Instant};
+use std::collections::{HashMap, VecDeque};
+use std::time::{SystemTime, UNIX_EPOCH, Duration};
 use std::thread;
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use std::hash::Hash;

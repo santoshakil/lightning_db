@@ -3,12 +3,12 @@
 //! Tests database consistency guarantees under various crash scenarios,
 //! ensuring ACID properties are maintained.
 
-use crate::{Database, Result, Error, Transaction};
+use crate::{Database, Result, Error};
 use crate::chaos_engineering::{ChaosTest, ChaosTestResult, IntegrityReport, ChaosConfig};
 use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
-use std::thread::{self, JoinHandle};
+use std::thread::{self};
 use std::time::{Duration, SystemTime};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashMap;
 use parking_lot::{RwLock, Mutex};
 use rand::{Rng, thread_rng};
 
@@ -375,7 +375,7 @@ impl Invariant for BalanceInvariant {
 
     fn check(&self, db: &Database, _state: &TransactionState) -> Result<bool> {
         // Check that total balance across all accounts remains constant
-        let mut total = 0u64;
+        let total = 0u64;
         
         // In real implementation, would sum all account balances
         // For now, return true

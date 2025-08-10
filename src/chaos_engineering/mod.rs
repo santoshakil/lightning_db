@@ -4,15 +4,12 @@
 //! database reliability under extreme conditions including power loss,
 //! corruption, resource exhaustion, and byzantine failures.
 
-use crate::{Database, Result, Error, LightningDbConfig};
+use crate::{Database, Result, LightningDbConfig};
 use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
 use std::thread;
 use std::time::{Duration, SystemTime};
 use std::path::{Path, PathBuf};
-use std::fs::{File, OpenOptions};
-use std::io::{Write, Read, Seek, SeekFrom};
 use parking_lot::{RwLock, Mutex};
-use rand::{Rng, thread_rng, seq::SliceRandom};
 use std::collections::{HashMap, VecDeque};
 
 pub mod power_loss;

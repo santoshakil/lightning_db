@@ -10,7 +10,7 @@ impl RaftNode {
         }
         
         let peers: Vec<NodeId> = {
-            let membership = self.membership.read().unwrap();
+            let membership = self.membership.read();
             membership.current.keys()
                 .filter(|id| **id != self.config.node_id)
                 .cloned()
@@ -40,8 +40,8 @@ impl RaftNode {
     /// Send AppendEntries RPC to a peer
     pub async fn send_append_entries(&self, peer_id: NodeId, is_heartbeat: bool) -> Result<()> {
         let (args, entries_to_send) = {
-            let persistent = self.persistent.read().unwrap();
-            let leader_state = self.leader.read().unwrap();
+            let persistent = self.persistent.read();
+            let leader_state = self.leader.read();
             
             if let Some(ref leader) = *leader_state {
                 let next_index = *leader.next_index.get(&peer_id).unwrap_or(&1);
@@ -85,7 +85,7 @@ impl RaftNode {
         
         // Record in-flight request if not heartbeat
         if !is_heartbeat && entries_to_send > 0 {
-            let mut leader_state = self.leader.write().unwrap();
+            let mut leader_state = self.leader.write();
             if let Some(ref mut leader) = *leader_state {
                 leader.in_flight.insert(peer_id, InFlightRequest {
                     prev_log_index: args.prev_log_index,
@@ -127,7 +127,7 @@ impl RaftNode {
             return Ok(());
         }
         
-        let mut leader_state = self.leader.write().unwrap();
+        let mut leader_state = self.leader.write();
         if let Some(ref mut leader) = *leader_state {
             // Remove from in-flight
             leader.in_flight.remove(&peer_id);
@@ -146,7 +146,7 @@ impl RaftNode {
                     // Use conflict information for faster catch-up
                     if let (Some(conflict_term), Some(conflict_index)) = (reply.conflict_term, reply.conflict_index) {
                         // Find the first entry with conflict_term
-                        let persistent = self.persistent.read().unwrap();
+                        let persistent = self.persistent.read();
                         let mut found = false;
                         
                         for entry in persistent.log.iter().rev() {
@@ -173,7 +173,7 @@ impl RaftNode {
     
     /// Handle incoming AppendEntries RPC
     pub async fn handle_append_entries(&self, args: AppendEntriesArgs) -> Result<AppendEntriesReply> {
-        let mut persistent = self.persistent.write().unwrap();
+        let mut persistent = self.persistent.write();
         
         // Reply false if term < currentTerm
         if args.term < persistent.current_term {
@@ -196,7 +196,7 @@ impl RaftNode {
             
             // Become follower
             self.volatile.state.store(NodeState::Follower as u8, Ordering::Release);
-            *self.leader.write().unwrap() = None;
+            *self.leader.write() = None;
         }
         
         // Reset election timer
@@ -210,7 +210,7 @@ impl RaftNode {
             Ordering::Release
         );
         
-        let mut persistent = self.persistent.write().unwrap();
+        let mut persistent = self.persistent.write();
         
         // Check if we have the previous log entry
         if args.prev_log_index > 0 {
@@ -295,7 +295,7 @@ impl RaftNode {
         Ok(AppendEntriesReply {
             term: self.current_term(),
             success: true,
-            last_log_index: self.persistent.read().unwrap().log.last().map(|e| e.index).unwrap_or(0),
+            last_log_index: self.persistent.read().log.last().map(|e| e.index).unwrap_or(0),
             conflict_term: None,
             conflict_index: None,
         })
@@ -307,9 +307,9 @@ impl RaftNode {
             return Ok(());
         }
         
-        let leader_state = self.leader.read().unwrap();
+        let leader_state = self.leader.read();
         if let Some(ref leader) = *leader_state {
-            let persistent = self.persistent.read().unwrap();
+            let persistent = self.persistent.read();
             let current_term = persistent.current_term;
             
             // Find highest index replicated on majority
@@ -355,7 +355,7 @@ impl RaftNode {
             
             // Get entry to apply
             let entry = {
-                let persistent = self.persistent.read().unwrap();
+                let persistent = self.persistent.read();
                 persistent.log.iter()
                     .find(|e| e.index == next_index)
                     .cloned()
@@ -384,13 +384,13 @@ impl RaftNode {
     
     /// Notify pending client requests
     async fn notify_pending_requests(&self, commit_index: LogIndex) -> Result<()> {
-        let mut leader_state = self.leader.write().unwrap();
+        let mut leader_state = self.leader.write();
         if let Some(ref mut leader) = *leader_state {
             let mut completed = Vec::new();
             
             for (request_id, request) in &leader.pending_requests {
                 // Check if request is committed
-                let persistent = self.persistent.read().unwrap();
+                let persistent = self.persistent.read();
                 let is_committed = persistent.log.iter()
                     .any(|e| e.index <= commit_index && 
                          e.client_id == Some(*request_id) &&
@@ -429,7 +429,7 @@ impl RaftNode {
         
         // Create log entry
         let entry = {
-            let persistent = self.persistent.read().unwrap();
+            let persistent = self.persistent.read();
             let index = persistent.log.last().map(|e| e.index + 1).unwrap_or(1);
             
             LogEntry {
@@ -446,7 +446,7 @@ impl RaftNode {
         
         // Add to pending requests
         {
-            let mut leader_state = self.leader.write().unwrap();
+            let mut leader_state = self.leader.write();
             if let Some(ref mut leader) = *leader_state {
                 leader.pending_requests.insert(request_id, ClientRequest {
                     command,
@@ -458,7 +458,7 @@ impl RaftNode {
         
         // Append to log
         {
-            let mut persistent = self.persistent.write().unwrap();
+            let mut persistent = self.persistent.write();
             persistent.log.push(entry.clone());
             self.storage.append_entries(&[entry])?;
         }

@@ -1,7 +1,7 @@
 use super::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::collections::HashMap;
-use tokio::sync::{mpsc, RwLock as TokioRwLock};
+use tokio::sync::RwLock as TokioRwLock;
 use tokio::time::{Duration, Instant, interval};
 use serde::{Deserialize, Serialize};
 use num_cpus;
@@ -456,7 +456,7 @@ impl ServiceDiscovery for EtcdServiceDiscovery {
         
         let registration = NodeRegistration {
             node_id,
-            address,
+            address: address.clone(),
             registered_at: now,
             last_heartbeat: now,
             metadata: NodeMetadata::default(),
