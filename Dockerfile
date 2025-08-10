@@ -25,7 +25,7 @@ COPY . .
 RUN cargo build --release --bin lightning-cli
 
 # Runtime stage
-FROM alpine:3.19
+FROM alpine:3.22
 
 # Install runtime dependencies
 RUN apk add --no-cache libgcc
