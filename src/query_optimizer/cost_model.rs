@@ -6,7 +6,7 @@
 use crate::{Result, Error};
 use super::{
     OptimizerConfig, PhysicalOperator, TableStatistics, ColumnStatistics, IndexStatistics,
-    JoinType, ComparisonOp, Value
+    JoinType
 };
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;

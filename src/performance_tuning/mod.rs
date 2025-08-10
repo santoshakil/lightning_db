@@ -3,11 +3,10 @@
 //! Provides hardware-aware auto-configuration, workload-specific optimization profiles,
 //! and continuous performance tuning to achieve optimal Lightning DB performance.
 
-use crate::{Database, LightningDbConfig, Result, Error};
+use crate::{Database, LightningDbConfig, Result};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::path::Path;
-use std::collections::HashMap;
 use parking_lot::RwLock;
 use serde::{Serialize, Deserialize};
 

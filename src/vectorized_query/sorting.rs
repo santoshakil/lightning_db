@@ -5,7 +5,7 @@
 
 use crate::{Result, Error};
 use super::{
-    DataType, Value, SortColumn, SortDirection, SIMDOperations, ColumnarTable, ColumnBatch,
+    DataType, Value, SortColumn, SortDirection, SIMDOperations, ColumnarTable,
     ExecutionStats, VECTOR_BATCH_SIZE
 };
 use std::sync::Arc;
@@ -233,7 +233,7 @@ impl VectorizedSorter {
         &mut self,
         table: &ColumnarTable,
         config: &SortConfig,
-        mut rows: Vec<usize>,
+        rows: Vec<usize>,
     ) -> Result<Vec<usize>> {
         if rows.len() <= 1 {
             return Ok(rows);

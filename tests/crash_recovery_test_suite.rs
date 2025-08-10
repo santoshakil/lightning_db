@@ -12,7 +12,7 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 
 /// Test configuration for crash scenarios
 #[derive(Clone)]
@@ -201,7 +201,7 @@ impl CrashRecoveryTestSuite {
                 for i in 0..10 {
                     let key = format!("tx_{}_key_{}", tx_num, i);
                     let value = format!("tx_{}_value_{}", tx_num, i);
-                    let _ = db.tx_put(tx_id, key.as_bytes(), value.as_bytes());
+                    let _ = db.put_tx(tx_id, key.as_bytes(), value.as_bytes());
                 }
                 
                 // Crash during random transaction commit
@@ -278,7 +278,7 @@ impl CrashRecoveryTestSuite {
             db.sync().unwrap();
             
             // Trigger compaction in background
-            db.trigger_compaction();
+            let _ = db.compact_lsm();
             
             // Simulate crash during compaction
             thread::sleep(Duration::from_millis(100));
@@ -460,10 +460,10 @@ fn main() {
                 
                 let handle = thread::spawn(move || {
                     barrier_clone.wait();
-                    let mut rng = thread_rng();
+                    let mut rng = rand::rng();
                     
                     for i in 0..1000 {
-                        let op_type = rng.gen_range(0..100);
+                        let op_type = rng.random_range(0..100);
                         
                         if op_type < 60 {
                             // Insert
@@ -474,14 +474,14 @@ fn main() {
                             }
                         } else if op_type < 80 {
                             // Update
-                            let key = format!("mixed_{}_{}", thread_id, rng.gen_range(0..i.max(1)));
+                            let key = format!("mixed_{}_{}", thread_id, rng.random_range(0..i.max(1)));
                             let value = format!("updated_{}", i);
                             if db_clone.put(key.as_bytes(), value.as_bytes()).is_ok() {
                                 ops_clone.record_update(key);
                             }
                         } else {
                             // Delete
-                            let key = format!("mixed_{}_{}", thread_id, rng.gen_range(0..i.max(1)));
+                            let key = format!("mixed_{}_{}", thread_id, rng.random_range(0..i.max(1)));
                             if db_clone.delete(key.as_bytes()).is_ok() {
                                 ops_clone.record_delete(key);
                             }
@@ -492,18 +492,19 @@ fn main() {
             }
             
             // Reader threads
+            let writer_threads = self.config.writer_threads;
             for thread_id in 0..self.config.reader_threads {
                 let db_clone = db.clone();
                 let barrier_clone = barrier.clone();
                 
                 let handle = thread::spawn(move || {
                     barrier_clone.wait();
-                    let mut rng = thread_rng();
+                    let mut rng = rand::rng();
                     
                     for _ in 0..2000 {
                         let key = format!("mixed_{}_{}", 
-                            rng.gen_range(0..self.config.writer_threads),
-                            rng.gen_range(0..1000)
+                            rng.random_range(0..writer_threads),
+                            rng.random_range(0..1000)
                         );
                         let _ = db_clone.get(key.as_bytes());
                     }
@@ -561,9 +562,8 @@ fn main() {
     fn get_db_config(&self) -> LightningDbConfig {
         LightningDbConfig {
             use_improved_wal: self.config.use_wal,
-            sync_wal_on_write: true,
             compression_enabled: self.config.use_compression,
-            cache_size: self.config.cache_size,
+            cache_size: self.config.cache_size as u64,
             ..Default::default()
         }
     }

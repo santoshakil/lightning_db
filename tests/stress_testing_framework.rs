@@ -3,7 +3,8 @@
 //! This framework tests Lightning DB under extreme concurrent load to identify
 //! race conditions, deadlocks, performance degradation, and resource exhaustion.
 
-use lightning_db::{Database, LightningDbConfig, TransactionOp};
+use lightning_db::{Database, LightningDbConfig};
+use lightning_db::sharding::TransactionOp;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Barrier, RwLock};
 use std::thread;
@@ -12,8 +13,19 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
-use rand::{thread_rng, Rng, distributions::Alphanumeric};
+use rand::Rng;
 use parking_lot::Mutex;
+
+/// Generate a random alphanumeric string of specified length
+fn generate_random_alphanumeric(rng: &mut impl Rng, len: usize) -> String {
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    (0..len)
+        .map(|_| {
+            let idx = rng.random_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect()
+}
 
 /// Stress test configuration
 #[derive(Clone)]
@@ -165,11 +177,11 @@ impl StressTestFramework {
     /// Create database with stress test configuration
     fn create_database(&self, path: &Path) -> Arc<Database> {
         let config = LightningDbConfig {
-            cache_size: self.config.cache_size,
+            cache_size: self.config.cache_size as u64,
             compression_enabled: self.config.enable_compression,
             use_improved_wal: true,
-            sync_wal_on_write: false, // Faster for stress testing
-            enable_transactions: true,
+            wal_sync_mode: lightning_db::WalSyncMode::Async, // Faster for stress testing
+            use_optimized_transactions: true,
             ..Default::default()
         };
         
@@ -179,16 +191,12 @@ impl StressTestFramework {
     /// Pre-populate database with initial data
     fn pre_populate_data(&self, db: &Arc<Database>) {
         println!("Pre-populating database...");
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         
         for i in 0..1000 {
             let key = format!("key_{:06}", i);
-            let value_size = rng.gen_range(self.config.value_size_range.0..self.config.value_size_range.1);
-            let value: String = rng
-                .sample_iter(&Alphanumeric)
-                .take(value_size)
-                .map(char::from)
-                .collect();
+            let value_size = rng.random_range(self.config.value_size_range.0..self.config.value_size_range.1);
+            let value = generate_random_alphanumeric(&mut rng, value_size);
             
             db.put(key.as_bytes(), value.as_bytes()).ok();
             
@@ -255,7 +263,7 @@ impl StressTestFramework {
         
         thread::spawn(move || {
             barrier.wait();
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             
             while !stop_flag.load(Ordering::Relaxed) {
                 // Inject chaos if enabled
@@ -263,14 +271,10 @@ impl StressTestFramework {
                     chaos_injector.maybe_inject_delay();
                 }
                 
-                let key_num = rng.gen_range(0..config.key_space_size);
+                let key_num = rng.random_range(0..config.key_space_size);
                 let key = format!("key_{:06}", key_num);
-                let value_size = rng.gen_range(config.value_size_range.0..config.value_size_range.1);
-                let value: String = rng
-                    .sample_iter(&Alphanumeric)
-                    .take(value_size)
-                    .map(char::from)
-                    .collect();
+                let value_size = rng.random_range(config.value_size_range.0..config.value_size_range.1);
+                let value = generate_random_alphanumeric(&mut rng, value_size);
                 
                 let start = Instant::now();
                 let result = db.put(key.as_bytes(), value.as_bytes());
@@ -312,14 +316,14 @@ impl StressTestFramework {
         
         thread::spawn(move || {
             barrier.wait();
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             
             while !stop_flag.load(Ordering::Relaxed) {
                 if config.enable_chaos {
                     chaos_injector.maybe_inject_delay();
                 }
                 
-                let key_num = rng.gen_range(0..config.key_space_size);
+                let key_num = rng.random_range(0..config.key_space_size);
                 let key = format!("key_{:06}", key_num);
                 
                 let start = Instant::now();
@@ -371,25 +375,21 @@ impl StressTestFramework {
         
         thread::spawn(move || {
             barrier.wait();
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             
             while !stop_flag.load(Ordering::Relaxed) {
                 if config.enable_chaos {
                     chaos_injector.maybe_inject_delay();
                 }
                 
-                let op_choice = rng.gen_range(0..100);
+                let op_choice = rng.random_range(0..100);
                 
                 if op_choice < 30 {
                     // Write operation
-                    let key_num = rng.gen_range(0..config.key_space_size);
+                    let key_num = rng.random_range(0..config.key_space_size);
                     let key = format!("key_{:06}", key_num);
-                    let value_size = rng.gen_range(config.value_size_range.0..config.value_size_range.1);
-                    let value: String = rng
-                        .sample_iter(&Alphanumeric)
-                        .take(value_size)
-                        .map(char::from)
-                        .collect();
+                    let value_size = rng.random_range(config.value_size_range.0..config.value_size_range.1);
+                    let value = generate_random_alphanumeric(&mut rng, value_size);
                     
                     let start = Instant::now();
                     let result = db.put(key.as_bytes(), value.as_bytes());
@@ -407,28 +407,32 @@ impl StressTestFramework {
                     });
                 } else if op_choice < 60 {
                     // Read operation
-                    let key_num = rng.gen_range(0..config.key_space_size);
+                    let key_num = rng.random_range(0..config.key_space_size);
                     let key = format!("key_{:06}", key_num);
                     
                     let start = Instant::now();
                     let result = db.get(key.as_bytes());
                     let latency_us = start.elapsed().as_micros() as u64;
                     
-                    let success = result.is_ok();
-                    if let Ok(Some(value)) = result {
-                        let value_str = String::from_utf8_lossy(&value).to_string();
-                        consistency_checker.verify_read(&key, &value_str);
-                    }
+                    let (success, error) = match result {
+                        Ok(Some(value)) => {
+                            let value_str = String::from_utf8_lossy(&value).to_string();
+                            consistency_checker.verify_read(&key, &value_str);
+                            (true, None)
+                        }
+                        Ok(None) => (true, None),
+                        Err(e) => (false, Some(e.to_string())),
+                    };
                     
                     results.lock().push(OperationResult {
                         op_type: OperationType::Read,
                         success,
                         latency_us,
-                        error: result.err().map(|e| e.to_string()),
+                        error,
                     });
                 } else if op_choice < 80 {
                     // Update operation
-                    let key_num = rng.gen_range(0..config.key_space_size);
+                    let key_num = rng.random_range(0..config.key_space_size);
                     let key = format!("key_{:06}", key_num);
                     
                     // Read-modify-write pattern
@@ -465,7 +469,7 @@ impl StressTestFramework {
                     });
                 } else if op_choice < 90 {
                     // Delete operation
-                    let key_num = rng.gen_range(0..config.key_space_size);
+                    let key_num = rng.random_range(0..config.key_space_size);
                     let key = format!("key_{:06}", key_num);
                     
                     let start = Instant::now();
@@ -484,11 +488,11 @@ impl StressTestFramework {
                     });
                 } else {
                     // Range scan operation
-                    let start_key = format!("key_{:06}", rng.gen_range(0..config.key_space_size - 100));
-                    let end_key = format!("key_{:06}", rng.gen_range(0..100) + config.key_space_size - 100);
+                    let start_key = format!("key_{:06}", rng.random_range(0..config.key_space_size - 100));
+                    let end_key = format!("key_{:06}", rng.random_range(0..100) + config.key_space_size - 100);
                     
                     let start = Instant::now();
-                    let result = db.range_scan(start_key.as_bytes(), end_key.as_bytes(), 100);
+                    let result = db.range(Some(start_key.as_bytes()), Some(end_key.as_bytes()));
                     let latency_us = start.elapsed().as_micros() as u64;
                     
                     results.lock().push(OperationResult {
@@ -517,7 +521,7 @@ impl StressTestFramework {
         
         thread::spawn(move || {
             barrier.wait();
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             
             while !stop_flag.load(Ordering::Relaxed) {
                 if config.enable_chaos {
@@ -535,22 +539,18 @@ impl StressTestFramework {
                         
                         // Perform multiple operations in transaction
                         for _ in 0..config.transaction_size {
-                            let key_num = rng.gen_range(0..config.key_space_size);
+                            let key_num = rng.random_range(0..config.key_space_size);
                             let key = format!("key_{:06}", key_num);
-                            let value: String = rng
-                                .sample_iter(&Alphanumeric)
-                                .take(100)
-                                .map(char::from)
-                                .collect();
+                            let value = generate_random_alphanumeric(&mut rng, 100);
                             
                             if rng.gen_bool(0.7) {
                                 // Write operation
-                                if db.tx_put(tx_id, key.as_bytes(), value.as_bytes()).is_ok() {
+                                if db.put_tx(tx_id, key.as_bytes(), value.as_bytes()).is_ok() {
                                     tx_ops.push((key, Some(value)));
                                 }
                             } else {
                                 // Delete operation
-                                if db.tx_delete(tx_id, key.as_bytes()).is_ok() {
+                                if db.delete_tx(tx_id, key.as_bytes()).is_ok() {
                                     tx_ops.push((key, None));
                                 }
                             }
@@ -572,7 +572,7 @@ impl StressTestFramework {
                             Err(e) => {
                                 error = Some(format!("Transaction commit failed: {}", e));
                                 // Rollback
-                                let _ = db.rollback_transaction(tx_id);
+                                let _ = db.abort_transaction(tx_id);
                             }
                         }
                     }
@@ -696,15 +696,15 @@ impl ConsistencyChecker {
     }
     
     fn record_write(&self, key: String, value: String) {
-        self.expected_state.write().insert(key, Some(value));
+        self.expected_state.write().unwrap().insert(key, Some(value));
     }
     
     fn record_delete(&self, key: String) {
-        self.expected_state.write().insert(key, None);
+        self.expected_state.write().unwrap().insert(key, None);
     }
     
     fn verify_read(&self, key: &str, value: &str) -> bool {
-        let state = self.expected_state.read();
+        let state = self.expected_state.read().unwrap();
         match state.get(key) {
             Some(Some(expected)) => expected == value,
             Some(None) => false, // Key should be deleted
@@ -713,7 +713,7 @@ impl ConsistencyChecker {
     }
     
     fn check_consistency(&self, db: &Database) -> u64 {
-        let state = self.expected_state.read();
+        let state = self.expected_state.read().unwrap();
         let mut violations = 0;
         
         for (key, expected_value) in state.iter() {
@@ -763,17 +763,17 @@ impl ChaosInjector {
             return;
         }
         
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         
         // 1% chance of delay
         if rng.gen_bool(0.01) {
-            let delay_ms = rng.gen_range(1..50);
+            let delay_ms = rng.random_range(1..50);
             thread::sleep(Duration::from_millis(delay_ms));
         }
         
         // 0.1% chance of long delay
         if rng.gen_bool(0.001) {
-            let delay_ms = rng.gen_range(100..500);
+            let delay_ms = rng.random_range(100..500);
             thread::sleep(Duration::from_millis(delay_ms));
         }
     }

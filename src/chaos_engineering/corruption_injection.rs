@@ -11,11 +11,11 @@ use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
 use std::thread;
 use std::time::{Duration, SystemTime};
 use std::path::{Path, PathBuf};
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::{Write, Read, Seek, SeekFrom};
 use parking_lot::{RwLock, Mutex};
 use rand::{Rng, thread_rng, rngs::StdRng, SeedableRng};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Corruption injection test
 pub struct CorruptionInjectionTest {
@@ -129,6 +129,7 @@ struct CorruptionDetectionEngine {
 }
 
 /// Trait for corruption detection methods
+#[allow(dead_code)]
 trait CorruptionDetector: Send + Sync {
     /// Name of the detection method
     fn name(&self) -> &str;
@@ -142,6 +143,7 @@ trait CorruptionDetector: Send + Sync {
 
 /// Metadata for data being checked
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct DataMetadata {
     location: String,
     data_type: DataType,
@@ -152,6 +154,7 @@ struct DataMetadata {
 
 /// Type of data being checked
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 enum DataType {
     Page,
     WALRecord,

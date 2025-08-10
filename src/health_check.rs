@@ -192,7 +192,7 @@ impl HealthCheckSystem {
     /// Start health check system
     pub async fn start(&self) -> Result<()> {
         if self.running.swap(true, Ordering::SeqCst) {
-            return Err(Error::Other("Health check system already running".into()));
+            return Err(Error::Generic("Health check system already running".into()));
         }
 
         let running = self.running.clone();
@@ -449,9 +449,9 @@ impl HealthCheckSystem {
         let perf_stats = db.get_performance_stats()?;
         
         Ok(HealthMetrics {
-            ops_per_second: perf_stats.ops_per_second,
-            avg_latency_us: perf_stats.avg_latency.as_micros() as f64,
-            p99_latency_us: perf_stats.p99_latency.as_micros() as f64,
+            ops_per_second: perf_stats.operations_per_second,
+            avg_latency_us: perf_stats.average_latency_us,
+            p99_latency_us: perf_stats.p99_latency_us,
             cache_hit_rate: stats.cache_hit_rate.unwrap_or(0.0),
             memory_usage_bytes: stats.memory_usage_bytes,
             disk_usage_bytes: stats.disk_usage_bytes,

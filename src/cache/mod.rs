@@ -16,7 +16,7 @@ pub use adaptive_sizing::{
     AdaptiveCacheSizer, AdaptiveSizingConfig, WorkloadPattern, CachePerformanceMetrics,
     SizingDecision, SizingReason, CacheTier, CacheAllocation, AdaptiveSizingStats, CacheWarmer,
 };
-pub use arc_cache::ArcCache;
+pub use arc_cache::{ArcCache, ArcCacheStats};
 pub use batch_eviction::{BatchEvictingArcCache, BatchEvictionConfig, BatchEvictionStats};
 pub use lock_free_cache::{LockFreeCache, SegmentedLockFreeCache};
 pub use memory_pool::MemoryPool;

@@ -2,8 +2,8 @@
 //! 
 //! Validates data integrity using CRC32 checksums for pages, keys, and values.
 
-use crate::{Database, Result, Error};
-use crate::storage::{PageManager, Page, PageType, PAGE_SIZE, PageManagerAsync};
+use crate::{Database, Result};
+use crate::storage::{PageManager, Page, PageType, PageManagerAsync};
 use super::{ChecksumError, ChecksumErrorType, calculate_checksum};
 use std::sync::Arc;
 use parking_lot::RwLock;
@@ -253,7 +253,7 @@ impl ChecksumValidator {
         }
         
         // Calculate checksum of metadata content
-        let calculated_checksum = calculate_checksum(&page.data);
+        let calculated_checksum = calculate_checksum(&*page.data);
         
         // In real implementation, compare with stored checksum
         true
@@ -261,7 +261,7 @@ impl ChecksumValidator {
 
     /// Quick checksum validation for a range of pages
     pub async fn validate_range(&self, start_page: u64, end_page: u64) -> Result<Vec<ChecksumError>> {
-        let mut errors = Vec::new();
+        let errors: Vec<ChecksumError> = Vec::new();
         
         for page_id in start_page..=end_page {
             if !self.validate_page(page_id).await.unwrap_or(false) {
@@ -274,21 +274,32 @@ impl ChecksumValidator {
 
     /// Calculate and update checksums for a page
     pub async fn update_page_checksums(&self, page_id: u64) -> Result<()> {
-        let mut page = self.page_manager.load_page(page_id).await?;
+        let page = self.page_manager.load_page(page_id).await?;
+        
+        // Clone the data to make it mutable
+        let mut data = (*page.data).clone();
         
         // Update header checksum
-        let header_data = &page.data[8..32];
+        let header_data = &data[8..32];
         let header_checksum = calculate_checksum(header_data);
-        page.data[4..8].copy_from_slice(&header_checksum.to_le_bytes());
+        data[4..8].copy_from_slice(&header_checksum.to_le_bytes());
         
         // Update data checksum
-        if page.data.len() > 32 {
-            let data_checksum = calculate_checksum(&page.data[32..]);
+        if data.len() > 32 {
+            let data_checksum = calculate_checksum(&data[32..]);
             // Store data checksum in appropriate location
         }
         
+        // Create a new page with the updated data
+        let updated_page = crate::storage::Page {
+            id: page.id,
+            data: Arc::new(data),
+            dirty: true,
+            page_type: page.page_type,
+        };
+        
         // Save updated page
-        self.page_manager.save_page(&page).await?;
+        self.page_manager.save_page(&updated_page).await?;
         
         Ok(())
     }

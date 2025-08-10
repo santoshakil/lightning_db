@@ -46,6 +46,17 @@ impl BTreeNode {
     }
 
     pub fn serialize_to_page(&self, page: &mut Page) -> Result<()> {
+        // Validate invariant before serializing
+        if self.node_type == NodeType::Internal && self.children.len() != self.entries.len() + 1 {
+            // Allow root to have 0 entries and 1 child (will be fixed by check_root_adjustment)
+            if !(self.entries.is_empty() && self.children.len() == 1) {
+                return Err(Error::Generic(format!(
+                    "Invalid internal node {}: {} entries but {} children", 
+                    self.page_id, self.entries.len(), self.children.len()
+                )));
+            }
+        }
+        
         let mut buffer = BytesMut::with_capacity(PAGE_SIZE);
 
         // Write page header
@@ -183,6 +194,17 @@ impl BTreeNode {
             }
         }
 
+        // Validate internal node invariant
+        if node_type == NodeType::Internal {
+            if children.len() != entries.len() + 1 {
+                // Don't try to fix - just return an error
+                return Err(Error::Generic(format!(
+                    "Corrupted internal node {}: {} entries but {} children",
+                    page.id, entries.len(), children.len()
+                )));
+            }
+        }
+        
         Ok(Self {
             page_id: page.id,
             node_type,
@@ -198,9 +220,10 @@ impl BTreeNode {
     }
 
     pub fn is_full(&self) -> bool {
-        // Conservative estimate - assume 32 bytes per entry
-        let estimated_size = 64 + self.entries.len() * 32 + self.children.len() * 4;
-        estimated_size > PAGE_SIZE - 100 // Leave some buffer
+        // Use accurate size calculation
+        let estimated_size = self.get_size_estimate();
+        // Leave 256 bytes buffer for new entry (typical max key+value size)
+        estimated_size > PAGE_SIZE - 256
     }
 
     pub fn is_underflow(&self) -> bool {

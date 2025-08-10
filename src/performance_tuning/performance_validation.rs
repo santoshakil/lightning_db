@@ -4,10 +4,10 @@
 //! running comprehensive benchmarks before and after optimization.
 
 use crate::{Database, LightningDbConfig, Result, Error};
-use crate::performance_tuning::{PerformanceMetrics, LatencyMetrics, TuningParameters, MLAutoTuner};
+use crate::performance_tuning::{PerformanceMetrics, LatencyMetrics, TuningParameters};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use parking_lot::RwLock;
 use serde::{Serialize, Deserialize};
 use tempfile::TempDir;
@@ -970,12 +970,10 @@ impl PerformanceValidationFramework {
             optimized.throughput_consistency.throughput_stability,
         );
         
-        let overall_improvement_pct = (
-            read_improvement_pct * 0.3 +
+        let overall_improvement_pct = read_improvement_pct * 0.3 +
             write_improvement_pct * 0.3 +
             latency_improvement_pct * 0.2 +
-            throughput_improvement_pct * 0.2
-        );
+            throughput_improvement_pct * 0.2;
         
         let mut significant_improvements = Vec::new();
         

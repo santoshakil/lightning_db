@@ -1,42 +1,82 @@
 # Lightning DB Examples
 
-This directory contains essential examples demonstrating key Lightning DB features.
+This directory contains comprehensive examples demonstrating Lightning DB features and usage patterns.
 
-## Core Examples
+## Directory Structure
 
-- **basic_usage.rs** - Basic database operations (create, read, update, delete)
-- **transactions.rs** - Transaction usage and ACID properties
-- **concurrent_access.rs** - Multi-threaded database access
-- **backup_restore.rs** - Backup and recovery operations
-- **encryption.rs** - Using encryption features
-- **performance_tuning.rs** - Performance optimization techniques
-- **migration.rs** - Schema migration examples
-- **monitoring.rs** - Setting up monitoring and metrics
-- **replication.rs** - Replication and high availability
-- **sharding.rs** - Distributed sharding setup
+### `basic/`
+Getting started with Lightning DB
+- `basic_usage.rs` - Simple CRUD operations
+- `demo.rs` - Quick demonstration of core features
+- `best_practices.rs` - Recommended patterns and practices
 
-## Platform-Specific Examples
+### `advanced/`
+Advanced features and capabilities
+- `encryption_example.rs` - Database encryption
+- `all_features.rs` - Comprehensive feature showcase
 
-- **android/** - Android integration
-- **ios/** - iOS integration  
-- **wasm/** - WebAssembly usage
-- **desktop/** - Desktop application integration
+### `benchmarks/`
+Performance testing and benchmarking
+- `benchmark.rs` - Performance benchmarks
+- `stress_test_suite.rs` - Stress testing scenarios
 
-## Advanced Examples
+### `production/`
+Production deployment examples
+- `config_management_demo.rs` - Configuration management
+- `health_check_server.rs` - Health monitoring server
+- `distributed_tracing_example.rs` - OpenTelemetry integration
 
-- **adaptive_compression.rs** - Advanced compression techniques
-- **numa_aware.rs** - NUMA-aware optimizations
-- **zero_copy_io.rs** - Zero-copy I/O operations
-- **vectorized_query.rs** - Vectorized query execution
+### `diagnostics/`
+Debugging and diagnostic tools
+- `transaction_debug_detailed.rs` - Transaction debugging
+- `transaction_loss_diagnostic.rs` - Transaction loss analysis
+- `transaction_manager_comparison.rs` - Transaction manager comparison
+- `version_store_debug.rs` - Version store debugging
+- `race_condition_diagnostic.rs` - Race condition detection
+
+### `migration_examples/`
+Database migration patterns
+- Progressive migration examples (e01-e10)
+- Zero-downtime migration strategies
+- Schema evolution patterns
+
+### Platform-Specific
+
+#### `android/`
+Android integration examples
+
+#### `ios/`
+iOS Swift integration with Package.swift
+
+#### `wasm/`
+WebAssembly browser examples
+
+#### `desktop/`
+Desktop application integration
 
 ## Running Examples
 
+### Basic Example
 ```bash
-# Run a specific example
 cargo run --example basic_usage
-
-# Run with release optimizations
-cargo run --release --example performance_tuning
 ```
+
+### Benchmark
+```bash
+cargo run --release --example benchmark
+```
+
+### Production Health Check
+```bash
+cargo run --release --example health_check_server
+```
+
+## Quick Start
+
+1. Start with `basic/basic_usage.rs` for fundamental operations
+2. Review `basic/best_practices.rs` for recommended patterns
+3. Explore `advanced/` for specific features you need
+4. Use `production/` examples for deployment guidance
+5. Reference `diagnostics/` for troubleshooting
 
 For more detailed documentation, see the [main documentation](../docs/).

@@ -4,11 +4,10 @@
 //! on specific NUMA nodes for optimal locality.
 
 use crate::{Result, Error};
-use crate::numa::topology::{NumaTopology, NumaNode};
+use crate::numa::topology::NumaTopology;
 use std::sync::Arc;
 use std::collections::HashMap;
 use std::alloc::{GlobalAlloc, Layout};
-use std::ptr;
 use parking_lot::RwLock;
 use serde::{Serialize, Deserialize};
 

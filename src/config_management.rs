@@ -3,13 +3,13 @@
 //! This module provides a comprehensive configuration management system
 //! supporting multiple environments, hot-reloading, validation, and templates.
 
-use crate::{Result, Error, LightningDbConfig, CompressionType, WalSyncMode};
+use crate::{Result, Error, LightningDbConfig, WalSyncMode};
+use crate::compression::CompressionType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 use notify::{Watcher, RecursiveMode, Event};
 use std::sync::mpsc;
 
@@ -329,7 +329,7 @@ impl ConfigManager {
             .clone();
         
         // Apply base configuration
-        let mut config = env_config.base;
+        let config = env_config.base;
         
         // Apply overrides
         // This would merge the overrides into the config
@@ -351,7 +351,7 @@ impl ConfigManager {
     pub fn enable_hot_reload(&mut self) -> Result<()> {
         let (tx, rx) = mpsc::channel();
         
-        let mut watcher = notify::recommended_watcher(move |res: Result<Event, _>| {
+        let mut watcher = notify::recommended_watcher(move |res: std::result::Result<Event, notify::Error>| {
             if let Ok(event) = res {
                 let _ = tx.send(event);
             }
@@ -447,7 +447,7 @@ impl ConfigManager {
             config: LightningDbConfig {
                 cache_size: 1024 * 1024 * 1024, // 1GB
                 compression_enabled: true,
-                compression_type: CompressionType::Lz4,
+                compression_type: 2, // Lz4
                 wal_sync_mode: WalSyncMode::Sync,
                 prefetch_enabled: true,
                 enable_statistics: true,
@@ -463,8 +463,8 @@ impl ConfigManager {
             config: LightningDbConfig {
                 cache_size: 1024 * 1024 * 64, // 64MB
                 compression_enabled: true,
-                compression_type: CompressionType::Zstd,
-                compression_level: 6,
+                compression_type: 1, // Zstd
+                compression_level: Some(6),
                 wal_sync_mode: WalSyncMode::Sync,
                 write_batch_size: 100,
                 max_active_transactions: 10,
@@ -482,7 +482,7 @@ impl ConfigManager {
             .ok_or_else(|| Error::Config(format!("Unknown template: {}", template_name)))?
             .clone();
         
-        let mut config = template.config;
+        let config = template.config;
         
         // Apply variables to template
         // This would substitute variables in the configuration
@@ -565,7 +565,7 @@ impl ConfigBuilder {
 
     /// Set cache size
     pub fn cache_size(mut self, size: usize) -> Self {
-        self.config.cache_size = size;
+        self.config.cache_size = size as u64;
         self
     }
 
@@ -577,7 +577,13 @@ impl ConfigBuilder {
 
     /// Set compression type
     pub fn compression_type(mut self, comp_type: CompressionType) -> Self {
-        self.config.compression_type = comp_type;
+        self.config.compression_type = match comp_type {
+            CompressionType::None => 0,
+            #[cfg(feature = "zstd-compression")]
+            CompressionType::Zstd => 1,
+            CompressionType::Lz4 => 2,
+            CompressionType::Snappy => 3,
+        };
         self
     }
 
@@ -622,7 +628,7 @@ mod tests {
 
         assert_eq!(config.cache_size, 1024 * 1024 * 1024);
         assert!(config.compression_enabled);
-        assert_eq!(config.compression_type, CompressionType::Zstd);
+        assert_eq!(config.compression_type, 1); // Zstd
     }
 
     #[test]

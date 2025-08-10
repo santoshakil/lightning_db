@@ -1,13 +1,12 @@
 use super::*;
 use std::sync::atomic::Ordering;
-use rand::{thread_rng, Rng};
 use tokio::time::Duration;
 
 impl RaftNode {
     /// Start an election
     pub async fn start_election(&self, pre_vote: bool) -> Result<()> {
-        let (mut current_term, last_log_index, last_log_term) = {
-            let persistent = self.persistent.read().unwrap();
+        let (current_term, last_log_index, last_log_term) = {
+            let persistent = self.persistent.read();
             let current_term = if pre_vote {
                 persistent.current_term
             } else {
@@ -25,7 +24,7 @@ impl RaftNode {
         
         // For actual election, update state
         if !pre_vote {
-            let mut persistent = self.persistent.write().unwrap();
+            let mut persistent = self.persistent.write();
             persistent.current_term = current_term;
             persistent.voted_for = Some(self.config.node_id);
             
@@ -36,7 +35,7 @@ impl RaftNode {
             self.volatile.state.store(NodeState::Candidate as u8, Ordering::Release);
             
             // Clear leader state
-            *self.leader.write().unwrap() = None;
+            *self.leader.write() = None;
             
             // Update metrics
             self.metrics.elections.fetch_add(1, Ordering::Relaxed);
@@ -56,7 +55,7 @@ impl RaftNode {
         
         // Get list of voting peers
         let voting_peers: Vec<NodeId> = {
-            let membership = self.membership.read().unwrap();
+            let membership = self.membership.read();
             membership.current.iter()
                 .filter(|(id, info)| **id != self.config.node_id && info.voting)
                 .map(|(id, _)| *id)
@@ -98,7 +97,7 @@ impl RaftNode {
                         if votes >= majority {
                             if pre_vote {
                                 // Won pre-vote, start actual election
-                                return self.start_election(false).await;
+                                return Box::pin(self.start_election(false)).await;
                             } else {
                                 // Won election, become leader
                                 return self.become_leader().await;
@@ -131,7 +130,7 @@ impl RaftNode {
         
         // Initialize leader state
         let last_log_index = {
-            let persistent = self.persistent.read().unwrap();
+            let persistent = self.persistent.read();
             persistent.log.last().map(|e| e.index).unwrap_or(0)
         };
         
@@ -146,7 +145,7 @@ impl RaftNode {
         
         // Initialize next_index and match_index for all peers
         let peers: Vec<NodeId> = {
-            let membership = self.membership.read().unwrap();
+            let membership = self.membership.read();
             membership.current.keys().filter(|id| **id != self.config.node_id).cloned().collect()
         };
         
@@ -155,7 +154,7 @@ impl RaftNode {
             leader_state.match_index.insert(peer_id, 0);
         }
         
-        *self.leader.write().unwrap() = Some(leader_state);
+        *self.leader.write() = Some(leader_state);
         
         // Update metrics
         self.metrics.elections_won.fetch_add(1, Ordering::Relaxed);
@@ -174,7 +173,7 @@ impl RaftNode {
     
     /// Handle RequestVote RPC
     pub async fn handle_request_vote(&self, args: RequestVoteArgs) -> Result<RequestVoteReply> {
-        let mut persistent = self.persistent.write().unwrap();
+        let mut persistent = self.persistent.write();
         
         // Reply false if term < currentTerm
         if args.term < persistent.current_term {
@@ -192,7 +191,7 @@ impl RaftNode {
             
             // Become follower
             self.volatile.state.store(NodeState::Follower as u8, Ordering::Release);
-            *self.leader.write().unwrap() = None;
+            *self.leader.write() = None;
         }
         
         // Check if we can grant vote
@@ -225,7 +224,7 @@ impl RaftNode {
         
         Ok(RequestVoteReply {
             term: if args.pre_vote { 
-                self.persistent.read().unwrap().current_term 
+                self.persistent.read().current_term 
             } else { 
                 args.term 
             },
@@ -241,7 +240,7 @@ impl RaftNode {
     /// Append a no-op entry to establish leadership
     async fn append_no_op(&self) -> Result<()> {
         let entry = {
-            let persistent = self.persistent.read().unwrap();
+            let persistent = self.persistent.read();
             let index = persistent.log.last().map(|e| e.index + 1).unwrap_or(1);
             
             LogEntry {
@@ -255,7 +254,7 @@ impl RaftNode {
         
         // Append to our log
         {
-            let mut persistent = self.persistent.write().unwrap();
+            let mut persistent = self.persistent.write();
             persistent.log.push(entry.clone());
             
             // Persist
@@ -275,7 +274,7 @@ impl RaftNode {
         }
         
         let peers: Vec<NodeId> = {
-            let membership = self.membership.read().unwrap();
+            let membership = self.membership.read();
             membership.current.keys().filter(|id| **id != self.config.node_id).cloned().collect()
         };
         
@@ -305,7 +304,7 @@ impl RaftNode {
     
     /// Check if a node's log is at least as up-to-date as ours
     fn is_log_up_to_date(&self, last_log_index: LogIndex, last_log_term: Term) -> bool {
-        let persistent = self.persistent.read().unwrap();
+        let persistent = self.persistent.read();
         
         if let Some(entry) = persistent.log.last() {
             last_log_term > entry.term || 
@@ -322,7 +321,7 @@ impl RaftNode {
             return Some(0);
         }
         
-        let persistent = self.persistent.read().unwrap();
+        let persistent = self.persistent.read();
         persistent.log.iter()
             .find(|entry| entry.index == index)
             .map(|entry| entry.term)

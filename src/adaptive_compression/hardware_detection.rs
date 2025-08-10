@@ -772,7 +772,7 @@ impl SoftwareAcceleration {
     
     fn detect_openmp() -> bool {
         // Check if OpenMP is available
-        cfg!(feature = "openmp") // Would be set by build script
+        false // Placeholder - would be set by build script
     }
 }
 

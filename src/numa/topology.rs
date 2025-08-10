@@ -4,9 +4,8 @@
 //! providing information about NUMA nodes, CPU cores, and memory layout.
 
 use crate::{Result, Error};
-use std::collections::{HashMap, BTreeSet};
+use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
 use serde::{Serialize, Deserialize};
 
 /// NUMA topology information
@@ -612,7 +611,7 @@ impl NumaTopology {
     /// Get macOS cache information
     #[cfg(target_os = "macos")]
     fn get_macos_cache_info() -> CacheInfo {
-        use std::process::Command;
+        
         
         // Try to get cache sizes from sysctl
         let l1d_size = Self::get_sysctl_value("hw.l1dcachesize").unwrap_or(32768) / 1024;

@@ -5,8 +5,9 @@
 
 use crate::{Result, Error};
 use super::{
-    DataType, Value, JoinType, JoinCondition, SIMDOperations, ColumnarTable, ColumnBatch,
-    ExecutionStats, VECTOR_BATCH_SIZE, ColumnarTableBuilder, ColumnDefinition
+    Value, JoinType, JoinCondition, SIMDOperations, ColumnarTable,
+    ExecutionStats, VECTOR_BATCH_SIZE, ColumnarTableBuilder,
+    ColumnDefinition, DataType
 };
 use std::collections::HashMap;
 use std::sync::Arc;

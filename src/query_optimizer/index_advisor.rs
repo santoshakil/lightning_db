@@ -3,13 +3,12 @@
 //! This module analyzes query patterns and recommends optimal indexes
 //! to improve query performance and reduce I/O costs.
 
-use crate::{Result, Error};
+use crate::Result;
 use super::{
     StatisticsManager, CostModel, LogicalQuery, Predicate, ComparisonOp, Value,
-    JoinCondition, IndexRecommendation, IndexType, OptimizerConfig,
-    TableStatistics, ColumnStatistics, PhysicalOperator
+    JoinCondition, IndexRecommendation, IndexType, OptimizerConfig
 };
-use std::collections::{HashMap, HashSet, BTreeMap};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Index advisor for recommending optimal indexes
@@ -408,7 +407,7 @@ impl IndexAdvisor {
 
     /// Generate covering index candidates
     fn generate_covering_index_candidates(&self, workload: &WorkloadAnalysis) -> Result<Vec<IndexCandidate>> {
-        let mut candidates = Vec::new();
+        let candidates = Vec::new();
         
         // Analyze patterns where covering indexes would be beneficial
         // For now, return empty - would implement based on SELECT column patterns

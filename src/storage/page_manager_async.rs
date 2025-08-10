@@ -2,7 +2,7 @@
 //! 
 //! Provides async methods for page operations needed by integrity validation.
 
-use crate::error::{Result, Error};
+use crate::error::Result;
 use super::{Page, PageManager, PageId};
 use std::sync::Arc;
 use parking_lot::RwLock;

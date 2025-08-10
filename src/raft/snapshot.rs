@@ -1,16 +1,15 @@
 use super::*;
 use std::sync::atomic::Ordering;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::fs::File;
 use std::path::{Path, PathBuf};
 use crc32fast::Hasher;
-use bincode::{encode_to_vec, decode_from_slice, config, Encode, Decode};
+use bincode::{encode_to_vec, decode_from_slice, config};
 
 impl RaftNode {
     /// Check if snapshot is needed
     pub fn should_snapshot(&self) -> bool {
         let last_applied = self.volatile.last_applied.load(Ordering::Acquire);
-        let persistent = self.persistent.read().unwrap();
+        let persistent = self.persistent.read();
         
         // Check if we have enough entries since last snapshot
         if let Some(snapshot) = self.last_snapshot_index() {
@@ -33,13 +32,13 @@ impl RaftNode {
         
         // Get the term of last applied entry
         let (last_term, config) = {
-            let persistent = self.persistent.read().unwrap();
+            let persistent = self.persistent.read();
             let last_term = persistent.log.iter()
                 .find(|e| e.index == last_applied)
                 .map(|e| e.term)
                 .unwrap_or(0);
             
-            let config = self.membership.read().unwrap().clone();
+            let config = self.membership.read().clone();
             
             (last_term, config)
         };
@@ -74,7 +73,7 @@ impl RaftNode {
     
     /// Compact log by removing entries before snapshot
     async fn compact_log(&self, snapshot_index: LogIndex) -> Result<()> {
-        let mut persistent = self.persistent.write().unwrap();
+        let mut persistent = self.persistent.write();
         
         // Keep some entries before snapshot for safety
         let keep_from = snapshot_index.saturating_sub(100);
@@ -98,7 +97,7 @@ impl RaftNode {
     
     /// Install snapshot from leader
     pub async fn handle_install_snapshot(&self, args: InstallSnapshotArgs) -> Result<InstallSnapshotReply> {
-        let mut persistent = self.persistent.write().unwrap();
+        let mut persistent = self.persistent.write();
         
         // Reply immediately if term < currentTerm
         if args.term < persistent.current_term {
@@ -118,7 +117,7 @@ impl RaftNode {
             
             // Become follower
             self.volatile.state.store(NodeState::Follower as u8, Ordering::Release);
-            *self.leader.write().unwrap() = None;
+            *self.leader.write() = None;
         }
         
         // Reset election timer
@@ -127,6 +126,9 @@ impl RaftNode {
         
         // Update leader info
         self.metrics.current_leader.store(args.leader_id, Ordering::Release);
+        
+        // Save data length before moving args
+        let data_len = args.data.len();
         
         // Handle snapshot installation
         if args.done {
@@ -139,7 +141,7 @@ impl RaftNode {
         
         Ok(InstallSnapshotReply {
             term: self.current_term(),
-            bytes_received: args.data.len(),
+            bytes_received: data_len,
         })
     }
     
@@ -173,11 +175,11 @@ impl RaftNode {
         self.volatile.commit_index.store(args.last_included_index, Ordering::Release);
         
         // Discard log entries before snapshot
-        let mut persistent = self.persistent.write().unwrap();
+        let mut persistent = self.persistent.write();
         persistent.log.retain(|e| e.index > args.last_included_index);
         
         // Update membership
-        *self.membership.write().unwrap() = snapshot.config;
+        *self.membership.write() = snapshot.config;
         
         println!("Snapshot installed successfully");
         
@@ -222,7 +224,7 @@ impl RaftNode {
                 self.metrics.snapshots_sent.fetch_add(1, Ordering::Relaxed);
                 
                 // Update next_index for peer
-                let mut leader_state = self.leader.write().unwrap();
+                let mut leader_state = self.leader.write();
                 if let Some(ref mut leader) = *leader_state {
                     leader.next_index.insert(peer_id, snapshot.last_index + 1);
                     leader.match_index.insert(peer_id, snapshot.last_index);

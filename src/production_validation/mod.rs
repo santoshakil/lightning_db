@@ -447,7 +447,7 @@ impl ProductionValidator {
             },
             WorkloadType::MixedReadWrite(read_percentage) => {
                 use rand::Rng as _;
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 while start.elapsed() < Duration::from_secs(10) {
                     let op_start = Instant::now();
                     if rng.gen_bool(read_percentage) {

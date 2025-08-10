@@ -3,12 +3,12 @@
 //! Provides streaming compression and decompression capabilities for large datasets
 //! and real-time scenarios with adaptive algorithm switching and buffer management.
 
-use crate::{Result, Error};
+use crate::Result;
 use super::{
-    CompressionAlgorithm, CompressionLevel, CompressionAlgorithmTrait,
+    CompressionAlgorithm, CompressionLevel,
     AdaptiveCompressionEngine, SelectionContext, DataType, StorageSpeed,
 };
-use std::io::{Read, Write, BufRead, BufReader, BufWriter};
+use std::io::{Read, Write, BufReader, BufWriter};
 use std::sync::Arc;
 use std::collections::VecDeque;
 use std::time::{Instant, Duration};
@@ -40,6 +40,7 @@ pub struct StreamingConfig {
 
 /// Streaming compression chunk
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct CompressionChunk {
     /// Original data
     data: Vec<u8>,
@@ -111,6 +112,7 @@ pub struct StreamingCompressor {
 }
 
 /// Streaming decompressor
+#[allow(dead_code)]
 pub struct StreamingDecompressor {
     /// Configuration
     config: StreamingConfig,
@@ -128,6 +130,7 @@ pub struct StreamingDecompressor {
 
 /// Chunk metadata for decompression
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ChunkMetadata {
     /// Algorithm used for compression
     algorithm: CompressionAlgorithm,

@@ -157,6 +157,70 @@ impl MetricsCollector {
         history[start..].to_vec()
     }
 
+    /// Get summary metrics as a HashMap (for compatibility)
+    pub fn get_summary_metrics(&self) -> HashMap<String, serde_json::Value> {
+        let snapshot = self.get_current_snapshot();
+        let mut metrics = HashMap::new();
+        
+        // Total operations
+        metrics.insert(
+            "total_operations".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(snapshot.reads + snapshot.writes)),
+        );
+        
+        // Calculate collection duration
+        let history = self.history.read();
+        let duration_secs = if !history.is_empty() {
+            history.last()
+                .map(|last| last.timestamp.elapsed().as_secs_f64())
+                .unwrap_or(1.0)
+        } else {
+            1.0
+        };
+        metrics.insert(
+            "collection_duration_secs".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(duration_secs)
+                    .unwrap_or_else(|| serde_json::Number::from(1))
+            ),
+        );
+        
+        // Latency metrics
+        metrics.insert(
+            "avg_latency_us".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(
+                (snapshot.avg_read_latency_us + snapshot.avg_write_latency_us) / 2,
+            )),
+        );
+        // Use average latency as approximation for p99 and p95 (not ideal but for compatibility)
+        let avg_latency = (snapshot.avg_read_latency_us + snapshot.avg_write_latency_us) / 2;
+        metrics.insert(
+            "p99_latency_us".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(avg_latency * 2)), // Approximate p99 as 2x average
+        );
+        metrics.insert(
+            "p95_latency_us".to_string(),
+            serde_json::Value::Number(serde_json::Number::from((avg_latency * 3) / 2)), // Approximate p95 as 1.5x average
+        );
+        
+        // Error rate
+        let total_ops = snapshot.reads + snapshot.writes;
+        let error_rate = if total_ops > 0 {
+            (snapshot.read_errors + snapshot.write_errors) as f64 / total_ops as f64
+        } else {
+            0.0
+        };
+        metrics.insert(
+            "error_rate".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(error_rate)
+                    .unwrap_or_else(|| serde_json::Number::from(0))
+            ),
+        );
+        
+        metrics
+    }
+
     /// Calculate metrics over a time window
     pub fn get_window_metrics(&self, window: Duration) -> Option<WindowMetrics> {
         let history = self.history.read();

@@ -27,10 +27,6 @@ pub use bloom_filter::{BloomFilter, BloomFilterBuilder};
 pub use tiered_storage::{StorageTier, TieredStorageManager};
 pub use write_engine::{WriteOptimizedEngine, WriteEngineConfig};
 
-use crate::{Result, Error};
-use std::path::Path;
-use std::sync::Arc;
-use parking_lot::RwLock;
 use serde::{Serialize, Deserialize};
 
 /// Configuration for the write-optimized storage engine

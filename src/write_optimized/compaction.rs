@@ -5,11 +5,11 @@
 
 use crate::{Result, Error};
 use crate::write_optimized::{SSTableReader, SSTableBuilder, SSTableMetadata};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use parking_lot::{RwLock, Mutex};
 use serde::{Serialize, Deserialize};
-use std::collections::{HashMap, BTreeMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH, Instant};
 use std::thread;
 use crossbeam_channel::{Receiver, Sender, unbounded};

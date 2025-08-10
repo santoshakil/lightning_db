@@ -56,6 +56,11 @@ crossbeam-channel = "0.5"
 encoding_rs = "0.8"
 parquet = "53.2"
 arrow = "53.2"
+serde_yaml = "0.9"
+toml = "0.8"
+notify = "6.1"
+lzma-rs = { version = "0.3", optional = true }
+brotli = { version = "6.0", optional = true }
 
 # Encryption dependencies
 aes-gcm = "0.10"
@@ -85,6 +90,7 @@ ctor = "0.2"
 
 [build-dependencies]
 prost-build = "0.14"
+chrono = { version = "0.4", features = ["serde"] }
 
 [features]
 default = ["zstd-compression", "rand"]
@@ -96,6 +102,8 @@ async = []
 monitoring = []
 testing = []
 proto = []
+lzma = ["dep:lzma-rs"]
+brotli = ["dep:brotli"]
 
 [lib]
 name = "lightning_db"
@@ -131,39 +139,43 @@ strip = true
 
 [[example]]
 name = "demo"
-path = "examples/demo.rs"
+path = "examples/basic/demo.rs"
 
 [[example]]
-name = "zero_copy_key_test"
-path = "examples/zero_copy_key_test.rs"
+name = "basic_usage"
+path = "examples/basic/basic_usage.rs"
 
 [[example]]
-name = "production_readiness_test"
-path = "examples/production_readiness_test.rs"
-
-[[example]]
-name = "critical_production_test"
-path = "examples/critical_production_test.rs"
-
-[[example]]
-name = "debug_transaction_issue"
-path = "examples/debug_transaction_issue.rs"
+name = "best_practices"
+path = "examples/basic/best_practices.rs"
 
 [[example]]
 name = "encryption_example"
-path = "examples/encryption_example.rs"
+path = "examples/advanced/encryption_example.rs"
 
 [[example]]
-name = "simple_lock_free_test"
-path = "examples/simple_lock_free_test.rs"
+name = "all_features"
+path = "examples/advanced/all_features.rs"
 
 [[example]]
-name = "split_test"
-path = "examples/split_test.rs"
+name = "benchmark"
+path = "examples/benchmarks/benchmark.rs"
 
 [[example]]
-name = "workload_profiles_demo"
-path = "examples/workload_profiles_demo.rs"
+name = "stress_test_suite"
+path = "examples/benchmarks/stress_test_suite.rs"
+
+[[example]]
+name = "config_management_demo"
+path = "examples/production/config_management_demo.rs"
+
+[[example]]
+name = "health_check_server"
+path = "examples/production/health_check_server.rs"
+
+[[example]]
+name = "distributed_tracing_example"
+path = "examples/production/distributed_tracing_example.rs"
 
 [[bench]]
 name = "mmap_benchmark"

@@ -102,12 +102,12 @@ fn test_btree_node_splits() {
 
     // Insert random keys to test random split patterns
     use rand::Rng;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut random_keys = Vec::new();
     
     for _ in 0..NUM_KEYS {
-        let key = format!("random_{:08}", rng.gen::<u32>());
-        let value = format!("rand_value_{}", rng.gen::<u32>());
+        let key = format!("random_{:08}", rng.random::<u32>());
+        let value = format!("rand_value_{}", rng.random::<u32>());
         db.put(key.as_bytes(), value.as_bytes()).unwrap();
         random_keys.push((key, value));
     }
@@ -286,7 +286,7 @@ fn test_btree_range_scans() {
         let mut count = 0;
         let mut prev_key = None;
 
-        for result in db.iter_prefix(prefix_bytes).unwrap() {
+        for result in db.scan_prefix(prefix_bytes).unwrap() {
             let (key, value) = result.unwrap();
             count += 1;
 
@@ -312,13 +312,12 @@ fn test_btree_range_scans() {
     let end = b"d_15";
     let mut range_count = 0;
 
-    for result in db.iter_range(start, end).unwrap() {
-        let (key, _) = result.unwrap();
+    for (key, _) in db.range(Some(start), Some(end)).unwrap() {
         range_count += 1;
         
         // Verify key is within range
-        assert!(key.as_slice() >= start);
-        assert!(key.as_slice() < end);
+        assert!(key.as_slice() >= start.as_ref());
+        assert!(key.as_slice() < end.as_ref());
     }
 
     // Should include: b_05 to b_19 (15), all of c (20), d_00 to d_14 (15) = 50 total
@@ -413,12 +412,12 @@ fn test_btree_stress_high_load() {
 
         let handle = thread::spawn(move || {
             let mut ops = 0u64;
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             use rand::Rng;
 
             while start.elapsed() < Duration::from_secs(DURATION_SECS) {
-                let op = rng.gen_range(0..100);
-                let key_num = rng.gen_range(0..10000);
+                let op = rng.random_range(0..100);
+                let key_num = rng.random_range(0..10000);
                 let key = format!("stress_key_{:05}", key_num);
 
                 match op {
@@ -428,12 +427,12 @@ fn test_btree_stress_high_load() {
                     }
                     61..=85 => {
                         // 25% writes
-                        let value = format!("stress_value_{}_{}_{}", thread_id, ops, rng.gen::<u32>());
+                        let value = format!("stress_value_{}_{}_{}", thread_id, ops, rng.random::<u32>());
                         let _ = db_clone.put(key.as_bytes(), value.as_bytes());
                     }
                     86..=95 => {
                         // 10% updates
-                        let value = format!("updated_{}_{}_{}", thread_id, ops, rng.gen::<u32>());
+                        let value = format!("updated_{}_{}_{}", thread_id, ops, rng.random::<u32>());
                         let _ = db_clone.put(key.as_bytes(), value.as_bytes());
                     }
                     _ => {
@@ -446,9 +445,9 @@ fn test_btree_stress_high_load() {
 
                 // Occasionally do range scans
                 if ops % 1000 == 0 {
-                    let start_key = format!("stress_key_{:05}", rng.gen_range(0..5000));
-                    let end_key = format!("stress_key_{:05}", rng.gen_range(5000..10000));
-                    let _ = db_clone.iter_range(start_key.as_bytes(), end_key.as_bytes());
+                    let start_key = format!("stress_key_{:05}", rng.random_range(0..5000));
+                    let end_key = format!("stress_key_{:05}", rng.random_range(5000..10000));
+                    let _ = db_clone.range(Some(start_key.as_bytes()), Some(end_key.as_bytes()));
                 }
             }
 

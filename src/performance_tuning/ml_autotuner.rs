@@ -3,10 +3,10 @@
 //! Implements intelligent performance optimization using machine learning algorithms
 //! to automatically tune Lightning DB parameters based on workload patterns.
 
-use crate::{Result, LightningDbConfig};
+use crate::Result;
 use crate::performance_tuning::{WorkloadType, PerformanceMetrics, TuningParameters};
 use std::collections::{HashMap, VecDeque};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 use serde::{Serialize, Deserialize};
 use rand::{thread_rng, Rng};
 

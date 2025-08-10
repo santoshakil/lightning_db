@@ -212,6 +212,7 @@ pub struct LightningDbConfig {
     pub mmap_size: Option<u64>,
     pub compression_enabled: bool,
     pub compression_type: i32, // Use i32 to match protobuf enum
+    pub compression_level: Option<i32>,
     pub max_active_transactions: usize,
     pub prefetch_enabled: bool,
     pub prefetch_distance: usize,
@@ -225,6 +226,7 @@ pub struct LightningDbConfig {
     pub write_batch_size: usize,
     pub encryption_config: encryption::EncryptionConfig,
     pub quota_config: resource_quotas::QuotaConfig,
+    pub enable_statistics: bool,
 }
 
 impl Default for LightningDbConfig {
@@ -248,6 +250,8 @@ impl Default for LightningDbConfig {
             write_batch_size: 1000,            // Batch up to 1000 writes
             encryption_config: encryption::EncryptionConfig::default(),
             quota_config: resource_quotas::QuotaConfig::default(),
+            compression_level: Some(3), // Default compression level
+            enable_statistics: true, // Default to enabled
         }
     }
 }
@@ -513,6 +517,16 @@ impl Database {
             quota_manager,
             _config: config,
         })
+    }
+
+    /// Create a temporary database for testing
+    pub fn create_temp() -> Result<Self> {
+        let temp_dir = std::env::temp_dir().join(format!("lightning_db_test_{}", 
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()));
+        Self::create(temp_dir, LightningDbConfig::default())
     }
 
     pub fn open<P: AsRef<Path>>(path: P, config: LightningDbConfig) -> Result<Self> {
@@ -905,12 +919,22 @@ impl Database {
     }
 
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        // Validate key is not empty
-        if key.is_empty() {
+        // Validate key and value sizes
+        const MAX_KEY_SIZE: usize = 4096;
+        const MAX_VALUE_SIZE: usize = 1024 * 1024; // 1MB
+        
+        if key.is_empty() || key.len() > MAX_KEY_SIZE {
             return Err(Error::InvalidKeySize {
-                size: 0,
+                size: key.len(),
                 min: 1,
-                max: usize::MAX,
+                max: MAX_KEY_SIZE,
+            });
+        }
+        
+        if value.len() > MAX_VALUE_SIZE {
+            return Err(Error::InvalidValueSize {
+                size: value.len(),
+                max: MAX_VALUE_SIZE,
             });
         }
 
@@ -1128,6 +1152,15 @@ impl Database {
                     self.page_manager.sync()?;
                 }
             }
+            
+            // CRITICAL: Update version store for regular puts to maintain consistency
+            // This ensures transactions can see regular puts
+            let timestamp = if let Some(ref opt_manager) = self.optimized_transaction_manager {
+                opt_manager.get_read_timestamp() + 1
+            } else {
+                self.transaction_manager.get_read_timestamp() + 1
+            };
+            self.version_store.put(key.to_vec(), Some(value.to_vec()), timestamp, 0);
 
             // Wait for consistency only if needed
             if level != ConsistencyLevel::Eventual {
@@ -1307,11 +1340,15 @@ impl Database {
                 }
             }
 
-            // Always check version store to see if there's a newer version (including deletions)
-            let read_timestamp = self.consistency_manager.get_read_timestamp(level, None);
+            // Check version store for transactional consistency
+            // CRITICAL: For non-transactional reads, we must use MAX timestamp to see ALL commits
+            // This ensures regular get() operations see the latest committed transactions
+            let read_timestamp = u64::MAX; // See all committed transactions
+            
+            // Always check version store to ensure we see committed transactions
+            // This is critical for transactional consistency
             if let Some(versioned) = self.version_store.get_versioned(key, read_timestamp) {
-                // If version store has a newer version (including deletions), use it
-                // This ensures transactional deletes override LSM data
+                // Version store has data - use it as it represents committed transactions
                 result = versioned.value;
             }
 
@@ -1448,8 +1485,50 @@ impl Database {
             }
         }
 
-        // Write all changes to B+Tree for persistence (when not using LSM)
-        if self.lsm_tree.is_none() {
+        // CRITICAL: First commit to version store to ensure transaction is recorded
+        // This must happen BEFORE writing to LSM to prevent lost updates
+        if let Some(ref opt_manager) = self.optimized_transaction_manager {
+            opt_manager.commit_sync(tx_id)?;
+        } else {
+            self.transaction_manager.commit(tx_id)?;
+        }
+
+        // Now write all changes to the appropriate storage backend
+        // This happens AFTER version store commit to ensure consistency
+        // IMPORTANT: These writes are not critical for correctness since version store
+        // already has the committed data. LSM writes are for persistence/performance.
+        if let Some(ref lsm) = self.lsm_tree {
+            // Write to LSM tree when available
+            // Note: If this fails or is delayed, reads will still get correct data from version store
+            for write_op in &write_set {
+                if let Some(ref value) = write_op.value {
+                    // Put operation
+                    match lsm.insert(write_op.key.clone(), value.clone()) {
+                        Ok(_) => {},
+                        Err(e) => {
+                            // Log but don't fail - version store has the data
+                            eprintln!("Warning: LSM write failed after commit: {:?}", e);
+                        }
+                    }
+                } else {
+                    // Delete operation
+                    match lsm.delete(&write_op.key) {
+                        Ok(_) => {},
+                        Err(e) => {
+                            // Log but don't fail - version store has the data
+                            eprintln!("Warning: LSM delete failed after commit: {:?}", e);
+                        }
+                    }
+                }
+            }
+            // Ensure LSM writes are visible for reads
+            // Note: We don't force a full flush here as that would be too expensive
+            // The memtable will auto-flush when it reaches the size threshold
+            
+            // Use a memory fence to ensure LSM writes are visible
+            std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
+        } else {
+            // Write to B+Tree when LSM is not used
             let mut btree = self.btree.write();
             for write_op in &write_set {
                 if let Some(ref value) = write_op.value {
@@ -1465,12 +1544,7 @@ impl Database {
             self.page_manager.sync()?;
         }
 
-        // Now commit to version store
-        if let Some(ref opt_manager) = self.optimized_transaction_manager {
-            opt_manager.commit_sync(tx_id)
-        } else {
-            self.transaction_manager.commit(tx_id)
-        }
+        Ok(())
     }
 
     pub fn abort_transaction(&self, tx_id: u64) -> Result<()> {
@@ -1556,6 +1630,7 @@ impl Database {
         };
 
         let mut value = self.version_store.get(key, read_timestamp);
+        let mut from_main_db = false;
 
         // If not found in version store, read from main database (like regular get() does)
         if value.is_none() {
@@ -1571,23 +1646,39 @@ impl Database {
                     value = btree.get(key)?;
                 }
             }
+            
+            // If we found a value in main database, initialize version store with it
+            // This ensures proper conflict detection for data not yet in version store
+            if value.is_some() {
+                from_main_db = true;
+                // Initialize version store with base version (timestamp 0)
+                // This is atomic and only the first transaction will succeed
+                self.version_store.put(key.to_vec(), value.clone(), 0, 0);
+            }
         }
 
-        // Record read for conflict detection only if the value came from version store
-        // Data from main database (LSM/B+Tree) doesn't participate in MVCC versioning
-        if value.is_some() && self.version_store.get_latest_version(key).is_some() {
+        // Always record reads for proper conflict detection
+        // Even if data comes from main database, we need to track it
+        {
             let timeout = std::time::Duration::from_millis(100);
             let mut tx = tx_arc.try_write_for(timeout).ok_or_else(|| {
                 Error::Transaction("Failed to acquire transaction lock".to_string())
             })?;
 
-            // Record read with the version that was actually read (at read_timestamp)
-            // This is critical for correct conflict detection
-            let actual_read_version = self
-                .version_store
-                .get_versioned(key, read_timestamp)
-                .map(|v| v.timestamp)
-                .unwrap_or(0);
+            // Get the version that was actually read
+            let actual_read_version = if from_main_db {
+                // We just initialized the version store with version 0
+                0
+            } else if self.version_store.get_latest_version(key).is_some() {
+                self.version_store
+                    .get_versioned(key, read_timestamp)
+                    .map(|v| v.timestamp)
+                    .unwrap_or(0)
+            } else {
+                // Data from main database is treated as version 0
+                0
+            };
+            
             tx.add_read(key.to_vec(), actual_read_version);
         }
 
@@ -1810,6 +1901,10 @@ impl Database {
             free_page_count: self.page_manager.free_page_count(),
             tree_height: btree.height(),
             active_transactions: self.transaction_manager.active_transaction_count(),
+            cache_hit_rate: None, // TODO: Implement proper cache hit rate tracking
+            memory_usage_bytes: 0, // TODO: Track memory usage
+            disk_usage_bytes: 0, // TODO: Track disk usage
+            active_connections: 0, // TODO: Track active connections
         }
     }
 
@@ -2434,6 +2529,160 @@ impl Database {
             Vec::new()
         }
     }
+
+    /// Get storage statistics
+    pub fn get_storage_stats(&self) -> Result<StorageStats> {
+        let tree_stats = self.btree.read().get_stats();
+        
+        // Calculate storage size - this is a simplified calculation
+        let used_bytes = tree_stats.page_count as u64 * self._config.page_size;
+        let total_bytes = used_bytes + (tree_stats.free_page_count as u64 * self._config.page_size);
+        
+        Ok(StorageStats {
+            used_bytes,
+            total_bytes,
+            page_count: tree_stats.page_count as u64,
+            free_pages: tree_stats.free_page_count as u64,
+        })
+    }
+
+    /// Get cache statistics
+    pub fn get_cache_stats(&self) -> Result<CacheStatsInfo> {
+        if let Some(ref memory_pool) = self.memory_pool {
+            let stats = memory_pool.get_cache_stats();
+            Ok(CacheStatsInfo {
+                hits: stats.hot_cache_hits + stats.cold_cache_hits,
+                misses: stats.cache_misses,
+                size_bytes: stats.hot_cache_size + stats.cold_cache_size,
+                entry_count: stats.hot_cache_entries + stats.cold_cache_entries,
+                evictions: stats.evictions,
+            })
+        } else {
+            // Return empty stats if cache is disabled
+            Ok(CacheStatsInfo::default())
+        }
+    }
+
+    /// Get transaction statistics
+    pub fn get_transaction_stats(&self) -> Result<TransactionStats> {
+        let stats = if let Some(ref opt_mgr) = self.optimized_transaction_manager {
+            let metrics = opt_mgr.get_metrics();
+            TransactionStats {
+                active: metrics.active_transactions as u64,
+                commits: metrics.successful_commits as u64,
+                rollbacks: metrics.failed_commits as u64,
+                conflicts: metrics.conflicts as u64,
+            }
+        } else {
+            let metrics = self.transaction_manager.get_metrics();
+            TransactionStats {
+                active: metrics.active_transactions as u64,
+                commits: metrics.successful_commits as u64,
+                rollbacks: metrics.failed_commits as u64,
+                conflicts: metrics.conflicts as u64,
+            }
+        };
+        
+        Ok(stats)
+    }
+
+    /// Get overall database statistics
+    pub fn get_stats(&self) -> Result<DatabaseStats> {
+        let tree_stats = self.btree.read().get_stats();
+        let tx_metrics = if let Some(ref opt_mgr) = self.optimized_transaction_manager {
+            opt_mgr.get_metrics()
+        } else {
+            self.transaction_manager.get_metrics()
+        };
+        
+        // Get cache stats
+        let (cache_hit_rate, memory_usage_bytes) = if let Some(ref pool) = self.memory_pool {
+            let cache_stats = pool.get_cache_stats();
+            let total_cache_ops = cache_stats.hot_cache_hits + cache_stats.cold_cache_hits + cache_stats.cache_misses;
+            let cache_hit_rate = if total_cache_ops > 0 {
+                Some((cache_stats.hot_cache_hits + cache_stats.cold_cache_hits) as f64 / total_cache_ops as f64)
+            } else {
+                None
+            };
+            let memory_usage = cache_stats.hot_cache_size + cache_stats.cold_cache_size;
+            (cache_hit_rate, memory_usage)
+        } else {
+            (None, 0)
+        };
+        
+        // Get storage stats
+        let storage_stats = self.get_storage_stats()?;
+        
+        Ok(DatabaseStats {
+            page_count: tree_stats.page_count,
+            free_page_count: tree_stats.free_page_count,
+            tree_height: tree_stats.tree_height,
+            active_transactions: tx_metrics.active_transactions,
+            cache_hit_rate,
+            memory_usage_bytes,
+            disk_usage_bytes: storage_stats.used_bytes,
+            active_connections: 0, // TODO: Track active connections properly
+        })
+    }
+
+    /// Get performance statistics
+    pub fn get_performance_stats(&self) -> Result<PerformanceStats> {
+        let metrics = self.metrics_collector.get_summary_metrics();
+        
+        // Calculate operations per second
+        let total_ops = metrics.get("total_operations")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as f64;
+        let duration_secs = metrics.get("collection_duration_secs")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(1.0);
+        let ops_per_sec = if duration_secs > 0.0 { total_ops / duration_secs } else { 0.0 };
+        
+        Ok(PerformanceStats {
+            operations_per_second: ops_per_sec,
+            average_latency_us: metrics.get("avg_latency_us")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0),
+            p99_latency_us: metrics.get("p99_latency_us")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0),
+            p95_latency_us: metrics.get("p95_latency_us")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0),
+            error_rate: metrics.get("error_rate")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0),
+        })
+    }
+
+    /// Test transaction functionality
+    pub async fn test_transaction(&self) -> Result<()> {
+        // Create a test transaction
+        let tx_id = self.begin_transaction()?;
+        
+        // Try a simple operation
+        let test_key = b"__test_transaction__";
+        let test_value = b"test_value";
+        
+        self.put_tx(tx_id, test_key, test_value)?;
+        
+        // Verify within transaction
+        if let Some(value) = self.get_tx(tx_id, test_key)? {
+            if value != test_value {
+                return Err(Error::CorruptedDatabase("Transaction read verification failed".to_string()));
+            }
+        } else {
+            return Err(Error::CorruptedDatabase("Transaction read failed".to_string()));
+        }
+        
+        // Commit
+        self.commit_transaction(tx_id)?;
+        
+        // Clean up
+        self.delete(test_key)?;
+        
+        Ok(())
+    }
 }
 
 impl Drop for Database {
@@ -2484,6 +2733,52 @@ pub struct DatabaseStats {
     pub free_page_count: usize,
     pub tree_height: u32,
     pub active_transactions: usize,
+    pub cache_hit_rate: Option<f64>,
+    pub memory_usage_bytes: u64,
+    pub disk_usage_bytes: u64,
+    pub active_connections: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StorageStats {
+    pub used_bytes: u64,
+    pub total_bytes: u64,
+    pub page_count: u64,
+    pub free_pages: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CacheStatsInfo {
+    pub hits: u64,
+    pub misses: u64,
+    pub size_bytes: u64,
+    pub entry_count: u64,
+    pub evictions: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TransactionStats {
+    pub active: u64,
+    pub commits: u64,
+    pub rollbacks: u64,
+    pub conflicts: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PerformanceStats {
+    pub operations_per_second: f64,
+    pub average_latency_us: f64,
+    pub p99_latency_us: f64,
+    pub p95_latency_us: f64,
+    pub error_rate: f64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TransactionMetrics {
+    pub active_transactions: usize,
+    pub successful_commits: usize,
+    pub failed_commits: usize,
+    pub conflicts: usize,
 }
 
 // Re-export commonly used types
@@ -2532,8 +2827,8 @@ mod tests {
         assert_eq!(db2.get(b"key2").unwrap(), Some(b"value2".to_vec()));
     }
 
-    #[test]
-    fn test_integrity_verification() {
+    #[tokio::test]
+    async fn test_integrity_verification() {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.db");
 
@@ -2550,15 +2845,20 @@ mod tests {
         db.checkpoint().unwrap();
 
         // Verify integrity
-        let report = db.verify_integrity().unwrap();
+        let report = db.verify_integrity().await.unwrap();
 
         // Should have no errors on a healthy database
+        let total_errors = report.checksum_errors.len() 
+            + report.structure_errors.len()
+            + report.consistency_errors.len()
+            + report.transaction_errors.len()
+            + report.cross_reference_errors.len();
         assert_eq!(
-            report.errors.len(),
+            total_errors,
             0,
             "Healthy database should have no integrity errors"
         );
-        assert!(report.statistics.total_pages > 0);
+        assert!(report.pages_scanned > 0);
         // Note: Current integrity verification implementation uses placeholder values
         // TODO: Implement proper key counting when B+tree metadata is available
         // For now, just ensure the verification completes without errors

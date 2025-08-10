@@ -3,8 +3,7 @@
 //! This module provides direct I/O operations that bypass the kernel page cache
 //! for maximum performance and predictable latency.
 
-use super::*;
-use super::zero_copy_buffer::{AlignedBuffer, BufferAlignment, DIRECT_IO_ALIGN, PAGE_SIZE};
+use super::zero_copy_buffer::{AlignedBuffer, BufferAlignment};
 use std::os::unix::io::{RawFd, AsRawFd};
 use std::os::unix::fs::OpenOptionsExt;
 use std::fs::{File, OpenOptions};

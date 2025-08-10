@@ -8,7 +8,6 @@
 //! These algorithms provide better hit rates and scan resistance compared to
 //! traditional LRU/ARC caches.
 
-use crate::{Result, Error};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use parking_lot::{RwLock, Mutex};

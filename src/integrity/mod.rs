@@ -4,11 +4,9 @@
 //! in Lightning DB, including checksums, consistency checks, and repair utilities.
 
 use crate::{Database, Result, Error};
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
 use parking_lot::RwLock;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::SystemTime;
 use serde::{Serialize, Deserialize};
 use crc32fast::Hasher;
 
@@ -62,9 +60,9 @@ impl Default for IntegrityConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IntegrityReport {
     /// Start time of validation
-    pub start_time: Instant,
+    pub start_time: SystemTime,
     /// End time of validation
-    pub end_time: Option<Instant>,
+    pub end_time: Option<SystemTime>,
     /// Total pages scanned
     pub pages_scanned: u64,
     /// Total keys validated
@@ -251,7 +249,7 @@ impl IntegrityValidator {
             config,
             database,
             report: Arc::new(RwLock::new(IntegrityReport {
-                start_time: Instant::now(),
+                start_time: SystemTime::now(),
                 end_time: None,
                 pages_scanned: 0,
                 keys_validated: 0,
@@ -306,7 +304,7 @@ impl IntegrityValidator {
         
         // Generate final report
         let mut report = self.report.write();
-        report.end_time = Some(Instant::now());
+        report.end_time = Some(SystemTime::now());
         Ok(report.clone())
     }
 
@@ -432,8 +430,9 @@ impl IntegrityValidator {
         output.push_str(&format!("Keys Validated: {}\n", report.keys_validated));
         
         if let Some(end_time) = report.end_time {
-            let duration = end_time.duration_since(report.start_time);
-            output.push_str(&format!("Duration: {:?}\n", duration));
+            if let Ok(duration) = end_time.duration_since(report.start_time) {
+                output.push_str(&format!("Duration: {:?}\n", duration));
+            }
         }
         
         output.push_str("\n--- Errors Summary ---\n");

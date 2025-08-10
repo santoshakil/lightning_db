@@ -229,11 +229,11 @@ impl EncryptionManager {
 
         // Generate random nonce
         let mut nonce_bytes = vec![0u8; 12]; // 96-bit nonce for GCM
-        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        rand::rng().fill_bytes(&mut nonce_bytes);
 
         // Generate salt for additional security
         let mut salt = vec![0u8; 32];
-        rand::thread_rng().fill_bytes(&mut salt);
+        rand::rng().fill_bytes(&mut salt);
 
         let (encrypted_data, auth_tag) = match key.algorithm {
             EncryptionAlgorithm::AES256GCM => {
@@ -416,7 +416,7 @@ impl EncryptionManager {
     fn derive_master_key_hash(&self, password: &str) -> Result<String> {
         // Generate salt manually to avoid version conflicts
         let mut salt_bytes = [0u8; 16];
-        rand::thread_rng().fill_bytes(&mut salt_bytes);
+        rand::rng().fill_bytes(&mut salt_bytes);
         let salt = base64::encode(&salt_bytes);
         let salt = SaltString::from_b64(&salt)
             .map_err(|e| Error::Generic(format!("Failed to create salt: {}", e)))?;
@@ -455,7 +455,7 @@ impl EncryptionManager {
         // Generate random key material
         let key_size_bytes = self.config.key_size_bits / 8;
         let mut key_material = vec![0u8; key_size_bytes as usize];
-        rand::thread_rng().fill_bytes(&mut key_material);
+        rand::rng().fill_bytes(&mut key_material);
 
         // Derive additional entropy from master password
         let mut hasher = Sha256::new();

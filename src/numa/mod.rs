@@ -12,8 +12,7 @@
 
 use crate::{Result, Error};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::collections::{HashMap, BTreeSet};
+use std::collections::HashMap;
 use std::thread;
 use parking_lot::RwLock;
 use serde::{Serialize, Deserialize};

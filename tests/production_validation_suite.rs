@@ -10,7 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
 use tempfile::TempDir;
-use rand::{Rng, thread_rng, distributions::Alphanumeric};
+use rand::{Rng, thread_rng};
 
 /// Production validation configuration
 #[derive(Debug, Clone)]
@@ -46,7 +46,7 @@ pub struct ProductionValidationSuite {
     results: Vec<TestResult>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TestResult {
     name: String,
     passed: bool,
@@ -150,7 +150,7 @@ impl ProductionValidationSuite {
         let value = b"test_value";
         
         db.put(key, value)?;
-        let retrieved = db.get(key)?.ok_or("Value not found")?;
+        let retrieved = db.get(key)?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
         assert_eq!(retrieved, value);
         
         db.delete(key)?;
@@ -159,7 +159,10 @@ impl ProductionValidationSuite {
         // Test batch operations
         let mut batch = WriteBatch::new();
         for i in 0..100 {
-            batch.put(format!("key_{}", i).as_bytes(), format!("value_{}", i).as_bytes());
+            batch.put(
+                format!("key_{}", i).into_bytes(),
+                format!("value_{}", i).into_bytes()
+            )?;
         }
         db.write_batch(&batch)?;
 
@@ -167,7 +170,7 @@ impl ProductionValidationSuite {
         for i in 0..100 {
             let key = format!("key_{}", i);
             let expected = format!("value_{}", i);
-            let value = db.get(key.as_bytes())?.ok_or("Batch value not found")?;
+            let value = db.get(key.as_bytes())?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
             assert_eq!(value, expected.as_bytes());
         }
 
@@ -201,7 +204,7 @@ impl ProductionValidationSuite {
             
             let handle = thread::spawn(move || {
                 for _ in 0..100 {
-                    let mut tx = match db_clone.begin_transaction() {
+                    let tx_id = match db_clone.begin_transaction() {
                         Ok(tx) => tx,
                         Err(_) => {
                             error_count_clone.fetch_add(1, Ordering::Relaxed);
@@ -210,28 +213,34 @@ impl ProductionValidationSuite {
                     };
 
                     // Read balances
-                    let balance_a = tx.get(b"account_a").ok().flatten()
-                        .and_then(|v| std::str::from_utf8(&v).ok())
-                        .and_then(|s| s.parse::<i64>().ok())
-                        .unwrap_or(0);
+                    let balance_a = if let Ok(Some(v)) = db_clone.get_tx(tx_id, b"account_a") {
+                        std::str::from_utf8(&v).ok()
+                            .and_then(|s| s.parse::<i64>().ok())
+                            .unwrap_or(0)
+                    } else {
+                        0
+                    };
                     
-                    let balance_b = tx.get(b"account_b").ok().flatten()
-                        .and_then(|v| std::str::from_utf8(&v).ok())
-                        .and_then(|s| s.parse::<i64>().ok())
-                        .unwrap_or(0);
+                    let balance_b = if let Ok(Some(v)) = db_clone.get_tx(tx_id, b"account_b") {
+                        std::str::from_utf8(&v).ok()
+                            .and_then(|s| s.parse::<i64>().ok())
+                            .unwrap_or(0)
+                    } else {
+                        0
+                    };
 
                     // Transfer 10 units
                     if balance_a >= 10 {
-                        tx.put(b"account_a", format!("{}", balance_a - 10).as_bytes()).ok();
-                        tx.put(b"account_b", format!("{}", balance_b + 10).as_bytes()).ok();
+                        db_clone.put_tx(tx_id, b"account_a", format!("{}", balance_a - 10).as_bytes()).ok();
+                        db_clone.put_tx(tx_id, b"account_b", format!("{}", balance_b + 10).as_bytes()).ok();
                         
-                        if tx.commit().is_ok() {
+                        if db_clone.commit_transaction(tx_id).is_ok() {
                             transfer_count_clone.fetch_add(1, Ordering::Relaxed);
                         } else {
                             error_count_clone.fetch_add(1, Ordering::Relaxed);
                         }
                     } else {
-                        tx.rollback().ok();
+                        db_clone.abort_transaction(tx_id).ok();
                     }
                 }
             });
@@ -244,11 +253,17 @@ impl ProductionValidationSuite {
         }
 
         // Verify consistency
-        let final_a = db.get(b"account_a")?.ok_or("Account A not found")?;
-        let final_b = db.get(b"account_b")?.ok_or("Account B not found")?;
+        let final_a = db.get(b"account_a")?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
+        let final_b = db.get(b"account_b")?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
         
-        let balance_a: i64 = std::str::from_utf8(&final_a)?.parse()?;
-        let balance_b: i64 = std::str::from_utf8(&final_b)?.parse()?;
+        let balance_a: i64 = std::str::from_utf8(&final_a)
+            .map_err(|e| lightning_db::Error::Generic(e.to_string()))?
+            .parse()
+            .map_err(|e: std::num::ParseIntError| lightning_db::Error::Generic(e.to_string()))?;
+        let balance_b: i64 = std::str::from_utf8(&final_b)
+            .map_err(|e| lightning_db::Error::Generic(e.to_string()))?
+            .parse()
+            .map_err(|e: std::num::ParseIntError| lightning_db::Error::Generic(e.to_string()))?;
         
         let total = balance_a + balance_b;
         assert_eq!(total, 2000, "Money was created or destroyed!");
@@ -305,14 +320,16 @@ impl ProductionValidationSuite {
         }
 
         // Readers
-        for thread_id in config.thread_count / 2..config.thread_count {
+        let reader_operation_count = config.operation_count / (config.thread_count / 2);
+        let thread_count_half = config.thread_count / 2;
+        for thread_id in thread_count_half..config.thread_count {
             let db_clone = db.clone();
             let op_count = operation_count.clone();
             
             let handle = thread::spawn(move || {
                 let mut rng = thread_rng();
-                for _ in 0..config.operation_count / (config.thread_count / 2) {
-                    let reader_thread = rng.gen_range(0..config.thread_count / 2);
+                for _ in 0..reader_operation_count {
+                    let reader_thread = rng.gen_range(0..thread_count_half);
                     let key_index = rng.gen_range(0..100);
                     let key = format!("thread_{}_key_{}", reader_thread, key_index);
                     
@@ -366,7 +383,7 @@ impl ProductionValidationSuite {
             let write_time = start.elapsed();
             
             let start = Instant::now();
-            let retrieved = db.get(key.as_bytes())?.ok_or("Large value not found")?;
+            let retrieved = db.get(key.as_bytes())?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
             let read_time = start.elapsed();
             
             assert_eq!(retrieved.len(), value.len());
@@ -400,7 +417,7 @@ impl ProductionValidationSuite {
 
         // Test full scan
         let start = Instant::now();
-        let count = db.scan()?.count();
+        let count = db.scan(None, None)?.count();
         let scan_time = start.elapsed();
         assert_eq!(count, 10000);
         metrics.insert("full_scan_ms".to_string(), scan_time.as_millis() as f64);
@@ -414,7 +431,7 @@ impl ProductionValidationSuite {
 
         // Test range scan
         let start = Instant::now();
-        let count = db.scan_range(b"key_00001000"..b"key_00002000")?.count();
+        let count = db.scan(Some(b"key_00001000".to_vec()), Some(b"key_00002000".to_vec()))?.count();
         let range_time = start.elapsed();
         assert_eq!(count, 1000);
         metrics.insert("range_scan_ms".to_string(), range_time.as_millis() as f64);
@@ -450,7 +467,7 @@ impl ProductionValidationSuite {
         for i in 0..1000 {
             let key = format!("key_{}", i);
             let expected = format!("value_{}", i);
-            let value = db.get(key.as_bytes())?.ok_or("Data lost after recovery")?;
+            let value = db.get(key.as_bytes())?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
             assert_eq!(value, expected.as_bytes());
         }
 
@@ -487,7 +504,7 @@ impl ProductionValidationSuite {
         {
             let db = Database::open(&db_path, LightningDbConfig::default())?;
             for (key, expected_value) in &test_data {
-                let value = db.get(key.as_bytes())?.ok_or("Persisted data not found")?;
+                let value = db.get(key.as_bytes())?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
                 assert_eq!(value, expected_value.as_bytes());
             }
         }
@@ -788,9 +805,7 @@ impl ProductionValidationSuite {
         let stats = db.get_stats()?;
         
         let mut metrics = HashMap::new();
-        if let Some(cache_size) = stats.cache_size {
-            metrics.insert("cache_size_mb".to_string(), cache_size as f64 / 1024.0 / 1024.0);
-        }
+        metrics.insert("memory_usage_mb".to_string(), stats.memory_usage_bytes as f64 / 1024.0 / 1024.0);
         if let Some(cache_hit_rate) = stats.cache_hit_rate {
             metrics.insert("cache_hit_rate".to_string(), cache_hit_rate);
         }
@@ -874,7 +889,7 @@ impl ProductionValidationSuite {
 
         // Trigger compaction
         let start = Instant::now();
-        db.compact()?;
+        db.compact_lsm()?;
         let compaction_time = start.elapsed();
 
         // Verify remaining keys
@@ -905,9 +920,9 @@ impl ProductionValidationSuite {
         let db = Database::create(&db_path, LightningDbConfig::default())?;
 
         // Test transaction rollback on error
-        let mut tx = db.begin_transaction()?;
-        tx.put(b"tx_test", b"value")?;
-        tx.rollback()?;
+        let tx_id = db.begin_transaction()?;
+        db.put_tx(tx_id, b"tx_test", b"value")?;
+        db.abort_transaction(tx_id)?;
         
         // Verify rollback worked
         assert!(db.get(b"tx_test")?.is_none());
@@ -949,18 +964,18 @@ impl ProductionValidationSuite {
                 for _ in 0..25 {
                     let mut retries = 0;
                     loop {
-                        let mut tx = db_clone.begin_transaction().unwrap();
+                        let tx_id = db_clone.begin_transaction().unwrap();
                         
                         // Read-modify-write pattern
-                        let value = tx.get(b"conflict_key").unwrap().unwrap();
+                        let value = db_clone.get_tx(tx_id, b"conflict_key").unwrap().unwrap();
                         let num: u64 = std::str::from_utf8(&value)
                             .unwrap_or("0")
                             .parse()
                             .unwrap_or(0);
                         
-                        tx.put(b"conflict_key", format!("{}", num + 1).as_bytes()).unwrap();
+                        db_clone.put_tx(tx_id, b"conflict_key", format!("{}", num + 1).as_bytes()).unwrap();
                         
-                        match tx.commit() {
+                        match db_clone.commit_transaction(tx_id) {
                             Ok(_) => {
                                 success_count_clone.fetch_add(1, Ordering::Relaxed);
                                 break;

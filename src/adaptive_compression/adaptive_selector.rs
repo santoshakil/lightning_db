@@ -3,14 +3,12 @@
 //! Intelligent selection of compression algorithms based on data characteristics,
 //! hardware capabilities, and performance history.
 
-use crate::{Result, Error};
 use super::{
     CompressionAlgorithm, CompressionLevel, DataType, CompressionStats,
     HardwareCapabilities, AlgorithmStats, DataTypeStats,
 };
 use std::sync::Arc;
 use parking_lot::RwLock;
-use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 /// Algorithm selection strategy
@@ -97,6 +95,7 @@ pub struct AdaptiveSelector {
 
 /// Algorithm performance weights
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct AlgorithmWeights {
     /// Weight for compression ratio (higher is better)
     compression_ratio: f64,
@@ -114,6 +113,7 @@ struct AlgorithmWeights {
 
 /// Learning and adaptation parameters
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct LearningParameters {
     /// Learning rate for algorithm performance updates
     learning_rate: f64,

@@ -3,7 +3,7 @@
 //! High-performance filtering implementations using SIMD instructions.
 
 use crate::{Result, Error};
-use super::{FilterExpression, ComparisonOperator, Value, DataType, SIMDOperations};
+use super::{FilterExpression, Value, DataType, SIMDOperations};
 use std::sync::Arc;
 
 /// Vectorized filter executor

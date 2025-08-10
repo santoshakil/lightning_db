@@ -9,9 +9,8 @@
 
 use crate::{Result, Error};
 use serde::{Serialize, Deserialize};
-use std::collections::{HashMap, BTreeMap, HashSet};
-use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::SystemTime;
 
 pub mod statistics;
 pub mod cost_model;

@@ -2,12 +2,11 @@
 //! 
 //! Provides utilities to repair common database corruption issues.
 
-use crate::{Database, Result, Error};
+use crate::{Database, Result};
 use crate::storage::{PageManager, PageManagerAsync, Page};
-use crate::btree::node::{BTreeNode, NodeType};
+use crate::btree::node::BTreeNode;
 use super::*;
 use std::sync::Arc;
-use std::collections::{HashMap, HashSet};
 use parking_lot::RwLock;
 
 /// Database repair tool
@@ -91,16 +90,27 @@ impl RepairTool {
         };
         
         match self.page_manager.load_page(page_id).await {
-            Ok(mut page) => {
+            Ok(page) => {
+                // Clone the data to make it mutable
+                let mut data = (*page.data).clone();
+                
                 // Recalculate header checksum
-                let header_data = &page.data[8..32];
+                let header_data = &data[8..32];
                 let new_checksum = calculate_checksum(header_data);
                 
                 // Update checksum in header
-                page.data[4..8].copy_from_slice(&new_checksum.to_le_bytes());
+                data[4..8].copy_from_slice(&new_checksum.to_le_bytes());
+                
+                // Create a new page with the updated data
+                let updated_page = Page {
+                    id: page.id,
+                    data: Arc::new(data),
+                    dirty: true,
+                    page_type: page.page_type,
+                };
                 
                 // Save updated page
-                match self.page_manager.save_page(&page).await {
+                match self.page_manager.save_page(&updated_page).await {
                     Ok(_) => {
                         action.success = true;
                     }

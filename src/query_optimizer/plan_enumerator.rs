@@ -5,12 +5,11 @@
 
 use crate::{Result, Error};
 use super::{
-    LogicalQuery, LogicalJoin, PhysicalPlan, PhysicalOperator, OptimizationMetadata,
+    LogicalQuery, PhysicalPlan, PhysicalOperator, OptimizationMetadata,
     CostModel, CardinalityEstimator, OptimizerConfig, JoinType, JoinCondition,
-    Predicate, ComparisonOp, Value, SortKey, SortDirection, AggregateFunction, IndexUsage,
-    TableStatistics, ColumnStatistics, IndexStatistics, StatisticsManager
+    Predicate, IndexUsage, StatisticsManager, ComparisonOp, Value, LogicalJoin
 };
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 /// Plan enumeration engine for generating alternative query plans
@@ -806,7 +805,7 @@ mod tests {
     fn test_plan_enumerator_creation() {
         let config = OptimizerConfig::default();
         let cost_model = Arc::new(CostModel::new(config.clone()));
-        let statistics = Arc::new(super::StatisticsManager::new(config.clone()));
+        let statistics = Arc::new(StatisticsManager::new(config.clone()));
         let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics));
         
         let enumerator = PlanEnumerator::new(cost_model, cardinality_estimator, config);
@@ -817,7 +816,7 @@ mod tests {
     fn test_enumeration_strategy_selection() {
         let config = OptimizerConfig::default();
         let cost_model = Arc::new(CostModel::new(config.clone()));
-        let statistics = Arc::new(super::StatisticsManager::new(config.clone()));
+        let statistics = Arc::new(StatisticsManager::new(config.clone()));
         let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics));
         let enumerator = PlanEnumerator::new(cost_model, cardinality_estimator, config);
 
@@ -879,7 +878,7 @@ mod tests {
     fn test_table_access_plan_generation() {
         let config = OptimizerConfig::default();
         let cost_model = Arc::new(CostModel::new(config.clone()));
-        let statistics = Arc::new(super::StatisticsManager::new(config.clone()));
+        let statistics = Arc::new(StatisticsManager::new(config.clone()));
         let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics));
         let enumerator = PlanEnumerator::new(cost_model, cardinality_estimator, config);
 
