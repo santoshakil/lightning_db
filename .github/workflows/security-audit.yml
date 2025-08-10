@@ -312,7 +312,7 @@ jobs:
       actions: read
     steps:
       - name: Run Scorecard Analysis
-        uses: ossf/scorecard-action@v2.4.0
+        uses: ossf/scorecard-action@v2.4.2
         with:
           results_file: results.sarif
           results_format: sarif
