@@ -1,7 +1,7 @@
 # Lightning DB Production Docker Container
 # Optimized for production deployment with monitoring and observability
 
-FROM rust:1.75-slim as builder
+FROM rust:1.89-slim as builder
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
