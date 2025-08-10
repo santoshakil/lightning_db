@@ -3,11 +3,11 @@
 //! This module analyzes query patterns and recommends optimal indexes
 //! to improve query performance and reduce I/O costs.
 
-use crate::Result;
 use super::{
-    StatisticsManager, CostModel, LogicalQuery, Predicate, ComparisonOp, Value,
-    JoinCondition, IndexRecommendation, IndexType, OptimizerConfig
+    ComparisonOp, CostModel, IndexRecommendation, IndexType, JoinCondition, LogicalQuery,
+    OptimizerConfig, Predicate, StatisticsManager, Value,
 };
+use crate::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -228,10 +228,10 @@ impl IndexAdvisor {
     pub fn recommend_indexes(&self, queries: &[LogicalQuery]) -> Result<Vec<IndexRecommendation>> {
         // Analyze the workload
         let workload_analysis = self.analyze_workload(queries)?;
-        
+
         // Generate index candidates
         let candidates = self.generate_index_candidates(&workload_analysis)?;
-        
+
         // Evaluate each candidate
         let mut recommendations = Vec::new();
         for candidate in candidates {
@@ -239,21 +239,24 @@ impl IndexAdvisor {
                 recommendations.push(recommendation);
             }
         }
-        
+
         // Rank and filter recommendations
         self.rank_and_filter_recommendations(recommendations)
     }
 
     /// Generate detailed index recommendations with full analysis
-    pub fn recommend_indexes_detailed(&self, queries: &[LogicalQuery]) -> Result<Vec<DetailedIndexRecommendation>> {
+    pub fn recommend_indexes_detailed(
+        &self,
+        queries: &[LogicalQuery],
+    ) -> Result<Vec<DetailedIndexRecommendation>> {
         let basic_recommendations = self.recommend_indexes(queries)?;
-        
+
         let mut detailed_recommendations = Vec::new();
         for recommendation in basic_recommendations {
             let analysis = self.analyze_index_impact(&recommendation, queries)?;
             let priority = self.calculate_index_priority(&recommendation, &analysis);
             let resource_requirements = self.estimate_resource_requirements(&recommendation)?;
-            
+
             detailed_recommendations.push(DetailedIndexRecommendation {
                 recommendation,
                 analysis,
@@ -261,14 +264,17 @@ impl IndexAdvisor {
                 resource_requirements,
             });
         }
-        
+
         // Sort by priority and benefit
         detailed_recommendations.sort_by(|a, b| {
-            a.priority.cmp(&b.priority)
-                .then(b.recommendation.estimated_benefit.partial_cmp(&a.recommendation.estimated_benefit)
-                     .unwrap_or(std::cmp::Ordering::Equal))
+            a.priority.cmp(&b.priority).then(
+                b.recommendation
+                    .estimated_benefit
+                    .partial_cmp(&a.recommendation.estimated_benefit)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
         });
-        
+
         Ok(detailed_recommendations)
     }
 
@@ -277,27 +283,32 @@ impl IndexAdvisor {
         let mut column_access = HashMap::new();
         let mut join_patterns = HashMap::new();
         let mut predicate_patterns = Vec::new();
-        
+
         for (query_idx, query) in queries.iter().enumerate() {
             // Analyze column access in predicates
             for predicate in &query.predicates {
-                self.analyze_predicate_patterns(predicate, &mut column_access, &mut predicate_patterns);
+                self.analyze_predicate_patterns(
+                    predicate,
+                    &mut column_access,
+                    &mut predicate_patterns,
+                );
             }
-            
+
             // Analyze join patterns
             for join in &query.joins {
                 self.analyze_join_pattern(join, &mut join_patterns);
             }
-            
+
             // Analyze ORDER BY patterns
             for sort_key in &query.order_by {
                 let column_key = format!("table.{}", sort_key.column); // Simplified
-                column_access.entry(column_key.clone())
+                column_access
+                    .entry(column_key.clone())
                     .or_insert_with(|| ColumnAccessPattern::new(column_key))
                     .order_by_count += 1;
             }
         }
-        
+
         Ok(WorkloadAnalysis {
             column_access,
             join_patterns,
@@ -307,12 +318,16 @@ impl IndexAdvisor {
     }
 
     /// Generate index candidates based on workload
-    fn generate_index_candidates(&self, workload: &WorkloadAnalysis) -> Result<Vec<IndexCandidate>> {
+    fn generate_index_candidates(
+        &self,
+        workload: &WorkloadAnalysis,
+    ) -> Result<Vec<IndexCandidate>> {
         let mut candidates = Vec::new();
-        
+
         // Single-column indexes for frequently accessed columns
         for (_, access_pattern) in &workload.column_access {
-            if access_pattern.frequency_score > 0.1 { // Threshold for consideration
+            if access_pattern.frequency_score > 0.1 {
+                // Threshold for consideration
                 candidates.push(IndexCandidate {
                     table: self.extract_table_from_column(&access_pattern.column),
                     columns: vec![self.extract_column_name(&access_pattern.column)],
@@ -322,10 +337,11 @@ impl IndexAdvisor {
                 });
             }
         }
-        
+
         // Composite indexes for join patterns
         for (_, join_pattern) in &workload.join_patterns {
-            if join_pattern.frequency > 5 { // Threshold for consideration
+            if join_pattern.frequency > 5 {
+                // Threshold for consideration
                 candidates.push(IndexCandidate {
                     table: self.extract_table_from_column(&join_pattern.left_column),
                     columns: vec![self.extract_column_name(&join_pattern.left_column)],
@@ -333,7 +349,7 @@ impl IndexAdvisor {
                     estimated_benefit: join_pattern.frequency as f64,
                     confidence: 0.9,
                 });
-                
+
                 candidates.push(IndexCandidate {
                     table: self.extract_table_from_column(&join_pattern.right_column),
                     columns: vec![self.extract_column_name(&join_pattern.right_column)],
@@ -343,20 +359,23 @@ impl IndexAdvisor {
                 });
             }
         }
-        
+
         // Composite indexes for multiple predicate patterns on same table
         candidates.extend(self.generate_composite_index_candidates(workload)?);
-        
+
         // Covering indexes for frequently projected columns
         candidates.extend(self.generate_covering_index_candidates(workload)?);
-        
+
         Ok(candidates)
     }
 
     /// Generate composite index candidates
-    fn generate_composite_index_candidates(&self, workload: &WorkloadAnalysis) -> Result<Vec<IndexCandidate>> {
+    fn generate_composite_index_candidates(
+        &self,
+        workload: &WorkloadAnalysis,
+    ) -> Result<Vec<IndexCandidate>> {
         let mut candidates = Vec::new();
-        
+
         // Group columns by table
         let mut table_columns: HashMap<String, Vec<String>> = HashMap::new();
         for column in workload.column_access.keys() {
@@ -364,33 +383,42 @@ impl IndexAdvisor {
             let col_name = self.extract_column_name(column);
             table_columns.entry(table).or_default().push(col_name);
         }
-        
+
         // Generate composite index candidates for each table
         for (table, columns) in table_columns {
             if columns.len() >= 2 {
                 // Sort by access frequency
                 let mut sorted_columns = columns;
                 sorted_columns.sort_by(|a, b| {
-                    let a_freq = workload.column_access.get(&format!("{}.{}", table, a))
+                    let a_freq = workload
+                        .column_access
+                        .get(&format!("{}.{}", table, a))
                         .map(|p| p.frequency_score)
                         .unwrap_or(0.0);
-                    let b_freq = workload.column_access.get(&format!("{}.{}", table, b))
+                    let b_freq = workload
+                        .column_access
+                        .get(&format!("{}.{}", table, b))
                         .map(|p| p.frequency_score)
                         .unwrap_or(0.0);
-                    b_freq.partial_cmp(&a_freq).unwrap_or(std::cmp::Ordering::Equal)
+                    b_freq
+                        .partial_cmp(&a_freq)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
-                
+
                 // Create candidate with top 2-3 columns
                 let composite_columns = sorted_columns.into_iter().take(3).collect::<Vec<_>>();
                 if composite_columns.len() >= 2 {
-                    let total_benefit: f64 = composite_columns.iter()
+                    let total_benefit: f64 = composite_columns
+                        .iter()
                         .map(|col| {
-                            workload.column_access.get(&format!("{}.{}", table, col))
+                            workload
+                                .column_access
+                                .get(&format!("{}.{}", table, col))
                                 .map(|p| p.frequency_score)
                                 .unwrap_or(0.0)
                         })
                         .sum();
-                    
+
                     candidates.push(IndexCandidate {
                         table: table.clone(),
                         columns: composite_columns,
@@ -401,28 +429,35 @@ impl IndexAdvisor {
                 }
             }
         }
-        
+
         Ok(candidates)
     }
 
     /// Generate covering index candidates
-    fn generate_covering_index_candidates(&self, workload: &WorkloadAnalysis) -> Result<Vec<IndexCandidate>> {
+    fn generate_covering_index_candidates(
+        &self,
+        workload: &WorkloadAnalysis,
+    ) -> Result<Vec<IndexCandidate>> {
         let candidates = Vec::new();
-        
+
         // Analyze patterns where covering indexes would be beneficial
         // For now, return empty - would implement based on SELECT column patterns
-        
+
         Ok(candidates)
     }
 
     /// Evaluate an index candidate
-    fn evaluate_index_candidate(&self, candidate: IndexCandidate, queries: &[LogicalQuery]) -> Result<IndexRecommendation> {
+    fn evaluate_index_candidate(
+        &self,
+        candidate: IndexCandidate,
+        queries: &[LogicalQuery],
+    ) -> Result<IndexRecommendation> {
         // Calculate cost without index
         let cost_without = self.estimate_cost_without_index(&candidate, queries)?;
-        
+
         // Calculate cost with index
         let cost_with = self.estimate_cost_with_index(&candidate, queries)?;
-        
+
         // Calculate benefit
         let cost_reduction = cost_without - cost_with;
         let estimated_benefit = if cost_without > 0.0 {
@@ -430,13 +465,13 @@ impl IndexAdvisor {
         } else {
             0.0
         };
-        
+
         // Calculate index creation and maintenance cost
         let creation_cost = self.estimate_index_creation_cost(&candidate)?;
-        
+
         // Calculate usage frequency
         let usage_frequency = self.calculate_usage_frequency(&candidate, queries);
-        
+
         Ok(IndexRecommendation {
             table: candidate.table,
             columns: candidate.columns,
@@ -448,23 +483,28 @@ impl IndexAdvisor {
     }
 
     /// Rank and filter recommendations
-    fn rank_and_filter_recommendations(&self, mut recommendations: Vec<IndexRecommendation>) -> Result<Vec<IndexRecommendation>> {
+    fn rank_and_filter_recommendations(
+        &self,
+        mut recommendations: Vec<IndexRecommendation>,
+    ) -> Result<Vec<IndexRecommendation>> {
         // Calculate overall score for each recommendation
         for recommendation in &mut recommendations {
             recommendation.estimated_benefit = self.calculate_overall_score(recommendation);
         }
-        
+
         // Sort by benefit (descending)
         recommendations.sort_by(|a, b| {
-            b.estimated_benefit.partial_cmp(&a.estimated_benefit).unwrap_or(std::cmp::Ordering::Equal)
+            b.estimated_benefit
+                .partial_cmp(&a.estimated_benefit)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
-        
+
         // Filter out low-benefit recommendations
         recommendations.retain(|r| r.estimated_benefit > 5.0); // 5% improvement threshold
-        
+
         // Limit number of recommendations
         recommendations.truncate(20);
-        
+
         Ok(recommendations)
     }
 
@@ -473,7 +513,7 @@ impl IndexAdvisor {
         let benefit_score = recommendation.estimated_benefit;
         let cost_penalty = recommendation.estimated_cost / 100.0; // Normalize cost
         let frequency_bonus = recommendation.usage_frequency * 10.0;
-        
+
         benefit_score + frequency_bonus - cost_penalty
     }
 
@@ -485,14 +525,22 @@ impl IndexAdvisor {
         predicate_patterns: &mut Vec<PredicatePattern>,
     ) {
         match predicate {
-            Predicate::Comparison { column, operator, value } => {
+            Predicate::Comparison {
+                column,
+                operator,
+                value,
+            } => {
                 let column_key = format!("table.{}", column); // Simplified
-                let access_pattern = column_access.entry(column_key.clone())
+                let access_pattern = column_access
+                    .entry(column_key.clone())
                     .or_insert_with(|| ColumnAccessPattern::new(column_key));
-                
+
                 access_pattern.where_access_count += 1;
-                *access_pattern.common_operators.entry(*operator).or_insert(0) += 1;
-                
+                *access_pattern
+                    .common_operators
+                    .entry(*operator)
+                    .or_insert(0) += 1;
+
                 predicate_patterns.push(PredicatePattern {
                     column: column.clone(),
                     operator: *operator,
@@ -511,19 +559,22 @@ impl IndexAdvisor {
             }
             Predicate::In { column, values } => {
                 let column_key = format!("table.{}", column);
-                let access_pattern = column_access.entry(column_key.clone())
+                let access_pattern = column_access
+                    .entry(column_key.clone())
                     .or_insert_with(|| ColumnAccessPattern::new(column_key));
                 access_pattern.where_access_count += 1;
             }
             Predicate::Between { column, .. } => {
                 let column_key = format!("table.{}", column);
-                let access_pattern = column_access.entry(column_key.clone())
+                let access_pattern = column_access
+                    .entry(column_key.clone())
                     .or_insert_with(|| ColumnAccessPattern::new(column_key));
                 access_pattern.where_access_count += 1;
             }
             Predicate::IsNull(column) | Predicate::IsNotNull(column) => {
                 let column_key = format!("table.{}", column);
-                let access_pattern = column_access.entry(column_key.clone())
+                let access_pattern = column_access
+                    .entry(column_key.clone())
                     .or_insert_with(|| ColumnAccessPattern::new(column_key));
                 access_pattern.where_access_count += 1;
             }
@@ -531,13 +582,22 @@ impl IndexAdvisor {
     }
 
     /// Analyze join patterns
-    fn analyze_join_pattern(&self, join: &super::LogicalJoin, join_patterns: &mut HashMap<String, JoinPattern>) {
-        if let JoinCondition::Equi { left_column, right_column } = &join.condition {
+    fn analyze_join_pattern(
+        &self,
+        join: &super::LogicalJoin,
+        join_patterns: &mut HashMap<String, JoinPattern>,
+    ) {
+        if let JoinCondition::Equi {
+            left_column,
+            right_column,
+        } = &join.condition
+        {
             let pattern_key = format!("{}#{}", left_column, right_column);
             let left_col = format!("{}.{}", join.left_table, left_column);
             let right_col = format!("{}.{}", join.right_table, right_column);
-            
-            let pattern = join_patterns.entry(pattern_key)
+
+            let pattern = join_patterns
+                .entry(pattern_key)
                 .or_insert_with(|| JoinPattern {
                     left_column: left_col,
                     right_column: right_col,
@@ -546,7 +606,7 @@ impl IndexAdvisor {
                     cost_without_index: 100.0,
                     cost_with_index: 10.0,
                 });
-            
+
             pattern.frequency += 1;
         }
     }
@@ -554,7 +614,9 @@ impl IndexAdvisor {
     /// Classify value type for predicate analysis
     fn classify_value_type(&self, value: &Value) -> ValueTypePattern {
         match value {
-            Value::Integer(_) | Value::Float(_) | Value::String(_) | Value::Boolean(_) => ValueTypePattern::Constant,
+            Value::Integer(_) | Value::Float(_) | Value::String(_) | Value::Boolean(_) => {
+                ValueTypePattern::Constant
+            }
             Value::Null => ValueTypePattern::Null,
         }
     }
@@ -562,10 +624,16 @@ impl IndexAdvisor {
     /// Recommend index type based on access pattern
     fn recommend_index_type(&self, access_pattern: &ColumnAccessPattern) -> IndexType {
         // Analyze operator patterns to recommend best index type
-        let has_equality = access_pattern.common_operators.contains_key(&ComparisonOp::Equal);
-        let has_range = access_pattern.common_operators.contains_key(&ComparisonOp::LessThan) ||
-                       access_pattern.common_operators.contains_key(&ComparisonOp::GreaterThan);
-        
+        let has_equality = access_pattern
+            .common_operators
+            .contains_key(&ComparisonOp::Equal);
+        let has_range = access_pattern
+            .common_operators
+            .contains_key(&ComparisonOp::LessThan)
+            || access_pattern
+                .common_operators
+                .contains_key(&ComparisonOp::GreaterThan);
+
         if has_equality && !has_range {
             IndexType::Hash // Good for equality lookups
         } else if has_range || access_pattern.order_by_count > 0 {
@@ -576,7 +644,11 @@ impl IndexAdvisor {
     }
 
     /// Estimate cost without index
-    fn estimate_cost_without_index(&self, candidate: &IndexCandidate, queries: &[LogicalQuery]) -> Result<f64> {
+    fn estimate_cost_without_index(
+        &self,
+        candidate: &IndexCandidate,
+        queries: &[LogicalQuery],
+    ) -> Result<f64> {
         // Simplified cost estimation
         // Would use actual cost model in real implementation
         let base_cost = 100.0; // Table scan cost
@@ -585,7 +657,11 @@ impl IndexAdvisor {
     }
 
     /// Estimate cost with index
-    fn estimate_cost_with_index(&self, candidate: &IndexCandidate, queries: &[LogicalQuery]) -> Result<f64> {
+    fn estimate_cost_with_index(
+        &self,
+        candidate: &IndexCandidate,
+        queries: &[LogicalQuery],
+    ) -> Result<f64> {
         // Simplified cost estimation
         let index_lookup_cost = match candidate.index_type {
             IndexType::Hash => 1.0,
@@ -593,7 +669,7 @@ impl IndexAdvisor {
             IndexType::Partial => 2.0,
             IndexType::Composite => 4.0,
         };
-        
+
         let frequency_factor = candidate.estimated_benefit / 10.0;
         Ok(index_lookup_cost * frequency_factor)
     }
@@ -607,21 +683,25 @@ impl IndexAdvisor {
             IndexType::Partial => 15.0,
             IndexType::Composite => 30.0,
         };
-        
+
         let column_factor = candidate.columns.len() as f64;
         Ok(base_cost * column_factor)
     }
 
     /// Calculate usage frequency
-    fn calculate_usage_frequency(&self, candidate: &IndexCandidate, queries: &[LogicalQuery]) -> f64 {
+    fn calculate_usage_frequency(
+        &self,
+        candidate: &IndexCandidate,
+        queries: &[LogicalQuery],
+    ) -> f64 {
         let mut usage_count = 0;
-        
+
         for query in queries {
             if self.would_use_index(query, candidate) {
                 usage_count += 1;
             }
         }
-        
+
         usage_count as f64 / queries.len() as f64
     }
 
@@ -633,23 +713,29 @@ impl IndexAdvisor {
                 return true;
             }
         }
-        
+
         // Check if any joins involve the indexed columns
         for join in &query.joins {
-            if let JoinCondition::Equi { left_column, right_column } = &join.condition {
-                if candidate.columns.contains(left_column) || candidate.columns.contains(right_column) {
+            if let JoinCondition::Equi {
+                left_column,
+                right_column,
+            } = &join.condition
+            {
+                if candidate.columns.contains(left_column)
+                    || candidate.columns.contains(right_column)
+                {
                     return true;
                 }
             }
         }
-        
+
         // Check if ORDER BY uses indexed columns
         for sort_key in &query.order_by {
             if candidate.columns.contains(&sort_key.column) {
                 return true;
             }
         }
-        
+
         false
     }
 
@@ -658,7 +744,8 @@ impl IndexAdvisor {
         match predicate {
             Predicate::Comparison { column, .. } => columns.contains(column),
             Predicate::And(left, right) | Predicate::Or(left, right) => {
-                self.predicate_uses_columns(left, columns) || self.predicate_uses_columns(right, columns)
+                self.predicate_uses_columns(left, columns)
+                    || self.predicate_uses_columns(right, columns)
             }
             Predicate::Not(inner) => self.predicate_uses_columns(inner, columns),
             Predicate::In { column, .. } => columns.contains(column),
@@ -668,21 +755,28 @@ impl IndexAdvisor {
     }
 
     /// Analyze index impact in detail
-    fn analyze_index_impact(&self, recommendation: &IndexRecommendation, queries: &[LogicalQuery]) -> Result<IndexAnalysis> {
+    fn analyze_index_impact(
+        &self,
+        recommendation: &IndexRecommendation,
+        queries: &[LogicalQuery],
+    ) -> Result<IndexAnalysis> {
         let mut benefiting_queries = Vec::new();
-        
+
         for (i, query) in queries.iter().enumerate() {
-            if self.would_use_index(query, &IndexCandidate {
-                table: recommendation.table.clone(),
-                columns: recommendation.columns.clone(),
-                index_type: recommendation.index_type,
-                estimated_benefit: recommendation.estimated_benefit,
-                confidence: 1.0,
-            }) {
+            if self.would_use_index(
+                query,
+                &IndexCandidate {
+                    table: recommendation.table.clone(),
+                    columns: recommendation.columns.clone(),
+                    index_type: recommendation.index_type,
+                    estimated_benefit: recommendation.estimated_benefit,
+                    confidence: 1.0,
+                },
+            ) {
                 benefiting_queries.push(format!("query_{}", i));
             }
         }
-        
+
         Ok(IndexAnalysis {
             benefiting_queries,
             performance_improvement: PerformanceImprovement {
@@ -708,10 +802,14 @@ impl IndexAdvisor {
     }
 
     /// Calculate index priority
-    fn calculate_index_priority(&self, recommendation: &IndexRecommendation, analysis: &IndexAnalysis) -> IndexPriority {
+    fn calculate_index_priority(
+        &self,
+        recommendation: &IndexRecommendation,
+        analysis: &IndexAnalysis,
+    ) -> IndexPriority {
         let benefit = recommendation.estimated_benefit;
         let frequency = recommendation.usage_frequency;
-        
+
         if benefit > 50.0 && frequency > 0.8 {
             IndexPriority::Critical
         } else if benefit > 30.0 && frequency > 0.5 {
@@ -726,9 +824,12 @@ impl IndexAdvisor {
     }
 
     /// Estimate resource requirements
-    fn estimate_resource_requirements(&self, recommendation: &IndexRecommendation) -> Result<ResourceRequirements> {
+    fn estimate_resource_requirements(
+        &self,
+        recommendation: &IndexRecommendation,
+    ) -> Result<ResourceRequirements> {
         let size_factor = recommendation.columns.len() as u64;
-        
+
         Ok(ResourceRequirements {
             creation_memory_mb: 100 * size_factor,
             disk_space_mb: 50 * size_factor,
@@ -738,11 +839,11 @@ impl IndexAdvisor {
     }
 
     // Helper methods
-    
+
     fn extract_table_from_column(&self, column: &str) -> String {
         column.split('.').next().unwrap_or("unknown").to_string()
     }
-    
+
     fn extract_column_name(&self, column: &str) -> String {
         column.split('.').last().unwrap_or(column).to_string()
     }
@@ -802,7 +903,7 @@ mod tests {
         let config = OptimizerConfig::default();
         let statistics = Arc::new(StatisticsManager::new(config.clone()));
         let cost_model = Arc::new(CostModel::new(config));
-        
+
         let advisor = IndexAdvisor::new(statistics, cost_model);
         assert_eq!(advisor.workload_analyzer.query_frequency.len(), 0);
     }
@@ -818,9 +919,18 @@ mod tests {
         let string_value = Value::String("test".to_string());
         let null_value = Value::Null;
 
-        assert!(matches!(advisor.classify_value_type(&int_value), ValueTypePattern::Constant));
-        assert!(matches!(advisor.classify_value_type(&string_value), ValueTypePattern::Constant));
-        assert!(matches!(advisor.classify_value_type(&null_value), ValueTypePattern::Null));
+        assert!(matches!(
+            advisor.classify_value_type(&int_value),
+            ValueTypePattern::Constant
+        ));
+        assert!(matches!(
+            advisor.classify_value_type(&string_value),
+            ValueTypePattern::Constant
+        ));
+        assert!(matches!(
+            advisor.classify_value_type(&null_value),
+            ValueTypePattern::Null
+        ));
     }
 
     #[test]
@@ -831,11 +941,17 @@ mod tests {
         let advisor = IndexAdvisor::new(statistics, cost_model);
 
         let mut equality_pattern = ColumnAccessPattern::new("test.id".to_string());
-        equality_pattern.common_operators.insert(ComparisonOp::Equal, 10);
+        equality_pattern
+            .common_operators
+            .insert(ComparisonOp::Equal, 10);
 
         let mut range_pattern = ColumnAccessPattern::new("test.date".to_string());
-        range_pattern.common_operators.insert(ComparisonOp::LessThan, 5);
-        range_pattern.common_operators.insert(ComparisonOp::GreaterThan, 5);
+        range_pattern
+            .common_operators
+            .insert(ComparisonOp::LessThan, 5);
+        range_pattern
+            .common_operators
+            .insert(ComparisonOp::GreaterThan, 5);
 
         let equality_type = advisor.recommend_index_type(&equality_pattern);
         let range_type = advisor.recommend_index_type(&range_pattern);

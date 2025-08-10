@@ -4,11 +4,11 @@
 //! while maintaining observability for critical operations.
 
 use super::{TraceContext, TraceSampler};
+use rand::rngs::StdRng;
+use rand::{Rng, RngCore, SeedableRng};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
-use rand::{Rng, RngCore, SeedableRng};
-use rand::rngs::StdRng;
 
 /// Advanced sampling decision with reasoning
 #[derive(Debug, Clone)]
@@ -28,7 +28,7 @@ impl SamplingDecision {
             attributes: HashMap::new(),
         }
     }
-    
+
     pub fn drop(reason: String) -> Self {
         Self {
             should_sample: false,
@@ -37,7 +37,7 @@ impl SamplingDecision {
             attributes: HashMap::new(),
         }
     }
-    
+
     pub fn with_attribute(mut self, key: String, value: String) -> Self {
         self.attributes.insert(key, value);
         self
@@ -85,7 +85,6 @@ impl TraceSampler for ProbabilitySampler {
     }
 }
 
-
 /// Rate-limiting sampler that limits samples per time window
 pub struct RateLimitingSampler {
     max_samples_per_second: u64,
@@ -101,19 +100,19 @@ impl RateLimitingSampler {
             samples: Arc::new(Mutex::new(Vec::new())),
         }
     }
-    
+
     pub fn with_window(mut self, window: Duration) -> Self {
         self.window_duration = window;
         self
     }
-    
+
     fn can_sample(&self) -> bool {
         if let Ok(mut samples) = self.samples.lock() {
             let now = Instant::now();
-            
+
             // Remove old samples outside the window
             samples.retain(|&sample_time| now.duration_since(sample_time) <= self.window_duration);
-            
+
             // Check if we can add another sample
             if samples.len() < self.max_samples_per_second as usize {
                 samples.push(now);
@@ -133,7 +132,6 @@ impl TraceSampler for RateLimitingSampler {
     }
 }
 
-
 /// Operation-aware sampler with different rates for different operations
 pub struct OperationBasedSampler {
     default_rate: f64,
@@ -149,7 +147,7 @@ impl OperationBasedSampler {
             fallback_sampler: ProbabilitySampler::new(default_rate),
         }
     }
-    
+
     /// Set sampling rate for specific operation
     pub fn set_operation_rate(&self, operation: String, rate: f64) -> &Self {
         if let Ok(mut rates) = self.operation_rates.write() {
@@ -157,7 +155,7 @@ impl OperationBasedSampler {
         }
         self
     }
-    
+
     /// Set high sampling rate for critical operations
     pub fn high_priority_operations(&self, operations: Vec<String>) -> &Self {
         for op in operations {
@@ -165,7 +163,7 @@ impl OperationBasedSampler {
         }
         self
     }
-    
+
     /// Set low sampling rate for noisy operations
     pub fn low_priority_operations(&self, operations: Vec<String>) -> &Self {
         for op in operations {
@@ -173,10 +171,13 @@ impl OperationBasedSampler {
         }
         self
     }
-    
+
     fn get_rate_for_operation(&self, operation_name: &str) -> f64 {
         if let Ok(rates) = self.operation_rates.read() {
-            rates.get(operation_name).copied().unwrap_or(self.default_rate)
+            rates
+                .get(operation_name)
+                .copied()
+                .unwrap_or(self.default_rate)
         } else {
             self.default_rate
         }
@@ -189,7 +190,6 @@ impl TraceSampler for OperationBasedSampler {
         rand::rng().random::<f64>() < rate
     }
 }
-
 
 /// Adaptive sampler that adjusts rates based on system load
 pub struct AdaptiveSampler {
@@ -210,21 +210,20 @@ impl AdaptiveSampler {
             load_monitor: Arc::new(Mutex::new(SystemLoadMonitor::new())),
         }
     }
-    
+
     pub fn with_rate_bounds(mut self, min_rate: f64, max_rate: f64) -> Self {
         self.min_rate = min_rate.clamp(0.0, 1.0);
         self.max_rate = max_rate.clamp(0.0, 1.0);
         self
     }
-    
+
     /// Update sampling rate based on system metrics
     pub fn update_rate_based_on_load(&self) {
-        if let (Ok(mut current_rate), Ok(mut monitor)) = (
-            self.current_rate.lock(),
-            self.load_monitor.lock()
-        ) {
+        if let (Ok(mut current_rate), Ok(mut monitor)) =
+            (self.current_rate.lock(), self.load_monitor.lock())
+        {
             let load_factor = monitor.get_load_factor();
-            
+
             // Adjust rate based on load (higher load = lower sampling rate)
             let adjustment = if load_factor > 0.8 {
                 0.5 // Reduce sampling by 50% under high load
@@ -233,12 +232,12 @@ impl AdaptiveSampler {
             } else {
                 1.0 // Normal sampling under low load
             };
-            
+
             let new_rate = (self.base_rate * adjustment).clamp(self.min_rate, self.max_rate);
             *current_rate = new_rate;
         }
     }
-    
+
     fn get_current_rate(&self) -> f64 {
         if let Ok(rate) = self.current_rate.lock() {
             *rate
@@ -254,7 +253,6 @@ impl TraceSampler for AdaptiveSampler {
         rand::rng().random::<f64>() < rate
     }
 }
-
 
 /// Composite sampler that combines multiple sampling strategies
 pub struct CompositeSampler {
@@ -281,47 +279,52 @@ impl CompositeSampler {
             strategy,
         }
     }
-    
+
     pub fn add_sampler(mut self, sampler: Box<dyn AdvancedSampler + Send + Sync>) -> Self {
         self.samplers.push(sampler);
         self
     }
-    
+
     pub fn with_probability(self, rate: f64) -> Self {
         self.add_sampler(Box::new(ProbabilitySampler::new(rate)))
     }
-    
+
     pub fn with_rate_limit(self, max_per_second: u64) -> Self {
         self.add_sampler(Box::new(RateLimitingSampler::new(max_per_second)))
     }
-    
+
     pub fn with_operation_based(self, default_rate: f64) -> Self {
         self.add_sampler(Box::new(OperationBasedSampler::new(default_rate)))
     }
 }
-
 
 impl TraceSampler for CompositeSampler {
     fn should_sample(&self, context: &TraceContext, operation_name: &str) -> bool {
         if self.samplers.is_empty() {
             return false;
         }
-        
-        let decisions: Vec<bool> = self.samplers
+
+        let decisions: Vec<bool> = self
+            .samplers
             .iter()
-            .map(|sampler| sampler.sampling_decision(context, operation_name).should_sample)
+            .map(|sampler| {
+                sampler
+                    .sampling_decision(context, operation_name)
+                    .should_sample
+            })
             .collect();
-        
+
         match &self.strategy {
             CompositeStrategy::All => decisions.iter().all(|&d| d),
             CompositeStrategy::Any => decisions.iter().any(|&d| d),
             CompositeStrategy::First => decisions.first().copied().unwrap_or(false),
             CompositeStrategy::Weighted(weights) => {
-                let weighted_sum: f64 = decisions.iter()
+                let weighted_sum: f64 = decisions
+                    .iter()
                     .zip(weights.iter())
                     .map(|(decision, weight)| if *decision { *weight } else { 0.0 })
                     .sum();
-                
+
                 let total_weight: f64 = weights.iter().sum();
                 if total_weight > 0.0 {
                     weighted_sum / total_weight > 0.5
@@ -346,19 +349,19 @@ impl SystemLoadMonitor {
             current_load: 0.0,
         }
     }
-    
+
     fn get_load_factor(&mut self) -> f64 {
         let now = Instant::now();
-        
+
         // Update load every second
         if now.duration_since(self.last_update) >= Duration::from_secs(1) {
             self.current_load = self.measure_system_load();
             self.last_update = now;
         }
-        
+
         self.current_load
     }
-    
+
     fn measure_system_load(&self) -> f64 {
         // Simplified load measurement
         // In production, this would use system APIs to measure:
@@ -366,7 +369,7 @@ impl SystemLoadMonitor {
         // - Memory usage
         // - I/O wait time
         // - Number of active traces
-        
+
         // For now, return a mock value
         0.3
     }
@@ -392,10 +395,7 @@ impl Default for SamplerConfig {
                 "db.recovery".to_string(),
                 "db.backup".to_string(),
             ],
-            low_priority_operations: vec![
-                "db.get".to_string(),
-                "db.cache.hit".to_string(),
-            ],
+            low_priority_operations: vec!["db.get".to_string(), "db.cache.hit".to_string()],
             max_samples_per_second: Some(100),
             adaptive: true,
         }
@@ -405,23 +405,23 @@ impl Default for SamplerConfig {
 impl SamplerConfig {
     pub fn build(self) -> Box<dyn AdvancedSampler + Send + Sync> {
         let mut composite = CompositeSampler::new(CompositeStrategy::All);
-        
+
         // Add operation-based sampler
         let op_sampler = OperationBasedSampler::new(self.default_rate);
         op_sampler.high_priority_operations(self.high_priority_operations);
         op_sampler.low_priority_operations(self.low_priority_operations);
         composite = composite.add_sampler(Box::new(op_sampler));
-        
+
         // Add rate limiting if configured
         if let Some(max_rate) = self.max_samples_per_second {
             composite = composite.add_sampler(Box::new(RateLimitingSampler::new(max_rate)));
         }
-        
+
         // Add adaptive sampling if enabled
         if self.adaptive {
             composite = composite.add_sampler(Box::new(AdaptiveSampler::new(self.default_rate)));
         }
-        
+
         Box::new(composite)
     }
 }
@@ -435,14 +435,14 @@ mod tests {
     fn test_probability_sampler() {
         let sampler = ProbabilitySampler::new(0.5);
         let context = TraceContext::new_root();
-        
+
         let mut sampled = 0;
         for _ in 0..1000 {
             if sampler.should_sample(&context, "test") {
                 sampled += 1;
             }
         }
-        
+
         // Should be approximately 500 with some variance
         assert!(sampled >= 400 && sampled <= 600);
     }
@@ -451,14 +451,14 @@ mod tests {
     fn test_rate_limiting_sampler() {
         let sampler = RateLimitingSampler::new(5);
         let context = TraceContext::new_root();
-        
+
         let mut sampled = 0;
         for _ in 0..10 {
             if sampler.should_sample(&context, "test") {
                 sampled += 1;
             }
         }
-        
+
         assert_eq!(sampled, 5); // Should only sample 5 times
     }
 
@@ -467,9 +467,9 @@ mod tests {
         let sampler = OperationBasedSampler::new(0.1);
         sampler.set_operation_rate("critical_op".to_string(), 1.0);
         sampler.set_operation_rate("low_priority".to_string(), 0.01);
-        
+
         let context = TraceContext::new_root();
-        
+
         // Critical operation should always be sampled
         let mut critical_sampled = 0;
         for _ in 0..100 {
@@ -478,7 +478,7 @@ mod tests {
             }
         }
         assert!(critical_sampled >= 95); // Should be close to 100%
-        
+
         // Low priority operation should rarely be sampled
         let mut low_priority_sampled = 0;
         for _ in 0..1000 {
@@ -493,7 +493,7 @@ mod tests {
     fn test_sampling_decision() {
         let decision = SamplingDecision::sample("test_reason".to_string(), 0.5)
             .with_attribute("key".to_string(), "value".to_string());
-        
+
         assert!(decision.should_sample);
         assert_eq!(decision.reason, "test_reason");
         assert_eq!(decision.sampling_rate, 0.5);
@@ -503,11 +503,11 @@ mod tests {
     #[test]
     fn test_composite_sampler_all() {
         let sampler = CompositeSampler::new(CompositeStrategy::All)
-            .with_probability(1.0)  // Always sample
+            .with_probability(1.0) // Always sample
             .with_probability(0.0); // Never sample
-        
+
         let context = TraceContext::new_root();
-        
+
         // Should never sample because one sampler always says no
         assert!(!sampler.should_sample(&context, "test"));
     }
@@ -515,11 +515,11 @@ mod tests {
     #[test]
     fn test_composite_sampler_any() {
         let sampler = CompositeSampler::new(CompositeStrategy::Any)
-            .with_probability(1.0)  // Always sample
+            .with_probability(1.0) // Always sample
             .with_probability(0.0); // Never sample
-        
+
         let context = TraceContext::new_root();
-        
+
         // Should always sample because one sampler always says yes
         assert!(sampler.should_sample(&context, "test"));
     }
@@ -533,10 +533,10 @@ mod tests {
             max_samples_per_second: Some(50),
             adaptive: false,
         };
-        
+
         let sampler = config.build();
         let context = TraceContext::new_root();
-        
+
         // Should create a working composite sampler
         let decision = sampler.sampling_decision(&context, "test");
         assert!(!decision.reason.is_empty());

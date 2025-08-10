@@ -4,16 +4,16 @@
 //! including CPU profiling, memory tracking, I/O monitoring, and flamegraph generation.
 //! Designed for production use with minimal overhead.
 
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::path::PathBuf;
-use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, instrument};
+use tracing::{error, info, instrument, warn};
 
 pub mod cpu_profiler;
-pub mod memory_profiler;
-pub mod io_profiler;
 pub mod flamegraph;
+pub mod io_profiler;
+pub mod memory_profiler;
 pub mod metrics_collector;
 pub mod regression_detector;
 
@@ -72,8 +72,8 @@ impl Default for ProfilingConfig {
             enable_flamegraphs: true,
             enable_regression_detection: true,
             retention_period: Duration::from_secs(7 * 24 * 60 * 60), // 7 days
-            max_memory_usage: 100 * 1024 * 1024, // 100MB
-            overhead_limit: 1.0, // 1% CPU overhead
+            max_memory_usage: 100 * 1024 * 1024,                     // 100MB
+            overhead_limit: 1.0,                                     // 1% CPU overhead
         }
     }
 }
@@ -122,27 +122,33 @@ impl ProfilerCoordinator {
     /// Create a new profiler coordinator
     pub fn new(config: ProfilingConfig) -> Result<Self, ProfilingError> {
         // Create output directory
-        std::fs::create_dir_all(&config.output_directory)
-            .map_err(|e| ProfilingError::IoError(format!("Failed to create output directory: {}", e)))?;
+        std::fs::create_dir_all(&config.output_directory).map_err(|e| {
+            ProfilingError::IoError(format!("Failed to create output directory: {}", e))
+        })?;
 
         let session_id = generate_session_id();
         let output_dir = config.output_directory.join(&session_id);
-        std::fs::create_dir_all(&output_dir)
-            .map_err(|e| ProfilingError::IoError(format!("Failed to create session directory: {}", e)))?;
+        std::fs::create_dir_all(&output_dir).map_err(|e| {
+            ProfilingError::IoError(format!("Failed to create session directory: {}", e))
+        })?;
 
         let metrics_collector = Arc::new(metrics_collector::MetricsCollector::new());
         let regression_detector = Arc::new(regression_detector::RegressionDetector::new(
-            config.output_directory.clone()
+            config.output_directory.clone(),
         ));
 
         Ok(Self {
             cpu_profiler: if config.enable_cpu_profiling {
-                Some(Arc::new(cpu_profiler::CpuProfiler::new(config.cpu_sample_rate)?))
+                Some(Arc::new(cpu_profiler::CpuProfiler::new(
+                    config.cpu_sample_rate,
+                )?))
             } else {
                 None
             },
             memory_profiler: if config.enable_memory_profiling {
-                Some(Arc::new(memory_profiler::MemoryProfiler::new(config.memory_sample_interval)?))
+                Some(Arc::new(memory_profiler::MemoryProfiler::new(
+                    config.memory_sample_interval,
+                )?))
             } else {
                 None
             },
@@ -168,7 +174,8 @@ impl ProfilerCoordinator {
         }
 
         info!("Starting profiling session: {}", self.session_id);
-        self.active.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.active
+            .store(true, std::sync::atomic::Ordering::Relaxed);
 
         // Start CPU profiler
         if let Some(ref cpu_profiler) = self.cpu_profiler {
@@ -200,7 +207,7 @@ impl ProfilerCoordinator {
 
         info!("Stopping profiling session: {}", self.session_id);
         let start_time = SystemTime::now();
-        
+
         // Stop all profilers
         if let Some(ref cpu_profiler) = self.cpu_profiler {
             cpu_profiler.stop()?;
@@ -215,7 +222,8 @@ impl ProfilerCoordinator {
         }
 
         self.metrics_collector.stop();
-        self.active.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.active
+            .store(false, std::sync::atomic::Ordering::Relaxed);
 
         // Generate reports
         let mut session = ProfileSession {
@@ -314,9 +322,9 @@ impl ProfilerCoordinator {
     pub fn list_sessions(&self) -> Result<Vec<ProfileSession>, ProfilingError> {
         let mut sessions = Vec::new();
 
-        for entry in std::fs::read_dir(&self.config.output_directory)
-            .map_err(|e| ProfilingError::IoError(format!("Failed to read profiles directory: {}", e)))?
-        {
+        for entry in std::fs::read_dir(&self.config.output_directory).map_err(|e| {
+            ProfilingError::IoError(format!("Failed to read profiles directory: {}", e))
+        })? {
             let entry = entry.map_err(|e| ProfilingError::IoError(e.to_string()))?;
             let path = entry.path();
 
@@ -324,16 +332,22 @@ impl ProfilerCoordinator {
                 let session_file = path.join("session.json");
                 if session_file.exists() {
                     match std::fs::read_to_string(&session_file) {
-                        Ok(content) => {
-                            match serde_json::from_str::<ProfileSession>(&content) {
-                                Ok(session) => sessions.push(session),
-                                Err(e) => {
-                                    warn!("Failed to parse session file {}: {}", session_file.display(), e);
-                                }
+                        Ok(content) => match serde_json::from_str::<ProfileSession>(&content) {
+                            Ok(session) => sessions.push(session),
+                            Err(e) => {
+                                warn!(
+                                    "Failed to parse session file {}: {}",
+                                    session_file.display(),
+                                    e
+                                );
                             }
-                        }
+                        },
                         Err(e) => {
-                            warn!("Failed to read session file {}: {}", session_file.display(), e);
+                            warn!(
+                                "Failed to read session file {}: {}",
+                                session_file.display(),
+                                e
+                            );
                         }
                     }
                 }
@@ -392,9 +406,9 @@ impl ProfilerCoordinator {
     fn cleanup_old_profiles(&self) -> Result<(), ProfilingError> {
         let cutoff_time = SystemTime::now() - self.config.retention_period;
 
-        for entry in std::fs::read_dir(&self.config.output_directory)
-            .map_err(|e| ProfilingError::IoError(format!("Failed to read profiles directory: {}", e)))?
-        {
+        for entry in std::fs::read_dir(&self.config.output_directory).map_err(|e| {
+            ProfilingError::IoError(format!("Failed to read profiles directory: {}", e))
+        })? {
             let entry = entry.map_err(|e| ProfilingError::IoError(e.to_string()))?;
             let path = entry.path();
 
@@ -494,7 +508,10 @@ fn generate_recommendations(analysis: &SessionAnalysis) -> Vec<PerformanceRecomm
                     "Function {} consumes {:.1}% of CPU time. Consider optimization.",
                     hotspot.function_name, hotspot.cpu_percentage
                 ),
-                potential_impact: format!("Up to {:.1}% performance improvement", hotspot.cpu_percentage * 0.8),
+                potential_impact: format!(
+                    "Up to {:.1}% performance improvement",
+                    hotspot.cpu_percentage * 0.8
+                ),
                 implementation_effort: ImplementationEffort::Medium,
             });
         }
@@ -502,7 +519,8 @@ fn generate_recommendations(analysis: &SessionAnalysis) -> Vec<PerformanceRecomm
 
     // Memory recommendations
     for hotspot in &analysis.memory_hotspots {
-        if hotspot.allocation_rate > 1024.0 * 1024.0 * 10.0 { // 10MB/s
+        if hotspot.allocation_rate > 1024.0 * 1024.0 * 10.0 {
+            // 10MB/s
             recommendations.push(PerformanceRecommendation {
                 category: RecommendationCategory::MemoryOptimization,
                 severity: RecommendationSeverity::High,
@@ -526,7 +544,7 @@ fn generate_session_id() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    
+
     format!("profile_{}_{}", timestamp, fastrand::u32(10000, 99999))
 }
 
@@ -535,28 +553,28 @@ fn generate_session_id() -> String {
 pub enum ProfilingError {
     #[error("I/O error: {0}")]
     IoError(String),
-    
+
     #[error("Profiling already active")]
     AlreadyActive,
-    
+
     #[error("Profiling not active")]
     NotActive,
-    
+
     #[error("Session not found: {0}")]
     SessionNotFound(String),
-    
+
     #[error("Serialization error: {0}")]
     SerializationError(String),
-    
+
     #[error("CPU profiler error: {0}")]
     CpuProfilerError(String),
-    
+
     #[error("Memory profiler error: {0}")]
     MemoryProfilerError(String),
-    
+
     #[error("I/O profiler error: {0}")]
     IoProfilerError(String),
-    
+
     #[error("Flamegraph generation error: {0}")]
     FlamegraphError(String),
 }
@@ -571,7 +589,7 @@ impl DurationExt for Duration {
     fn from_minutes(minutes: u64) -> Duration {
         Duration::from_secs(minutes * 60)
     }
-    
+
     fn from_days(days: u64) -> Duration {
         Duration::from_secs(days * 24 * 60 * 60)
     }
@@ -580,16 +598,16 @@ impl DurationExt for Duration {
 /// Fast random number generator for session IDs
 mod fastrand {
     use std::sync::atomic::{AtomicU64, Ordering};
-    
+
     static STATE: AtomicU64 = AtomicU64::new(1);
-    
+
     pub fn u32(range_start: u32, range_end: u32) -> u32 {
         let mut x = STATE.load(Ordering::Relaxed);
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         STATE.store(x, Ordering::Relaxed);
-        
+
         let range_size = range_end - range_start;
         range_start + ((x as u32) % range_size)
     }

@@ -3,14 +3,14 @@
 //! Handles automatic key rotation, re-encryption of data, and
 //! safe transition between encryption keys.
 
-use crate::{Error, Result};
 use super::key_manager::KeyManager;
-use std::sync::{Arc, RwLock, Mutex};
-use std::time::{SystemTime, Duration};
+use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
-use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use std::time::{Duration, SystemTime};
+use tracing::{debug, error, info, warn};
 
 /// Key rotation manager
 #[derive(Debug)]
@@ -128,9 +128,10 @@ impl RotationManager {
     pub fn new(key_manager: Arc<KeyManager>, rotation_interval_days: u32) -> Result<Self> {
         let rotation_state = Arc::new(RwLock::new(RotationState {
             last_rotation: None,
-            next_rotation: Some(SystemTime::now() + Duration::from_secs(
-                rotation_interval_days as u64 * 24 * 60 * 60
-            )),
+            next_rotation: Some(
+                SystemTime::now()
+                    + Duration::from_secs(rotation_interval_days as u64 * 24 * 60 * 60),
+            ),
             in_progress: false,
             pages_reencrypted: 0,
             total_pages: 0,
@@ -167,7 +168,7 @@ impl RotationManager {
     /// Check if key rotation is needed
     pub fn needs_rotation(&self) -> Result<bool> {
         let state = self.rotation_state.read().unwrap();
-        
+
         if state.in_progress {
             return Ok(false); // Already rotating
         }
@@ -185,7 +186,9 @@ impl RotationManager {
         {
             let mut state = self.rotation_state.write().unwrap();
             if state.in_progress {
-                return Err(Error::Encryption("Key rotation already in progress".to_string()));
+                return Err(Error::Encryption(
+                    "Key rotation already in progress".to_string(),
+                ));
             }
             state.in_progress = true;
             state.phase = RotationPhase::GeneratingKeys;
@@ -229,7 +232,7 @@ impl RotationManager {
 
                 // Complete rotation
                 self.complete_rotation(rotation_start)?;
-                
+
                 Ok(())
             }
             Err(e) => {
@@ -241,13 +244,17 @@ impl RotationManager {
 
     /// Generate new encryption keys
     fn generate_new_keys(&self) -> Result<(u64, u64)> {
-        let old_key_id = self.key_manager.get_current_key_id()
+        let old_key_id = self
+            .key_manager
+            .get_current_key_id()
             .ok_or_else(|| Error::Encryption("No current key".to_string()))?;
 
         // Rotate keys in key manager
         self.key_manager.rotate_keys()?;
 
-        let new_key_id = self.key_manager.get_current_key_id()
+        let new_key_id = self
+            .key_manager
+            .get_current_key_id()
             .ok_or_else(|| Error::Encryption("Failed to get new key ID".to_string()))?;
 
         debug!("Generated new keys: {} -> {}", old_key_id, new_key_id);
@@ -261,7 +268,7 @@ impl RotationManager {
         // 2. Decrypt with old key
         // 3. Re-encrypt with new key
         // 4. Update page metadata
-        
+
         let total_pages = 10000; // Simulated
         {
             let mut state = self.rotation_state.write().unwrap();
@@ -282,7 +289,7 @@ impl RotationManager {
         // Simulate progress
         for batch in (0..total_pages).step_by(1000) {
             let pages_done = (batch + 1000).min(total_pages);
-            
+
             {
                 let mut state = self.rotation_state.write().unwrap();
                 state.pages_reencrypted = pages_done;
@@ -328,9 +335,8 @@ impl RotationManager {
             state.phase = RotationPhase::Idle;
             state.last_rotation = Some(SystemTime::now());
             state.next_rotation = Some(
-                SystemTime::now() + Duration::from_secs(
-                    self.rotation_interval_days as u64 * 24 * 60 * 60
-                )
+                SystemTime::now()
+                    + Duration::from_secs(self.rotation_interval_days as u64 * 24 * 60 * 60),
             );
             state.pages_reencrypted = 0;
             state.total_pages = 0;
@@ -376,7 +382,7 @@ impl RotationManager {
     fn add_event(&self, event: RotationEvent) {
         let mut history = self.rotation_history.lock().unwrap();
         history.push_back(event);
-        
+
         // Keep only last 100 events
         while history.len() > 100 {
             history.pop_front();
@@ -385,7 +391,12 @@ impl RotationManager {
 
     /// Get rotation history
     pub fn get_rotation_history(&self) -> Vec<RotationEvent> {
-        self.rotation_history.lock().unwrap().iter().cloned().collect()
+        self.rotation_history
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect()
     }
 
     /// Get current rotation state
@@ -412,7 +423,7 @@ impl RotationManager {
 
         state.in_progress = false;
         state.phase = RotationPhase::Idle;
-        
+
         self.add_event(RotationEvent {
             timestamp: SystemTime::now(),
             event_type: RotationEventType::Cancelled,
@@ -437,12 +448,12 @@ mod tests {
             enabled: true,
             ..Default::default()
         };
-        
+
         let key_manager = Arc::new(KeyManager::new(config).unwrap());
         let master_key = vec![0x42; 32];
         key_manager.initialize_master_key(&master_key).unwrap();
         key_manager.generate_data_key().unwrap();
-        
+
         let rotation_manager = RotationManager::new(key_manager.clone(), 30).unwrap();
         (rotation_manager, key_manager)
     }
@@ -451,7 +462,7 @@ mod tests {
     fn test_rotation_state_initialization() {
         let (manager, _) = create_test_rotation_manager();
         let state = manager.get_rotation_state();
-        
+
         assert!(!state.in_progress);
         assert_eq!(state.phase, RotationPhase::Idle);
         assert!(state.next_rotation.is_some());
@@ -460,16 +471,16 @@ mod tests {
     #[test]
     fn test_needs_rotation() {
         let (manager, _) = create_test_rotation_manager();
-        
+
         // Should not need rotation immediately after creation
         assert!(!manager.needs_rotation().unwrap());
-        
+
         // Manually set next rotation to past
         {
             let mut state = manager.rotation_state.write().unwrap();
             state.next_rotation = Some(SystemTime::now() - Duration::from_secs(60));
         }
-        
+
         // Now should need rotation
         assert!(manager.needs_rotation().unwrap());
     }
@@ -477,7 +488,7 @@ mod tests {
     #[test]
     fn test_rotation_history() {
         let (manager, _) = create_test_rotation_manager();
-        
+
         // Add some events
         manager.add_event(RotationEvent {
             timestamp: SystemTime::now(),
@@ -497,20 +508,20 @@ mod tests {
     #[test]
     fn test_cancel_rotation() {
         let (manager, _) = create_test_rotation_manager();
-        
+
         // Should fail when no rotation in progress
         assert!(manager.cancel_rotation().is_err());
-        
+
         // Start rotation
         {
             let mut state = manager.rotation_state.write().unwrap();
             state.in_progress = true;
             state.phase = RotationPhase::ReencryptingData;
         }
-        
+
         // Cancel should succeed
         assert!(manager.cancel_rotation().is_ok());
-        
+
         let state = manager.get_rotation_state();
         assert!(!state.in_progress);
         assert_eq!(state.phase, RotationPhase::Idle);

@@ -3,10 +3,10 @@
 //! A space-efficient probabilistic data structure used to test whether an element
 //! is a member of a set. Used in SSTables to quickly determine if a key doesn't exist.
 
-use serde::{Serialize, Deserialize};
-use bincode::{Encode, Decode};
-use std::hash::{Hash, Hasher};
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 /// Bloom filter for efficient membership testing
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
@@ -66,7 +66,7 @@ impl BloomFilter {
         let m = self.num_bits as f64;
         let n = self.num_elements as f64;
         let k = self.num_hashes as f64;
-        
+
         (1.0 - (-k * n / m).exp()).powf(k)
     }
 
@@ -127,12 +127,12 @@ impl BloomFilterBuilder {
     pub fn build(self) -> BloomFilter {
         let n = self.elements.len().max(self.target_elements);
         let (num_bits, num_hashes) = Self::optimal_parameters(n, self.false_positive_rate);
-        
+
         let mut filter = BloomFilter::new(num_bits, num_hashes);
         for element in self.elements {
             filter.add(&element);
         }
-        
+
         filter
     }
 
@@ -140,10 +140,10 @@ impl BloomFilterBuilder {
     fn optimal_parameters(n: usize, p: f64) -> (usize, usize) {
         // Optimal number of bits: m = -n * ln(p) / (ln(2)^2)
         let m = (-(n as f64) * p.ln() / (2.0_f64.ln().powi(2))).ceil() as usize;
-        
+
         // Optimal number of hash functions: k = (m / n) * ln(2)
         let k = ((m as f64 / n as f64) * 2.0_f64.ln()).round() as usize;
-        
+
         (m.max(64), k.max(1)) // Minimum 64 bits and 1 hash
     }
 }
@@ -182,7 +182,7 @@ impl CountingBloomFilter {
     /// Remove an element
     pub fn remove(&mut self, key: &[u8]) {
         let mut all_present = true;
-        
+
         // First check if all bits are set
         for i in 0..self.num_hashes {
             let index = self.hash(key, i) % self.num_counters;
@@ -229,7 +229,7 @@ impl CountingBloomFilter {
     pub fn to_bloom_filter(&self) -> BloomFilter {
         let num_bits = self.num_counters;
         let mut filter = BloomFilter::new(num_bits, self.num_hashes);
-        
+
         // Set bits where counters > 0
         for i in 0..self.num_counters {
             if self.counters[i] > 0 {
@@ -240,7 +240,7 @@ impl CountingBloomFilter {
                 }
             }
         }
-        
+
         filter.num_elements = self.num_elements;
         filter
     }
@@ -261,10 +261,10 @@ impl ScalableBloomFilter {
             initial_capacity,
             false_positive_rate * 0.5, // Tighter bound for first filter
         );
-        
+
         let mut filters = Vec::new();
         filters.push(BloomFilter::new(num_bits, num_hashes));
-        
+
         Self {
             filters,
             false_positive_rate,
@@ -301,16 +301,14 @@ impl ScalableBloomFilter {
     /// Add a new filter with increased capacity
     fn add_new_filter(&mut self) {
         self.current_capacity *= self.growth_factor;
-        
+
         // Calculate tighter false positive rate for new filter
         let filter_index = self.filters.len();
         let filter_fp_rate = self.false_positive_rate * (0.5_f64).powi(filter_index as i32 + 1);
-        
-        let (num_bits, num_hashes) = BloomFilterBuilder::optimal_parameters(
-            self.current_capacity,
-            filter_fp_rate,
-        );
-        
+
+        let (num_bits, num_hashes) =
+            BloomFilterBuilder::optimal_parameters(self.current_capacity, filter_fp_rate);
+
         self.filters.push(BloomFilter::new(num_bits, num_hashes));
     }
 
@@ -342,17 +340,17 @@ mod tests {
     #[test]
     fn test_bloom_filter_basic() {
         let mut filter = BloomFilter::new(1000, 3);
-        
+
         // Add some elements
         filter.add(b"hello");
         filter.add(b"world");
         filter.add(b"rust");
-        
+
         // Test membership
         assert!(filter.may_contain(b"hello"));
         assert!(filter.may_contain(b"world"));
         assert!(filter.may_contain(b"rust"));
-        
+
         // These might have false positives but probably won't
         assert!(!filter.may_contain(b"python"));
         assert!(!filter.may_contain(b"java"));
@@ -361,18 +359,18 @@ mod tests {
     #[test]
     fn test_bloom_filter_builder() {
         let mut builder = BloomFilterBuilder::new(1000, 0.01);
-        
+
         for i in 0..100 {
             builder.add(&format!("key{}", i).into_bytes());
         }
-        
+
         let filter = builder.build();
-        
+
         // All added elements should be found
         for i in 0..100 {
             assert!(filter.may_contain(&format!("key{}", i).into_bytes()));
         }
-        
+
         // False positive rate should be close to target
         let fp_rate = filter.false_positive_rate();
         assert!(fp_rate < 0.02); // Should be close to 0.01
@@ -381,22 +379,22 @@ mod tests {
     #[test]
     fn test_counting_bloom_filter() {
         let mut filter = CountingBloomFilter::new(1000, 3);
-        
+
         // Add and remove elements
         filter.add(b"test");
         assert!(filter.may_contain(b"test"));
-        
+
         filter.remove(b"test");
         // Might still return true due to hash collisions
-        
+
         // Add multiple times
         filter.add(b"multi");
         filter.add(b"multi");
         assert!(filter.may_contain(b"multi"));
-        
+
         filter.remove(b"multi");
         assert!(filter.may_contain(b"multi")); // Still there once
-        
+
         filter.remove(b"multi");
         // Now might be gone (depending on collisions)
     }
@@ -404,20 +402,20 @@ mod tests {
     #[test]
     fn test_scalable_bloom_filter() {
         let mut filter = ScalableBloomFilter::new(100, 0.01);
-        
+
         // Add many elements to trigger scaling
         for i in 0..500 {
             filter.add(&format!("key{}", i).into_bytes());
         }
-        
+
         // All elements should be found
         for i in 0..500 {
             assert!(filter.may_contain(&format!("key{}", i).into_bytes()));
         }
-        
+
         // Should have multiple filters
         assert!(filter.filters.len() > 1);
-        
+
         // Total elements
         assert_eq!(filter.num_elements(), 500);
     }
@@ -426,23 +424,23 @@ mod tests {
     fn test_bloom_filter_merge() {
         let mut filter1 = BloomFilter::new(1000, 3);
         let mut filter2 = BloomFilter::new(1000, 3);
-        
+
         // Add different elements
         filter1.add(b"a");
         filter1.add(b"b");
-        
+
         filter2.add(b"c");
         filter2.add(b"d");
-        
+
         // Merge
         filter1.merge(&filter2).unwrap();
-        
+
         // Should contain all elements
         assert!(filter1.may_contain(b"a"));
         assert!(filter1.may_contain(b"b"));
         assert!(filter1.may_contain(b"c"));
         assert!(filter1.may_contain(b"d"));
-        
+
         assert_eq!(filter1.num_elements(), 4);
     }
 }

@@ -1,0 +1,110 @@
+# Pre-commit hooks for Lightning DB security
+# Install with: pip install pre-commit && pre-commit install
+
+repos:
+  # Security scanning
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: ^(target/|\.git/)
+
+  # Rust-specific hooks
+  - repo: local
+    hooks:
+      - id: cargo-check
+        name: cargo check
+        entry: cargo check --all-targets --all-features
+        language: system
+        files: \.(rs|toml)$
+        pass_filenames: false
+        
+      - id: cargo-clippy
+        name: cargo clippy (security lints)
+        entry: cargo clippy --all-targets --all-features --
+        language: system
+        args:
+          - -D
+          - clippy::unwrap_used
+          - -D
+          - clippy::expect_used
+          - -D
+          - clippy::panic
+          - -D
+          - clippy::integer_overflow
+          - -W
+          - clippy::cast_lossless
+          - -W
+          - clippy::cast_possible_truncation
+        files: \.rs$
+        pass_filenames: false
+        
+      - id: cargo-audit
+        name: cargo audit
+        entry: cargo audit
+        language: system
+        pass_filenames: false
+        files: (Cargo\.(toml|lock)|\.rs)$
+        
+      - id: cargo-deny
+        name: cargo deny
+        entry: cargo deny check
+        language: system
+        pass_filenames: false
+        files: (Cargo\.(toml|lock)|deny\.toml)$
+
+  # General security and quality hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+        exclude: \.min\.(js|css)$
+      - id: trailing-whitespace
+        exclude: \.min\.(js|css)$
+
+  # Docker security
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        files: Dockerfile.*
+
+  # Additional security tools
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.45.0
+    hooks:
+      - id: semgrep
+        args: ['--config=p/security-audit', '--config=p/secrets', '--error']
+        
+  # License checking
+  - repo: local
+    hooks:
+      - id: check-license-headers
+        name: check license headers
+        entry: python3
+        args: ['-c', 'import sys; files=sys.argv[1:]; [print(f"No license header in {f}") for f in files if not any(line.strip().startswith(("// Copyright", "# Copyright", "/* Copyright")) for line in open(f, "r", encoding="utf-8", errors="ignore").readlines()[:10])]']
+        language: system
+        files: \.(rs|py|js|ts)$
+
+# Configuration
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit hooks
+    
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: 'main'
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false

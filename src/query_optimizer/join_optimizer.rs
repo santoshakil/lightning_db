@@ -3,12 +3,11 @@
 //! This module optimizes join order and algorithm selection for complex queries.
 //! It uses dynamic programming, heuristics, and cost-based analysis.
 
-use crate::{Result, Error};
 use super::{
-    CardinalityEstimator, CostModel, LogicalQuery, LogicalJoin,
-    JoinCondition, JoinType, Predicate,
-    OptimizerConfig, StatisticsManager
+    CardinalityEstimator, CostModel, JoinCondition, JoinType, LogicalJoin, LogicalQuery,
+    OptimizerConfig, Predicate,
 };
+use crate::{Error, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -210,18 +209,10 @@ impl JoinOptimizer {
             JoinEnumerationStrategy::DynamicProgramming => {
                 self.optimize_with_dynamic_programming(&query, &join_graph)?
             }
-            JoinEnumerationStrategy::Greedy => {
-                self.optimize_with_greedy(&query, &join_graph)?
-            }
-            JoinEnumerationStrategy::LeftDeep => {
-                self.optimize_left_deep(&query, &join_graph)?
-            }
-            JoinEnumerationStrategy::Bushy => {
-                self.optimize_bushy(&query, &join_graph)?
-            }
-            JoinEnumerationStrategy::Genetic => {
-                self.optimize_with_genetic(&query, &join_graph)?
-            }
+            JoinEnumerationStrategy::Greedy => self.optimize_with_greedy(&query, &join_graph)?,
+            JoinEnumerationStrategy::LeftDeep => self.optimize_left_deep(&query, &join_graph)?,
+            JoinEnumerationStrategy::Bushy => self.optimize_bushy(&query, &join_graph)?,
+            JoinEnumerationStrategy::Genetic => self.optimize_with_genetic(&query, &join_graph)?,
         };
 
         // Apply the optimized plan to the query
@@ -242,7 +233,7 @@ impl JoinOptimizer {
         // Add explicit join edges
         for join in &query.joins {
             let selectivity = self.estimate_join_selectivity(&join.condition)?;
-            
+
             let edge = JoinEdge {
                 left_table: join.left_table.clone(),
                 right_table: join.right_table.clone(),
@@ -251,11 +242,12 @@ impl JoinOptimizer {
                 selectivity: selectivity.selectivity,
                 base_cost: 100.0, // Would be calculated by cost model
             };
-            
+
             graph.edges.push(edge);
-            
+
             // Add dependencies
-            graph.dependencies
+            graph
+                .dependencies
                 .entry(join.left_table.clone())
                 .or_default()
                 .insert(join.right_table.clone());
@@ -274,14 +266,18 @@ impl JoinOptimizer {
         for predicate in &query.predicates {
             self.extract_cross_table_predicates(predicate, graph)?;
         }
-        
+
         Ok(())
     }
 
     /// Extract cross-table predicates that could be join conditions
-    fn extract_cross_table_predicates(&self, predicate: &Predicate, graph: &mut JoinGraph) -> Result<()> {
+    fn extract_cross_table_predicates(
+        &self,
+        predicate: &Predicate,
+        graph: &mut JoinGraph,
+    ) -> Result<()> {
         match predicate {
-            Predicate::Comparison {  .. } => {
+            Predicate::Comparison { .. } => {
                 // Would analyze if this comparison involves multiple tables
                 // For now, simplified implementation
             }
@@ -294,7 +290,7 @@ impl JoinOptimizer {
             }
             _ => {}
         }
-        
+
         Ok(())
     }
 
@@ -302,7 +298,7 @@ impl JoinOptimizer {
     fn choose_optimization_strategy(&self, query: &LogicalQuery) -> JoinEnumerationStrategy {
         let table_count = query.tables.len();
         let join_count = query.joins.len();
-        
+
         match (table_count, join_count) {
             (0..=4, _) => JoinEnumerationStrategy::DynamicProgramming,
             (5..=8, _) => JoinEnumerationStrategy::Greedy,
@@ -313,54 +309,65 @@ impl JoinOptimizer {
     }
 
     /// Optimize using dynamic programming
-    fn optimize_with_dynamic_programming(&self, query: &LogicalQuery, graph: &JoinGraph) -> Result<JoinOrderPlan> {
+    fn optimize_with_dynamic_programming(
+        &self,
+        query: &LogicalQuery,
+        graph: &JoinGraph,
+    ) -> Result<JoinOrderPlan> {
         let tables = &query.tables;
         let n = tables.len();
-        
+
         // DP table: dp[mask] = best plan for subset represented by mask
         let mut dp: HashMap<u32, JoinTree> = HashMap::new();
-        
+
         // Base case: single tables
         for (i, table) in tables.iter().enumerate() {
             let mask = 1u32 << i;
             let cardinality = self.estimate_table_cardinality(table)?;
-            
-            dp.insert(mask, JoinTree::Table {
-                name: table.clone(),
-                estimated_cardinality: cardinality,
-                access_method: TableAccessMethod::TableScan,
-            });
+
+            dp.insert(
+                mask,
+                JoinTree::Table {
+                    name: table.clone(),
+                    estimated_cardinality: cardinality,
+                    access_method: TableAccessMethod::TableScan,
+                },
+            );
         }
-        
+
         // Fill DP table for larger subsets
         for subset_size in 2..=n {
             for mask in 1u32..(1u32 << n) {
                 if mask.count_ones() as usize != subset_size {
                     continue;
                 }
-                
+
                 let mut best_plan: Option<JoinTree> = None;
                 let mut best_cost = f64::INFINITY;
-                
+
                 // Try all possible splits
                 for left_mask in 1u32..mask {
                     if (left_mask & mask) != left_mask {
                         continue;
                     }
-                    
+
                     let right_mask = mask ^ left_mask;
                     if right_mask == 0 {
                         continue;
                     }
-                    
-                    if let (Some(left_tree), Some(right_tree)) = (dp.get(&left_mask), dp.get(&right_mask)) {
-                        if let Some(join_edge) = self.find_join_edge(left_mask, right_mask, tables, graph) {
+
+                    if let (Some(left_tree), Some(right_tree)) =
+                        (dp.get(&left_mask), dp.get(&right_mask))
+                    {
+                        if let Some(join_edge) =
+                            self.find_join_edge(left_mask, right_mask, tables, graph)
+                        {
                             let join_tree = self.create_join_tree(
                                 left_tree.clone(),
                                 right_tree.clone(),
                                 &join_edge,
                             )?;
-                            
+
                             let cost = self.calculate_join_tree_cost(&join_tree)?;
                             if cost < best_cost {
                                 best_cost = cost;
@@ -369,13 +376,13 @@ impl JoinOptimizer {
                         }
                     }
                 }
-                
+
                 if let Some(plan) = best_plan {
                     dp.insert(mask, plan);
                 }
             }
         }
-        
+
         // Extract final plan
         let final_mask = (1u32 << n) - 1;
         if let Some(final_tree) = dp.get(&final_mask) {
@@ -399,42 +406,47 @@ impl JoinOptimizer {
     }
 
     /// Optimize using greedy heuristic
-    fn optimize_with_greedy(&self, query: &LogicalQuery, graph: &JoinGraph) -> Result<JoinOrderPlan> {
+    fn optimize_with_greedy(
+        &self,
+        query: &LogicalQuery,
+        graph: &JoinGraph,
+    ) -> Result<JoinOrderPlan> {
         let mut remaining_tables: HashSet<String> = query.tables.iter().cloned().collect();
         let mut join_order = Vec::new();
         let mut current_tree: Option<JoinTree> = None;
-        
+
         // Start with the most selective table
         let first_table = self.find_most_selective_table(&remaining_tables, graph)?;
         join_order.push(first_table.clone());
         remaining_tables.remove(&first_table);
-        
+
         let cardinality = self.estimate_table_cardinality(&first_table)?;
         current_tree = Some(JoinTree::Table {
             name: first_table,
             estimated_cardinality: cardinality,
             access_method: TableAccessMethod::TableScan,
         });
-        
+
         // Greedily add remaining tables
         while !remaining_tables.is_empty() {
-            let (next_table, best_edge) = self.find_best_next_join(&join_order, &remaining_tables, graph)?;
-            
+            let (next_table, best_edge) =
+                self.find_best_next_join(&join_order, &remaining_tables, graph)?;
+
             let next_cardinality = self.estimate_table_cardinality(&next_table)?;
             let right_tree = JoinTree::Table {
                 name: next_table.clone(),
                 estimated_cardinality: next_cardinality,
                 access_method: TableAccessMethod::TableScan,
             };
-            
+
             if let Some(left_tree) = current_tree {
                 current_tree = Some(self.create_join_tree(left_tree, right_tree, &best_edge)?);
             }
-            
+
             join_order.push(next_table.clone());
             remaining_tables.remove(&next_table);
         }
-        
+
         if let Some(final_tree) = current_tree {
             Ok(JoinOrderPlan {
                 join_order,
@@ -462,12 +474,14 @@ impl JoinOptimizer {
         tables.sort_by(|a, b| {
             let a_selectivity = self.estimate_table_selectivity(a, graph);
             let b_selectivity = self.estimate_table_selectivity(b, graph);
-            a_selectivity.partial_cmp(&b_selectivity).unwrap_or(std::cmp::Ordering::Equal)
+            a_selectivity
+                .partial_cmp(&b_selectivity)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
-        
+
         // Build left-deep join tree
         let mut join_tree = None;
-        
+
         for (i, table) in tables.iter().enumerate() {
             let cardinality = self.estimate_table_cardinality(table)?;
             let table_tree = JoinTree::Table {
@@ -475,7 +489,7 @@ impl JoinOptimizer {
                 estimated_cardinality: cardinality,
                 access_method: TableAccessMethod::TableScan,
             };
-            
+
             if i == 0 {
                 join_tree = Some(table_tree);
             } else if let Some(left_tree) = join_tree.take() {
@@ -488,7 +502,7 @@ impl JoinOptimizer {
                 }
             }
         }
-        
+
         if let Some(final_tree) = join_tree {
             Ok(JoinOrderPlan {
                 join_order: tables,
@@ -517,7 +531,11 @@ impl JoinOptimizer {
     }
 
     /// Optimize using genetic algorithm
-    fn optimize_with_genetic(&self, query: &LogicalQuery, graph: &JoinGraph) -> Result<JoinOrderPlan> {
+    fn optimize_with_genetic(
+        &self,
+        query: &LogicalQuery,
+        graph: &JoinGraph,
+    ) -> Result<JoinOrderPlan> {
         // Genetic algorithm would evolve join orders over generations
         // For now, fall back to greedy
         self.optimize_with_greedy(query, graph)
@@ -526,7 +544,10 @@ impl JoinOptimizer {
     /// Estimate join selectivity
     fn estimate_join_selectivity(&self, condition: &JoinCondition) -> Result<JoinSelectivity> {
         match condition {
-            JoinCondition::Equi { left_column, right_column } => {
+            JoinCondition::Equi {
+                left_column,
+                right_column,
+            } => {
                 // Estimate based on foreign key relationships and cardinalities
                 Ok(JoinSelectivity {
                     selectivity: 0.1, // Default 10% selectivity
@@ -546,44 +567,65 @@ impl JoinOptimizer {
     }
 
     /// Find join edge between table subsets
-    fn find_join_edge(&self, left_mask: u32, right_mask: u32, tables: &[String], graph: &JoinGraph) -> Option<JoinEdge> {
-        let left_tables: Vec<&String> = tables.iter()
+    fn find_join_edge(
+        &self,
+        left_mask: u32,
+        right_mask: u32,
+        tables: &[String],
+        graph: &JoinGraph,
+    ) -> Option<JoinEdge> {
+        let left_tables: Vec<&String> = tables
+            .iter()
             .enumerate()
             .filter(|(i, _)| (left_mask & (1u32 << i)) != 0)
             .map(|(_, table)| table)
             .collect();
-        
-        let right_tables: Vec<&String> = tables.iter()
+
+        let right_tables: Vec<&String> = tables
+            .iter()
             .enumerate()
             .filter(|(i, _)| (right_mask & (1u32 << i)) != 0)
             .map(|(_, table)| table)
             .collect();
-        
+
         // Find edge connecting left and right subsets
         for edge in &graph.edges {
-            if left_tables.contains(&&edge.left_table) && right_tables.contains(&&edge.right_table) {
+            if left_tables.contains(&&edge.left_table) && right_tables.contains(&&edge.right_table)
+            {
                 return Some(edge.clone());
             }
-            if left_tables.contains(&&edge.right_table) && right_tables.contains(&&edge.left_table) {
+            if left_tables.contains(&&edge.right_table) && right_tables.contains(&&edge.left_table)
+            {
                 return Some(edge.clone());
             }
         }
-        
+
         None
     }
 
     /// Create join tree node
-    fn create_join_tree(&self, left: JoinTree, right: JoinTree, edge: &JoinEdge) -> Result<JoinTree> {
+    fn create_join_tree(
+        &self,
+        left: JoinTree,
+        right: JoinTree,
+        edge: &JoinEdge,
+    ) -> Result<JoinTree> {
         let left_cardinality = self.get_tree_cardinality(&left);
         let right_cardinality = self.get_tree_cardinality(&right);
-        
+
         // Choose join algorithm
-        let algorithm = self.choose_join_algorithm(left_cardinality, right_cardinality, &edge.condition);
-        
+        let algorithm =
+            self.choose_join_algorithm(left_cardinality, right_cardinality, &edge.condition);
+
         // Estimate join cost and cardinality
-        let join_cost = self.estimate_join_cost(left_cardinality, right_cardinality, algorithm, edge)?;
-        let result_cardinality = self.estimate_join_result_cardinality(left_cardinality, right_cardinality, edge.selectivity);
-        
+        let join_cost =
+            self.estimate_join_cost(left_cardinality, right_cardinality, algorithm, edge)?;
+        let result_cardinality = self.estimate_join_result_cardinality(
+            left_cardinality,
+            right_cardinality,
+            edge.selectivity,
+        );
+
         Ok(JoinTree::Join {
             left: Box::new(left),
             right: Box::new(right),
@@ -596,16 +638,22 @@ impl JoinOptimizer {
     }
 
     /// Choose join algorithm based on characteristics
-    fn choose_join_algorithm(&self, left_cardinality: u64, right_cardinality: u64, condition: &JoinCondition) -> JoinAlgorithmChoice {
+    fn choose_join_algorithm(
+        &self,
+        left_cardinality: u64,
+        right_cardinality: u64,
+        condition: &JoinCondition,
+    ) -> JoinAlgorithmChoice {
         match condition {
             JoinCondition::Equi { .. } => {
                 // For equi-joins, choose based on size difference
                 let size_ratio = if left_cardinality > 0 && right_cardinality > 0 {
-                    (left_cardinality as f64 / right_cardinality as f64).max(right_cardinality as f64 / left_cardinality as f64)
+                    (left_cardinality as f64 / right_cardinality as f64)
+                        .max(right_cardinality as f64 / left_cardinality as f64)
                 } else {
                     1.0
                 };
-                
+
                 if size_ratio > 10.0 {
                     JoinAlgorithmChoice::Hash
                 } else if left_cardinality > 100_000 && right_cardinality > 100_000 {
@@ -628,7 +676,13 @@ impl JoinOptimizer {
     }
 
     /// Estimate join cost
-    fn estimate_join_cost(&self, left_cardinality: u64, right_cardinality: u64, algorithm: JoinAlgorithmChoice, edge: &JoinEdge) -> Result<f64> {
+    fn estimate_join_cost(
+        &self,
+        left_cardinality: u64,
+        right_cardinality: u64,
+        algorithm: JoinAlgorithmChoice,
+        edge: &JoinEdge,
+    ) -> Result<f64> {
         let base_cost = match algorithm {
             JoinAlgorithmChoice::Hash => {
                 // Hash join: O(M + N) where M, N are input sizes
@@ -636,8 +690,8 @@ impl JoinOptimizer {
             }
             JoinAlgorithmChoice::SortMerge => {
                 // Sort-merge: O(M log M + N log N)
-                left_cardinality as f64 * (left_cardinality as f64).log2() * 0.001 +
-                right_cardinality as f64 * (right_cardinality as f64).log2() * 0.001
+                left_cardinality as f64 * (left_cardinality as f64).log2() * 0.001
+                    + right_cardinality as f64 * (right_cardinality as f64).log2() * 0.001
             }
             JoinAlgorithmChoice::NestedLoop => {
                 // Nested loop: O(M * N)
@@ -652,12 +706,17 @@ impl JoinOptimizer {
                 (left_cardinality + right_cardinality) as f64 * 0.005
             }
         };
-        
+
         Ok(base_cost)
     }
 
     /// Estimate join result cardinality
-    fn estimate_join_result_cardinality(&self, left_cardinality: u64, right_cardinality: u64, selectivity: f64) -> u64 {
+    fn estimate_join_result_cardinality(
+        &self,
+        left_cardinality: u64,
+        right_cardinality: u64,
+        selectivity: f64,
+    ) -> u64 {
         // Simplified cardinality estimation
         ((left_cardinality as f64 * right_cardinality as f64).sqrt() * selectivity) as u64
     }
@@ -679,22 +738,34 @@ impl JoinOptimizer {
         0.1 // Default selectivity
     }
 
-    fn find_most_selective_table(&self, tables: &HashSet<String>, graph: &JoinGraph) -> Result<String> {
-        tables.iter()
+    fn find_most_selective_table(
+        &self,
+        tables: &HashSet<String>,
+        graph: &JoinGraph,
+    ) -> Result<String> {
+        tables
+            .iter()
             .min_by(|a, b| {
                 let a_sel = self.estimate_table_selectivity(a, graph);
                 let b_sel = self.estimate_table_selectivity(b, graph);
-                a_sel.partial_cmp(&b_sel).unwrap_or(std::cmp::Ordering::Equal)
+                a_sel
+                    .partial_cmp(&b_sel)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .cloned()
             .ok_or_else(|| Error::Generic("No tables found".to_string()))
     }
 
-    fn find_best_next_join(&self, current_tables: &[String], remaining: &HashSet<String>, graph: &JoinGraph) -> Result<(String, JoinEdge)> {
+    fn find_best_next_join(
+        &self,
+        current_tables: &[String],
+        remaining: &HashSet<String>,
+        graph: &JoinGraph,
+    ) -> Result<(String, JoinEdge)> {
         let mut best_table = None;
         let mut best_edge = None;
         let mut best_score = f64::INFINITY;
-        
+
         for table in remaining {
             if let Some(edge) = self.find_table_join_edge(current_tables, table, graph) {
                 let score = self.calculate_join_score(&edge);
@@ -705,7 +776,7 @@ impl JoinOptimizer {
                 }
             }
         }
-        
+
         if let (Some(table), Some(edge)) = (best_table, best_edge) {
             Ok((table, edge))
         } else {
@@ -713,7 +784,12 @@ impl JoinOptimizer {
         }
     }
 
-    fn find_table_join_edge(&self, current_tables: &[String], new_table: &str, graph: &JoinGraph) -> Option<JoinEdge> {
+    fn find_table_join_edge(
+        &self,
+        current_tables: &[String],
+        new_table: &str,
+        graph: &JoinGraph,
+    ) -> Option<JoinEdge> {
         for edge in &graph.edges {
             if current_tables.contains(&edge.left_table) && edge.right_table == new_table {
                 return Some(edge.clone());
@@ -733,7 +809,12 @@ impl JoinOptimizer {
     fn calculate_join_tree_cost(&self, tree: &JoinTree) -> Result<f64> {
         match tree {
             JoinTree::Table { .. } => Ok(1.0), // Base table access cost
-            JoinTree::Join { left, right, estimated_cost, .. } => {
+            JoinTree::Join {
+                left,
+                right,
+                estimated_cost,
+                ..
+            } => {
                 let left_cost = self.calculate_join_tree_cost(left)?;
                 let right_cost = self.calculate_join_tree_cost(right)?;
                 Ok(left_cost + right_cost + estimated_cost)
@@ -743,8 +824,14 @@ impl JoinOptimizer {
 
     fn get_tree_cardinality(&self, tree: &JoinTree) -> u64 {
         match tree {
-            JoinTree::Table { estimated_cardinality, .. } => *estimated_cardinality,
-            JoinTree::Join { estimated_cardinality, .. } => *estimated_cardinality,
+            JoinTree::Table {
+                estimated_cardinality,
+                ..
+            } => *estimated_cardinality,
+            JoinTree::Join {
+                estimated_cardinality,
+                ..
+            } => *estimated_cardinality,
         }
     }
 
@@ -762,7 +849,12 @@ impl JoinOptimizer {
     fn extract_join_algorithms(&self, tree: &JoinTree) -> Vec<JoinAlgorithmChoice> {
         match tree {
             JoinTree::Table { .. } => Vec::new(),
-            JoinTree::Join { left, right, algorithm, .. } => {
+            JoinTree::Join {
+                left,
+                right,
+                algorithm,
+                ..
+            } => {
                 let mut algorithms = self.extract_join_algorithms(left);
                 algorithms.extend(self.extract_join_algorithms(right));
                 algorithms.push(*algorithm);
@@ -771,13 +863,17 @@ impl JoinOptimizer {
         }
     }
 
-    fn reconstruct_joins_from_plan(&self, plan: &JoinOrderPlan, graph: &JoinGraph) -> Result<Vec<LogicalJoin>> {
+    fn reconstruct_joins_from_plan(
+        &self,
+        plan: &JoinOrderPlan,
+        graph: &JoinGraph,
+    ) -> Result<Vec<LogicalJoin>> {
         // Reconstruct the joins based on the optimized plan
         let mut joins = Vec::new();
-        
+
         // Extract joins from the join tree
         self.extract_joins_from_tree(&plan.join_tree, &mut joins);
-        
+
         Ok(joins)
     }
 
@@ -786,13 +882,21 @@ impl JoinOptimizer {
             JoinTree::Table { .. } => {
                 // Leaf node, no joins
             }
-            JoinTree::Join { left, right, condition, join_type, .. } => {
+            JoinTree::Join {
+                left,
+                right,
+                condition,
+                join_type,
+                ..
+            } => {
                 // Extract table names from left and right subtrees
                 let left_tables = self.extract_join_order(left);
                 let right_tables = self.extract_join_order(right);
-                
+
                 // Create logical join (simplified)
-                if let (Some(left_table), Some(right_table)) = (left_tables.first(), right_tables.first()) {
+                if let (Some(left_table), Some(right_table)) =
+                    (left_tables.first(), right_tables.first())
+                {
                     joins.push(LogicalJoin {
                         left_table: left_table.clone(),
                         right_table: right_table.clone(),
@@ -800,7 +904,7 @@ impl JoinOptimizer {
                         join_type: *join_type,
                     });
                 }
-                
+
                 // Recursively extract from subtrees
                 self.extract_joins_from_tree(left, joins);
                 self.extract_joins_from_tree(right, joins);
@@ -816,10 +920,9 @@ mod tests {
     #[test]
     fn test_join_optimizer_creation() {
         let config = OptimizerConfig::default();
-        let statistics = Arc::new(StatisticsManager::new(config.clone()));
-        let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics));
+        let cardinality_estimator = Arc::new(CardinalityEstimator::new());
         let cost_model = Arc::new(CostModel::new(config));
-        
+
         let optimizer = JoinOptimizer::new(cardinality_estimator, cost_model);
         assert_eq!(optimizer.order_cache.len(), 0);
     }
@@ -827,8 +930,7 @@ mod tests {
     #[test]
     fn test_join_algorithm_selection() {
         let config = OptimizerConfig::default();
-        let statistics = Arc::new(StatisticsManager::new(config.clone()));
-        let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics));
+        let cardinality_estimator = Arc::new(CardinalityEstimator::new());
         let cost_model = Arc::new(CostModel::new(config));
         let optimizer = JoinOptimizer::new(cardinality_estimator, cost_model);
 
@@ -853,8 +955,7 @@ mod tests {
     #[test]
     fn test_join_graph_construction() {
         let config = OptimizerConfig::default();
-        let statistics = Arc::new(StatisticsManager::new(config.clone()));
-        let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics));
+        let cardinality_estimator = Arc::new(CardinalityEstimator::new());
         let cost_model = Arc::new(CostModel::new(config));
         let optimizer = JoinOptimizer::new(cardinality_estimator, cost_model);
 
@@ -886,8 +987,7 @@ mod tests {
     #[test]
     fn test_optimization_strategy_selection() {
         let config = OptimizerConfig::default();
-        let statistics = Arc::new(StatisticsManager::new(config.clone()));
-        let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics));
+        let cardinality_estimator = Arc::new(CardinalityEstimator::new());
         let cost_model = Arc::new(CostModel::new(config));
         let optimizer = JoinOptimizer::new(cardinality_estimator, cost_model);
 
@@ -903,7 +1003,10 @@ mod tests {
         };
 
         let strategy = optimizer.choose_optimization_strategy(&small_query);
-        assert!(matches!(strategy, JoinEnumerationStrategy::DynamicProgramming));
+        assert!(matches!(
+            strategy,
+            JoinEnumerationStrategy::DynamicProgramming
+        ));
 
         // Large query should use genetic algorithm
         let large_query = LogicalQuery {

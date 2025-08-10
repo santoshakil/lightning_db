@@ -36,7 +36,10 @@ impl std::fmt::Debug for MemoryPool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MemoryPool")
             .field("config", &self.config)
-            .field("shutdown", &self.shutdown.load(std::sync::atomic::Ordering::Relaxed))
+            .field(
+                "shutdown",
+                &self.shutdown.load(std::sync::atomic::Ordering::Relaxed),
+            )
             .field("prefetch_thread", &self.prefetch_thread.is_some())
             .field("eviction_thread", &self.eviction_thread.is_some())
             .finish()

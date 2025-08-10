@@ -6,8 +6,8 @@
 //! - Data layout optimized for sequential scanning
 //! - Slot directory at end for append-only performance
 
-use super::{CACHE_LINE_SIZE, PrefetchHints, CachePerformanceStats};
-use std::sync::atomic::{AtomicU32, AtomicU16, Ordering};
+use super::{CachePerformanceStats, PrefetchHints, CACHE_LINE_SIZE};
+use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use std::sync::Arc;
 
 /// Standard database page size (4KB)
@@ -84,7 +84,8 @@ impl CacheAlignedPageHeader {
 
     /// Mark page as dirty
     pub fn mark_dirty(&self) {
-        self.flags.fetch_or(PageFlags::DIRTY as u16, Ordering::Release);
+        self.flags
+            .fetch_or(PageFlags::DIRTY as u16, Ordering::Release);
     }
 
     /// Check if page is dirty
@@ -159,7 +160,7 @@ impl CacheAlignedPage {
     /// Insert a record into the page
     pub fn insert_record(&mut self, record: &[u8]) -> Result<u16, PageError> {
         let record_len = record.len() as u16;
-        
+
         // Check if we have space
         if !self.header.can_fit(record_len) {
             return Err(PageError::InsufficientSpace);
@@ -168,26 +169,28 @@ impl CacheAlignedPage {
         // Allocate space for record (grows down from end)
         let current_free = self.header.free_space_ptr.load(Ordering::Acquire);
         let new_free = current_free - record_len;
-        
+
         // Copy record data
         let record_offset = new_free as usize - CACHE_LINE_SIZE;
         self.data[record_offset..record_offset + record.len()].copy_from_slice(record);
-        
+
         // Add slot entry (grows up from header)
-        let slot_offset = self.header.slot_dir_offset.load(Ordering::Acquire) as usize - CACHE_LINE_SIZE;
+        let slot_offset =
+            self.header.slot_dir_offset.load(Ordering::Acquire) as usize - CACHE_LINE_SIZE;
         let slot_entry = SlotEntry::new(new_free, record_len);
-        
+
         unsafe {
             let slot_ptr = self.data.as_mut_ptr().add(slot_offset) as *mut SlotEntry;
             std::ptr::write(slot_ptr, slot_entry);
         }
 
         // Update page metadata
-        self.header.free_space_ptr.store(new_free, Ordering::Release);
-        self.header.slot_dir_offset.fetch_add(
-            std::mem::size_of::<SlotEntry>() as u16, 
-            Ordering::Release
-        );
+        self.header
+            .free_space_ptr
+            .store(new_free, Ordering::Release);
+        self.header
+            .slot_dir_offset
+            .fetch_add(std::mem::size_of::<SlotEntry>() as u16, Ordering::Release);
         let slot_idx = self.header.record_count.fetch_add(1, Ordering::Release);
         self.header.mark_dirty();
         self.header.increment_seq();
@@ -204,9 +207,7 @@ impl CacheAlignedPage {
 
         // Prefetch the slot directory area
         let slot_area_start = CACHE_LINE_SIZE;
-        PrefetchHints::prefetch_read_t0(
-            unsafe { self.data.as_ptr().add(slot_area_start) }
-        );
+        PrefetchHints::prefetch_read_t0(unsafe { self.data.as_ptr().add(slot_area_start) });
 
         // Get slot entry
         let slot_offset = slot_area_start + (slot_idx as usize * std::mem::size_of::<SlotEntry>());
@@ -221,9 +222,7 @@ impl CacheAlignedPage {
 
         // Prefetch the record data
         let record_offset = slot_entry.offset as usize - CACHE_LINE_SIZE;
-        PrefetchHints::prefetch_read_t0(
-            unsafe { self.data.as_ptr().add(record_offset) }
-        );
+        PrefetchHints::prefetch_read_t0(unsafe { self.data.as_ptr().add(record_offset) });
 
         // Return record slice
         let record_end = record_offset + slot_entry.length as usize;
@@ -236,23 +235,23 @@ impl CacheAlignedPage {
         F: FnMut(u16, &[u8]) -> bool,
     {
         let record_count = self.header.record_count.load(Ordering::Acquire);
-        
+
         // Prefetch slot directory
         PrefetchHints::prefetch_range(
             unsafe { self.data.as_ptr().add(CACHE_LINE_SIZE) },
-            record_count as usize * std::mem::size_of::<SlotEntry>()
+            record_count as usize * std::mem::size_of::<SlotEntry>(),
         );
 
         for slot_idx in 0..record_count {
             let record = self.get_record(slot_idx)?;
-            
+
             // Prefetch next record
             if slot_idx + 1 < record_count {
                 if let Ok(next_record) = self.get_record(slot_idx + 1) {
                     PrefetchHints::prefetch_read_t0(next_record.as_ptr());
                 }
             }
-            
+
             if !callback(slot_idx, record) {
                 break; // Callback requested early termination
             }
@@ -284,7 +283,7 @@ impl CacheAlignedPage {
             // In-place update
             let record_offset = slot_entry.offset as usize - CACHE_LINE_SIZE;
             self.data[record_offset..record_offset + new_data.len()].copy_from_slice(new_data);
-            
+
             // Update slot length if smaller
             if (new_data.len() as u16) < slot_entry.length {
                 slot_entry.length = new_data.len() as u16;
@@ -315,7 +314,7 @@ impl CacheAlignedPage {
         // Mark slot as invalid
         let slot_offset = CACHE_LINE_SIZE + (slot_idx as usize * std::mem::size_of::<SlotEntry>());
         let invalid_slot = SlotEntry::new(0, 0);
-        
+
         unsafe {
             let slot_ptr = self.data.as_mut_ptr().add(slot_offset) as *mut SlotEntry;
             std::ptr::write(slot_ptr, invalid_slot);
@@ -330,7 +329,7 @@ impl CacheAlignedPage {
     pub fn compact(&mut self) -> Result<(), PageError> {
         let record_count = self.header.record_count.load(Ordering::Acquire);
         let mut valid_records = Vec::new();
-        
+
         // Collect valid records
         for slot_idx in 0..record_count {
             if let Ok(record) = self.get_record(slot_idx) {
@@ -340,8 +339,12 @@ impl CacheAlignedPage {
 
         // Reset page
         self.header.record_count.store(0, Ordering::Release);
-        self.header.free_space_ptr.store(PAGE_SIZE as u16, Ordering::Release);
-        self.header.slot_dir_offset.store(CACHE_LINE_SIZE as u16, Ordering::Release);
+        self.header
+            .free_space_ptr
+            .store(PAGE_SIZE as u16, Ordering::Release);
+        self.header
+            .slot_dir_offset
+            .store(CACHE_LINE_SIZE as u16, Ordering::Release);
 
         // Re-insert valid records
         for record in valid_records {
@@ -361,19 +364,19 @@ impl CacheAlignedPage {
     /// Calculate checksum for integrity verification
     pub fn calculate_checksum(&self) -> u32 {
         let mut crc = crc32fast::Hasher::new();
-        
+
         // Include header (except checksum field)
         let header_bytes = unsafe {
             std::slice::from_raw_parts(
                 &self.header as *const _ as *const u8,
-                std::mem::size_of::<CacheAlignedPageHeader>() - 4 // Exclude checksum
+                std::mem::size_of::<CacheAlignedPageHeader>() - 4, // Exclude checksum
             )
         };
         crc.update(header_bytes);
-        
+
         // Include data
         crc.update(&self.data);
-        
+
         crc.finalize()
     }
 
@@ -428,7 +431,7 @@ impl CacheOptimizedPageCache {
 
     pub fn get_page(&self, page_id: u32) -> Option<Arc<CacheAlignedPage>> {
         let slot = (page_id as usize) % self.cache_size;
-        
+
         if let Some(ref page) = self.pages[slot] {
             let cached_id = page.header.page_id.load(Ordering::Acquire);
             if cached_id == page_id {
@@ -438,7 +441,7 @@ impl CacheOptimizedPageCache {
                 return Some(Arc::clone(page));
             }
         }
-        
+
         self.stats.record_miss();
         None
     }
@@ -446,12 +449,10 @@ impl CacheOptimizedPageCache {
     pub fn put_page(&mut self, page: Arc<CacheAlignedPage>) {
         let page_id = page.header.page_id.load(Ordering::Acquire);
         let slot = (page_id as usize) % self.cache_size;
-        
+
         // Prefetch the slot for write
-        PrefetchHints::prefetch_write(
-            &self.pages[slot] as *const _ as *const u8
-        );
-        
+        PrefetchHints::prefetch_write(&self.pages[slot] as *const _ as *const u8);
+
         self.pages[slot] = Some(page);
     }
 
@@ -466,8 +467,14 @@ mod tests {
 
     #[test]
     fn test_page_header_alignment() {
-        assert_eq!(std::mem::align_of::<CacheAlignedPageHeader>(), CACHE_LINE_SIZE);
-        assert_eq!(std::mem::size_of::<CacheAlignedPageHeader>(), CACHE_LINE_SIZE);
+        assert_eq!(
+            std::mem::align_of::<CacheAlignedPageHeader>(),
+            CACHE_LINE_SIZE
+        );
+        assert_eq!(
+            std::mem::size_of::<CacheAlignedPageHeader>(),
+            CACHE_LINE_SIZE
+        );
     }
 
     #[test]
@@ -479,47 +486,55 @@ mod tests {
     #[test]
     fn test_record_operations() {
         let mut page = CacheAlignedPage::new(1, PageType::DataPage);
-        
+
         // Test insert
         let record1 = b"Hello, World!";
-        let slot1 = page.insert_record(record1).unwrap();
+        let slot1 = page.insert_record(record1)
+            .expect("Failed to insert first record");
         assert_eq!(slot1, 0);
-        
+
         let record2 = b"Lightning DB";
-        let slot2 = page.insert_record(record2).unwrap();
+        let slot2 = page.insert_record(record2)
+            .expect("Failed to insert second record");
         assert_eq!(slot2, 1);
-        
+
         // Test get
-        let retrieved1 = page.get_record(slot1).unwrap();
+        let retrieved1 = page.get_record(slot1)
+            .expect("Failed to retrieve first record");
         assert_eq!(retrieved1, record1);
-        
-        let retrieved2 = page.get_record(slot2).unwrap();
+
+        let retrieved2 = page.get_record(slot2)
+            .expect("Failed to retrieve second record");
         assert_eq!(retrieved2, record2);
-        
+
         // Test update
         let new_record1 = b"Updated!";
-        page.update_record(slot1, new_record1).unwrap();
-        let updated = page.get_record(slot1).unwrap();
+        page.update_record(slot1, new_record1)
+            .expect("Failed to update record");
+        let updated = page.get_record(slot1)
+            .expect("Failed to retrieve updated record");
         assert_eq!(updated, new_record1);
     }
 
     #[test]
     fn test_page_scan() {
         let mut page = CacheAlignedPage::new(1, PageType::DataPage);
-        
+
         // Insert test records
         let records = vec![b"record1", b"record2", b"record3"];
         for record in &records {
-            page.insert_record(*record).unwrap();
+            page.insert_record(*record)
+                .expect("Failed to insert record for scan test");
         }
-        
+
         // Scan all records
         let mut scanned = Vec::new();
         page.scan_records(|_idx, record| {
             scanned.push(record.to_vec());
             true
-        }).unwrap();
-        
+        })
+        .expect("Failed to scan records");
+
         assert_eq!(scanned.len(), records.len());
         for (i, record) in records.iter().enumerate() {
             assert_eq!(&scanned[i], record);
@@ -530,8 +545,9 @@ mod tests {
     fn test_page_utilization() {
         let mut page = CacheAlignedPage::new(1, PageType::DataPage);
         assert_eq!(page.utilization(), 0.0);
-        
-        page.insert_record(b"test record").unwrap();
+
+        page.insert_record(b"test record")
+            .expect("Failed to insert record for utilization test");
         assert!(page.utilization() > 0.0);
         assert!(page.utilization() < 1.0);
     }
@@ -539,11 +555,12 @@ mod tests {
     #[test]
     fn test_checksum_verification() {
         let mut page = CacheAlignedPage::new(1, PageType::DataPage);
-        page.insert_record(b"test data").unwrap();
+        page.insert_record(b"test data")
+            .expect("Failed to insert record for checksum test");
         page.update_checksum();
-        
+
         assert!(page.verify_integrity());
-        
+
         // Manually corrupt data
         page.data[1000] = 0xFF;
         assert!(!page.verify_integrity());
@@ -553,14 +570,14 @@ mod tests {
     fn test_page_cache() {
         let mut cache = CacheOptimizedPageCache::new(10);
         let page = Arc::new(CacheAlignedPage::new(42, PageType::DataPage));
-        
+
         // Initially miss
         assert!(cache.get_page(42).is_none());
-        
+
         // Put and hit
         cache.put_page(Arc::clone(&page));
         assert!(cache.get_page(42).is_some());
-        
+
         // Check stats
         let stats = cache.get_stats();
         assert_eq!(stats.cache_hits.load(Ordering::Relaxed), 1);

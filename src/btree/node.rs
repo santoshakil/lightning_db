@@ -51,12 +51,14 @@ impl BTreeNode {
             // Allow root to have 0 entries and 1 child (will be fixed by check_root_adjustment)
             if !(self.entries.is_empty() && self.children.len() == 1) {
                 return Err(Error::Generic(format!(
-                    "Invalid internal node {}: {} entries but {} children", 
-                    self.page_id, self.entries.len(), self.children.len()
+                    "Invalid internal node {}: {} entries but {} children",
+                    self.page_id,
+                    self.entries.len(),
+                    self.children.len()
                 )));
             }
         }
-        
+
         let mut buffer = BytesMut::with_capacity(PAGE_SIZE);
 
         // Write page header
@@ -200,11 +202,13 @@ impl BTreeNode {
                 // Don't try to fix - just return an error
                 return Err(Error::Generic(format!(
                     "Corrupted internal node {}: {} entries but {} children",
-                    page.id, entries.len(), children.len()
+                    page.id,
+                    entries.len(),
+                    children.len()
                 )));
             }
         }
-        
+
         Ok(Self {
             page_id: page.id,
             node_type,

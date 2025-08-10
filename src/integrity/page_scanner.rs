@@ -1,12 +1,12 @@
 //! Page Structure Scanner
-//! 
+//!
 //! Scans and validates the structure of database pages.
 
+use super::{ErrorSeverity, StructureError, StructureErrorType};
+use crate::storage::{Page, PageManager, PageManagerAsync, PageType, PAGE_SIZE};
 use crate::{Database, Result};
-use crate::storage::{PageManager, Page, PageType, PAGE_SIZE, PageManagerAsync};
-use super::{StructureError, StructureErrorType, ErrorSeverity};
-use std::sync::Arc;
 use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Magic number for Lightning DB pages
 const LIGHTNING_DB_MAGIC: u32 = 0x4C444242; // "LDBB"
@@ -23,7 +23,7 @@ impl PageScanner {
     /// Create new page scanner
     pub fn new(database: Arc<Database>) -> Self {
         let page_manager = database.get_page_manager();
-        
+
         Self {
             database,
             page_manager,
@@ -35,20 +35,20 @@ impl PageScanner {
     /// Scan all pages for structural issues
     pub async fn scan_all_pages(&self) -> Result<Vec<StructureError>> {
         let all_pages = self.page_manager.get_all_allocated_pages().await?;
-        
+
         for page_id in all_pages {
             if page_id == 0 {
                 continue; // Skip null page
             }
-            
+
             if let Err(_) = self.scan_page(page_id).await {
                 // Continue scanning even if one page fails
                 continue;
             }
-            
+
             *self.pages_scanned.write() += 1;
         }
-        
+
         Ok(self.errors_found.read().clone())
     }
 
@@ -66,9 +66,9 @@ impl PageScanner {
                 return Ok(false);
             }
         };
-        
+
         let mut is_valid = true;
-        
+
         // Validate page size
         if page.data.len() != PAGE_SIZE {
             self.record_error(StructureError {
@@ -79,22 +79,22 @@ impl PageScanner {
             });
             is_valid = false;
         }
-        
+
         // Validate magic number
         if !self.validate_magic_number(&page, page_id) {
             is_valid = false;
         }
-        
+
         // Validate page type
         if !self.validate_page_type(&page, page_id) {
             is_valid = false;
         }
-        
+
         // Validate page header
         if !self.validate_page_header(&page, page_id) {
             is_valid = false;
         }
-        
+
         // Type-specific validation
         match page.page_type {
             PageType::Meta => is_valid &= self.validate_meta_page(&page, page_id),
@@ -102,7 +102,7 @@ impl PageScanner {
             PageType::Overflow => is_valid &= self.validate_overflow_page(&page, page_id),
             PageType::Free => is_valid &= self.validate_free_page(&page, page_id),
         }
-        
+
         Ok(is_valid)
     }
 
@@ -117,9 +117,9 @@ impl PageScanner {
             });
             return false;
         }
-        
+
         let magic = u32::from_le_bytes([page.data[0], page.data[1], page.data[2], page.data[3]]);
-        
+
         if magic != LIGHTNING_DB_MAGIC {
             self.record_error(StructureError {
                 page_id,
@@ -129,7 +129,7 @@ impl PageScanner {
             });
             return false;
         }
-        
+
         true
     }
 
@@ -139,9 +139,9 @@ impl PageScanner {
         if page.data.len() < 9 {
             return false;
         }
-        
+
         let type_byte = page.data[8];
-        
+
         match type_byte {
             0 => page.page_type == PageType::Meta,
             1 => page.page_type == PageType::Data,
@@ -163,7 +163,7 @@ impl PageScanner {
     fn validate_page_header(&self, page: &Page, page_id: u64) -> bool {
         // Standard header size
         const HEADER_SIZE: usize = 32;
-        
+
         if page.data.len() < HEADER_SIZE {
             self.record_error(StructureError {
                 page_id,
@@ -173,23 +173,32 @@ impl PageScanner {
             });
             return false;
         }
-        
+
         // Validate page ID in header matches expected
         let stored_page_id = u64::from_le_bytes([
-            page.data[12], page.data[13], page.data[14], page.data[15],
-            page.data[16], page.data[17], page.data[18], page.data[19],
+            page.data[12],
+            page.data[13],
+            page.data[14],
+            page.data[15],
+            page.data[16],
+            page.data[17],
+            page.data[18],
+            page.data[19],
         ]);
-        
+
         if stored_page_id != page_id {
             self.record_error(StructureError {
                 page_id,
                 error_type: StructureErrorType::CorruptedHeader,
-                description: format!("Page ID mismatch: stored {} vs expected {}", stored_page_id, page_id),
+                description: format!(
+                    "Page ID mismatch: stored {} vs expected {}",
+                    stored_page_id, page_id
+                ),
                 severity: ErrorSeverity::Critical,
             });
             return false;
         }
-        
+
         true
     }
 
@@ -197,13 +206,12 @@ impl PageScanner {
     fn validate_meta_page(&self, page: &Page, page_id: u64) -> bool {
         // Metadata pages contain database configuration
         let mut is_valid = true;
-        
+
         // Check version number
         if page.data.len() >= 40 {
-            let version = u32::from_le_bytes([
-                page.data[32], page.data[33], page.data[34], page.data[35],
-            ]);
-            
+            let version =
+                u32::from_le_bytes([page.data[32], page.data[33], page.data[34], page.data[35]]);
+
             if version == 0 || version > 100 {
                 self.record_error(StructureError {
                     page_id,
@@ -214,18 +222,18 @@ impl PageScanner {
                 is_valid = false;
             }
         }
-        
+
         is_valid
     }
 
     /// Validate data page
     fn validate_data_page(&self, page: &Page, page_id: u64) -> bool {
         let mut is_valid = true;
-        
+
         // Check key count
         if page.data.len() >= 34 {
             let key_count = u16::from_le_bytes([page.data[32], page.data[33]]) as usize;
-            
+
             // Sanity check
             if key_count > 1000 {
                 self.record_error(StructureError {
@@ -236,7 +244,7 @@ impl PageScanner {
                 });
                 is_valid = false;
             }
-            
+
             // Validate space usage
             let used_space = self.calculate_used_space(page, key_count);
             if used_space > PAGE_SIZE {
@@ -249,21 +257,27 @@ impl PageScanner {
                 is_valid = false;
             }
         }
-        
+
         is_valid
     }
 
     /// Validate overflow page
     fn validate_overflow_page(&self, page: &Page, page_id: u64) -> bool {
         let mut is_valid = true;
-        
+
         // Check next overflow pointer
         if page.data.len() >= 40 {
             let next_overflow = u64::from_le_bytes([
-                page.data[32], page.data[33], page.data[34], page.data[35],
-                page.data[36], page.data[37], page.data[38], page.data[39],
+                page.data[32],
+                page.data[33],
+                page.data[34],
+                page.data[35],
+                page.data[36],
+                page.data[37],
+                page.data[38],
+                page.data[39],
             ]);
-            
+
             // Validate pointer
             if next_overflow != 0 && next_overflow == page_id {
                 self.record_error(StructureError {
@@ -275,7 +289,7 @@ impl PageScanner {
                 is_valid = false;
             }
         }
-        
+
         is_valid
     }
 
@@ -291,7 +305,7 @@ impl PageScanner {
         // Header + key directory + actual data
         let header_size = 32;
         let directory_size = key_count * 8; // offset + length per key
-        
+
         // This is simplified - real calculation would parse actual data
         header_size + directory_size + (key_count * 50) // Assume avg 50 bytes per entry
     }
@@ -314,27 +328,27 @@ impl PageScanner {
                 *self.pages_scanned.write() += 1;
             }
         }
-        
+
         Ok(self.errors_found.read().clone())
     }
 
     /// Quick validation of critical pages
     pub async fn validate_critical_pages(&self) -> Result<bool> {
         let mut all_valid = true;
-        
+
         // Validate root page
         let root_page_id = self.database.get_root_page_id()?;
         if root_page_id != 0 {
             all_valid &= self.scan_page(root_page_id).await?;
         }
-        
+
         // Validate metadata pages (typically first few pages)
         for page_id in 1..=5 {
             if self.page_manager.is_page_allocated(page_id).await? {
                 all_valid &= self.scan_page(page_id).await?;
             }
         }
-        
+
         Ok(all_valid)
     }
 }

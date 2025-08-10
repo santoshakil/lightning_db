@@ -1,27 +1,36 @@
 //! Data Integrity Validation Tools
-//! 
+//!
 //! This module provides comprehensive tools for validating data integrity
 //! in Lightning DB, including checksums, consistency checks, and repair utilities.
 
-use crate::{Database, Result, Error};
+use crate::{Database, Error, Result};
+use crc32fast::Hasher;
 use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::SystemTime;
-use serde::{Serialize, Deserialize};
-use crc32fast::Hasher;
 
-pub mod consistency_checker;
-pub mod repair_tool;
 pub mod checksum_validator;
+pub mod consistency_checker;
 pub mod page_scanner;
+pub mod repair_tool;
+pub mod data_integrity;
+pub mod error_types;
+pub mod validation_config;
+pub mod metrics;
 
-pub use consistency_checker::ConsistencyChecker;
-pub use repair_tool::RepairTool;
 pub use checksum_validator::ChecksumValidator;
+pub use consistency_checker::ConsistencyChecker;
+pub use data_integrity::{DataIntegrityValidator, IntegrityReport as NewIntegrityReport};
+pub use error_types::{IntegrityError, IntegrityViolation, ValidationResult, ViolationSeverity};
 pub use page_scanner::PageScanner;
+pub use repair_tool::RepairTool;
+pub use validation_config::{IntegrityConfig as NewIntegrityConfig, ValidationLevel, ValidationContext};
+pub use metrics::{IntegrityMetrics, MetricsSnapshot};
 
-/// Integrity validation configuration
+/// Legacy integrity validation configuration (deprecated - use validation_config::IntegrityConfig)
 #[derive(Debug, Clone)]
+#[deprecated(note = "Use validation_config::IntegrityConfig instead")]
 pub struct IntegrityConfig {
     /// Enable checksum validation
     pub validate_checksums: bool,
@@ -52,6 +61,34 @@ impl Default for IntegrityConfig {
             max_errors: 1000,
             enable_repair: false,
             backup_before_repair: true,
+        }
+    }
+}
+
+/// Convert legacy config to new config
+impl From<IntegrityConfig> for NewIntegrityConfig {
+    fn from(legacy: IntegrityConfig) -> Self {
+        Self {
+            enabled: true,
+            level: ValidationLevel::Standard,
+            validate_all_reads: false,
+            validate_all_writes: true,
+            validate_cached_data: false,
+            background_validation: true,
+            checksum_algorithm: validation_config::ChecksumAlgorithm::CRC32Fast,
+            max_validation_latency: std::time::Duration::from_millis(10),
+            sampling_rate: 0.1,
+            deep_structural_validation: legacy.validate_page_structure,
+            cross_reference_validation: legacy.validate_cross_references,
+            temporal_consistency_checks: true,
+            max_errors_threshold: legacy.max_errors,
+            auto_repair: legacy.enable_repair,
+            backup_before_repair: legacy.backup_before_repair,
+            collect_metrics: true,
+            enable_alerts: true,
+            context_timeout: std::time::Duration::from_secs(30),
+            enable_parallel_validation: true,
+            validation_thread_pool_size: 4,
         }
     }
 }
@@ -268,40 +305,40 @@ impl IntegrityValidator {
     /// Run full integrity validation
     pub async fn validate(&self) -> Result<IntegrityReport> {
         println!("Starting integrity validation...");
-        
+
         // Phase 1: Checksum validation
         if self.config.validate_checksums {
             println!("Phase 1: Validating checksums...");
             self.validate_checksums().await?;
         }
-        
+
         // Phase 2: Page structure validation
         if self.config.validate_page_structure {
             println!("Phase 2: Validating page structures...");
             self.validate_page_structures().await?;
         }
-        
+
         // Phase 3: B+Tree consistency
         if self.config.validate_btree_consistency {
             println!("Phase 3: Validating B+Tree consistency...");
             self.validate_btree_consistency().await?;
         }
-        
+
         // Phase 4: Transaction log validation
         if self.config.validate_transaction_log {
             println!("Phase 4: Validating transaction log...");
             self.validate_transaction_log().await?;
         }
-        
+
         // Phase 5: Cross-reference validation
         if self.config.validate_cross_references {
             println!("Phase 5: Validating cross-references...");
             self.validate_cross_references().await?;
         }
-        
+
         // Determine overall status
         self.determine_overall_status();
-        
+
         // Generate final report
         let mut report = self.report.write();
         report.end_time = Some(SystemTime::now());
@@ -312,10 +349,10 @@ impl IntegrityValidator {
     async fn validate_checksums(&self) -> Result<()> {
         let validator = ChecksumValidator::new(self.database.clone());
         let errors = validator.validate_all().await?;
-        
+
         let mut report = self.report.write();
         report.checksum_errors.extend(errors);
-        
+
         Ok(())
     }
 
@@ -323,11 +360,11 @@ impl IntegrityValidator {
     async fn validate_page_structures(&self) -> Result<()> {
         let scanner = PageScanner::new(self.database.clone());
         let errors = scanner.scan_all_pages().await?;
-        
+
         let mut report = self.report.write();
         report.structure_errors.extend(errors);
         report.pages_scanned = scanner.get_pages_scanned();
-        
+
         Ok(())
     }
 
@@ -335,11 +372,11 @@ impl IntegrityValidator {
     async fn validate_btree_consistency(&self) -> Result<()> {
         let checker = ConsistencyChecker::new(self.database.clone());
         let errors = checker.check_btree_consistency().await?;
-        
+
         let mut report = self.report.write();
         report.consistency_errors.extend(errors);
         report.keys_validated = checker.get_keys_validated();
-        
+
         Ok(())
     }
 
@@ -358,22 +395,26 @@ impl IntegrityValidator {
     /// Determine overall integrity status
     fn determine_overall_status(&self) {
         let report = self.report.read();
-        
-        let critical_errors = report.structure_errors.iter()
+
+        let critical_errors = report
+            .structure_errors
+            .iter()
             .filter(|e| e.severity >= ErrorSeverity::Critical)
-            .count() +
-            report.consistency_errors.iter()
+            .count()
+            + report
+                .consistency_errors
+                .iter()
                 .filter(|e| e.severity >= ErrorSeverity::Critical)
                 .count();
-        
-        let total_errors = report.checksum_errors.len() +
-            report.structure_errors.len() +
-            report.consistency_errors.len() +
-            report.transaction_errors.len() +
-            report.cross_reference_errors.len();
-        
+
+        let total_errors = report.checksum_errors.len()
+            + report.structure_errors.len()
+            + report.consistency_errors.len()
+            + report.transaction_errors.len()
+            + report.cross_reference_errors.len();
+
         drop(report);
-        
+
         let status = if critical_errors > 0 {
             IntegrityStatus::Fatal
         } else if total_errors > 100 {
@@ -385,7 +426,7 @@ impl IntegrityValidator {
         } else {
             IntegrityStatus::Clean
         };
-        
+
         self.report.write().status = status;
     }
 
@@ -393,22 +434,22 @@ impl IntegrityValidator {
     pub async fn repair(&self) -> Result<Vec<RepairAction>> {
         if !self.config.enable_repair {
             return Err(Error::InvalidOperation {
-                reason: "Repair not enabled in configuration".to_string()
+                reason: "Repair not enabled in configuration".to_string(),
             });
         }
-        
+
         if self.config.backup_before_repair {
             println!("Creating backup before repair...");
             self.create_backup().await?;
         }
-        
+
         let repair_tool = RepairTool::new(self.database.clone());
         let report = self.report.read().clone();
-        
+
         let actions = repair_tool.repair_errors(&report).await?;
-        
+
         self.report.write().repair_actions.extend(actions.clone());
-        
+
         Ok(actions)
     }
 
@@ -421,38 +462,54 @@ impl IntegrityValidator {
     /// Generate detailed report
     pub fn generate_report(&self) -> String {
         let report = self.report.read();
-        
+
         let mut output = String::new();
         output.push_str("=== Lightning DB Integrity Report ===\n\n");
-        
+
         output.push_str(&format!("Status: {:?}\n", report.status));
         output.push_str(&format!("Pages Scanned: {}\n", report.pages_scanned));
         output.push_str(&format!("Keys Validated: {}\n", report.keys_validated));
-        
+
         if let Some(end_time) = report.end_time {
             if let Ok(duration) = end_time.duration_since(report.start_time) {
                 output.push_str(&format!("Duration: {:?}\n", duration));
             }
         }
-        
+
         output.push_str("\n--- Errors Summary ---\n");
-        output.push_str(&format!("Checksum Errors: {}\n", report.checksum_errors.len()));
-        output.push_str(&format!("Structure Errors: {}\n", report.structure_errors.len()));
-        output.push_str(&format!("Consistency Errors: {}\n", report.consistency_errors.len()));
-        output.push_str(&format!("Transaction Errors: {}\n", report.transaction_errors.len()));
-        output.push_str(&format!("Cross-Reference Errors: {}\n", report.cross_reference_errors.len()));
-        
+        output.push_str(&format!(
+            "Checksum Errors: {}\n",
+            report.checksum_errors.len()
+        ));
+        output.push_str(&format!(
+            "Structure Errors: {}\n",
+            report.structure_errors.len()
+        ));
+        output.push_str(&format!(
+            "Consistency Errors: {}\n",
+            report.consistency_errors.len()
+        ));
+        output.push_str(&format!(
+            "Transaction Errors: {}\n",
+            report.transaction_errors.len()
+        ));
+        output.push_str(&format!(
+            "Cross-Reference Errors: {}\n",
+            report.cross_reference_errors.len()
+        ));
+
         if !report.repair_actions.is_empty() {
             output.push_str("\n--- Repair Actions ---\n");
             for action in &report.repair_actions {
-                output.push_str(&format!("{:?}: {} - {}\n", 
-                    action.action_type, 
+                output.push_str(&format!(
+                    "{:?}: {} - {}\n",
+                    action.action_type,
                     action.description,
                     if action.success { "SUCCESS" } else { "FAILED" }
                 ));
             }
         }
-        
+
         output
     }
 }
@@ -469,10 +526,10 @@ pub async fn quick_integrity_check(database: Arc<Database>) -> Result<bool> {
         enable_repair: false,
         backup_before_repair: false,
     };
-    
+
     let validator = IntegrityValidator::new(database, config);
     let report = validator.validate().await?;
-    
+
     Ok(report.status == IntegrityStatus::Clean)
 }
 

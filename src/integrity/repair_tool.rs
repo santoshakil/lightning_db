@@ -1,13 +1,13 @@
 //! Database Repair Tool
-//! 
+//!
 //! Provides utilities to repair common database corruption issues.
 
-use crate::{Database, Result};
-use crate::storage::{PageManager, PageManagerAsync, Page};
-use crate::btree::node::BTreeNode;
 use super::*;
-use std::sync::Arc;
+use crate::btree::node::BTreeNode;
+use crate::storage::{Page, PageManager, PageManagerAsync};
+use crate::{Database, Result};
 use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Database repair tool
 pub struct RepairTool {
@@ -20,7 +20,7 @@ impl RepairTool {
     /// Create new repair tool
     pub fn new(database: Arc<Database>) -> Self {
         let page_manager = database.get_page_manager();
-        
+
         Self {
             database,
             page_manager,
@@ -31,50 +31,42 @@ impl RepairTool {
     /// Repair errors found in integrity report
     pub async fn repair_errors(&self, report: &IntegrityReport) -> Result<Vec<RepairAction>> {
         println!("Starting database repair...");
-        
+
         // Clear previous actions
         self.actions_taken.write().clear();
-        
+
         // Repair checksum errors
         for error in &report.checksum_errors {
             self.repair_checksum_error(error).await?;
         }
-        
+
         // Repair structure errors
         for error in &report.structure_errors {
             self.repair_structure_error(error).await?;
         }
-        
+
         // Repair consistency errors
         for error in &report.consistency_errors {
             self.repair_consistency_error(error).await?;
         }
-        
+
         // Repair transaction errors
         for error in &report.transaction_errors {
             self.repair_transaction_error(error).await?;
         }
-        
+
         Ok(self.actions_taken.read().clone())
     }
 
     /// Repair checksum error
     async fn repair_checksum_error(&self, error: &ChecksumError) -> Result<()> {
         let action = match error.error_type {
-            ChecksumErrorType::PageHeader => {
-                self.rebuild_page_checksum(error.page_id).await
-            }
-            ChecksumErrorType::PageData => {
-                self.rebuild_data_checksum(error.page_id).await
-            }
-            ChecksumErrorType::KeyValue => {
-                self.rebuild_keyvalue_checksums(error.page_id).await
-            }
-            ChecksumErrorType::Metadata => {
-                self.rebuild_metadata_checksum(error.page_id).await
-            }
+            ChecksumErrorType::PageHeader => self.rebuild_page_checksum(error.page_id).await,
+            ChecksumErrorType::PageData => self.rebuild_data_checksum(error.page_id).await,
+            ChecksumErrorType::KeyValue => self.rebuild_keyvalue_checksums(error.page_id).await,
+            ChecksumErrorType::Metadata => self.rebuild_metadata_checksum(error.page_id).await,
         };
-        
+
         self.record_action(action);
         Ok(())
     }
@@ -88,19 +80,19 @@ impl RepairTool {
             success: false,
             error: None,
         };
-        
+
         match self.page_manager.load_page(page_id).await {
             Ok(page) => {
                 // Clone the data to make it mutable
                 let mut data = (*page.data).clone();
-                
+
                 // Recalculate header checksum
                 let header_data = &data[8..32];
                 let new_checksum = calculate_checksum(header_data);
-                
+
                 // Update checksum in header
                 data[4..8].copy_from_slice(&new_checksum.to_le_bytes());
-                
+
                 // Create a new page with the updated data
                 let updated_page = Page {
                     id: page.id,
@@ -108,7 +100,7 @@ impl RepairTool {
                     dirty: true,
                     page_type: page.page_type,
                 };
-                
+
                 // Save updated page
                 match self.page_manager.save_page(&updated_page).await {
                     Ok(_) => {
@@ -123,7 +115,7 @@ impl RepairTool {
                 action.error = Some(e.to_string());
             }
         }
-        
+
         action
     }
 
@@ -136,7 +128,7 @@ impl RepairTool {
             success: false,
             error: None,
         };
-        
+
         // Implementation would rebuild data checksums
         action.success = true;
         action
@@ -151,7 +143,7 @@ impl RepairTool {
             success: false,
             error: None,
         };
-        
+
         // Implementation would rebuild individual key-value checksums
         action.success = true;
         action
@@ -166,7 +158,7 @@ impl RepairTool {
             success: false,
             error: None,
         };
-        
+
         // Implementation would rebuild metadata checksums
         action.success = true;
         action
@@ -185,18 +177,10 @@ impl RepairTool {
                     error: Some("Manual intervention required".to_string()),
                 }
             }
-            StructureErrorType::InvalidKeyCount => {
-                self.fix_key_count(error.page_id).await
-            }
-            StructureErrorType::InvalidPointer => {
-                self.fix_invalid_pointer(error.page_id).await
-            }
-            StructureErrorType::InvalidSize => {
-                self.fix_page_size(error.page_id).await
-            }
-            StructureErrorType::CorruptedHeader => {
-                self.rebuild_page_header(error.page_id).await
-            }
+            StructureErrorType::InvalidKeyCount => self.fix_key_count(error.page_id).await,
+            StructureErrorType::InvalidPointer => self.fix_invalid_pointer(error.page_id).await,
+            StructureErrorType::InvalidSize => self.fix_page_size(error.page_id).await,
+            StructureErrorType::CorruptedHeader => self.rebuild_page_header(error.page_id).await,
             StructureErrorType::InvalidMagicNumber => {
                 // Critical error - can't repair
                 RepairAction {
@@ -208,7 +192,7 @@ impl RepairTool {
                 }
             }
         };
-        
+
         self.record_action(action);
         Ok(())
     }
@@ -222,7 +206,7 @@ impl RepairTool {
             success: false,
             error: None,
         };
-        
+
         // Load page and recount keys
         match self.page_manager.load_page(page_id).await {
             Ok(page) => {
@@ -241,7 +225,7 @@ impl RepairTool {
                 action.error = Some(e.to_string());
             }
         }
-        
+
         action
     }
 
@@ -276,7 +260,7 @@ impl RepairTool {
             success: false,
             error: None,
         };
-        
+
         // Implementation would rebuild the page header
         action.success = true;
         action
@@ -285,9 +269,7 @@ impl RepairTool {
     /// Repair consistency error
     async fn repair_consistency_error(&self, error: &ConsistencyError) -> Result<()> {
         let action = match error.error_type {
-            ConsistencyErrorType::BTreeDepthMismatch => {
-                self.rebalance_btree().await
-            }
+            ConsistencyErrorType::BTreeDepthMismatch => self.rebalance_btree().await,
             ConsistencyErrorType::InvalidKeyOrder => {
                 self.fix_key_ordering(&error.affected_pages).await
             }
@@ -307,7 +289,7 @@ impl RepairTool {
                 self.fix_parent_pointers(&error.affected_pages).await
             }
         };
-        
+
         self.record_action(action);
         Ok(())
     }
@@ -332,7 +314,7 @@ impl RepairTool {
             success: false,
             error: None,
         };
-        
+
         // Sort keys within each affected page
         for &page_id in pages {
             match self.sort_page_keys(page_id).await {
@@ -343,7 +325,7 @@ impl RepairTool {
                 }
             }
         }
-        
+
         action
     }
 
@@ -351,15 +333,15 @@ impl RepairTool {
     async fn sort_page_keys(&self, page_id: u64) -> Result<()> {
         let page = self.page_manager.load_page(page_id).await?;
         let mut node = BTreeNode::deserialize_from_page(&page)?;
-        
+
         // Sort entries by key
         node.entries.sort_by(|a, b| a.key.cmp(&b.key));
-        
+
         // Save updated node
         let mut updated_page = Page::new(page_id as u32);
         node.serialize_to_page(&mut updated_page)?;
         self.page_manager.save_page(&updated_page).await?;
-        
+
         Ok(())
     }
 
@@ -383,7 +365,7 @@ impl RepairTool {
             success: false,
             error: None,
         };
-        
+
         // Mark pages as free
         for &page_id in pages {
             match self.page_manager.free_page(page_id).await {
@@ -394,7 +376,7 @@ impl RepairTool {
                 }
             }
         }
-        
+
         action
     }
 
@@ -435,7 +417,8 @@ impl RepairTool {
     async fn repair_transaction_error(&self, error: &TransactionError) -> Result<()> {
         let action = match error.error_type {
             TransactionErrorType::IncompleteTransaction => {
-                self.rollback_incomplete_transaction(error.transaction_id).await
+                self.rollback_incomplete_transaction(error.transaction_id)
+                    .await
             }
             TransactionErrorType::InvalidSequence => {
                 self.fix_transaction_sequence(error.transaction_id).await
@@ -446,11 +429,9 @@ impl RepairTool {
             TransactionErrorType::MissingCommit => {
                 self.add_missing_commit(error.transaction_id).await
             }
-            TransactionErrorType::InvalidCheckpoint => {
-                self.rebuild_checkpoint().await
-            }
+            TransactionErrorType::InvalidCheckpoint => self.rebuild_checkpoint().await,
         };
-        
+
         self.record_action(action);
         Ok(())
     }
@@ -518,7 +499,7 @@ impl RepairTool {
     /// Rebuild entire index
     pub async fn rebuild_index(&self) -> Result<()> {
         println!("Rebuilding entire B+Tree index...");
-        
+
         let action = RepairAction {
             action_type: RepairActionType::RebuildIndex,
             target: RepairTarget::Index("main".to_string()),
@@ -526,13 +507,13 @@ impl RepairTool {
             success: true,
             error: None,
         };
-        
+
         // Implementation would:
         // 1. Scan all data pages
         // 2. Extract all key-value pairs
         // 3. Build new B+Tree from scratch
         // 4. Update root page reference
-        
+
         self.record_action(action);
         Ok(())
     }

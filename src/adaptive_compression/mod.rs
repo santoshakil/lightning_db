@@ -1,25 +1,25 @@
 //! Adaptive Compression with Hardware Acceleration
 //!
-//! This module provides intelligent compression that automatically selects the best 
+//! This module provides intelligent compression that automatically selects the best
 //! compression algorithm based on data characteristics and available hardware capabilities.
 //! It supports multiple compression algorithms with hardware acceleration when available.
 
-use crate::{Result, Error};
-use std::sync::Arc;
-use std::time::{Instant, Duration};
-use serde::{Serialize, Deserialize};
+use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-pub mod algorithms;
-pub mod hardware_detection;
 pub mod adaptive_selector;
+pub mod algorithms;
 pub mod benchmark;
+pub mod hardware_detection;
 pub mod streaming;
 
-pub use algorithms::*;
-pub use hardware_detection::*;
 pub use adaptive_selector::*;
+pub use algorithms::*;
 pub use benchmark::*;
+pub use hardware_detection::*;
 pub use streaming::*;
 
 /// Compression level settings
@@ -42,7 +42,7 @@ impl CompressionLevel {
     pub fn as_int(self) -> i32 {
         self as i32
     }
-    
+
     /// Get compression level from integer
     pub fn from_int(level: i32) -> Self {
         match level {
@@ -87,12 +87,12 @@ impl CompressionAlgorithm {
             CompressionAlgorithm::HardwareAccelerated => "hardware",
         }
     }
-    
+
     /// Check if algorithm is hardware accelerated
     pub fn is_hardware_accelerated(&self) -> bool {
         matches!(self, CompressionAlgorithm::HardwareAccelerated)
     }
-    
+
     /// Get recommended level for algorithm
     pub fn recommended_level(&self) -> CompressionLevel {
         match self {
@@ -153,12 +153,12 @@ impl CompressionResult {
             0.0
         }
     }
-    
+
     /// Calculate space savings in bytes
     pub fn space_saved(&self) -> usize {
         self.original_size.saturating_sub(self.compressed_size)
     }
-    
+
     /// Calculate space savings as percentage
     pub fn space_saved_percent(&self) -> f64 {
         if self.original_size > 0 {
@@ -264,34 +264,55 @@ impl AdaptiveCompressionEngine {
     /// Create a new adaptive compression engine
     pub fn new() -> Result<Self> {
         let hardware = HardwareCapabilities::detect();
-        let mut algorithms: HashMap<CompressionAlgorithm, Box<dyn CompressionAlgorithmTrait + Send + Sync>> = HashMap::new();
-        
+        let mut algorithms: HashMap<
+            CompressionAlgorithm,
+            Box<dyn CompressionAlgorithmTrait + Send + Sync>,
+        > = HashMap::new();
+
         // Register available algorithms
-        algorithms.insert(CompressionAlgorithm::None, Box::new(algorithms::NoCompression::new()));
-        algorithms.insert(CompressionAlgorithm::LZ4, Box::new(algorithms::LZ4Compression::new()));
-        algorithms.insert(CompressionAlgorithm::Zstd, Box::new(algorithms::ZstdCompression::new()));
-        algorithms.insert(CompressionAlgorithm::Snappy, Box::new(algorithms::SnappyCompression::new()));
-        
+        algorithms.insert(
+            CompressionAlgorithm::None,
+            Box::new(algorithms::NoCompression::new()),
+        );
+        algorithms.insert(
+            CompressionAlgorithm::LZ4,
+            Box::new(algorithms::LZ4Compression::new()),
+        );
+        algorithms.insert(
+            CompressionAlgorithm::Zstd,
+            Box::new(algorithms::ZstdCompression::new()),
+        );
+        algorithms.insert(
+            CompressionAlgorithm::Snappy,
+            Box::new(algorithms::SnappyCompression::new()),
+        );
+
         // Add hardware-accelerated algorithms if available
         if hardware.has_compression_acceleration() {
             algorithms.insert(
                 CompressionAlgorithm::HardwareAccelerated,
-                Box::new(algorithms::HardwareAcceleratedCompression::new(&hardware)?)
+                Box::new(algorithms::HardwareAcceleratedCompression::new(&hardware)?),
             );
         }
-        
+
         // Add LZMA if available
         #[cfg(feature = "lzma")]
-        algorithms.insert(CompressionAlgorithm::LZMA, Box::new(algorithms::LZMACompression::new()));
-        
+        algorithms.insert(
+            CompressionAlgorithm::LZMA,
+            Box::new(algorithms::LZMACompression::new()),
+        );
+
         // Add Brotli if available
         #[cfg(feature = "brotli")]
-        algorithms.insert(CompressionAlgorithm::Brotli, Box::new(algorithms::BrotliCompression::new()));
-        
+        algorithms.insert(
+            CompressionAlgorithm::Brotli,
+            Box::new(algorithms::BrotliCompression::new()),
+        );
+
         let stats = Arc::new(parking_lot::RwLock::new(CompressionStats::default()));
         let selector = AdaptiveSelector::new(Arc::clone(&stats));
         let benchmark = CompressionBenchmark::new();
-        
+
         Ok(Self {
             algorithms,
             stats,
@@ -300,7 +321,7 @@ impl AdaptiveCompressionEngine {
             benchmark,
         })
     }
-    
+
     /// Compress data with automatic algorithm selection
     pub fn compress(&self, data: &[u8]) -> Result<CompressionResult> {
         if data.is_empty() {
@@ -314,23 +335,23 @@ impl AdaptiveCompressionEngine {
                 level: CompressionLevel::Fastest,
             });
         }
-        
+
         // Analyze data characteristics
         let data_type = self.analyze_data_type(data);
         let entropy = self.calculate_entropy(data);
-        
+
         // Select best algorithm and level
         let (algorithm, level) = self.selector.select_algorithm(data, &data_type, entropy);
-        
+
         // Perform compression
         let result = self.compress_with_algorithm(data, algorithm, level)?;
-        
+
         // Update statistics
         self.update_stats(&result, &data_type);
-        
+
         Ok(result)
     }
-    
+
     /// Compress data with specific algorithm and level
     pub fn compress_with_algorithm(
         &self,
@@ -338,13 +359,15 @@ impl AdaptiveCompressionEngine {
         algorithm: CompressionAlgorithm,
         level: CompressionLevel,
     ) -> Result<CompressionResult> {
-        let compressor = self.algorithms.get(&algorithm)
+        let compressor = self
+            .algorithms
+            .get(&algorithm)
             .ok_or_else(|| Error::Generic(format!("Algorithm {:?} not available", algorithm)))?;
-        
+
         let start = Instant::now();
         let compressed_data = compressor.compress(data, level)?;
         let compression_time = start.elapsed();
-        
+
         let original_size = data.len();
         let compressed_size = compressed_data.len();
         let compression_ratio = if original_size > 0 {
@@ -352,7 +375,7 @@ impl AdaptiveCompressionEngine {
         } else {
             1.0
         };
-        
+
         Ok(CompressionResult {
             data: compressed_data,
             original_size,
@@ -363,7 +386,7 @@ impl AdaptiveCompressionEngine {
             level,
         })
     }
-    
+
     /// Decompress data
     pub fn decompress(
         &self,
@@ -378,14 +401,16 @@ impl AdaptiveCompressionEngine {
                 algorithm,
             });
         }
-        
-        let compressor = self.algorithms.get(&algorithm)
+
+        let compressor = self
+            .algorithms
+            .get(&algorithm)
             .ok_or_else(|| Error::Generic(format!("Algorithm {:?} not available", algorithm)))?;
-        
+
         let start = Instant::now();
         let decompressed_data = compressor.decompress(compressed_data)?;
         let decompression_time = start.elapsed();
-        
+
         Ok(DecompressionResult {
             size: decompressed_data.len(),
             data: decompressed_data,
@@ -393,45 +418,46 @@ impl AdaptiveCompressionEngine {
             algorithm,
         })
     }
-    
+
     /// Benchmark all available algorithms
     pub fn benchmark_algorithms(&self, test_data: &[u8]) -> Result<BenchmarkResults> {
-        self.benchmark.run_comprehensive_benchmark(test_data, &self.algorithms)
+        self.benchmark
+            .run_comprehensive_benchmark(test_data, &self.algorithms)
     }
-    
+
     /// Get compression statistics
     pub fn get_stats(&self) -> CompressionStats {
         self.stats.read().clone()
     }
-    
+
     /// Reset statistics
     pub fn reset_stats(&self) {
         let mut stats = self.stats.write();
         *stats = CompressionStats::default();
     }
-    
+
     /// Get available algorithms
     pub fn available_algorithms(&self) -> Vec<CompressionAlgorithm> {
         self.algorithms.keys().copied().collect()
     }
-    
+
     /// Get hardware capabilities
     pub fn hardware_capabilities(&self) -> &HardwareCapabilities {
         &self.hardware
     }
-    
+
     /// Analyze data type from content
     fn analyze_data_type(&self, data: &[u8]) -> DataType {
         if data.is_empty() {
             return DataType::Mixed;
         }
-        
+
         // Check if it's already compressed (high entropy)
         let entropy = self.calculate_entropy(data);
         if entropy > 7.5 {
             return DataType::Compressed;
         }
-        
+
         // Check for text patterns
         if self.is_text_data(data) {
             if self.is_json_data(data) {
@@ -439,49 +465,50 @@ impl AdaptiveCompressionEngine {
             }
             return DataType::Text;
         }
-        
+
         // Check for numeric patterns
         if self.is_numeric_data(data) {
             return DataType::Numeric;
         }
-        
+
         // Default to binary
         DataType::Binary
     }
-    
+
     /// Calculate entropy of data (bits per byte)
     fn calculate_entropy(&self, data: &[u8]) -> f64 {
         if data.is_empty() {
             return 0.0;
         }
-        
+
         let mut counts = [0u32; 256];
         for &byte in data {
             counts[byte as usize] += 1;
         }
-        
+
         let len = data.len() as f64;
         let mut entropy = 0.0;
-        
+
         for count in counts.iter() {
             if *count > 0 {
                 let p = *count as f64 / len;
                 entropy -= p * p.log2();
             }
         }
-        
+
         entropy
     }
-    
+
     /// Check if data is text
     fn is_text_data(&self, data: &[u8]) -> bool {
         if data.is_empty() {
             return false;
         }
-        
+
         // Check for valid UTF-8 and printable characters
         if let Ok(text) = std::str::from_utf8(data) {
-            let printable_count = text.chars()
+            let printable_count = text
+                .chars()
                 .filter(|c| c.is_ascii_graphic() || c.is_ascii_whitespace())
                 .count();
             printable_count as f64 / text.chars().count() as f64 > 0.8
@@ -489,17 +516,18 @@ impl AdaptiveCompressionEngine {
             false
         }
     }
-    
+
     /// Check if data is JSON
     fn is_json_data(&self, data: &[u8]) -> bool {
         if data.is_empty() {
             return false;
         }
-        
+
         // Simple heuristic: starts with { or [ and has common JSON characters
         let first_char = data[0];
         if first_char == b'{' || first_char == b'[' {
-            let json_chars = data.iter()
+            let json_chars = data
+                .iter()
                 .filter(|&&b| matches!(b, b'{' | b'}' | b'[' | b']' | b':' | b',' | b'"'))
                 .count();
             json_chars as f64 / data.len() as f64 > 0.1
@@ -507,32 +535,35 @@ impl AdaptiveCompressionEngine {
             false
         }
     }
-    
+
     /// Check if data is numeric
     fn is_numeric_data(&self, data: &[u8]) -> bool {
         if data.is_empty() {
             return false;
         }
-        
+
         // Check for patterns that suggest numeric data
-        let numeric_chars = data.iter()
+        let numeric_chars = data
+            .iter()
             .filter(|&&b| matches!(b, b'0'..=b'9' | b'.' | b'-' | b'+' | b'e' | b'E'))
             .count();
         numeric_chars as f64 / data.len() as f64 > 0.6
     }
-    
+
     /// Update compression statistics
     fn update_stats(&self, result: &CompressionResult, data_type: &DataType) {
         let mut stats = self.stats.write();
-        
+
         // Update global stats
         stats.total_compressions += 1;
         stats.total_bytes_compressed += result.original_size as u64;
         stats.total_compression_time += result.compression_time;
-        
+
         // Update algorithm stats
-        let algo_stats = stats.algorithm_stats.entry(result.algorithm).or_insert_with(|| {
-            AlgorithmStats {
+        let algo_stats = stats
+            .algorithm_stats
+            .entry(result.algorithm)
+            .or_insert_with(|| AlgorithmStats {
                 usage_count: 0,
                 avg_compression_ratio: 0.0,
                 avg_compression_time_ms: 0.0,
@@ -543,43 +574,46 @@ impl AdaptiveCompressionEngine {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_secs(),
-            }
-        });
-        
+            });
+
         // Update algorithm statistics using exponential moving average
         let alpha = 0.1; // Smoothing factor
         algo_stats.usage_count += 1;
-        algo_stats.avg_compression_ratio = 
+        algo_stats.avg_compression_ratio =
             alpha * result.compression_ratio + (1.0 - alpha) * algo_stats.avg_compression_ratio;
-        algo_stats.avg_compression_time_ms = 
-            alpha * result.compression_time.as_secs_f64() * 1000.0 + 
-            (1.0 - alpha) * algo_stats.avg_compression_time_ms;
-        algo_stats.avg_efficiency = 
+        algo_stats.avg_compression_time_ms = alpha * result.compression_time.as_secs_f64() * 1000.0
+            + (1.0 - alpha) * algo_stats.avg_compression_time_ms;
+        algo_stats.avg_efficiency =
             alpha * result.efficiency() + (1.0 - alpha) * algo_stats.avg_efficiency;
-        
+
         // Update data type stats
-        let dtype_stats = stats.data_type_stats.entry(data_type.clone()).or_insert_with(|| {
-            DataTypeStats {
+        let dtype_stats = stats
+            .data_type_stats
+            .entry(data_type.clone())
+            .or_insert_with(|| DataTypeStats {
                 sample_count: 0,
                 avg_entropy: 0.0,
                 best_algorithm: result.algorithm,
                 best_compression_ratio: result.compression_ratio,
                 algorithm_effectiveness: HashMap::new(),
-            }
-        });
-        
+            });
+
         dtype_stats.sample_count += 1;
         let effectiveness = result.efficiency();
-        let current_effectiveness = dtype_stats.algorithm_effectiveness
+        let current_effectiveness = dtype_stats
+            .algorithm_effectiveness
             .entry(result.algorithm)
             .or_insert(effectiveness);
         *current_effectiveness = alpha * effectiveness + (1.0 - alpha) * *current_effectiveness;
-        
+
         // Update best algorithm if this one is better
-        if result.efficiency() > dtype_stats.algorithm_effectiveness
-            .get(&dtype_stats.best_algorithm)
-            .copied()
-            .unwrap_or(0.0) {
+        if result.efficiency()
+            > dtype_stats
+                .algorithm_effectiveness
+                .get(&dtype_stats.best_algorithm)
+                .copied()
+                .unwrap_or(0.0)
+        {
             dtype_stats.best_algorithm = result.algorithm;
             dtype_stats.best_compression_ratio = result.compression_ratio;
         }
@@ -589,21 +623,21 @@ impl AdaptiveCompressionEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_compression_levels() {
         assert_eq!(CompressionLevel::Fastest.as_int(), 1);
         assert_eq!(CompressionLevel::Maximum.as_int(), 12);
         assert_eq!(CompressionLevel::from_int(5), CompressionLevel::Balanced);
     }
-    
+
     #[test]
     fn test_algorithm_names() {
         assert_eq!(CompressionAlgorithm::LZ4.name(), "lz4");
         assert_eq!(CompressionAlgorithm::Zstd.name(), "zstd");
         assert!(CompressionAlgorithm::HardwareAccelerated.is_hardware_accelerated());
     }
-    
+
     #[test]
     fn test_compression_result_metrics() {
         let result = CompressionResult {
@@ -615,7 +649,7 @@ mod tests {
             algorithm: CompressionAlgorithm::LZ4,
             level: CompressionLevel::Balanced,
         };
-        
+
         assert_eq!(result.space_saved(), 50);
         assert_eq!(result.space_saved_percent(), 50.0);
         assert!(result.efficiency() > 0.0);

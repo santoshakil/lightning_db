@@ -3,15 +3,15 @@
 //! Executes parsed commands against the database with proper error handling,
 //! transaction management, and result formatting.
 
-use crate::{Database, Result, Error};
+use crate::{Database, Error, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime};
-use serde::{Serialize, Deserialize};
-use tracing::{debug, warn, info};
+use tracing::{debug, info, warn};
 
-use super::parser::{ParsedCommand, CommandType, ParameterValue, WhereClause, OrderByClause};
-use super::formatter::{FormattableData, DatabaseStats};
+use super::formatter::{DatabaseStats, FormattableData};
+use super::parser::{CommandType, OrderByClause, ParameterValue, ParsedCommand, WhereClause};
 
 /// Command executor for parsed REPL commands
 pub struct CommandExecutor {
@@ -168,7 +168,7 @@ impl CommandExecutor {
     /// Execute a parsed command
     pub fn execute(&self, command: &ParsedCommand, context: &ExecutionContext) -> ExecutionResult {
         let start_time = Instant::now();
-        
+
         if self.config.enable_execution_logging {
             info!("Executing command: {:?}", command.command);
             debug!("Command details: {:?}", command);
@@ -186,12 +186,15 @@ impl CommandExecutor {
         let result = match self.execute_command_impl(command, context) {
             Ok(result) => {
                 self.update_stats(true, start_time.elapsed(), false);
-                
+
                 // Cache successful read results
-                if self.config.enable_query_caching && self.is_cacheable_command(command) && result.success {
+                if self.config.enable_query_caching
+                    && self.is_cacheable_command(command)
+                    && result.success
+                {
                     self.cache_result(&command.original_query, &result);
                 }
-                
+
                 result
             }
             Err(e) => {
@@ -210,7 +213,10 @@ impl CommandExecutor {
 
         if self.config.enable_execution_logging {
             if result.success {
-                info!("Command executed successfully in {:?}", result.execution_time);
+                info!(
+                    "Command executed successfully in {:?}",
+                    result.execution_time
+                );
             } else {
                 warn!("Command failed: {:?}", result.error);
             }
@@ -220,18 +226,27 @@ impl CommandExecutor {
     }
 
     /// Internal command execution implementation
-    fn execute_command_impl(&self, command: &ParsedCommand, context: &ExecutionContext) -> Result<ExecutionResult> {
+    fn execute_command_impl(
+        &self,
+        command: &ParsedCommand,
+        context: &ExecutionContext,
+    ) -> Result<ExecutionResult> {
         let start_time = Instant::now();
-        
+
         // Resolve variables in parameters
         let resolved_params = self.resolve_parameters(&command.parameters, context)?;
-        
+
         let result = match command.command {
             CommandType::Get => self.execute_get(&resolved_params, &command.where_clause)?,
             CommandType::Put => self.execute_put(&resolved_params)?,
             CommandType::Delete => self.execute_delete(&resolved_params, &command.where_clause)?,
             CommandType::Exists => self.execute_exists(&resolved_params)?,
-            CommandType::Scan => self.execute_scan(&resolved_params, &command.where_clause, &command.order_by, command.limit)?,
+            CommandType::Scan => self.execute_scan(
+                &resolved_params,
+                &command.where_clause,
+                &command.order_by,
+                command.limit,
+            )?,
             CommandType::Begin => self.execute_begin(context)?,
             CommandType::Commit => self.execute_commit(context)?,
             CommandType::Rollback => self.execute_rollback(context)?,
@@ -249,7 +264,12 @@ impl CommandExecutor {
             CommandType::Help => self.execute_help()?,
             CommandType::Clear => self.execute_clear()?,
             CommandType::History => self.execute_history()?,
-            _ => return Err(Error::Generic(format!("Command not implemented: {:?}", command.command))),
+            _ => {
+                return Err(Error::Generic(format!(
+                    "Command not implemented: {:?}",
+                    command.command
+                )))
+            }
         };
 
         Ok(ExecutionResult {
@@ -264,7 +284,11 @@ impl CommandExecutor {
     }
 
     /// Execute GET command
-    fn execute_get(&self, params: &[ParameterValue], _where_clause: &Option<WhereClause>) -> Result<CommandExecutionResult> {
+    fn execute_get(
+        &self,
+        params: &[ParameterValue],
+        _where_clause: &Option<WhereClause>,
+    ) -> Result<CommandExecutionResult> {
         if params.is_empty() {
             return Err(Error::Generic("GET requires a key parameter".to_string()));
         }
@@ -273,7 +297,7 @@ impl CommandExecutor {
         let key_bytes = key.as_bytes();
 
         let value = self.database.get(key_bytes)?;
-        
+
         let is_some = value.is_some();
         let data = FormattableData::KeyValue {
             key: key.clone(),
@@ -300,12 +324,14 @@ impl CommandExecutor {
     /// Execute PUT command
     fn execute_put(&self, params: &[ParameterValue]) -> Result<CommandExecutionResult> {
         if params.len() < 2 {
-            return Err(Error::Generic("PUT requires key and value parameters".to_string()));
+            return Err(Error::Generic(
+                "PUT requires key and value parameters".to_string(),
+            ));
         }
 
         let key = self.extract_string_param(&params[0], "key")?;
         let value = self.extract_string_param(&params[1], "value")?;
-        
+
         let key_bytes = key.as_bytes();
         let value_bytes = value.as_bytes();
 
@@ -328,9 +354,15 @@ impl CommandExecutor {
     }
 
     /// Execute DELETE command
-    fn execute_delete(&self, params: &[ParameterValue], _where_clause: &Option<WhereClause>) -> Result<CommandExecutionResult> {
+    fn execute_delete(
+        &self,
+        params: &[ParameterValue],
+        _where_clause: &Option<WhereClause>,
+    ) -> Result<CommandExecutionResult> {
         if params.is_empty() {
-            return Err(Error::Generic("DELETE requires a key parameter".to_string()));
+            return Err(Error::Generic(
+                "DELETE requires a key parameter".to_string(),
+            ));
         }
 
         let key = self.extract_string_param(&params[0], "key")?;
@@ -338,18 +370,16 @@ impl CommandExecutor {
 
         // Check if key exists before deletion
         let existed = self.database.get(key_bytes)?.is_some();
-        
+
         if existed {
             self.database.delete(key_bytes)?;
         }
 
-        let data = FormattableData::Message(
-            if existed {
-                format!("Deleted key '{}'", key)
-            } else {
-                format!("Key '{}' not found", key)
-            }
-        );
+        let data = FormattableData::Message(if existed {
+            format!("Deleted key '{}'", key)
+        } else {
+            format!("Key '{}' not found", key)
+        });
 
         Ok(CommandExecutionResult {
             data,
@@ -372,7 +402,9 @@ impl CommandExecutor {
     /// Execute EXISTS command
     fn execute_exists(&self, params: &[ParameterValue]) -> Result<CommandExecutionResult> {
         if params.is_empty() {
-            return Err(Error::Generic("EXISTS requires a key parameter".to_string()));
+            return Err(Error::Generic(
+                "EXISTS requires a key parameter".to_string(),
+            ));
         }
 
         let key = self.extract_string_param(&params[0], "key")?;
@@ -388,7 +420,11 @@ impl CommandExecutor {
 
         Ok(CommandExecutionResult {
             data,
-            message: Some(format!("Key '{}' {}", key, if exists { "exists" } else { "does not exist" })),
+            message: Some(format!(
+                "Key '{}' {}",
+                key,
+                if exists { "exists" } else { "does not exist" }
+            )),
             rows_affected: Some(if exists { 1 } else { 0 }),
             metadata: {
                 let mut meta = HashMap::new();
@@ -401,7 +437,13 @@ impl CommandExecutor {
     }
 
     /// Execute SCAN command
-    fn execute_scan(&self, params: &[ParameterValue], _where_clause: &Option<WhereClause>, _order_by: &Option<OrderByClause>, limit: Option<u64>) -> Result<CommandExecutionResult> {
+    fn execute_scan(
+        &self,
+        params: &[ParameterValue],
+        _where_clause: &Option<WhereClause>,
+        _order_by: &Option<OrderByClause>,
+        limit: Option<u64>,
+    ) -> Result<CommandExecutionResult> {
         // This is a simplified implementation - real implementation would use iterator
         let prefix = if !params.is_empty() {
             Some(self.extract_string_param(&params[0], "prefix")?)
@@ -418,7 +460,7 @@ impl CommandExecutor {
         // For demonstration, we'll return a simulated result
         // In a real implementation, this would iterate through the database
         let mut keys = Vec::new();
-        
+
         // Simulate some keys for demonstration
         for i in 1..=10 {
             let key = if let Some(ref p) = prefix {
@@ -457,15 +499,19 @@ impl CommandExecutor {
     /// Execute BEGIN command
     fn execute_begin(&self, context: &ExecutionContext) -> Result<CommandExecutionResult> {
         let tx_id = self.database.begin_transaction()?;
-        
+
         // Store transaction in context
         {
             let mut ctx = self.context.write().unwrap();
-            ctx.active_transactions.insert(context.session_id.clone(), tx_id);
+            ctx.active_transactions
+                .insert(context.session_id.clone(), tx_id);
         }
 
         let mut result_map = HashMap::new();
-        result_map.insert("transaction_id".to_string(), serde_json::Value::Number(serde_json::Number::from(tx_id)));
+        result_map.insert(
+            "transaction_id".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(tx_id)),
+        );
 
         let data = FormattableData::Single(result_map);
 
@@ -486,7 +532,8 @@ impl CommandExecutor {
     fn execute_commit(&self, context: &ExecutionContext) -> Result<CommandExecutionResult> {
         let tx_id = {
             let mut ctx = self.context.write().unwrap();
-            ctx.active_transactions.remove(&context.session_id)
+            ctx.active_transactions
+                .remove(&context.session_id)
                 .ok_or_else(|| Error::Generic("No active transaction to commit".to_string()))?
         };
 
@@ -511,7 +558,8 @@ impl CommandExecutor {
     fn execute_rollback(&self, context: &ExecutionContext) -> Result<CommandExecutionResult> {
         let tx_id = {
             let mut ctx = self.context.write().unwrap();
-            ctx.active_transactions.remove(&context.session_id)
+            ctx.active_transactions
+                .remove(&context.session_id)
                 .ok_or_else(|| Error::Generic("No active transaction to rollback".to_string()))?
         };
 
@@ -533,14 +581,20 @@ impl CommandExecutor {
     }
 
     /// Execute transaction GET
-    fn execute_tx_get(&self, params: &[ParameterValue], context: &ExecutionContext) -> Result<CommandExecutionResult> {
+    fn execute_tx_get(
+        &self,
+        params: &[ParameterValue],
+        context: &ExecutionContext,
+    ) -> Result<CommandExecutionResult> {
         if params.is_empty() {
             return Err(Error::Generic("TXGET requires a key parameter".to_string()));
         }
 
         let tx_id = {
             let ctx = self.context.read().unwrap();
-            ctx.active_transactions.get(&context.session_id).copied()
+            ctx.active_transactions
+                .get(&context.session_id)
+                .copied()
                 .ok_or_else(|| Error::Generic("No active transaction".to_string()))?
         };
 
@@ -548,7 +602,7 @@ impl CommandExecutor {
         let key_bytes = key.as_bytes();
 
         let value = self.database.get_tx(tx_id, key_bytes)?;
-        
+
         let is_some = value.is_some();
         let data = FormattableData::KeyValue {
             key: key.clone(),
@@ -558,7 +612,10 @@ impl CommandExecutor {
         Ok(CommandExecutionResult {
             data,
             message: if is_some {
-                Some(format!("Retrieved value for key '{}' in transaction {}", key, tx_id))
+                Some(format!(
+                    "Retrieved value for key '{}' in transaction {}",
+                    key, tx_id
+                ))
             } else {
                 Some(format!("Key '{}' not found in transaction {}", key, tx_id))
             },
@@ -574,30 +631,42 @@ impl CommandExecutor {
     }
 
     /// Execute transaction PUT
-    fn execute_tx_put(&self, params: &[ParameterValue], context: &ExecutionContext) -> Result<CommandExecutionResult> {
+    fn execute_tx_put(
+        &self,
+        params: &[ParameterValue],
+        context: &ExecutionContext,
+    ) -> Result<CommandExecutionResult> {
         if params.len() < 2 {
-            return Err(Error::Generic("TXPUT requires key and value parameters".to_string()));
+            return Err(Error::Generic(
+                "TXPUT requires key and value parameters".to_string(),
+            ));
         }
 
         let tx_id = {
             let ctx = self.context.read().unwrap();
-            ctx.active_transactions.get(&context.session_id).copied()
+            ctx.active_transactions
+                .get(&context.session_id)
+                .copied()
                 .ok_or_else(|| Error::Generic("No active transaction".to_string()))?
         };
 
         let key = self.extract_string_param(&params[0], "key")?;
         let value = self.extract_string_param(&params[1], "value")?;
-        
+
         let key_bytes = key.as_bytes();
         let value_bytes = value.as_bytes();
 
         self.database.put_tx(tx_id, key_bytes, value_bytes)?;
 
-        let data = FormattableData::Message(format!("Stored key '{}' in transaction {}", key, tx_id));
+        let data =
+            FormattableData::Message(format!("Stored key '{}' in transaction {}", key, tx_id));
 
         Ok(CommandExecutionResult {
             data,
-            message: Some(format!("Successfully stored key '{}' in transaction {}", key, tx_id)),
+            message: Some(format!(
+                "Successfully stored key '{}' in transaction {}",
+                key, tx_id
+            )),
             rows_affected: Some(1),
             metadata: {
                 let mut meta = HashMap::new();
@@ -611,14 +680,22 @@ impl CommandExecutor {
     }
 
     /// Execute transaction DELETE
-    fn execute_tx_delete(&self, params: &[ParameterValue], context: &ExecutionContext) -> Result<CommandExecutionResult> {
+    fn execute_tx_delete(
+        &self,
+        params: &[ParameterValue],
+        context: &ExecutionContext,
+    ) -> Result<CommandExecutionResult> {
         if params.is_empty() {
-            return Err(Error::Generic("TXDELETE requires a key parameter".to_string()));
+            return Err(Error::Generic(
+                "TXDELETE requires a key parameter".to_string(),
+            ));
         }
 
         let tx_id = {
             let ctx = self.context.read().unwrap();
-            ctx.active_transactions.get(&context.session_id).copied()
+            ctx.active_transactions
+                .get(&context.session_id)
+                .copied()
                 .ok_or_else(|| Error::Generic("No active transaction".to_string()))?
         };
 
@@ -627,23 +704,24 @@ impl CommandExecutor {
 
         // Check if key exists in transaction before deletion
         let existed = self.database.get_tx(tx_id, key_bytes)?.is_some();
-        
+
         if existed {
             self.database.delete_tx(tx_id, key_bytes)?;
         }
 
-        let data = FormattableData::Message(
-            if existed {
-                format!("Deleted key '{}' in transaction {}", key, tx_id)
-            } else {
-                format!("Key '{}' not found in transaction {}", key, tx_id)
-            }
-        );
+        let data = FormattableData::Message(if existed {
+            format!("Deleted key '{}' in transaction {}", key, tx_id)
+        } else {
+            format!("Key '{}' not found in transaction {}", key, tx_id)
+        });
 
         Ok(CommandExecutionResult {
             data,
             message: Some(if existed {
-                format!("Successfully deleted key '{}' in transaction {}", key, tx_id)
+                format!(
+                    "Successfully deleted key '{}' in transaction {}",
+                    key, tx_id
+                )
             } else {
                 format!("Key '{}' was not found in transaction {}", key, tx_id)
             }),
@@ -662,11 +740,23 @@ impl CommandExecutor {
     /// Execute INFO command
     fn execute_info(&self) -> Result<CommandExecutionResult> {
         let mut info_map = HashMap::new();
-        
-        info_map.insert("database_type".to_string(), serde_json::Value::String("Lightning DB".to_string()));
-        info_map.insert("version".to_string(), serde_json::Value::String(env!("CARGO_PKG_VERSION").to_string()));
-        info_map.insert("storage_engine".to_string(), serde_json::Value::String("Hybrid B+Tree/LSM".to_string()));
-        info_map.insert("transaction_support".to_string(), serde_json::Value::Bool(true));
+
+        info_map.insert(
+            "database_type".to_string(),
+            serde_json::Value::String("Lightning DB".to_string()),
+        );
+        info_map.insert(
+            "version".to_string(),
+            serde_json::Value::String(env!("CARGO_PKG_VERSION").to_string()),
+        );
+        info_map.insert(
+            "storage_engine".to_string(),
+            serde_json::Value::String("Hybrid B+Tree/LSM".to_string()),
+        );
+        info_map.insert(
+            "transaction_support".to_string(),
+            serde_json::Value::Bool(true),
+        );
         info_map.insert("acid_compliant".to_string(), serde_json::Value::Bool(true));
 
         let data = FormattableData::Single(info_map);
@@ -753,7 +843,9 @@ impl CommandExecutor {
         let path = if !params.is_empty() {
             self.extract_string_param(&params[0], "path")?
         } else {
-            return Err(Error::Generic("RESTORE requires a path parameter".to_string()));
+            return Err(Error::Generic(
+                "RESTORE requires a path parameter".to_string(),
+            ));
         };
 
         let data = FormattableData::Message(format!("Database restored from {}", path));
@@ -772,9 +864,18 @@ impl CommandExecutor {
 
     fn execute_health(&self) -> Result<CommandExecutionResult> {
         let mut health_map = HashMap::new();
-        health_map.insert("status".to_string(), serde_json::Value::String("healthy".to_string()));
-        health_map.insert("uptime_seconds".to_string(), serde_json::Value::Number(serde_json::Number::from(3600)));
-        health_map.insert("memory_usage_mb".to_string(), serde_json::Value::Number(serde_json::Number::from(256)));
+        health_map.insert(
+            "status".to_string(),
+            serde_json::Value::String("healthy".to_string()),
+        );
+        health_map.insert(
+            "uptime_seconds".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(3600)),
+        );
+        health_map.insert(
+            "memory_usage_mb".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(256)),
+        );
 
         let data = FormattableData::Single(health_map);
         Ok(CommandExecutionResult {
@@ -789,9 +890,15 @@ impl CommandExecutor {
         })
     }
 
-    fn execute_set(&self, params: &[ParameterValue], _context: &ExecutionContext) -> Result<CommandExecutionResult> {
+    fn execute_set(
+        &self,
+        params: &[ParameterValue],
+        _context: &ExecutionContext,
+    ) -> Result<CommandExecutionResult> {
         if params.len() < 2 {
-            return Err(Error::Generic("SET requires variable name and value".to_string()));
+            return Err(Error::Generic(
+                "SET requires variable name and value".to_string(),
+            ));
         }
 
         let var_name = self.extract_string_param(&params[0], "variable")?;
@@ -799,7 +906,8 @@ impl CommandExecutor {
 
         {
             let mut ctx = self.context.write().unwrap();
-            ctx.session_variables.insert(var_name.clone(), var_value.clone());
+            ctx.session_variables
+                .insert(var_name.clone(), var_value.clone());
         }
 
         let data = FormattableData::Message(format!("Set {} = {}", var_name, var_value));
@@ -819,12 +927,13 @@ impl CommandExecutor {
 
     fn execute_show(&self, params: &[ParameterValue]) -> Result<CommandExecutionResult> {
         let ctx = self.context.read().unwrap();
-        
+
         if !params.is_empty() {
             let what = self.extract_string_param(&params[0], "what")?;
             match what.to_uppercase().as_str() {
                 "VARIABLES" => {
-                    let vars: Vec<HashMap<String, serde_json::Value>> = ctx.session_variables
+                    let vars: Vec<HashMap<String, serde_json::Value>> = ctx
+                        .session_variables
                         .iter()
                         .map(|(k, v)| {
                             let mut map = HashMap::new();
@@ -833,7 +942,7 @@ impl CommandExecutor {
                             map
                         })
                         .collect();
-                    
+
                     let data = FormattableData::Multiple(vars);
                     Ok(CommandExecutionResult {
                         data,
@@ -845,12 +954,16 @@ impl CommandExecutor {
                 _ => Err(Error::Generic(format!("Unknown SHOW target: {}", what))),
             }
         } else {
-            Err(Error::Generic("SHOW requires a target (e.g., VARIABLES)".to_string()))
+            Err(Error::Generic(
+                "SHOW requires a target (e.g., VARIABLES)".to_string(),
+            ))
         }
     }
 
     fn execute_help(&self) -> Result<CommandExecutionResult> {
-        let data = FormattableData::Message("Help is available with the 'help' command or '\\?'".to_string());
+        let data = FormattableData::Message(
+            "Help is available with the 'help' command or '\\?'".to_string(),
+        );
         Ok(CommandExecutionResult {
             data,
             message: Some("Help information displayed".to_string()),
@@ -882,9 +995,13 @@ impl CommandExecutor {
     // Helper methods
 
     /// Resolve parameter variables
-    fn resolve_parameters(&self, params: &[super::parser::CommandParameter], context: &ExecutionContext) -> Result<Vec<ParameterValue>> {
+    fn resolve_parameters(
+        &self,
+        params: &[super::parser::CommandParameter],
+        context: &ExecutionContext,
+    ) -> Result<Vec<ParameterValue>> {
         let mut resolved = Vec::new();
-        
+
         for param in params {
             let resolved_value = match &param.value {
                 ParameterValue::Variable(var_name) => {
@@ -897,7 +1014,10 @@ impl CommandExecutor {
                         if let Some(value) = ctx.session_variables.get(var_name) {
                             ParameterValue::String(value.clone())
                         } else {
-                            return Err(Error::Generic(format!("Undefined variable: {}", var_name)));
+                            return Err(Error::Generic(format!(
+                                "Undefined variable: {}",
+                                var_name
+                            )));
                         }
                     }
                 }
@@ -905,7 +1025,7 @@ impl CommandExecutor {
             };
             resolved.push(resolved_value);
         }
-        
+
         Ok(resolved)
     }
 
@@ -917,7 +1037,10 @@ impl CommandExecutor {
             ParameterValue::Float(f) => Ok(f.to_string()),
             ParameterValue::Boolean(b) => Ok(b.to_string()),
             ParameterValue::Null => Ok("null".to_string()),
-            _ => Err(Error::Generic(format!("Invalid {} parameter type", param_name))),
+            _ => Err(Error::Generic(format!(
+                "Invalid {} parameter type",
+                param_name
+            ))),
         }
     }
 
@@ -925,22 +1048,37 @@ impl CommandExecutor {
     fn extract_integer_param(&self, param: &ParameterValue, param_name: &str) -> Result<i64> {
         match param {
             ParameterValue::Integer(i) => Ok(*i),
-            ParameterValue::String(s) => s.parse::<i64>()
-                .map_err(|_| Error::Generic(format!("Invalid {} parameter: not a number", param_name))),
-            _ => Err(Error::Generic(format!("Invalid {} parameter type", param_name))),
+            ParameterValue::String(s) => s.parse::<i64>().map_err(|_| {
+                Error::Generic(format!("Invalid {} parameter: not a number", param_name))
+            }),
+            _ => Err(Error::Generic(format!(
+                "Invalid {} parameter type",
+                param_name
+            ))),
         }
     }
 
     /// Check if command is cacheable
     fn is_cacheable_command(&self, command: &ParsedCommand) -> bool {
-        matches!(command.command, CommandType::Get | CommandType::Exists | CommandType::Scan | CommandType::Info | CommandType::Stats)
+        matches!(
+            command.command,
+            CommandType::Get
+                | CommandType::Exists
+                | CommandType::Scan
+                | CommandType::Info
+                | CommandType::Stats
+        )
     }
 
     /// Get cached result
     fn get_cached_result(&self, query: &str) -> Option<ExecutionResult> {
         let ctx = self.context.read().unwrap();
         if let Some(cached) = ctx.query_cache.get(query) {
-            if SystemTime::now().duration_since(cached.timestamp).unwrap_or_default() <= cached.ttl {
+            if SystemTime::now()
+                .duration_since(cached.timestamp)
+                .unwrap_or_default()
+                <= cached.ttl
+            {
                 return Some(cached.result.clone());
             }
         }
@@ -950,11 +1088,14 @@ impl CommandExecutor {
     /// Cache result
     fn cache_result(&self, query: &str, result: &ExecutionResult) {
         let mut ctx = self.context.write().unwrap();
-        ctx.query_cache.insert(query.to_string(), CachedResult {
-            result: result.clone(),
-            timestamp: SystemTime::now(),
-            ttl: Duration::from_secs(300), // 5 minutes
-        });
+        ctx.query_cache.insert(
+            query.to_string(),
+            CachedResult {
+                result: result.clone(),
+                timestamp: SystemTime::now(),
+                ttl: Duration::from_secs(300), // 5 minutes
+            },
+        );
 
         // Simple cache size management
         if ctx.query_cache.len() > 1000 {
@@ -966,21 +1107,22 @@ impl CommandExecutor {
     fn update_stats(&self, success: bool, duration: Duration, cache_hit: bool) {
         let mut ctx = self.context.write().unwrap();
         ctx.stats.total_commands_executed += 1;
-        
+
         if success {
             ctx.stats.successful_commands += 1;
         } else {
             ctx.stats.failed_commands += 1;
         }
-        
+
         if cache_hit {
             ctx.stats.cache_hits += 1;
         } else {
             ctx.stats.cache_misses += 1;
         }
-        
+
         ctx.stats.total_execution_time += duration;
-        ctx.stats.average_execution_time = ctx.stats.total_execution_time / ctx.stats.total_commands_executed as u32;
+        ctx.stats.average_execution_time =
+            ctx.stats.total_execution_time / ctx.stats.total_commands_executed as u32;
     }
 
     /// Get execution statistics
@@ -1006,9 +1148,9 @@ struct CommandExecutionResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-    use crate::LightningDbConfig;
     use crate::repl::parser::{CommandParameter, ParameterType};
+    use crate::LightningDbConfig;
+    use tempfile::TempDir;
 
     fn create_test_executor() -> CommandExecutor {
         let test_dir = TempDir::new().unwrap();
@@ -1027,11 +1169,11 @@ mod tests {
     #[test]
     fn test_extract_string_param() {
         let executor = create_test_executor();
-        
+
         let param = ParameterValue::String("test".to_string());
         let result = executor.extract_string_param(&param, "test").unwrap();
         assert_eq!(result, "test");
-        
+
         let param = ParameterValue::Integer(123);
         let result = executor.extract_string_param(&param, "test").unwrap();
         assert_eq!(result, "123");
@@ -1040,15 +1182,15 @@ mod tests {
     #[test]
     fn test_extract_integer_param() {
         let executor = create_test_executor();
-        
+
         let param = ParameterValue::Integer(42);
         let result = executor.extract_integer_param(&param, "test").unwrap();
         assert_eq!(result, 42);
-        
+
         let param = ParameterValue::String("123".to_string());
         let result = executor.extract_integer_param(&param, "test").unwrap();
         assert_eq!(result, 123);
-        
+
         let param = ParameterValue::String("not_a_number".to_string());
         assert!(executor.extract_integer_param(&param, "test").is_err());
     }
@@ -1056,7 +1198,7 @@ mod tests {
     #[test]
     fn test_cacheable_commands() {
         let executor = create_test_executor();
-        
+
         let get_cmd = ParsedCommand {
             command: CommandType::Get,
             parameters: vec![],
@@ -1066,9 +1208,9 @@ mod tests {
             variables: vec![],
             original_query: "GET test".to_string(),
         };
-        
+
         assert!(executor.is_cacheable_command(&get_cmd));
-        
+
         let put_cmd = ParsedCommand {
             command: CommandType::Put,
             parameters: vec![],
@@ -1078,14 +1220,14 @@ mod tests {
             variables: vec![],
             original_query: "PUT test value".to_string(),
         };
-        
+
         assert!(!executor.is_cacheable_command(&put_cmd));
     }
 
     #[test]
     fn test_parameter_resolution() {
         let executor = create_test_executor();
-        
+
         let params = vec![
             CommandParameter {
                 value: ParameterValue::String("literal".to_string()),
@@ -1098,10 +1240,10 @@ mod tests {
                 quoted: false,
             },
         ];
-        
+
         let mut context_vars = HashMap::new();
         context_vars.insert("test_var".to_string(), "resolved_value".to_string());
-        
+
         let context = ExecutionContext {
             session_id: "test".to_string(),
             start_time: Instant::now(),
@@ -1109,17 +1251,17 @@ mod tests {
             variables: context_vars,
             verbose: false,
         };
-        
+
         let resolved = executor.resolve_parameters(&params, &context).unwrap();
-        
+
         assert_eq!(resolved.len(), 2);
-        
+
         if let ParameterValue::String(s) = &resolved[0] {
             assert_eq!(s, "literal");
         } else {
             panic!("Expected string parameter");
         }
-        
+
         if let ParameterValue::String(s) = &resolved[1] {
             assert_eq!(s, "resolved_value");
         } else {

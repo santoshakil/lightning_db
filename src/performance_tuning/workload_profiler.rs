@@ -4,13 +4,13 @@
 //! and recommend optimal configurations.
 
 use crate::{Database, Result};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
-use std::path::Path;
-use std::collections::HashMap;
 use parking_lot::RwLock;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// Workload profiler
 pub struct WorkloadProfiler {
@@ -38,21 +38,21 @@ pub struct WorkloadProfile {
 /// Workload type classification
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum WorkloadType {
-    OLTP,           // Online Transaction Processing
-    OLAP,           // Online Analytical Processing
-    Mixed,          // Mixed workload
-    WriteHeavy,     // Write-intensive
-    ReadHeavy,      // Read-intensive
-    KeyValue,       // Simple key-value
-    TimeSeries,     // Time-series data
-    Cache,          // Cache-like access
+    OLTP,       // Online Transaction Processing
+    OLAP,       // Online Analytical Processing
+    Mixed,      // Mixed workload
+    WriteHeavy, // Write-intensive
+    ReadHeavy,  // Read-intensive
+    KeyValue,   // Simple key-value
+    TimeSeries, // Time-series data
+    Cache,      // Cache-like access
 }
 
 /// Access patterns
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessPatterns {
-    pub temporal_locality: f64,    // 0.0 = random, 1.0 = perfect locality
-    pub spatial_locality: f64,     // 0.0 = random, 1.0 = sequential
+    pub temporal_locality: f64, // 0.0 = random, 1.0 = perfect locality
+    pub spatial_locality: f64,  // 0.0 = random, 1.0 = sequential
     pub key_distribution: KeyDistribution,
     pub operation_mix: OperationMix,
     pub batch_characteristics: BatchCharacteristics,
@@ -118,7 +118,7 @@ impl WorkloadProfiler {
     pub fn profile_database(&self, db_path: &Path) -> Result<WorkloadProfile> {
         // In a real implementation, this would monitor actual database operations
         // For now, we'll analyze based on database statistics and sampling
-        
+
         let profile = self.analyze_workload_patterns()?;
         Ok(profile)
     }
@@ -127,7 +127,7 @@ impl WorkloadProfiler {
     pub fn profile_live(&self, db: &Arc<Database>) -> Result<WorkloadProfile> {
         let start_time = Instant::now();
         let metrics = Arc::clone(&self.metrics);
-        
+
         // Monitor operations for the profiling duration
         while start_time.elapsed() < self.profiling_duration {
             self.sample_operations(db)?;
@@ -149,7 +149,7 @@ impl WorkloadProfiler {
     fn analyze_workload_patterns(&self) -> Result<WorkloadProfile> {
         // Simulate workload analysis
         // In production, this would analyze actual metrics
-        
+
         Ok(WorkloadProfile {
             workload_type: WorkloadType::Mixed,
             read_ratio: 0.8,
@@ -184,21 +184,21 @@ impl WorkloadProfiler {
     /// Analyze collected metrics
     fn analyze_metrics(&self) -> Result<WorkloadProfile> {
         let metrics = self.metrics.read();
-        
+
         let total_reads = metrics.read_ops.load(Ordering::Relaxed);
         let total_writes = metrics.write_ops.load(Ordering::Relaxed);
         let total_ops = total_reads + total_writes;
-        
+
         if total_ops == 0 {
             return self.analyze_workload_patterns();
         }
 
         let read_ratio = total_reads as f64 / total_ops as f64;
         let write_ratio = total_writes as f64 / total_ops as f64;
-        
+
         // Determine workload type
         let workload_type = self.classify_workload(read_ratio, write_ratio, &metrics);
-        
+
         // Calculate access patterns
         let sequential_ratio = if metrics.sequential_accesses.load(Ordering::Relaxed) > 0 {
             let seq = metrics.sequential_accesses.load(Ordering::Relaxed) as f64;
@@ -216,7 +216,7 @@ impl WorkloadProfiler {
             value_size_avg: 1024,
             hot_key_percentage: self.calculate_hot_key_percentage(&metrics.key_access_frequency),
             sequential_access_ratio: sequential_ratio,
-            transaction_size_avg: metrics.transaction_sizes.iter().sum::<usize>() 
+            transaction_size_avg: metrics.transaction_sizes.iter().sum::<usize>()
                 / metrics.transaction_sizes.len().max(1),
             concurrent_operations_avg: metrics.concurrent_ops.iter().sum::<usize>() as f64
                 / metrics.concurrent_ops.len().max(1) as f64,
@@ -226,7 +226,12 @@ impl WorkloadProfiler {
     }
 
     /// Classify workload type
-    fn classify_workload(&self, read_ratio: f64, write_ratio: f64, _metrics: &WorkloadMetrics) -> WorkloadType {
+    fn classify_workload(
+        &self,
+        read_ratio: f64,
+        write_ratio: f64,
+        _metrics: &WorkloadMetrics,
+    ) -> WorkloadType {
         if read_ratio > 0.9 {
             WorkloadType::ReadHeavy
         } else if write_ratio > 0.7 {
@@ -247,12 +252,12 @@ impl WorkloadProfiler {
         let total_accesses: u64 = key_frequencies.values().sum();
         let mut frequencies: Vec<_> = key_frequencies.values().cloned().collect();
         frequencies.sort_by(|a, b| b.cmp(a));
-        
+
         // Calculate what percentage of keys account for 80% of accesses
         let target_accesses = (total_accesses as f64 * 0.8) as u64;
         let mut cumulative = 0u64;
         let mut hot_key_count = 0;
-        
+
         for freq in frequencies {
             cumulative += freq;
             hot_key_count += 1;
@@ -260,7 +265,7 @@ impl WorkloadProfiler {
                 break;
             }
         }
-        
+
         hot_key_count as f64 / key_frequencies.len() as f64
     }
 
@@ -273,7 +278,7 @@ impl WorkloadProfiler {
         // Find the highest operation rate in any 1-second window
         let mut max_ops_per_sec: f64 = 0.0;
         let mut window_start = 0;
-        
+
         for (i, timestamp) in metrics.access_timestamps.iter().enumerate() {
             // Move window start forward
             while window_start < i {
@@ -283,11 +288,11 @@ impl WorkloadProfiler {
                 }
                 window_start += 1;
             }
-            
+
             let ops_in_window = (i - window_start + 1) as f64;
             max_ops_per_sec = max_ops_per_sec.max(ops_in_window);
         }
-        
+
         max_ops_per_sec
     }
 

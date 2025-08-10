@@ -72,22 +72,20 @@ pub mod cache_optimized;
 pub mod chaos_engineering;
 pub mod compression;
 pub mod config_management;
-pub mod io_uring;
 pub mod consistency;
 pub mod corruption_detection;
+#[cfg(any(feature = "data-import", feature = "data-export-parquet"))]
 pub mod data_import_export;
 pub mod distributed_tracing;
-pub mod performance_regression;
 pub mod encryption;
 pub mod error;
 pub mod fast_auto_batcher;
-pub mod health_check;
-pub mod resource_quotas;
-pub mod schema_migration;
 pub mod fast_path;
 pub mod header;
+pub mod health_check;
 pub mod index;
 pub mod integrity_checker;
+pub mod io_uring;
 pub mod iterator;
 pub mod key;
 pub mod key_ops;
@@ -96,16 +94,19 @@ pub mod lock_free_batcher;
 pub mod lsm;
 pub mod metrics;
 pub mod optimizations;
+pub mod performance_regression;
 pub mod prefetch;
+pub mod production_validation;
 pub mod profiling;
 pub mod profiling_legacy;
-pub mod production_validation;
 pub mod property_testing;
 pub mod query_planner;
-pub mod repl;
 pub mod realtime_stats;
 pub mod recovery;
+pub mod repl;
 pub mod replication;
+pub mod resource_quotas;
+pub mod schema_migration;
 pub mod serialization;
 pub mod sharding;
 pub mod simd;
@@ -127,17 +128,17 @@ pub mod utils {
     pub mod resource_guard;
     pub mod retry;
 }
-pub mod vectorized_query;
-pub mod query_optimizer;
 pub mod integrity;
-pub mod raft;
 pub mod logging;
 pub mod monitoring;
 pub mod numa;
 pub mod observability;
 pub mod performance_tuning;
+pub mod query_optimizer;
+pub mod raft;
 pub mod resource_limits;
 pub mod safety_guards;
+pub mod vectorized_query;
 // Async modules
 pub mod async_database;
 pub mod async_page_manager;
@@ -251,7 +252,7 @@ impl Default for LightningDbConfig {
             encryption_config: encryption::EncryptionConfig::default(),
             quota_config: resource_quotas::QuotaConfig::default(),
             compression_level: Some(3), // Default compression level
-            enable_statistics: true, // Default to enabled
+            enable_statistics: true,    // Default to enabled
         }
     }
 }
@@ -296,17 +297,21 @@ impl Database {
 
         // Initialize encryption manager if enabled (before creating page managers)
         let encryption_manager = if config.encryption_config.enabled {
-            let manager = Arc::new(encryption::EncryptionManager::new(config.encryption_config.clone())?);
+            let manager = Arc::new(encryption::EncryptionManager::new(
+                config.encryption_config.clone(),
+            )?);
             // TODO: Initialize with master key from environment or key management system
             // For now, we'll leave the key uninitialized until explicitly set
             Some(manager)
         } else {
             None
         };
-        
+
         // Initialize quota manager if enabled
         let quota_manager = if config.quota_config.enabled {
-            Some(Arc::new(resource_quotas::QuotaManager::new(config.quota_config.clone())?))
+            Some(Arc::new(resource_quotas::QuotaManager::new(
+                config.quota_config.clone(),
+            )?))
         } else {
             None
         };
@@ -345,7 +350,8 @@ impl Database {
 
         // Wrap with encryption if enabled
         if let Some(ref enc_manager) = encryption_manager {
-            page_manager_wrapper = storage::PageManagerWrapper::encrypted(page_manager_wrapper, enc_manager.clone());
+            page_manager_wrapper =
+                storage::PageManagerWrapper::encrypted(page_manager_wrapper, enc_manager.clone());
         }
 
         // Create BPlusTree with the final wrapper
@@ -521,11 +527,13 @@ impl Database {
 
     /// Create a temporary database for testing
     pub fn create_temp() -> Result<Self> {
-        let temp_dir = std::env::temp_dir().join(format!("lightning_db_test_{}", 
+        let temp_dir = std::env::temp_dir().join(format!(
+            "lightning_db_test_{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()));
+                .as_nanos()
+        ));
         Self::create(temp_dir, LightningDbConfig::default())
     }
 
@@ -540,57 +548,65 @@ impl Database {
 
             // Initialize encryption manager if enabled (before creating page managers)
             let encryption_manager = if config.encryption_config.enabled {
-                let manager = Arc::new(encryption::EncryptionManager::new(config.encryption_config.clone())?);
+                let manager = Arc::new(encryption::EncryptionManager::new(
+                    config.encryption_config.clone(),
+                )?);
                 // TODO: Initialize with master key from environment or key management system
                 // For now, we'll leave the key uninitialized until explicitly set
                 Some(manager)
             } else {
                 None
             };
-            
+
             // Initialize quota manager if enabled
             let quota_manager = if config.quota_config.enabled {
-                Some(Arc::new(resource_quotas::QuotaManager::new(config.quota_config.clone())?))
+                Some(Arc::new(resource_quotas::QuotaManager::new(
+                    config.quota_config.clone(),
+                )?))
             } else {
                 None
             };
 
             // Open either standard or optimized page manager based on config
-            let (mut page_manager_wrapper, page_manager_arc) =
-                if config.use_optimized_page_manager {
-                    if let Some(mmap_config) = config.mmap_config.clone() {
-                        // Open optimized page manager
-                        let opt_page_manager = Arc::new(storage::OptimizedPageManager::open(
-                            &btree_path,
-                            mmap_config,
-                        )?);
-                        let wrapper = storage::PageManagerWrapper::optimized(opt_page_manager);
+            let (mut page_manager_wrapper, page_manager_arc) = if config.use_optimized_page_manager
+            {
+                if let Some(mmap_config) = config.mmap_config.clone() {
+                    // Open optimized page manager
+                    let opt_page_manager = Arc::new(storage::OptimizedPageManager::open(
+                        &btree_path,
+                        mmap_config,
+                    )?);
+                    let wrapper = storage::PageManagerWrapper::optimized(opt_page_manager);
 
-                        // Create a dummy standard page manager for legacy compatibility
-                        let std_page_manager = Arc::new(RwLock::new(PageManager::open(
-                            &btree_path.with_extension("legacy"),
-                        )?));
+                    // Create a dummy standard page manager for legacy compatibility
+                    let std_page_manager = Arc::new(RwLock::new(PageManager::open(
+                        &btree_path.with_extension("legacy"),
+                    )?));
 
-                        (wrapper, std_page_manager)
-                    } else {
-                        // Fall back to standard if no mmap config provided
-                        let page_manager = Arc::new(RwLock::new(PageManager::open(&btree_path)?));
-                        let wrapper = storage::PageManagerWrapper::standard(page_manager.clone());
-                        (wrapper, page_manager)
-                    }
+                    (wrapper, std_page_manager)
                 } else {
+                    // Fall back to standard if no mmap config provided
                     let page_manager = Arc::new(RwLock::new(PageManager::open(&btree_path)?));
                     let wrapper = storage::PageManagerWrapper::standard(page_manager.clone());
                     (wrapper, page_manager)
-                };
+                }
+            } else {
+                let page_manager = Arc::new(RwLock::new(PageManager::open(&btree_path)?));
+                let wrapper = storage::PageManagerWrapper::standard(page_manager.clone());
+                (wrapper, page_manager)
+            };
 
             // Wrap with encryption if enabled
             if let Some(ref enc_manager) = encryption_manager {
-                page_manager_wrapper = storage::PageManagerWrapper::encrypted(page_manager_wrapper, enc_manager.clone());
+                page_manager_wrapper = storage::PageManagerWrapper::encrypted(
+                    page_manager_wrapper,
+                    enc_manager.clone(),
+                );
             }
 
             // Create BPlusTree with the final wrapper
-            let mut btree = BPlusTree::from_existing_with_wrapper(page_manager_wrapper.clone(), 1, 1);
+            let mut btree =
+                BPlusTree::from_existing_with_wrapper(page_manager_wrapper.clone(), 1, 1);
 
             // Similar setup for memory pool and LSM tree
             let memory_pool = if config.cache_size > 0 {
@@ -922,7 +938,7 @@ impl Database {
         // Validate key and value sizes
         const MAX_KEY_SIZE: usize = 4096;
         const MAX_VALUE_SIZE: usize = 1024 * 1024; // 1MB
-        
+
         if key.is_empty() || key.len() > MAX_KEY_SIZE {
             return Err(Error::InvalidKeySize {
                 size: key.len(),
@@ -930,7 +946,7 @@ impl Database {
                 max: MAX_KEY_SIZE,
             });
         }
-        
+
         if value.len() > MAX_VALUE_SIZE {
             return Err(Error::InvalidValueSize {
                 size: value.len(),
@@ -939,13 +955,13 @@ impl Database {
         }
 
         let _timer = logging::OperationTimer::with_key("put", key);
-        
+
         // Check resource quotas
         if let Some(ref quota_manager) = self.quota_manager {
             let size_bytes = key.len() as u64 + value.len() as u64;
             quota_manager.check_write_allowed(None, size_bytes)?;
         }
-        
+
         // Check if we have a write batcher
         if let Some(ref batcher) = self.write_batcher {
             return batcher.put(key.to_vec(), value.to_vec());
@@ -1152,7 +1168,7 @@ impl Database {
                     self.page_manager.sync()?;
                 }
             }
-            
+
             // CRITICAL: Update version store for regular puts to maintain consistency
             // This ensures transactions can see regular puts
             let timestamp = if let Some(ref opt_manager) = self.optimized_transaction_manager {
@@ -1160,7 +1176,8 @@ impl Database {
             } else {
                 self.transaction_manager.get_read_timestamp() + 1
             };
-            self.version_store.put(key.to_vec(), Some(value.to_vec()), timestamp, 0);
+            self.version_store
+                .put(key.to_vec(), Some(value.to_vec()), timestamp, 0);
 
             // Wait for consistency only if needed
             if level != ConsistencyLevel::Eventual {
@@ -1274,12 +1291,12 @@ impl Database {
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let _timer = logging::OperationTimer::with_key("get", key);
-        
+
         // Check resource quotas
         if let Some(ref quota_manager) = self.quota_manager {
             quota_manager.check_read_allowed(None, key.len() as u64)?;
         }
-        
+
         // Fast path: try cache first with minimal metrics overhead
         if let Some(ref memory_pool) = self.memory_pool {
             if let Ok(Some(cached_value)) = memory_pool.cache_get(key) {
@@ -1344,7 +1361,7 @@ impl Database {
             // CRITICAL: For non-transactional reads, we must use MAX timestamp to see ALL commits
             // This ensures regular get() operations see the latest committed transactions
             let read_timestamp = u64::MAX; // See all committed transactions
-            
+
             // Always check version store to ensure we see committed transactions
             // This is critical for transactional consistency
             if let Some(versioned) = self.version_store.get_versioned(key, read_timestamp) {
@@ -1417,7 +1434,7 @@ impl Database {
         if let Some(ref quota_manager) = self.quota_manager {
             quota_manager.check_connection_allowed(None)?; // Treat transaction as a connection for quota purposes
         }
-        
+
         if let Some(ref opt_manager) = self.optimized_transaction_manager {
             opt_manager.begin()
         } else {
@@ -1504,7 +1521,7 @@ impl Database {
                 if let Some(ref value) = write_op.value {
                     // Put operation
                     match lsm.insert(write_op.key.clone(), value.clone()) {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err(e) => {
                             // Log but don't fail - version store has the data
                             eprintln!("Warning: LSM write failed after commit: {:?}", e);
@@ -1513,7 +1530,7 @@ impl Database {
                 } else {
                     // Delete operation
                     match lsm.delete(&write_op.key) {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err(e) => {
                             // Log but don't fail - version store has the data
                             eprintln!("Warning: LSM delete failed after commit: {:?}", e);
@@ -1524,7 +1541,7 @@ impl Database {
             // Ensure LSM writes are visible for reads
             // Note: We don't force a full flush here as that would be too expensive
             // The memtable will auto-flush when it reaches the size threshold
-            
+
             // Use a memory fence to ensure LSM writes are visible
             std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
         } else {
@@ -1646,7 +1663,7 @@ impl Database {
                     value = btree.get(key)?;
                 }
             }
-            
+
             // If we found a value in main database, initialize version store with it
             // This ensures proper conflict detection for data not yet in version store
             if value.is_some() {
@@ -1678,7 +1695,7 @@ impl Database {
                 // Data from main database is treated as version 0
                 0
             };
-            
+
             tx.add_read(key.to_vec(), actual_read_version);
         }
 
@@ -1784,7 +1801,7 @@ impl Database {
 
     /// Verify database integrity
     pub async fn verify_integrity(&self) -> Result<integrity::IntegrityReport> {
-        use integrity::{IntegrityValidator, IntegrityConfig};
+        use integrity::{IntegrityConfig, IntegrityValidator};
 
         let config = IntegrityConfig::default();
         let validator = IntegrityValidator::new(Arc::new(self.clone()), config);
@@ -1807,9 +1824,9 @@ impl Database {
     /// Attempt to repair integrity issues
     pub async fn repair_integrity(
         &self,
-        report: &integrity::IntegrityReport,
+        _report: &integrity::IntegrityReport,
     ) -> Result<Vec<integrity::RepairAction>> {
-        use integrity::{IntegrityValidator, IntegrityConfig};
+        use integrity::{IntegrityConfig, IntegrityValidator};
 
         let mut config = IntegrityConfig::default();
         config.enable_repair = true;
@@ -1903,7 +1920,7 @@ impl Database {
             active_transactions: self.transaction_manager.active_transaction_count(),
             cache_hit_rate: None, // TODO: Implement proper cache hit rate tracking
             memory_usage_bytes: 0, // TODO: Track memory usage
-            disk_usage_bytes: 0, // TODO: Track disk usage
+            disk_usage_bytes: 0,  // TODO: Track disk usage
             active_connections: 0, // TODO: Track active connections
         }
     }
@@ -2079,7 +2096,7 @@ impl Database {
         if let Some(ref quota_manager) = self.quota_manager {
             quota_manager.check_read_allowed(None, 1)?; // Scan is a single read operation for quota purposes
         }
-        
+
         let read_timestamp = if let Some(ref opt_manager) = self.optimized_transaction_manager {
             opt_manager.get_read_timestamp()
         } else {
@@ -2533,11 +2550,11 @@ impl Database {
     /// Get storage statistics
     pub fn get_storage_stats(&self) -> Result<StorageStats> {
         let tree_stats = self.btree.read().get_stats();
-        
+
         // Calculate storage size - this is a simplified calculation
         let used_bytes = tree_stats.page_count as u64 * self._config.page_size;
         let total_bytes = used_bytes + (tree_stats.free_page_count as u64 * self._config.page_size);
-        
+
         Ok(StorageStats {
             used_bytes,
             total_bytes,
@@ -2582,7 +2599,7 @@ impl Database {
                 conflicts: metrics.conflicts as u64,
             }
         };
-        
+
         Ok(stats)
     }
 
@@ -2594,13 +2611,17 @@ impl Database {
         } else {
             self.transaction_manager.get_metrics()
         };
-        
+
         // Get cache stats
         let (cache_hit_rate, memory_usage_bytes) = if let Some(ref pool) = self.memory_pool {
             let cache_stats = pool.get_cache_stats();
-            let total_cache_ops = cache_stats.hot_cache_hits + cache_stats.cold_cache_hits + cache_stats.cache_misses;
+            let total_cache_ops =
+                cache_stats.hot_cache_hits + cache_stats.cold_cache_hits + cache_stats.cache_misses;
             let cache_hit_rate = if total_cache_ops > 0 {
-                Some((cache_stats.hot_cache_hits + cache_stats.cold_cache_hits) as f64 / total_cache_ops as f64)
+                Some(
+                    (cache_stats.hot_cache_hits + cache_stats.cold_cache_hits) as f64
+                        / total_cache_ops as f64,
+                )
             } else {
                 None
             };
@@ -2609,10 +2630,10 @@ impl Database {
         } else {
             (None, 0)
         };
-        
+
         // Get storage stats
         let storage_stats = self.get_storage_stats()?;
-        
+
         Ok(DatabaseStats {
             page_count: tree_stats.page_count,
             free_page_count: tree_stats.free_page_count,
@@ -2628,28 +2649,38 @@ impl Database {
     /// Get performance statistics
     pub fn get_performance_stats(&self) -> Result<PerformanceStats> {
         let metrics = self.metrics_collector.get_summary_metrics();
-        
+
         // Calculate operations per second
-        let total_ops = metrics.get("total_operations")
+        let total_ops = metrics
+            .get("total_operations")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as f64;
-        let duration_secs = metrics.get("collection_duration_secs")
+        let duration_secs = metrics
+            .get("collection_duration_secs")
             .and_then(|v| v.as_f64())
             .unwrap_or(1.0);
-        let ops_per_sec = if duration_secs > 0.0 { total_ops / duration_secs } else { 0.0 };
-        
+        let ops_per_sec = if duration_secs > 0.0 {
+            total_ops / duration_secs
+        } else {
+            0.0
+        };
+
         Ok(PerformanceStats {
             operations_per_second: ops_per_sec,
-            average_latency_us: metrics.get("avg_latency_us")
+            average_latency_us: metrics
+                .get("avg_latency_us")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0),
-            p99_latency_us: metrics.get("p99_latency_us")
+            p99_latency_us: metrics
+                .get("p99_latency_us")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0),
-            p95_latency_us: metrics.get("p95_latency_us")
+            p95_latency_us: metrics
+                .get("p95_latency_us")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0),
-            error_rate: metrics.get("error_rate")
+            error_rate: metrics
+                .get("error_rate")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0),
         })
@@ -2659,28 +2690,32 @@ impl Database {
     pub async fn test_transaction(&self) -> Result<()> {
         // Create a test transaction
         let tx_id = self.begin_transaction()?;
-        
+
         // Try a simple operation
         let test_key = b"__test_transaction__";
         let test_value = b"test_value";
-        
+
         self.put_tx(tx_id, test_key, test_value)?;
-        
+
         // Verify within transaction
         if let Some(value) = self.get_tx(tx_id, test_key)? {
             if value != test_value {
-                return Err(Error::CorruptedDatabase("Transaction read verification failed".to_string()));
+                return Err(Error::CorruptedDatabase(
+                    "Transaction read verification failed".to_string(),
+                ));
             }
         } else {
-            return Err(Error::CorruptedDatabase("Transaction read failed".to_string()));
+            return Err(Error::CorruptedDatabase(
+                "Transaction read failed".to_string(),
+            ));
         }
-        
+
         // Commit
         self.commit_transaction(tx_id)?;
-        
+
         // Clean up
         self.delete(test_key)?;
-        
+
         Ok(())
     }
 }
@@ -2848,14 +2883,13 @@ mod tests {
         let report = db.verify_integrity().await.unwrap();
 
         // Should have no errors on a healthy database
-        let total_errors = report.checksum_errors.len() 
+        let total_errors = report.checksum_errors.len()
             + report.structure_errors.len()
             + report.consistency_errors.len()
             + report.transaction_errors.len()
             + report.cross_reference_errors.len();
         assert_eq!(
-            total_errors,
-            0,
+            total_errors, 0,
             "Healthy database should have no integrity errors"
         );
         assert!(report.pages_scanned > 0);

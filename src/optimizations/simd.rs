@@ -161,9 +161,14 @@ impl SimdOps {
         while pos + 32 <= data.len() {
             let chunk = _mm256_loadu_si256(data.as_ptr().add(pos) as *const __m256i);
 
-            // Extract 64-bit values and mix them
-            let values = std::mem::transmute::<__m256i, [u64; 4]>(chunk);
-            for &value in &values {
+            // Extract 64-bit values and mix them safely using SIMD intrinsics
+            // Extract four 64-bit values from the 256-bit SIMD register
+            let value0 = _mm256_extract_epi64(chunk, 0) as u64;
+            let value1 = _mm256_extract_epi64(chunk, 1) as u64;
+            let value2 = _mm256_extract_epi64(chunk, 2) as u64;
+            let value3 = _mm256_extract_epi64(chunk, 3) as u64;
+            
+            for &value in &[value0, value1, value2, value3] {
                 hash = hash.wrapping_mul(0x9e3779b97f4a7c15u64);
                 hash ^= value;
                 hash = hash.rotate_left(31);
@@ -199,11 +204,12 @@ impl SimdOps {
         while pos + 32 <= data.len() {
             let chunk = _mm256_loadu_si256(data.as_ptr().add(pos) as *const __m256i);
 
-            // Calculate byte frequencies (simplified entropy estimation)
-            let bytes = std::mem::transmute::<__m256i, [u8; 32]>(chunk);
+            // Calculate byte frequencies (simplified entropy estimation) using safe extraction
             let mut local_entropy = 0u32;
-
-            for &byte in &bytes {
+            
+            // Extract bytes safely using SIMD intrinsics
+            for i in 0..32 {
+                let byte = _mm256_extract_epi8(chunk, i) as u8;
                 // Simple entropy estimation based on byte patterns
                 local_entropy += (byte as u32).count_ones();
             }
@@ -213,10 +219,19 @@ impl SimdOps {
             pos += 32;
         }
 
-        // Extract sum
+        // Extract sum safely using SIMD intrinsics
         let entropy_sum: i32 = {
-            let temp = std::mem::transmute::<__m256i, [i32; 8]>(entropy_acc);
-            temp.iter().sum()
+            // Extract eight 32-bit values from the 256-bit SIMD register
+            let val0 = _mm256_extract_epi32(entropy_acc, 0);
+            let val1 = _mm256_extract_epi32(entropy_acc, 1);
+            let val2 = _mm256_extract_epi32(entropy_acc, 2);
+            let val3 = _mm256_extract_epi32(entropy_acc, 3);
+            let val4 = _mm256_extract_epi32(entropy_acc, 4);
+            let val5 = _mm256_extract_epi32(entropy_acc, 5);
+            let val6 = _mm256_extract_epi32(entropy_acc, 6);
+            let val7 = _mm256_extract_epi32(entropy_acc, 7);
+            
+            val0 + val1 + val2 + val3 + val4 + val5 + val6 + val7
         };
 
         // Estimate based on bit distribution

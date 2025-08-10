@@ -3,7 +3,7 @@
 //! Detects hardware features and capabilities for compression optimization including
 //! CPU features, memory bandwidth, and specialized compression acceleration.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
 /// Hardware compression capabilities
@@ -159,12 +159,10 @@ impl HardwareCapabilities {
     /// Detect hardware capabilities
     pub fn detect() -> Self {
         static CAPABILITIES: OnceLock<HardwareCapabilities> = OnceLock::new();
-        
-        CAPABILITIES.get_or_init(|| {
-            Self::detect_internal()
-        }).clone()
+
+        CAPABILITIES.get_or_init(|| Self::detect_internal()).clone()
     }
-    
+
     /// Internal detection implementation
     fn detect_internal() -> Self {
         Self {
@@ -174,27 +172,27 @@ impl HardwareCapabilities {
             compression: CompressionHardware::detect(),
         }
     }
-    
+
     /// Check if hardware compression acceleration is available
     pub fn has_compression_acceleration(&self) -> bool {
-        self.compression.intel_qat ||
-        self.compression.nvidia_gpu ||
-        self.compression.amd_gpu ||
-        self.compression.fpga
+        self.compression.intel_qat
+            || self.compression.nvidia_gpu
+            || self.compression.amd_gpu
+            || self.compression.fpga
     }
-    
+
     /// Check if SIMD acceleration is available
     pub fn has_simd_acceleration(&self) -> bool {
-        self.cpu.instruction_sets.avx2 ||
-        self.cpu.instruction_sets.avx512 ||
-        self.compression.arm_neon
+        self.cpu.instruction_sets.avx2
+            || self.cpu.instruction_sets.avx512
+            || self.compression.arm_neon
     }
-    
+
     /// Get optimal number of compression threads
     pub fn optimal_compression_threads(&self) -> usize {
         // Use 75% of logical cores, but at least 1 and at most 16
         let threads = (self.cpu.logical_cores * 3 / 4).max(1).min(16);
-        
+
         // Adjust based on memory bandwidth
         if self.memory.bandwidth_gb_s < 10.0 {
             threads / 2 // Memory-bound, reduce threads
@@ -202,43 +200,43 @@ impl HardwareCapabilities {
             threads
         }
     }
-    
+
     /// Get recommended block size for compression
     pub fn recommended_block_size(&self) -> usize {
         // Base on L3 cache size
         let cache_based = (self.cpu.cache.l3_kb as usize * 1024) / 4; // 1/4 of L3 cache
-        
+
         // Clamp to reasonable range
         cache_based.max(32 * 1024).min(1024 * 1024) // 32KB to 1MB
     }
-    
+
     /// Check if parallel compression is beneficial
     pub fn benefits_from_parallel_compression(&self) -> bool {
         self.cpu.logical_cores > 2 && self.memory.bandwidth_gb_s > 5.0
     }
-    
+
     /// Get memory pressure level (0.0 to 1.0)
     pub fn memory_pressure(&self) -> f64 {
         1.0 - (self.memory.available_gb as f64 / self.memory.total_gb as f64)
     }
-    
+
     /// Check if storage is fast enough for compression overhead
     pub fn storage_supports_compression(&self) -> bool {
         // If storage is slow, compression can actually improve performance
         // by reducing I/O
         self.storage.seq_write_mb_s < 500 || self.storage.seq_read_mb_s > 1000
     }
-    
+
     /// Estimate compression performance factor
     pub fn compression_performance_factor(&self) -> f64 {
         let mut factor = 1.0;
-        
+
         // CPU frequency boost
         factor += (self.cpu.frequency_mhz as f64 / 3000.0) * 0.3;
-        
+
         // Core count boost
         factor += (self.cpu.logical_cores as f64 / 8.0) * 0.2;
-        
+
         // SIMD boost
         if self.cpu.instruction_sets.avx512 {
             factor += 0.5;
@@ -247,15 +245,15 @@ impl HardwareCapabilities {
         } else if self.cpu.instruction_sets.avx {
             factor += 0.2;
         }
-        
+
         // Hardware acceleration boost
         if self.has_compression_acceleration() {
             factor += 1.0;
         }
-        
+
         // Memory bandwidth factor
         factor *= (self.memory.bandwidth_gb_s / 20.0).min(2.0);
-        
+
         factor
     }
 }
@@ -275,20 +273,20 @@ impl CpuCapabilities {
             Self::detect_generic()
         }
     }
-    
+
     #[cfg(target_arch = "x86_64")]
     fn detect_x86_64() -> Self {
         let logical_cores = std::thread::available_parallelism()
             .map(|p| p.get())
             .unwrap_or(1);
-        
+
         // Estimate physical cores (assume hyperthreading if > 4 cores)
         let physical_cores = if logical_cores > 4 {
             logical_cores / 2
         } else {
             logical_cores
         };
-        
+
         Self {
             physical_cores,
             logical_cores,
@@ -297,13 +295,13 @@ impl CpuCapabilities {
             instruction_sets: InstructionSets::detect_x86_64(),
         }
     }
-    
+
     #[cfg(target_arch = "aarch64")]
     fn detect_aarch64() -> Self {
         let logical_cores = std::thread::available_parallelism()
             .map(|p| p.get())
             .unwrap_or(1);
-        
+
         Self {
             physical_cores: logical_cores, // ARM typically doesn't have hyperthreading
             logical_cores,
@@ -312,13 +310,13 @@ impl CpuCapabilities {
             instruction_sets: InstructionSets::detect_aarch64(),
         }
     }
-    
+
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     fn detect_generic() -> Self {
         let logical_cores = std::thread::available_parallelism()
             .map(|p| p.get())
             .unwrap_or(1);
-        
+
         Self {
             physical_cores: logical_cores,
             logical_cores,
@@ -327,7 +325,7 @@ impl CpuCapabilities {
             instruction_sets: InstructionSets::default(),
         }
     }
-    
+
     fn detect_cpu_frequency() -> u32 {
         // Try to read from /proc/cpuinfo on Linux
         #[cfg(target_os = "linux")]
@@ -344,7 +342,7 @@ impl CpuCapabilities {
                 }
             }
         }
-        
+
         // Default estimate
         2500 // 2.5 GHz
     }
@@ -370,11 +368,11 @@ impl CacheInfo {
             Self::default()
         }
     }
-    
+
     #[cfg(target_os = "linux")]
     fn detect_linux() -> Self {
         let mut cache = Self::default();
-        
+
         // Read from /sys/devices/system/cpu/cpu0/cache/
         if let Ok(entries) = std::fs::read_dir("/sys/devices/system/cpu/cpu0/cache") {
             for entry in entries.flatten() {
@@ -403,28 +401,28 @@ impl CacheInfo {
                 }
             }
         }
-        
+
         cache
     }
-    
+
     #[cfg(target_os = "macos")]
     fn detect_macos() -> Self {
         // macOS detection would use sysctl
         Self::default()
     }
-    
+
     #[cfg(target_os = "windows")]
     fn detect_windows() -> Self {
         // Windows detection would use GetLogicalProcessorInformation
         Self::default()
     }
-    
+
     fn parse_cache_size(size_str: &str) -> Result<u32, std::num::ParseIntError> {
         let trimmed = size_str.trim();
         if trimmed.ends_with('K') {
-            trimmed[..trimmed.len()-1].parse::<u32>()
+            trimmed[..trimmed.len() - 1].parse::<u32>()
         } else if trimmed.ends_with("KB") {
-            trimmed[..trimmed.len()-2].parse::<u32>()
+            trimmed[..trimmed.len() - 2].parse::<u32>()
         } else {
             trimmed.parse::<u32>()
         }
@@ -462,7 +460,7 @@ impl InstructionSets {
             bmi2: is_x86_feature_detected!("bmi2"),
         }
     }
-    
+
     #[cfg(target_arch = "aarch64")]
     fn detect_aarch64() -> Self {
         Self {
@@ -481,7 +479,7 @@ impl InstructionSets {
             bmi2: false,
         }
     }
-    
+
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     fn detect_generic() -> Self {
         Self::default()
@@ -512,7 +510,7 @@ impl MemoryCapabilities {
     fn detect() -> Self {
         let total_gb = Self::detect_total_memory();
         let available_gb = Self::detect_available_memory();
-        
+
         Self {
             total_gb,
             available_gb,
@@ -522,7 +520,7 @@ impl MemoryCapabilities {
             channels: Self::detect_channels(),
         }
     }
-    
+
     fn detect_total_memory() -> u64 {
         #[cfg(target_os = "linux")]
         {
@@ -538,11 +536,11 @@ impl MemoryCapabilities {
                 }
             }
         }
-        
+
         // Fallback estimate
         8 // 8GB
     }
-    
+
     fn detect_available_memory() -> u64 {
         #[cfg(target_os = "linux")]
         {
@@ -558,34 +556,34 @@ impl MemoryCapabilities {
                 }
             }
         }
-        
+
         // Fallback: assume 75% of total is available
         Self::detect_total_memory() * 3 / 4
     }
-    
+
     fn estimate_bandwidth() -> f64 {
         // Very rough estimation based on memory type and channels
         // Modern DDR4: ~25 GB/s per channel
         // Modern DDR5: ~40 GB/s per channel
         let channels = Self::detect_channels() as f64;
-        
+
         if Self::detect_memory_type().contains("DDR5") {
             40.0 * channels
         } else {
             25.0 * channels
         }
     }
-    
+
     fn detect_memory_type() -> String {
         // This would require platform-specific detection
         "DDR4".to_string()
     }
-    
+
     fn detect_frequency() -> u32 {
         // Default DDR4 frequency
         2400
     }
-    
+
     fn detect_channels() -> u32 {
         // Estimate based on total memory
         let total_gb = Self::detect_total_memory();
@@ -610,7 +608,7 @@ impl StorageCapabilities {
             Self::default()
         }
     }
-    
+
     #[cfg(target_os = "linux")]
     fn detect_linux() -> Self {
         // Try to detect NVMe vs SSD vs HDD
@@ -626,14 +624,14 @@ impl StorageCapabilities {
                     }
                 }
             }
-            
+
             // Assume SSD if no NVMe found
             Self::ssd_defaults()
         } else {
             Self::default()
         }
     }
-    
+
     fn nvme_defaults() -> Self {
         Self {
             storage_type: "NVMe".to_string(),
@@ -644,7 +642,7 @@ impl StorageCapabilities {
             queue_depth: 32,
         }
     }
-    
+
     fn ssd_defaults() -> Self {
         Self {
             storage_type: "SSD".to_string(),
@@ -681,20 +679,20 @@ impl CompressionHardware {
             software_acceleration: SoftwareAcceleration::detect(),
         }
     }
-    
+
     fn detect_intel_qat() -> bool {
         // Check for Intel QAT devices
         #[cfg(target_os = "linux")]
         {
-            std::path::Path::new("/dev/qat_adf_ctl").exists() ||
-            std::path::Path::new("/sys/bus/pci/drivers/qat_dh895xcc").exists()
+            std::path::Path::new("/dev/qat_adf_ctl").exists()
+                || std::path::Path::new("/sys/bus/pci/drivers/qat_dh895xcc").exists()
         }
         #[cfg(not(target_os = "linux"))]
         {
             false
         }
     }
-    
+
     fn detect_nvidia_gpu() -> bool {
         // Check for NVIDIA GPU
         #[cfg(target_os = "linux")]
@@ -706,26 +704,29 @@ impl CompressionHardware {
             false
         }
     }
-    
+
     fn detect_amd_gpu() -> bool {
         // Check for AMD GPU
         #[cfg(target_os = "linux")]
         {
-            std::path::Path::new("/sys/class/drm").exists() &&
-            std::fs::read_dir("/sys/class/drm")
-                .map(|entries| {
-                    entries.flatten()
-                        .any(|entry| entry.file_name().to_str()
-                            .map_or(false, |name| name.contains("amdgpu")))
-                })
-                .unwrap_or(false)
+            std::path::Path::new("/sys/class/drm").exists()
+                && std::fs::read_dir("/sys/class/drm")
+                    .map(|entries| {
+                        entries.flatten().any(|entry| {
+                            entry
+                                .file_name()
+                                .to_str()
+                                .map_or(false, |name| name.contains("amdgpu"))
+                        })
+                    })
+                    .unwrap_or(false)
         }
         #[cfg(not(target_os = "linux"))]
         {
             false
         }
     }
-    
+
     fn detect_arm_neon() -> bool {
         #[cfg(target_arch = "aarch64")]
         {
@@ -736,7 +737,7 @@ impl CompressionHardware {
             false
         }
     }
-    
+
     fn detect_fpga() -> bool {
         // Check for FPGA devices (very basic detection)
         #[cfg(target_os = "linux")]
@@ -759,17 +760,17 @@ impl SoftwareAcceleration {
             threading: ThreadingCapabilities::detect(),
         }
     }
-    
+
     fn detect_intel_ipp() -> bool {
         // Check if Intel IPP is available
         false // Placeholder - would check for IPP installation
     }
-    
+
     fn detect_intel_mkl() -> bool {
         // Check if Intel MKL is available
         false // Placeholder - would check for MKL installation
     }
-    
+
     fn detect_openmp() -> bool {
         // Check if OpenMP is available
         false // Placeholder - would be set by build script
@@ -786,14 +787,17 @@ impl ThreadingCapabilities {
             affinity_support: Self::detect_affinity_support(),
         }
     }
-    
+
     fn detect_numa_nodes() -> u32 {
         #[cfg(target_os = "linux")]
         {
             if let Ok(entries) = std::fs::read_dir("/sys/devices/system/node") {
-                entries.flatten()
+                entries
+                    .flatten()
                     .filter(|entry| {
-                        entry.file_name().to_str()
+                        entry
+                            .file_name()
+                            .to_str()
                             .map_or(false, |name| name.starts_with("node"))
                     })
                     .count() as u32
@@ -806,7 +810,7 @@ impl ThreadingCapabilities {
             1
         }
     }
-    
+
     fn detect_affinity_support() -> bool {
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         {
@@ -822,66 +826,66 @@ impl ThreadingCapabilities {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_hardware_detection() {
         let capabilities = HardwareCapabilities::detect();
-        
+
         // Basic sanity checks
         assert!(capabilities.cpu.logical_cores > 0);
         assert!(capabilities.cpu.frequency_mhz > 0);
         assert!(capabilities.memory.total_gb > 0);
         assert!(capabilities.memory.bandwidth_gb_s > 0.0);
     }
-    
+
     #[test]
     fn test_cpu_capabilities() {
         let cpu = CpuCapabilities::detect();
-        
+
         assert!(cpu.logical_cores >= cpu.physical_cores);
         assert!(cpu.physical_cores > 0);
         assert!(cpu.frequency_mhz > 0);
     }
-    
+
     #[test]
     fn test_cache_info() {
         let cache = CacheInfo::detect();
-        
+
         assert!(cache.l1_data_kb > 0);
         assert!(cache.l2_kb > 0);
         assert!(cache.line_size > 0);
     }
-    
+
     #[test]
     fn test_memory_capabilities() {
         let memory = MemoryCapabilities::detect();
-        
+
         assert!(memory.total_gb > 0);
         assert!(memory.available_gb <= memory.total_gb);
         assert!(memory.bandwidth_gb_s > 0.0);
         assert!(memory.channels > 0);
     }
-    
+
     #[test]
     fn test_optimization_recommendations() {
         let capabilities = HardwareCapabilities::detect();
-        
+
         let threads = capabilities.optimal_compression_threads();
         assert!(threads > 0);
         assert!(threads <= capabilities.cpu.logical_cores);
-        
+
         let block_size = capabilities.recommended_block_size();
         assert!(block_size >= 32 * 1024);
         assert!(block_size <= 1024 * 1024);
-        
+
         let performance_factor = capabilities.compression_performance_factor();
         assert!(performance_factor > 0.0);
     }
-    
+
     #[test]
     fn test_feature_detection() {
         let capabilities = HardwareCapabilities::detect();
-        
+
         // These should not panic
         let _has_compression = capabilities.has_compression_acceleration();
         let _has_simd = capabilities.has_simd_acceleration();

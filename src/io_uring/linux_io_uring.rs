@@ -4,13 +4,13 @@
 //! It interfaces directly with the kernel's io_uring API for maximum performance.
 
 use super::*;
+use std::collections::HashMap;
+use std::mem;
 use std::os::unix::io::RawFd;
+use std::ptr;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
-use std::ptr;
-use std::mem;
 
 // io_uring constants
 const IORING_SETUP_IOPOLL: u32 = 1 << 0;
@@ -171,13 +171,13 @@ impl IoUringImpl {
         // For non-Linux platforms, return error
         #[cfg(not(target_os = "linux"))]
         return Err(Error::new(ErrorKind::Unsupported, "io_uring is Linux-only"));
-        
+
         #[cfg(target_os = "linux")]
         {
             // In real implementation, would call io_uring_setup syscall
             // For now, create a mock implementation
             let ring_fd = -1; // Would be real fd from syscall
-            
+
             // Mock parameters
             let mut params = IoUringParams {
                 sq_entries: queue_depth,
@@ -211,26 +211,25 @@ impl IoUringImpl {
                     resv2: 0,
                 },
             };
-            
+
             // Allocate memory for rings (would be mmap'd in real implementation)
-            let sq_ring_size = params.sq_off.array + params.sq_entries * std::mem::size_of::<u32>() as u32;
-            let cq_ring_size = params.cq_off.cqes + params.cq_entries * std::mem::size_of::<IoUringCqe>() as u32;
+            let sq_ring_size =
+                params.sq_off.array + params.sq_entries * std::mem::size_of::<u32>() as u32;
+            let cq_ring_size =
+                params.cq_off.cqes + params.cq_entries * std::mem::size_of::<IoUringCqe>() as u32;
             let sqe_size = params.sq_entries * std::mem::size_of::<IoUringSqe>() as u32;
-            
-            let sq_ring_mem = unsafe {
-                libc::calloc(1, sq_ring_size as usize) as *mut u8
-            };
-            let cq_ring_mem = unsafe {
-                libc::calloc(1, cq_ring_size as usize) as *mut u8
-            };
-            let sqe_mem = unsafe {
-                libc::calloc(1, sqe_size as usize) as *mut IoUringSqe
-            };
-            
+
+            let sq_ring_mem = unsafe { libc::calloc(1, sq_ring_size as usize) as *mut u8 };
+            let cq_ring_mem = unsafe { libc::calloc(1, cq_ring_size as usize) as *mut u8 };
+            let sqe_mem = unsafe { libc::calloc(1, sqe_size as usize) as *mut IoUringSqe };
+
             if sq_ring_mem.is_null() || cq_ring_mem.is_null() || sqe_mem.is_null() {
-                return Err(Error::new(ErrorKind::OutOfMemory, "Failed to allocate ring memory"));
+                return Err(Error::new(
+                    ErrorKind::OutOfMemory,
+                    "Failed to allocate ring memory",
+                ));
             }
-            
+
             // Initialize submission queue pointers
             let sq_ring = unsafe {
                 SubmissionQueue {
@@ -243,7 +242,7 @@ impl IoUringImpl {
                     array: sq_ring_mem.add(params.sq_off.array as usize) as *mut u32,
                 }
             };
-            
+
             // Initialize completion queue pointers
             let cq_ring = unsafe {
                 CompletionQueue {
@@ -255,7 +254,7 @@ impl IoUringImpl {
                     cqes: cq_ring_mem.add(params.cq_off.cqes as usize) as *mut IoUringCqe,
                 }
             };
-            
+
             Ok(IoUringImpl {
                 ring_fd,
                 sq_ring,
@@ -270,67 +269,67 @@ impl IoUringImpl {
             })
         }
     }
-    
+
     fn get_sqe(&mut self) -> Option<&mut IoUringSqe> {
         unsafe {
             let head = (*self.sq_ring.head).load(Ordering::Acquire);
             let tail = (*self.sq_ring.tail).load(Ordering::Relaxed);
             let next_tail = tail.wrapping_add(1);
-            
+
             if next_tail.wrapping_sub(head) > self.sq_ring.ring_entries {
                 return None; // Queue full
             }
-            
+
             let idx = (tail & self.sq_ring.ring_mask) as usize;
             let sqe = &mut *self.sqe_mem.add(idx);
-            
+
             // Clear the SQE
             ptr::write_bytes(sqe, 0, 1);
-            
+
             Some(sqe)
         }
     }
-    
+
     fn submit_sqe(&mut self, sqe_idx: u32) {
         unsafe {
             let tail = (*self.sq_ring.tail).load(Ordering::Relaxed);
             let idx = (tail & self.sq_ring.ring_mask) as usize;
             *self.sq_ring.array.add(idx) = sqe_idx;
-            
+
             // Memory barrier
             std::sync::atomic::fence(Ordering::Release);
-            
+
             (*self.sq_ring.tail).store(tail.wrapping_add(1), Ordering::Release);
         }
     }
-    
+
     fn reap_cqe(&mut self) -> Option<CompletionEntry> {
         unsafe {
             let head = (*self.cq_ring.head).load(Ordering::Relaxed);
             let tail = (*self.cq_ring.tail).load(Ordering::Acquire);
-            
+
             if head == tail {
                 return None; // Queue empty
             }
-            
+
             let idx = (head & self.cq_ring.ring_mask) as usize;
             let cqe = &*self.cq_ring.cqes.add(idx);
-            
+
             let entry = CompletionEntry {
                 user_data: cqe.user_data,
                 result: cqe.res,
                 flags: cqe.flags,
             };
-            
+
             // Memory barrier
             std::sync::atomic::fence(Ordering::Release);
-            
+
             (*self.cq_ring.head).store(head.wrapping_add(1), Ordering::Release);
-            
+
             Some(entry)
         }
     }
-    
+
     fn convert_op_type(op_type: OpType) -> u8 {
         match op_type {
             OpType::Read => IORING_OP_READ,
@@ -360,10 +359,10 @@ impl IoUringImpl {
             _ => IORING_OP_NOP,
         }
     }
-    
+
     fn convert_flags(flags: &SqeFlags) -> u8 {
         let mut sqe_flags = 0u8;
-        
+
         if flags.fixed_file {
             sqe_flags |= IOSQE_FIXED_FILE;
         }
@@ -382,72 +381,73 @@ impl IoUringImpl {
         if flags.buffer_select {
             sqe_flags |= IOSQE_BUFFER_SELECT;
         }
-        
+
         sqe_flags
     }
 }
 
 impl ZeroCopyIo for IoUringImpl {
     fn submit(&mut self, request: IoRequest) -> Result<()> {
-        let sqe = self.get_sqe()
+        let sqe = self
+            .get_sqe()
             .ok_or_else(|| Error::new(ErrorKind::WouldBlock, "Submission queue full"))?;
-        
+
         // Fill in the SQE
         sqe.opcode = Self::convert_op_type(request.op_type);
         sqe.flags = Self::convert_flags(&request.flags);
         sqe.fd = request.fd;
         sqe.off = request.offset;
         sqe.user_data = request.user_data;
-        
+
         // Handle buffer
         match request.buffer {
             Some(IoBuffer::Standard(ref buf)) => {
                 sqe.addr = buf.as_ptr() as u64;
                 sqe.len = buf.len() as u32;
-            },
+            }
             Some(IoBuffer::Fixed { index, offset, len }) => {
                 sqe.buf_index = index as u16;
                 sqe.addr = offset as u64;
                 sqe.len = len as u32;
-            },
+            }
             Some(IoBuffer::Mapped { ptr, len }) => {
                 sqe.addr = ptr as u64;
                 sqe.len = len as u32;
-            },
+            }
             Some(IoBuffer::Vectored(ref vecs)) => {
                 // For vectored I/O, addr points to iovec array
                 sqe.addr = vecs.as_ptr() as u64;
                 sqe.len = vecs.len() as u32;
-            },
+            }
             None => {
                 sqe.addr = 0;
                 sqe.len = 0;
-            },
+            }
         }
-        
+
         // Submit the SQE
         let tail = unsafe { (*self.sq_ring.tail).load(Ordering::Relaxed) };
         self.submit_sqe(tail);
-        
+
         // Update stats
         if let Ok(mut stats) = self.stats.lock() {
             match request.op_type {
                 OpType::Read | OpType::ReadFixed | OpType::ReadVectored => {
                     stats.total_reads += 1;
-                },
+                }
                 OpType::Write | OpType::WriteFixed | OpType::WriteVectored => {
                     stats.total_writes += 1;
-                },
-                _ => {},
+                }
+                _ => {}
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn submit_batch(&mut self, requests: Vec<IoRequest>) -> Result<usize> {
         let mut submitted = 0;
-        
+
         for request in requests {
             match self.submit(request) {
                 Ok(()) => submitted += 1,
@@ -455,14 +455,18 @@ impl ZeroCopyIo for IoUringImpl {
                 Err(e) => return Err(e),
             }
         }
-        
+
         Ok(submitted)
     }
-    
-    fn wait_completions(&mut self, min_complete: usize, timeout: Option<Duration>) -> Result<Vec<CompletionEntry>> {
+
+    fn wait_completions(
+        &mut self,
+        min_complete: usize,
+        timeout: Option<Duration>,
+    ) -> Result<Vec<CompletionEntry>> {
         let start = Instant::now();
         let mut completions = Vec::new();
-        
+
         loop {
             // Try to reap completions
             while let Some(cqe) = self.reap_cqe() {
@@ -471,49 +475,50 @@ impl ZeroCopyIo for IoUringImpl {
                     return Ok(completions);
                 }
             }
-            
+
             // Check timeout
             if let Some(timeout) = timeout {
                 if start.elapsed() >= timeout {
                     break;
                 }
             }
-            
+
             // In real implementation, would call io_uring_enter syscall
             // For now, just yield
             std::thread::yield_now();
         }
-        
+
         Ok(completions)
     }
-    
+
     fn register_buffers(&mut self, buffers: &[&[u8]]) -> Result<()> {
         // In real implementation, would call io_uring_register syscall
         self.fixed_buffers.clear();
         for buffer in buffers {
-            self.fixed_buffers.push((buffer.as_ptr() as *mut u8, buffer.len()));
+            self.fixed_buffers
+                .push((buffer.as_ptr() as *mut u8, buffer.len()));
         }
         Ok(())
     }
-    
+
     fn unregister_buffers(&mut self) -> Result<()> {
         // In real implementation, would call io_uring_register syscall
         self.fixed_buffers.clear();
         Ok(())
     }
-    
+
     fn register_files(&mut self, fds: &[RawFd]) -> Result<()> {
         // In real implementation, would call io_uring_register syscall
         self.fixed_files = fds.to_vec();
         Ok(())
     }
-    
+
     fn unregister_files(&mut self) -> Result<()> {
         // In real implementation, would call io_uring_register syscall
         self.fixed_files.clear();
         Ok(())
     }
-    
+
     fn sq_space_left(&self) -> usize {
         unsafe {
             let head = (*self.sq_ring.head).load(Ordering::Acquire);
@@ -521,7 +526,7 @@ impl ZeroCopyIo for IoUringImpl {
             (self.sq_ring.ring_entries - tail.wrapping_sub(head)) as usize
         }
     }
-    
+
     fn cq_ready(&self) -> usize {
         unsafe {
             let head = (*self.cq_ring.head).load(Ordering::Relaxed);
@@ -544,7 +549,7 @@ impl Drop for IoUringImpl {
             if !self.sqe_mem.is_null() {
                 libc::free(self.sqe_mem as *mut libc::c_void);
             }
-            
+
             // In real implementation, would close ring_fd
         }
     }
@@ -553,6 +558,12 @@ impl Drop for IoUringImpl {
 // External C functions (would be actual syscalls in real implementation)
 extern "C" {
     fn io_uring_setup(entries: u32, params: *mut IoUringParams) -> i32;
-    fn io_uring_enter(fd: i32, to_submit: u32, min_complete: u32, flags: u32, sig: *const libc::sigset_t) -> i32;
+    fn io_uring_enter(
+        fd: i32,
+        to_submit: u32,
+        min_complete: u32,
+        flags: u32,
+        sig: *const libc::sigset_t,
+    ) -> i32;
     fn io_uring_register(fd: i32, opcode: u32, arg: *const libc::c_void, nr_args: u32) -> i32;
 }

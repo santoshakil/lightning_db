@@ -3,11 +3,11 @@
 //! Collects, aggregates, and analyzes performance metrics from all profilers
 //! to provide comprehensive performance insights for Lightning DB.
 
-use std::sync::{Arc, Mutex, RwLock};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
-use serde::{Serialize, Deserialize};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn};
 
 /// Metrics collector that aggregates data from all profilers
@@ -187,8 +187,9 @@ impl MetricsCollector {
         }
 
         info!("Starting metrics collector");
-        self.active.store(true, std::sync::atomic::Ordering::Relaxed);
-        
+        self.active
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+
         // Record start time
         {
             let mut start_time = self.start_time.lock().unwrap();
@@ -215,8 +216,9 @@ impl MetricsCollector {
     /// Stop metrics collection
     pub fn stop(&self) {
         info!("Stopping metrics collector");
-        self.active.store(false, std::sync::atomic::Ordering::Relaxed);
-        
+        self.active
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+
         // Wait for collection thread to finish
         thread::sleep(Duration::from_millis(100));
     }
@@ -224,9 +226,10 @@ impl MetricsCollector {
     /// Get current metrics summary
     pub fn get_summary(&self) -> super::MetricsSummary {
         let metrics = self.metrics.read().unwrap();
-        
+
         super::MetricsSummary {
-            total_samples: metrics.cpu_metrics.total_samples + metrics.memory_metrics.current_usage_bytes / 1024, // Approximation
+            total_samples: metrics.cpu_metrics.total_samples
+                + metrics.memory_metrics.current_usage_bytes / 1024, // Approximation
             cpu_samples: metrics.cpu_metrics.total_samples,
             memory_samples: metrics.memory_metrics.current_usage_bytes / 1024, // Approximation
             io_operations: metrics.io_metrics.total_operations,
@@ -259,13 +262,13 @@ impl MetricsCollector {
         start_time: Arc<Mutex<Option<Instant>>>,
     ) {
         debug!("Metrics collection loop started");
-        
+
         while active.load(std::sync::atomic::Ordering::Relaxed) {
             let collection_start = Instant::now();
-            
+
             // Collect metrics from various sources
             let new_metrics = Self::collect_system_metrics(&start_time);
-            
+
             // Update metrics
             {
                 let mut metrics_guard = metrics.write().unwrap();
@@ -275,10 +278,10 @@ impl MetricsCollector {
                     .unwrap_or_default()
                     .as_secs();
             }
-            
+
             // Update time series data
             Self::update_time_series(&time_series, &new_metrics);
-            
+
             // Sleep for collection interval (1 second)
             let collection_duration = collection_start.elapsed();
             let target_interval = Duration::from_secs(1);
@@ -286,7 +289,7 @@ impl MetricsCollector {
                 thread::sleep(target_interval - collection_duration);
             }
         }
-        
+
         debug!("Metrics collection loop ended");
     }
 
@@ -301,8 +304,9 @@ impl MetricsCollector {
         let cpu_usage = Self::simulate_cpu_usage();
         let memory_usage = Self::simulate_memory_usage();
         let io_metrics = Self::simulate_io_metrics();
-        
-        let performance_score = Self::calculate_performance_score(&cpu_usage, &memory_usage, &io_metrics);
+
+        let performance_score =
+            Self::calculate_performance_score(&cpu_usage, &memory_usage, &io_metrics);
         let health_status = Self::determine_health_status(performance_score);
 
         MetricsData {
@@ -330,7 +334,7 @@ impl MetricsCollector {
     fn simulate_cpu_usage() -> CpuMetrics {
         let base_usage = 15.0 + fastrand::f64() * 45.0; // 15-60% base usage
         let peak_usage = base_usage + fastrand::f64() * 30.0; // Up to 30% higher peaks
-        
+
         CpuMetrics {
             total_samples: 1000 + fastrand::u64(0..9000),
             avg_cpu_usage: base_usage,
@@ -345,14 +349,14 @@ impl MetricsCollector {
     fn simulate_memory_usage() -> MemoryMetrics {
         let current_mb = 50.0 + fastrand::f64() * 200.0; // 50-250 MB current usage
         let peak_mb = current_mb + fastrand::f64() * 100.0; // Up to 100 MB higher peak
-        
+
         MemoryMetrics {
             current_usage_bytes: (current_mb * 1024.0 * 1024.0) as u64,
             peak_usage_bytes: (peak_mb * 1024.0 * 1024.0) as u64,
             allocation_rate_per_sec: 1024.0 * 1024.0 * (1.0 + fastrand::f64() * 10.0), // 1-11 MB/s
             deallocation_rate_per_sec: 1024.0 * 1024.0 * (0.8 + fastrand::f64() * 9.0), // 0.8-9.8 MB/s
             memory_efficiency: 80.0 + fastrand::f64() * 15.0, // 80-95% efficiency
-            leak_potential_score: fastrand::f64() * 10.0, // 0-10 score
+            leak_potential_score: fastrand::f64() * 10.0,     // 0-10 score
             fragmentation_level: 5.0 + fastrand::f64() * 15.0, // 5-20% fragmentation
         }
     }
@@ -361,15 +365,15 @@ impl MetricsCollector {
     fn simulate_io_metrics() -> IoMetrics {
         let read_throughput = 10.0 * 1024.0 * 1024.0 * (1.0 + fastrand::f64() * 4.0); // 10-50 MB/s
         let write_throughput = 5.0 * 1024.0 * 1024.0 * (1.0 + fastrand::f64() * 3.0); // 5-20 MB/s
-        
+
         IoMetrics {
             total_operations: 1000 + fastrand::u64(0..9000),
             bytes_read_per_sec: read_throughput,
             bytes_written_per_sec: write_throughput,
             avg_read_latency_ms: 0.1 + fastrand::f64() * 4.9, // 0.1-5.0 ms
             avg_write_latency_ms: 0.5 + fastrand::f64() * 9.5, // 0.5-10.0 ms
-            io_efficiency: 75.0 + fastrand::f64() * 20.0, // 75-95% efficiency
-            error_rate: fastrand::f64() * 2.0, // 0-2% error rate
+            io_efficiency: 75.0 + fastrand::f64() * 20.0,     // 75-95% efficiency
+            error_rate: fastrand::f64() * 2.0,                // 0-2% error rate
             bottlenecks_count: fastrand::u64(0..5),
         }
     }
@@ -401,11 +405,15 @@ impl MetricsCollector {
     }
 
     /// Calculate overall performance score
-    fn calculate_performance_score(cpu: &CpuMetrics, memory: &MemoryMetrics, io: &IoMetrics) -> f64 {
+    fn calculate_performance_score(
+        cpu: &CpuMetrics,
+        memory: &MemoryMetrics,
+        io: &IoMetrics,
+    ) -> f64 {
         let cpu_score = (100.0 - cpu.avg_cpu_usage) * 0.3; // Lower CPU usage is better
         let memory_score = memory.memory_efficiency * 0.3;
         let io_score = io.io_efficiency * 0.4;
-        
+
         (cpu_score + memory_score + io_score).max(0.0).min(100.0)
     }
 
@@ -431,22 +439,30 @@ impl MetricsCollector {
             .as_secs();
 
         let mut series = time_series.lock().unwrap();
-        
+
         // Add data points for key metrics
         let metrics_to_track = vec![
             ("cpu_usage", metrics.cpu_metrics.avg_cpu_usage),
-            ("memory_usage", metrics.memory_metrics.current_usage_bytes as f64),
+            (
+                "memory_usage",
+                metrics.memory_metrics.current_usage_bytes as f64,
+            ),
             ("io_read_throughput", metrics.io_metrics.bytes_read_per_sec),
-            ("io_write_throughput", metrics.io_metrics.bytes_written_per_sec),
+            (
+                "io_write_throughput",
+                metrics.io_metrics.bytes_written_per_sec,
+            ),
             ("performance_score", metrics.performance_score),
             ("cache_hit_rate", metrics.system_metrics.cache_hit_rate),
         ];
 
         for (metric_name, value) in metrics_to_track {
-            let points = series.entry(metric_name.to_string()).or_insert_with(VecDeque::new);
-            
+            let points = series
+                .entry(metric_name.to_string())
+                .or_insert_with(VecDeque::new);
+
             points.push_back(MetricPoint { timestamp, value });
-            
+
             // Keep only last 1000 points (about 16 minutes at 1-second intervals)
             if points.len() > 1000 {
                 points.pop_front();
@@ -465,12 +481,15 @@ impl MetricsCollector {
             }
 
             let trend = Self::calculate_trend(points);
-            trends.insert(metric_name.clone(), MetricTrend {
-                metric_name: metric_name.clone(),
-                direction: trend.0,
-                rate_of_change: trend.1,
-                significance: trend.2,
-            });
+            trends.insert(
+                metric_name.clone(),
+                MetricTrend {
+                    metric_name: metric_name.clone(),
+                    direction: trend.0,
+                    rate_of_change: trend.1,
+                    significance: trend.2,
+                },
+            );
         }
 
         trends
@@ -484,7 +503,7 @@ impl MetricsCollector {
 
         let recent_points: Vec<_> = points.iter().rev().take(30).collect(); // Last 30 points
         let values: Vec<f64> = recent_points.iter().map(|p| p.value).collect();
-        
+
         // Simple linear regression for trend
         let n = values.len() as f64;
         let sum_x: f64 = (0..values.len()).map(|i| i as f64).sum();
@@ -508,9 +527,17 @@ impl MetricsCollector {
         let mean = sum_y / n;
         let variance = values.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / n;
         let std_dev = variance.sqrt();
-        let cv = if mean != 0.0 { std_dev / mean.abs() } else { 0.0 };
+        let cv = if mean != 0.0 {
+            std_dev / mean.abs()
+        } else {
+            0.0
+        };
 
-        let direction = if cv > 0.2 { TrendDirection::Volatile } else { direction };
+        let direction = if cv > 0.2 {
+            TrendDirection::Volatile
+        } else {
+            direction
+        };
 
         // Determine significance
         let significance = match abs_slope {
@@ -524,7 +551,11 @@ impl MetricsCollector {
     }
 
     /// Generate alerts based on metrics and trends
-    fn generate_alerts(&self, metrics: &MetricsData, trends: &HashMap<String, MetricTrend>) -> Vec<MetricAlert> {
+    fn generate_alerts(
+        &self,
+        metrics: &MetricsData,
+        trends: &HashMap<String, MetricTrend>,
+    ) -> Vec<MetricAlert> {
         let mut alerts = Vec::new();
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -588,9 +619,9 @@ impl MetricsCollector {
         for (metric_name, trend) in trends {
             if let TrendSignificance::High = trend.significance {
                 match (&trend.direction, metric_name.as_str()) {
-                    (TrendDirection::Increasing, "cpu_usage") |
-                    (TrendDirection::Increasing, "memory_usage") |
-                    (TrendDirection::Increasing, "io_error_rate") => {
+                    (TrendDirection::Increasing, "cpu_usage")
+                    | (TrendDirection::Increasing, "memory_usage")
+                    | (TrendDirection::Increasing, "io_error_rate") => {
                         alerts.push(MetricAlert {
                             alert_type: AlertType::Trend,
                             severity: AlertSeverity::Medium,
@@ -601,8 +632,8 @@ impl MetricsCollector {
                             timestamp,
                         });
                     }
-                    (TrendDirection::Decreasing, "performance_score") |
-                    (TrendDirection::Decreasing, "cache_hit_rate") => {
+                    (TrendDirection::Decreasing, "performance_score")
+                    | (TrendDirection::Decreasing, "cache_hit_rate") => {
                         alerts.push(MetricAlert {
                             alert_type: AlertType::Trend,
                             severity: AlertSeverity::Medium,
@@ -625,26 +656,26 @@ impl MetricsCollector {
 /// Fast random number generation for simulation
 mod fastrand {
     use std::sync::atomic::{AtomicU64, Ordering};
-    
+
     static STATE: AtomicU64 = AtomicU64::new(1);
-    
+
     pub fn f64() -> f64 {
         let mut x = STATE.load(Ordering::Relaxed);
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         STATE.store(x, Ordering::Relaxed);
-        
+
         (x as f64) / (u64::MAX as f64)
     }
-    
+
     pub fn u64(range: std::ops::Range<u64>) -> u64 {
         let mut x = STATE.load(Ordering::Relaxed);
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         STATE.store(x, Ordering::Relaxed);
-        
+
         range.start + (x % (range.end - range.start))
     }
 }
@@ -680,17 +711,32 @@ mod tests {
 
     #[test]
     fn test_health_status_determination() {
-        assert!(matches!(MetricsCollector::determine_health_status(95.0), HealthStatus::Excellent));
-        assert!(matches!(MetricsCollector::determine_health_status(80.0), HealthStatus::Good));
-        assert!(matches!(MetricsCollector::determine_health_status(65.0), HealthStatus::Fair));
-        assert!(matches!(MetricsCollector::determine_health_status(45.0), HealthStatus::Poor));
-        assert!(matches!(MetricsCollector::determine_health_status(30.0), HealthStatus::Critical));
+        assert!(matches!(
+            MetricsCollector::determine_health_status(95.0),
+            HealthStatus::Excellent
+        ));
+        assert!(matches!(
+            MetricsCollector::determine_health_status(80.0),
+            HealthStatus::Good
+        ));
+        assert!(matches!(
+            MetricsCollector::determine_health_status(65.0),
+            HealthStatus::Fair
+        ));
+        assert!(matches!(
+            MetricsCollector::determine_health_status(45.0),
+            HealthStatus::Poor
+        ));
+        assert!(matches!(
+            MetricsCollector::determine_health_status(30.0),
+            HealthStatus::Critical
+        ));
     }
 
     #[test]
     fn test_trend_calculation() {
         let mut points = VecDeque::new();
-        
+
         // Add increasing values
         for i in 0..20 {
             points.push_back(MetricPoint {

@@ -65,7 +65,7 @@ impl PrefetchHints {
         #[cfg(target_arch = "x86_64")]
         unsafe {
             std::arch::x86_64::_mm_prefetch::<{ std::arch::x86_64::_MM_HINT_NTA }>(
-                ptr as *const i8
+                ptr as *const i8,
             );
         }
     }
@@ -75,9 +75,7 @@ impl PrefetchHints {
     pub fn prefetch_read_t0(ptr: *const u8) {
         #[cfg(target_arch = "x86_64")]
         unsafe {
-            std::arch::x86_64::_mm_prefetch::<{ std::arch::x86_64::_MM_HINT_T0 }>(
-                ptr as *const i8
-            );
+            std::arch::x86_64::_mm_prefetch::<{ std::arch::x86_64::_MM_HINT_T0 }>(ptr as *const i8);
         }
     }
 
@@ -87,9 +85,7 @@ impl PrefetchHints {
         #[cfg(target_arch = "x86_64")]
         unsafe {
             // Use T0 hint for write prefetch
-            std::arch::x86_64::_mm_prefetch::<{ std::arch::x86_64::_MM_HINT_T0 }>(
-                ptr as *const i8
-            );
+            std::arch::x86_64::_mm_prefetch::<{ std::arch::x86_64::_MM_HINT_T0 }>(ptr as *const i8);
         }
     }
 
@@ -98,7 +94,7 @@ impl PrefetchHints {
     pub fn prefetch_range(start: *const u8, len: usize) {
         let mut ptr = start;
         let end = unsafe { start.add(len) };
-        
+
         while ptr < end {
             Self::prefetch_read_t0(ptr);
             ptr = unsafe { ptr.add(CACHE_LINE_SIZE) };
@@ -116,14 +112,14 @@ pub struct CacheOptimizedRingBuffer<T> {
     _padding: [u8; CACHE_LINE_SIZE],
 }
 
-impl<T> CacheOptimizedRingBuffer<T> 
-where 
+impl<T> CacheOptimizedRingBuffer<T>
+where
     T: Default + Clone,
 {
     pub fn new(capacity: usize) -> Self {
         // Round capacity to cache line boundary for optimal access
         let aligned_capacity = (capacity + CACHE_LINE_SIZE - 1) & !(CACHE_LINE_SIZE - 1);
-        
+
         Self {
             buffer: vec![T::default(); aligned_capacity],
             capacity: aligned_capacity,
@@ -136,7 +132,7 @@ where
     pub fn push(&self, item: T) -> Result<(), T> {
         let current_tail = self.tail.load(Ordering::Relaxed);
         let next_tail = (current_tail + 1) % self.capacity;
-        
+
         if next_tail == self.head.load(Ordering::Acquire) {
             return Err(item); // Buffer full
         }
@@ -147,10 +143,7 @@ where
 
         // SAFETY: We've verified the buffer isn't full
         unsafe {
-            std::ptr::write(
-                self.buffer.as_ptr().add(current_tail) as *mut T,
-                item,
-            );
+            std::ptr::write(self.buffer.as_ptr().add(current_tail) as *mut T, item);
         }
 
         self.tail.store(next_tail, Ordering::Release);
@@ -159,13 +152,13 @@ where
 
     pub fn pop(&self) -> Option<T> {
         let current_head = self.head.load(Ordering::Relaxed);
-        
+
         if current_head == self.tail.load(Ordering::Acquire) {
             return None; // Buffer empty
         }
 
         let next_head = (current_head + 1) % self.capacity;
-        
+
         // Prefetch the next read location
         let next_ptr = &self.buffer[next_head] as *const T as *const u8;
         PrefetchHints::prefetch_read_t0(next_ptr);
@@ -180,7 +173,7 @@ where
     pub fn len(&self) -> usize {
         let tail = self.tail.load(Ordering::Acquire);
         let head = self.head.load(Ordering::Acquire);
-        
+
         if tail >= head {
             tail - head
         } else {
@@ -241,7 +234,7 @@ impl CachePerformanceStats {
         let hits = self.cache_hits.load(Ordering::Relaxed) as f64;
         let misses = self.cache_misses.load(Ordering::Relaxed) as f64;
         let total = hits + misses;
-        
+
         if total > 0.0 {
             hits / total
         } else {
@@ -252,7 +245,7 @@ impl CachePerformanceStats {
     pub fn prefetch_effectiveness(&self) -> f64 {
         let prefetch_hits = self.prefetch_hits.load(Ordering::Relaxed) as f64;
         let total_hits = self.cache_hits.load(Ordering::Relaxed) as f64;
-        
+
         if total_hits > 0.0 {
             prefetch_hits / total_hits
         } else {
@@ -262,9 +255,9 @@ impl CachePerformanceStats {
 
     pub fn false_sharing_rate(&self) -> f64 {
         let false_sharing = self.false_sharing_events.load(Ordering::Relaxed) as f64;
-        let total_accesses = (self.cache_hits.load(Ordering::Relaxed) + 
-                             self.cache_misses.load(Ordering::Relaxed)) as f64;
-        
+        let total_accesses = (self.cache_hits.load(Ordering::Relaxed)
+            + self.cache_misses.load(Ordering::Relaxed)) as f64;
+
         if total_accesses > 0.0 {
             false_sharing / total_accesses
         } else {
@@ -289,10 +282,10 @@ mod tests {
     fn test_cache_aligned_counter() {
         let counter = CacheAlignedCounter::new(0);
         assert_eq!(counter.load(Ordering::Relaxed), 0);
-        
+
         counter.store(42, Ordering::Relaxed);
         assert_eq!(counter.load(Ordering::Relaxed), 42);
-        
+
         let old = counter.fetch_add(8, Ordering::Relaxed);
         assert_eq!(old, 42);
         assert_eq!(counter.load(Ordering::Relaxed), 50);
@@ -327,16 +320,16 @@ mod tests {
     #[test]
     fn test_cache_performance_stats() {
         let stats = CachePerformanceStats::new();
-        
+
         stats.record_hit();
         stats.record_hit();
         stats.record_miss();
-        
+
         assert_eq!(stats.hit_rate(), 2.0 / 3.0);
-        
+
         stats.record_prefetch_hit();
         assert_eq!(stats.prefetch_effectiveness(), 1.0 / 2.0);
-        
+
         stats.reset();
         assert_eq!(stats.hit_rate(), 0.0);
     }

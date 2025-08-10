@@ -1,5 +1,5 @@
 //! Comprehensive B+Tree Testing Suite
-//! 
+//!
 //! This test suite ensures the B+Tree implementation is bulletproof for production use.
 //! Tests cover:
 //! - Edge cases (empty keys, large values, boundary conditions)
@@ -21,7 +21,7 @@ fn test_btree_edge_case_sizes() {
     let dir = tempdir().unwrap();
     let config = LightningDbConfig {
         compression_enabled: false, // Test raw B+Tree without compression
-        cache_size: 0, // Disable cache to test B+Tree directly
+        cache_size: 0,              // Disable cache to test B+Tree directly
         ..Default::default()
     };
     let db = Database::create(dir.path(), config).unwrap();
@@ -71,7 +71,7 @@ fn test_btree_node_splits() {
     // Insert enough keys to force multiple node splits
     // Based on MIN_KEYS_PER_NODE = 50, MAX_KEYS_PER_NODE = 100
     const NUM_KEYS: usize = 1000;
-    
+
     // Insert keys in sequential order to test split behavior
     for i in 0..NUM_KEYS {
         let key = format!("split_test_{:06}", i);
@@ -104,7 +104,7 @@ fn test_btree_node_splits() {
     use rand::Rng;
     let mut rng = rand::rng();
     let mut random_keys = Vec::new();
-    
+
     for _ in 0..NUM_KEYS {
         let key = format!("random_{:08}", rng.random::<u32>());
         let value = format!("rand_value_{}", rng.random::<u32>());
@@ -114,7 +114,10 @@ fn test_btree_node_splits() {
 
     // Verify random keys
     for (key, value) in &random_keys {
-        assert_eq!(db.get(key.as_bytes()).unwrap(), Some(value.as_bytes().to_vec()));
+        assert_eq!(
+            db.get(key.as_bytes()).unwrap(),
+            Some(value.as_bytes().to_vec())
+        );
     }
 }
 
@@ -163,7 +166,7 @@ fn test_btree_deletion_and_merging() {
         let i = remaining.remove(mid);
         let key = format!("del_test_{:04}", i);
         assert!(db.delete(key.as_bytes()).unwrap());
-        
+
         // Verify key is deleted
         assert!(db.get(key.as_bytes()).unwrap().is_none());
     }
@@ -220,7 +223,9 @@ fn test_btree_concurrent_operations() {
                 // Update occasionally
                 if i % 10 == 0 {
                     let updated_value = format!("updated_{}_{}", thread_id, i);
-                    db_clone.put(key.as_bytes(), updated_value.as_bytes()).unwrap();
+                    db_clone
+                        .put(key.as_bytes(), updated_value.as_bytes())
+                        .unwrap();
                 }
 
                 // Delete occasionally
@@ -242,7 +247,7 @@ fn test_btree_concurrent_operations() {
     for thread_id in 0..NUM_THREADS {
         for i in 0..OPS_PER_THREAD {
             let key = format!("thread_{}_key_{:04}", thread_id, i);
-            
+
             if i % 20 == 10 {
                 // Should be deleted
                 assert!(db.get(key.as_bytes()).unwrap().is_none());
@@ -301,7 +306,9 @@ fn test_btree_range_scans() {
 
             // Verify value format
             let expected_prefix = format!("value_{}_", prefix);
-            assert!(String::from_utf8(value).unwrap().starts_with(&expected_prefix));
+            assert!(String::from_utf8(value)
+                .unwrap()
+                .starts_with(&expected_prefix));
         }
 
         assert_eq!(count, 20, "Expected 20 keys for prefix {}", prefix);
@@ -314,7 +321,7 @@ fn test_btree_range_scans() {
 
     for (key, _) in db.range(Some(start), Some(end)).unwrap() {
         range_count += 1;
-        
+
         // Verify key is within range
         assert!(key.as_slice() >= start.as_ref());
         assert!(key.as_slice() < end.as_ref());
@@ -329,7 +336,7 @@ fn test_btree_range_scans() {
 fn test_btree_persistence_and_recovery() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().to_path_buf();
-    
+
     let config = LightningDbConfig {
         compression_enabled: false,
         cache_size: 0,
@@ -340,7 +347,7 @@ fn test_btree_persistence_and_recovery() {
     // Phase 1: Create database and insert data
     {
         let db = Database::create(&db_path, config.clone()).unwrap();
-        
+
         // Insert test data
         for i in 0..100 {
             let key = format!("persist_{:03}", i);
@@ -368,10 +375,10 @@ fn test_btree_persistence_and_recovery() {
     // Phase 2: Reopen and verify data
     {
         let db = Database::open(&db_path, config).unwrap();
-        
+
         for i in 0..100 {
             let key = format!("persist_{:03}", i);
-            
+
             if i % 10 == 0 {
                 // Should be deleted
                 assert!(db.get(key.as_bytes()).unwrap().is_none());
@@ -401,7 +408,7 @@ fn test_btree_stress_high_load() {
 
     const NUM_THREADS: usize = 16;
     const DURATION_SECS: u64 = 10;
-    
+
     let start_time = Instant::now();
     let mut handles = vec![];
 
@@ -427,12 +434,14 @@ fn test_btree_stress_high_load() {
                     }
                     61..=85 => {
                         // 25% writes
-                        let value = format!("stress_value_{}_{}_{}", thread_id, ops, rng.random::<u32>());
+                        let value =
+                            format!("stress_value_{}_{}_{}", thread_id, ops, rng.random::<u32>());
                         let _ = db_clone.put(key.as_bytes(), value.as_bytes());
                     }
                     86..=95 => {
                         // 10% updates
-                        let value = format!("updated_{}_{}_{}", thread_id, ops, rng.random::<u32>());
+                        let value =
+                            format!("updated_{}_{}_{}", thread_id, ops, rng.random::<u32>());
                         let _ = db_clone.put(key.as_bytes(), value.as_bytes());
                     }
                     _ => {
@@ -506,9 +515,12 @@ fn test_btree_duplicate_keys() {
         let value = format!("rapid_value_{}", i);
         db.put(b"rapid_key", value.as_bytes()).unwrap();
     }
-    
+
     // Should have the last value
-    assert_eq!(db.get(b"rapid_key").unwrap(), Some(b"rapid_value_99".to_vec()));
+    assert_eq!(
+        db.get(b"rapid_key").unwrap(),
+        Some(b"rapid_value_99".to_vec())
+    );
 }
 
 /// Test B+Tree memory efficiency
@@ -527,7 +539,7 @@ fn test_btree_memory_efficiency() {
     const VALUE_SIZE: usize = 1024; // 1KB values
 
     let start_time = Instant::now();
-    
+
     for i in 0..NUM_ENTRIES {
         let key = format!("mem_test_{:06}", i);
         let value = vec![i as u8; VALUE_SIZE];
@@ -538,7 +550,7 @@ fn test_btree_memory_efficiency() {
 
     // Read back all data
     let read_start = Instant::now();
-    
+
     for i in 0..NUM_ENTRIES {
         let key = format!("mem_test_{:06}", i);
         let value = db.get(key.as_bytes()).unwrap().unwrap();
@@ -550,11 +562,18 @@ fn test_btree_memory_efficiency() {
 
     println!("B+Tree Memory Efficiency Test:");
     println!("  Entries: {} x {} bytes", NUM_ENTRIES, VALUE_SIZE);
-    println!("  Total data: {} MB", (NUM_ENTRIES * VALUE_SIZE) / (1024 * 1024));
+    println!(
+        "  Total data: {} MB",
+        (NUM_ENTRIES * VALUE_SIZE) / (1024 * 1024)
+    );
     println!("  Write time: {:?}", write_duration);
     println!("  Read time: {:?}", read_duration);
-    println!("  Write throughput: {:.2} MB/s", 
-        (NUM_ENTRIES * VALUE_SIZE) as f64 / write_duration.as_secs_f64() / (1024.0 * 1024.0));
-    println!("  Read throughput: {:.2} MB/s",
-        (NUM_ENTRIES * VALUE_SIZE) as f64 / read_duration.as_secs_f64() / (1024.0 * 1024.0));
+    println!(
+        "  Write throughput: {:.2} MB/s",
+        (NUM_ENTRIES * VALUE_SIZE) as f64 / write_duration.as_secs_f64() / (1024.0 * 1024.0)
+    );
+    println!(
+        "  Read throughput: {:.2} MB/s",
+        (NUM_ENTRIES * VALUE_SIZE) as f64 / read_duration.as_secs_f64() / (1024.0 * 1024.0)
+    );
 }

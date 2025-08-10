@@ -3,16 +3,16 @@
 //! SSTables are immutable on-disk data structures that store sorted key-value pairs.
 //! They include an index for efficient lookups and support compression.
 
-use crate::{Result, Error};
 use crate::write_optimized::bloom_filter::{BloomFilter, BloomFilterBuilder};
+use crate::{Error, Result};
+use bincode::{Decode, Encode};
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
-use std::io::{Write, Read, Seek, SeekFrom, BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use parking_lot::RwLock;
-use serde::{Serialize, Deserialize};
-use bincode::{Encode, Decode};
-use std::collections::BTreeMap;
 
 /// SSTable file format:
 /// - Header (metadata)
@@ -69,7 +69,7 @@ impl DataBlock {
         if self.size + entry_size > BLOCK_SIZE && !self.entries.is_empty() {
             return false;
         }
-        
+
         self.size += entry_size;
         self.entries.push((key, value));
         true
@@ -152,7 +152,7 @@ impl SSTableBuilder {
         if !self.current_block.add(key.clone(), value.clone()) {
             // Block is full, flush it
             self.flush_block()?;
-            
+
             // Add to new block
             self.current_block.add(key, value);
         }
@@ -186,10 +186,10 @@ impl SSTableBuilder {
     /// Serialize a data block
     fn serialize_block(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        
+
         // Write number of entries
         data.extend_from_slice(&(self.current_block.entries.len() as u32).to_le_bytes());
-        
+
         // Write each entry
         for (key, value) in &self.current_block.entries {
             data.extend_from_slice(&(key.len() as u32).to_le_bytes());
@@ -274,7 +274,7 @@ impl SSTableBuilder {
         };
         let footer_data = bincode::encode_to_vec(&footer, bincode::config::standard())?;
         self.file.write_all(&footer_data)?;
-        
+
         // Write footer size at the very end (8 bytes for u64)
         let footer_size = footer_data.len() as u64;
         self.file.write_all(&footer_size.to_le_bytes())?;
@@ -301,41 +301,47 @@ impl SSTableReader {
     /// Open an existing SSTable
     pub fn open(path: &Path) -> Result<Self> {
         let mut file = BufReader::new(File::open(path)?);
-        
+
         // Read footer size from the very end of file (last 8 bytes)
         file.seek(SeekFrom::End(-8))?;
         let mut footer_size_data = [0u8; 8];
         file.read_exact(&mut footer_size_data)?;
         let footer_size = u64::from_le_bytes(footer_size_data);
-        
+
         // Read footer data
         file.seek(SeekFrom::End(-(footer_size as i64 + 8)))?;
         let mut footer_data = vec![0u8; footer_size as usize];
         file.read_exact(&mut footer_data)?;
-        let (footer, _): (SSTableFooter, usize) = bincode::decode_from_slice(&footer_data, bincode::config::standard())?;
+        let (footer, _): (SSTableFooter, usize) =
+            bincode::decode_from_slice(&footer_data, bincode::config::standard())?;
 
         // Verify magic number
         if footer.magic != SSTABLE_MAGIC {
-            return Err(Error::InvalidFormat("Invalid SSTable magic number".to_string()));
+            return Err(Error::InvalidFormat(
+                "Invalid SSTable magic number".to_string(),
+            ));
         }
 
         // Read metadata
         file.seek(SeekFrom::Start(footer.metadata_offset))?;
         let mut metadata_data = vec![0u8; footer.metadata_size as usize];
         file.read_exact(&mut metadata_data)?;
-        let (metadata, _): (SSTableMetadata, usize) = bincode::decode_from_slice(&metadata_data, bincode::config::standard())?;
+        let (metadata, _): (SSTableMetadata, usize) =
+            bincode::decode_from_slice(&metadata_data, bincode::config::standard())?;
 
         // Read index
         file.seek(SeekFrom::Start(footer.index_offset))?;
         let mut index_data = vec![0u8; footer.index_size as usize];
         file.read_exact(&mut index_data)?;
-        let (index, _): (BTreeMap<Vec<u8>, u64>, usize) = bincode::decode_from_slice(&index_data, bincode::config::standard())?;
+        let (index, _): (BTreeMap<Vec<u8>, u64>, usize) =
+            bincode::decode_from_slice(&index_data, bincode::config::standard())?;
 
         // Read bloom filter
         file.seek(SeekFrom::Start(footer.bloom_filter_offset))?;
         let mut bloom_data = vec![0u8; footer.bloom_filter_size as usize];
         file.read_exact(&mut bloom_data)?;
-        let (bloom_filter, _): (BloomFilter, usize) = bincode::decode_from_slice(&bloom_data, bincode::config::standard())?;
+        let (bloom_filter, _): (BloomFilter, usize) =
+            bincode::decode_from_slice(&bloom_data, bincode::config::standard())?;
 
         Ok(Self {
             file: Arc::new(RwLock::new(file)),
@@ -355,7 +361,7 @@ impl SSTableReader {
 
         // Find the block that might contain the key
         let block_offset = self.find_block_offset(key)?;
-        
+
         // Read and search the block
         self.search_block(block_offset, key)
     }
@@ -363,7 +369,7 @@ impl SSTableReader {
     /// Find the block that might contain a key
     fn find_block_offset(&self, key: &[u8]) -> Result<u64> {
         let mut offset = 0u64;
-        
+
         for (block_key, block_offset) in self.index.iter().rev() {
             if key >= block_key.as_slice() {
                 offset = *block_offset;
@@ -408,7 +414,7 @@ impl SSTableReader {
             if entry_key == key {
                 return Ok(Some(value));
             }
-            
+
             // If we've passed our key (since entries are sorted), it's not here
             if entry_key.as_slice() > key {
                 return Ok(None);
@@ -526,7 +532,7 @@ impl SSTableManager {
     /// Create a new SSTable manager
     pub fn new(data_dir: PathBuf) -> Result<Self> {
         std::fs::create_dir_all(&data_dir)?;
-        
+
         Ok(Self {
             data_dir,
             sstables: Arc::new(RwLock::new(Vec::new())),
@@ -543,7 +549,7 @@ impl SSTableManager {
     /// Get a value by searching all SSTables (newest to oldest)
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let sstables = self.sstables.read();
-        
+
         for sstable in sstables.iter().rev() {
             if let Some(value) = sstable.get(key)? {
                 return Ok(Some(value));
@@ -566,10 +572,10 @@ impl SSTableManager {
     /// Remove SSTables
     pub fn remove_sstables(&self, to_remove: &[Arc<SSTableReader>]) -> Result<()> {
         let mut sstables = self.sstables.write();
-        
+
         for remove in to_remove {
             sstables.retain(|s| !Arc::ptr_eq(s, remove));
-            
+
             // Delete the file
             std::fs::remove_file(&remove.metadata().file_path)?;
         }
@@ -622,7 +628,7 @@ mod tests {
         // Iterate over SSTable
         let reader = SSTableReader::open(&path).unwrap();
         let mut iter = reader.iter().unwrap();
-        
+
         let mut count = 0;
         while let Some(Ok((key, value))) = iter.next() {
             let expected_key = format!("key{:02}", count);
@@ -631,7 +637,7 @@ mod tests {
             assert_eq!(value, expected_value.as_bytes());
             count += 1;
         }
-        
+
         assert_eq!(count, 10);
     }
 }

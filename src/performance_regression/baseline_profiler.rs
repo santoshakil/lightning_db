@@ -3,11 +3,11 @@
 //! Creates and maintains performance baselines for different operation types.
 //! Baselines are used as reference points for regression detection.
 
-use super::{PerformanceMetric, PerformanceBaseline, RegressionDetectorConfig, MetricsStorage};
+use super::{MetricsStorage, PerformanceBaseline, PerformanceMetric, RegressionDetectorConfig};
 use crate::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, Duration};
+use std::time::{Duration, SystemTime};
 
 /// Baseline profiler for creating performance reference points
 pub struct BaselineProfiler {
@@ -63,24 +63,33 @@ impl BaselineProfiler {
     /// Try to create a baseline for an operation type if enough samples exist
     pub fn try_create_baseline(&self, operation_type: &str) -> Result<Option<PerformanceBaseline>> {
         let samples = self.collect_recent_samples(operation_type)?;
-        
+
         if samples.len() >= self.config.min_samples_for_analysis {
-            let baseline = self.create_baseline_from_samples(operation_type, &samples, BaselineStrategy::Adaptive)?;
-            
+            let baseline = self.create_baseline_from_samples(
+                operation_type,
+                &samples,
+                BaselineStrategy::Adaptive,
+            )?;
+
             // Store the baseline
             if let Ok(mut storage) = self.metrics_storage.write() {
-                storage.baselines.insert(operation_type.to_string(), baseline.clone());
+                storage
+                    .baselines
+                    .insert(operation_type.to_string(), baseline.clone());
             }
-            
+
             // Cache the baseline
             if let Ok(mut cache) = self.baseline_cache.write() {
-                cache.insert(operation_type.to_string(), CachedBaseline {
-                    baseline: baseline.clone(),
-                    last_updated: SystemTime::now(),
-                    sample_count_at_creation: samples.len(),
-                });
+                cache.insert(
+                    operation_type.to_string(),
+                    CachedBaseline {
+                        baseline: baseline.clone(),
+                        last_updated: SystemTime::now(),
+                        sample_count_at_creation: samples.len(),
+                    },
+                );
             }
-            
+
             Ok(Some(baseline))
         } else {
             Ok(None)
@@ -90,33 +99,39 @@ impl BaselineProfiler {
     /// Force update baseline for an operation type
     pub fn force_update_baseline(&self, operation_type: &str) -> Result<PerformanceBaseline> {
         let samples = self.collect_recent_samples(operation_type)?;
-        
+
         if samples.is_empty() {
-            return Err(crate::Error::Generic(
-                format!("No samples available for operation type: {}", operation_type)
-            ));
+            return Err(crate::Error::Generic(format!(
+                "No samples available for operation type: {}",
+                operation_type
+            )));
         }
 
         let baseline = self.create_baseline_from_samples(
-            operation_type, 
-            &samples, 
-            BaselineStrategy::Adaptive
+            operation_type,
+            &samples,
+            BaselineStrategy::Adaptive,
         )?;
-        
+
         // Store the baseline
         if let Ok(mut storage) = self.metrics_storage.write() {
-            storage.baselines.insert(operation_type.to_string(), baseline.clone());
+            storage
+                .baselines
+                .insert(operation_type.to_string(), baseline.clone());
         }
-        
+
         // Update cache
         if let Ok(mut cache) = self.baseline_cache.write() {
-            cache.insert(operation_type.to_string(), CachedBaseline {
-                baseline: baseline.clone(),
-                last_updated: SystemTime::now(),
-                sample_count_at_creation: samples.len(),
-            });
+            cache.insert(
+                operation_type.to_string(),
+                CachedBaseline {
+                    baseline: baseline.clone(),
+                    last_updated: SystemTime::now(),
+                    sample_count_at_creation: samples.len(),
+                },
+            );
         }
-        
+
         Ok(baseline)
     }
 
@@ -128,14 +143,22 @@ impl BaselineProfiler {
         strategy: BaselineStrategy,
     ) -> Result<PerformanceBaseline> {
         if samples.is_empty() {
-            return Err(crate::Error::Generic("No samples provided for baseline creation".to_string()));
+            return Err(crate::Error::Generic(
+                "No samples provided for baseline creation".to_string(),
+            ));
         }
 
         match strategy {
-            BaselineStrategy::RecentWindow => self.create_recent_window_baseline(operation_type, samples),
-            BaselineStrategy::PercentileBased => self.create_percentile_baseline(operation_type, samples),
+            BaselineStrategy::RecentWindow => {
+                self.create_recent_window_baseline(operation_type, samples)
+            }
+            BaselineStrategy::PercentileBased => {
+                self.create_percentile_baseline(operation_type, samples)
+            }
             BaselineStrategy::Adaptive => self.create_adaptive_baseline(operation_type, samples),
-            BaselineStrategy::RollingAverage => self.create_rolling_average_baseline(operation_type, samples),
+            BaselineStrategy::RollingAverage => {
+                self.create_rolling_average_baseline(operation_type, samples)
+            }
         }
     }
 
@@ -147,13 +170,16 @@ impl BaselineProfiler {
     ) -> Result<PerformanceBaseline> {
         let window_duration = Duration::from_secs(self.config.baseline_window_hours * 3600);
         let cutoff_time = SystemTime::now() - window_duration;
-        
-        let recent_samples: Vec<_> = samples.iter()
+
+        let recent_samples: Vec<_> = samples
+            .iter()
             .filter(|s| s.timestamp > cutoff_time)
             .collect();
-            
+
         if recent_samples.is_empty() {
-            return Err(crate::Error::Generic("No recent samples in window".to_string()));
+            return Err(crate::Error::Generic(
+                "No recent samples in window".to_string(),
+            ));
         }
 
         self.calculate_baseline_statistics(operation_type, &recent_samples)
@@ -165,24 +191,27 @@ impl BaselineProfiler {
         operation_type: &str,
         samples: &[PerformanceMetric],
     ) -> Result<PerformanceBaseline> {
-        let mut durations: Vec<u64> = samples.iter()
-            .map(|s| s.duration_micros)
-            .collect();
+        let mut durations: Vec<u64> = samples.iter().map(|s| s.duration_micros).collect();
         durations.sort_unstable();
 
         // Remove outliers (bottom 5% and top 5%)
         let start_idx = (durations.len() as f64 * 0.05) as usize;
         let end_idx = (durations.len() as f64 * 0.95) as usize;
-        
+
         if end_idx <= start_idx {
-            return self.calculate_baseline_statistics(operation_type, &samples.iter().collect::<Vec<_>>());
+            return self.calculate_baseline_statistics(
+                operation_type,
+                &samples.iter().collect::<Vec<_>>(),
+            );
         }
 
         let filtered_durations = &durations[start_idx..end_idx];
-        let filtered_samples: Vec<_> = samples.iter()
+        let filtered_samples: Vec<_> = samples
+            .iter()
             .filter(|s| {
                 let duration = s.duration_micros;
-                duration >= filtered_durations[0] && duration <= filtered_durations[filtered_durations.len() - 1]
+                duration >= filtered_durations[0]
+                    && duration <= filtered_durations[filtered_durations.len() - 1]
             })
             .collect();
 
@@ -197,7 +226,7 @@ impl BaselineProfiler {
     ) -> Result<PerformanceBaseline> {
         // Analyze data distribution to choose best strategy
         let quality = self.analyze_data_quality(samples);
-        
+
         let strategy = if quality.outlier_percentage > 0.15 {
             // High outlier percentage, use percentile-based
             BaselineStrategy::PercentileBased
@@ -241,7 +270,10 @@ impl BaselineProfiler {
         }
 
         if total_weight == 0.0 {
-            return self.calculate_baseline_statistics(operation_type, &samples.iter().collect::<Vec<_>>());
+            return self.calculate_baseline_statistics(
+                operation_type,
+                &samples.iter().collect::<Vec<_>>(),
+            );
         }
 
         let weighted_mean = weighted_sum / total_weight;
@@ -275,7 +307,8 @@ impl BaselineProfiler {
         let p95 = self.calculate_percentile(&durations, 95.0);
         let p99 = self.calculate_percentile(&durations, 99.0);
 
-        let confidence_interval = self.calculate_confidence_interval(weighted_mean, std_deviation, sorted_samples.len());
+        let confidence_interval =
+            self.calculate_confidence_interval(weighted_mean, std_deviation, sorted_samples.len());
 
         Ok(PerformanceBaseline {
             operation_type: operation_type.to_string(),
@@ -300,43 +333,48 @@ impl BaselineProfiler {
         samples: &[&PerformanceMetric],
     ) -> Result<PerformanceBaseline> {
         if samples.is_empty() {
-            return Err(crate::Error::Generic("No samples for baseline calculation".to_string()));
+            return Err(crate::Error::Generic(
+                "No samples for baseline calculation".to_string(),
+            ));
         }
 
         // Calculate duration statistics
         let durations: Vec<u64> = samples.iter().map(|s| s.duration_micros).collect();
         let mean_duration = durations.iter().sum::<u64>() as f64 / durations.len() as f64;
-        
-        let variance = durations.iter()
+
+        let variance = durations
+            .iter()
             .map(|&d| {
                 let diff = d as f64 - mean_duration;
                 diff * diff
             })
-            .sum::<f64>() / durations.len() as f64;
+            .sum::<f64>()
+            / durations.len() as f64;
         let std_deviation = variance.sqrt();
 
         // Calculate percentiles
         let mut sorted_durations = durations.clone();
         sorted_durations.sort_unstable();
-        
+
         let p50 = self.calculate_percentile(&sorted_durations, 50.0);
         let p95 = self.calculate_percentile(&sorted_durations, 95.0);
         let p99 = self.calculate_percentile(&sorted_durations, 99.0);
 
         // Calculate other metrics
-        let mean_throughput = samples.iter()
+        let mean_throughput = samples
+            .iter()
             .map(|s| s.throughput_ops_per_sec)
-            .sum::<f64>() / samples.len() as f64;
+            .sum::<f64>()
+            / samples.len() as f64;
 
-        let memory_baseline = samples.iter()
-            .map(|s| s.memory_usage_bytes)
-            .sum::<u64>() / samples.len() as u64;
+        let memory_baseline =
+            samples.iter().map(|s| s.memory_usage_bytes).sum::<u64>() / samples.len() as u64;
 
-        let cpu_baseline = samples.iter()
-            .map(|s| s.cpu_usage_percent)
-            .sum::<f64>() / samples.len() as f64;
+        let cpu_baseline =
+            samples.iter().map(|s| s.cpu_usage_percent).sum::<f64>() / samples.len() as f64;
 
-        let confidence_interval = self.calculate_confidence_interval(mean_duration, std_deviation, samples.len());
+        let confidence_interval =
+            self.calculate_confidence_interval(mean_duration, std_deviation, samples.len());
 
         Ok(PerformanceBaseline {
             operation_type: operation_type.to_string(),
@@ -375,7 +413,12 @@ impl BaselineProfiler {
     }
 
     /// Calculate confidence interval for the mean
-    fn calculate_confidence_interval(&self, mean: f64, std_dev: f64, sample_size: usize) -> (f64, f64) {
+    fn calculate_confidence_interval(
+        &self,
+        mean: f64,
+        std_dev: f64,
+        sample_size: usize,
+    ) -> (f64, f64) {
         if sample_size <= 1 {
             return (mean, mean);
         }
@@ -399,16 +442,18 @@ impl BaselineProfiler {
             return 0.0;
         }
 
-        samples.iter()
+        samples
+            .iter()
             .map(|s| s.throughput_ops_per_sec)
-            .sum::<f64>() / samples.len() as f64
+            .sum::<f64>()
+            / samples.len() as f64
     }
 
     /// Collect recent samples for an operation type
     fn collect_recent_samples(&self, operation_type: &str) -> Result<Vec<PerformanceMetric>> {
         if let Ok(storage) = self.metrics_storage.read() {
             let mut samples = Vec::new();
-            
+
             for metrics_batch in storage.metrics.values() {
                 for metric in metrics_batch {
                     if metric.operation_type == operation_type {
@@ -416,10 +461,10 @@ impl BaselineProfiler {
                     }
                 }
             }
-            
+
             // Sort by timestamp (most recent first)
             samples.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-            
+
             Ok(samples)
         } else {
             Ok(Vec::new())
@@ -440,36 +485,40 @@ impl BaselineProfiler {
 
         let durations: Vec<u64> = samples.iter().map(|s| s.duration_micros).collect();
         let mean = durations.iter().sum::<u64>() as f64 / durations.len() as f64;
-        
+
         // Calculate variance
-        let variance = durations.iter()
+        let variance = durations
+            .iter()
             .map(|&d| {
                 let diff = d as f64 - mean;
                 diff * diff
             })
-            .sum::<f64>() / durations.len() as f64;
+            .sum::<f64>()
+            / durations.len() as f64;
 
         // Detect outliers using IQR method
         let mut sorted_durations = durations.clone();
         sorted_durations.sort_unstable();
-        
+
         let q1 = self.calculate_percentile(&sorted_durations, 25.0) as f64;
         let q3 = self.calculate_percentile(&sorted_durations, 75.0) as f64;
         let iqr = q3 - q1;
         let lower_bound = q1 - 1.5 * iqr;
         let upper_bound = q3 + 1.5 * iqr;
-        
-        let outlier_count = durations.iter()
+
+        let outlier_count = durations
+            .iter()
             .filter(|&&d| (d as f64) < lower_bound || (d as f64) > upper_bound)
             .count();
-        
+
         let outlier_percentage = outlier_count as f64 / durations.len() as f64;
 
         // Calculate temporal stability (how stable performance is over time)
         let temporal_stability = self.calculate_temporal_stability(samples);
 
         // Calculate confidence score based on sample size and variance
-        let confidence_score = self.calculate_confidence_score(samples.len(), variance, outlier_percentage);
+        let confidence_score =
+            self.calculate_confidence_score(samples.len(), variance, outlier_percentage);
 
         BaselineQuality {
             confidence_score,
@@ -499,13 +548,19 @@ impl BaselineProfiler {
         let mut window_means = Vec::new();
         for i in 0..5 {
             let start = i * window_size;
-            let end = if i == 4 { sorted_samples.len() } else { (i + 1) * window_size };
-            
+            let end = if i == 4 {
+                sorted_samples.len()
+            } else {
+                (i + 1) * window_size
+            };
+
             if start < sorted_samples.len() {
                 let window_samples = &sorted_samples[start..end.min(sorted_samples.len())];
-                let window_mean = window_samples.iter()
+                let window_mean = window_samples
+                    .iter()
                     .map(|s| s.duration_micros as f64)
-                    .sum::<f64>() / window_samples.len() as f64;
+                    .sum::<f64>()
+                    / window_samples.len() as f64;
                 window_means.push(window_mean);
             }
         }
@@ -516,12 +571,14 @@ impl BaselineProfiler {
 
         // Calculate coefficient of variation between windows
         let overall_mean = window_means.iter().sum::<f64>() / window_means.len() as f64;
-        let variance = window_means.iter()
+        let variance = window_means
+            .iter()
             .map(|&mean| {
                 let diff = mean - overall_mean;
                 diff * diff
             })
-            .sum::<f64>() / window_means.len() as f64;
+            .sum::<f64>()
+            / window_means.len() as f64;
 
         let coefficient_of_variation = if overall_mean > 0.0 {
             variance.sqrt() / overall_mean
@@ -534,7 +591,12 @@ impl BaselineProfiler {
     }
 
     /// Calculate confidence score for baseline quality
-    fn calculate_confidence_score(&self, sample_size: usize, variance: f64, outlier_percentage: f64) -> f64 {
+    fn calculate_confidence_score(
+        &self,
+        sample_size: usize,
+        variance: f64,
+        outlier_percentage: f64,
+    ) -> f64 {
         // Sample size factor (logarithmic scaling)
         let size_factor = if sample_size >= self.config.min_samples_for_analysis {
             let log_size = (sample_size as f64).ln();
@@ -551,22 +613,25 @@ impl BaselineProfiler {
         let outlier_factor = 1.0 - outlier_percentage;
 
         // Weighted combination
-        (size_factor * 0.4 + variance_factor * 0.3 + outlier_factor * 0.3).min(1.0).max(0.0)
+        (size_factor * 0.4 + variance_factor * 0.3 + outlier_factor * 0.3)
+            .min(1.0)
+            .max(0.0)
     }
 
     /// Check if baseline needs updating
     pub fn should_update_baseline(&self, operation_type: &str) -> Result<bool> {
         if let Ok(cache) = self.baseline_cache.read() {
             if let Some(cached) = cache.get(operation_type) {
-                let age = SystemTime::now().duration_since(cached.last_updated)
+                let age = SystemTime::now()
+                    .duration_since(cached.last_updated)
                     .unwrap_or_default();
-                
+
                 let max_age = Duration::from_secs(self.config.baseline_window_hours * 3600);
-                
+
                 // Update if baseline is old or if we have significantly more samples
                 let current_samples = self.collect_recent_samples(operation_type)?.len();
                 let sample_growth = current_samples > cached.sample_count_at_creation * 2;
-                
+
                 Ok(age > max_age || sample_growth)
             } else {
                 Ok(true) // No cached baseline, needs creation
@@ -601,7 +666,11 @@ mod tests {
         }))
     }
 
-    fn create_test_metric(operation_type: &str, duration_micros: u64, timestamp_offset_secs: i64) -> PerformanceMetric {
+    fn create_test_metric(
+        operation_type: &str,
+        duration_micros: u64,
+        timestamp_offset_secs: i64,
+    ) -> PerformanceMetric {
         let timestamp = SystemTime::now() + Duration::from_secs(timestamp_offset_secs as u64);
         PerformanceMetric {
             timestamp,
@@ -622,7 +691,7 @@ mod tests {
         let storage = create_test_storage();
         let config = RegressionDetectorConfig::default();
         let profiler = BaselineProfiler::new(storage, config);
-        
+
         let result = profiler.try_create_baseline("nonexistent_op");
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
@@ -633,9 +702,9 @@ mod tests {
         let storage = create_test_storage();
         let config = RegressionDetectorConfig::default();
         let profiler = BaselineProfiler::new(storage, config);
-        
+
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        
+
         assert_eq!(profiler.calculate_percentile(&data, 50.0), 5);
         assert_eq!(profiler.calculate_percentile(&data, 90.0), 9);
         assert_eq!(profiler.calculate_percentile(&data, 0.0), 1);
@@ -647,7 +716,7 @@ mod tests {
         let storage = create_test_storage();
         let config = RegressionDetectorConfig::default();
         let profiler = BaselineProfiler::new(storage, config);
-        
+
         let (lower, upper) = profiler.calculate_confidence_interval(100.0, 10.0, 30);
         assert!(lower < 100.0);
         assert!(upper > 100.0);
@@ -659,14 +728,14 @@ mod tests {
         let storage = create_test_storage();
         let config = RegressionDetectorConfig::default();
         let profiler = BaselineProfiler::new(storage, config);
-        
+
         // Create samples with some outliers
         let mut samples = Vec::new();
         for i in 0..100 {
             let duration = if i < 95 { 1000 + i * 10 } else { 10000 }; // Last 5 are outliers
             samples.push(create_test_metric("test_op", duration, i as i64));
         }
-        
+
         let quality = profiler.analyze_data_quality(&samples);
         assert_eq!(quality.sample_size, 100);
         assert!(quality.outlier_percentage > 0.0);
@@ -678,23 +747,23 @@ mod tests {
         let storage = create_test_storage();
         let config = RegressionDetectorConfig::default();
         let profiler = BaselineProfiler::new(storage, config);
-        
+
         // Create stable samples
         let mut stable_samples = Vec::new();
         for i in 0..50 {
             stable_samples.push(create_test_metric("stable_op", 1000, i));
         }
-        
+
         let stable_stability = profiler.calculate_temporal_stability(&stable_samples);
-        
+
         // Create unstable samples (performance degrading over time)
         let mut unstable_samples = Vec::new();
         for i in 0..50 {
             unstable_samples.push(create_test_metric("unstable_op", 1000 + i * 100, i as i64));
         }
-        
+
         let unstable_stability = profiler.calculate_temporal_stability(&unstable_samples);
-        
+
         assert!(stable_stability > unstable_stability);
     }
 }

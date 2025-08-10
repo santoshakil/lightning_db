@@ -2,7 +2,7 @@
 //!
 //! This module implements a high-performance write-optimized storage engine that uses
 //! tiered compaction to optimize write throughput while maintaining good read performance.
-//! 
+//!
 //! Key features:
 //! - Leveled Compaction Strategy (LCS) for predictable performance
 //! - Tiered Storage with hot, warm, and cold data separation
@@ -11,23 +11,23 @@
 //! - Compression support for space efficiency
 //! - Adaptive compaction based on workload
 
+pub mod bloom_filter;
+pub mod compaction;
 pub mod memtable;
 pub mod sstable;
-pub mod compaction;
-pub mod wal;
-pub mod bloom_filter;
 pub mod tiered_storage;
+pub mod wal;
 pub mod write_engine;
 
-pub use memtable::{MemTable, MemTableEntry, MemTableManager};
-pub use sstable::{SSTableBuilder, SSTableReader, SSTableMetadata, SSTableManager};
-pub use compaction::{CompactionStrategy, CompactionLevel, CompactionJob, CompactionManager};
-pub use wal::{WriteAheadLog, WalEntry, WalIterator};
 pub use bloom_filter::{BloomFilter, BloomFilterBuilder};
+pub use compaction::{CompactionJob, CompactionLevel, CompactionManager, CompactionStrategy};
+pub use memtable::{MemTable, MemTableEntry, MemTableManager};
+pub use sstable::{SSTableBuilder, SSTableManager, SSTableMetadata, SSTableReader};
 pub use tiered_storage::{StorageTier, TieredStorageManager};
-pub use write_engine::{WriteOptimizedEngine, WriteEngineConfig};
+pub use wal::{WalEntry, WalIterator, WriteAheadLog};
+pub use write_engine::{WriteEngineConfig, WriteOptimizedEngine};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Configuration for the write-optimized storage engine
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,7 +84,7 @@ impl Default for WriteOptimizedConfig {
             level_size_multiplier: 10,
             max_levels: 7,
             enable_compression: true,
-            compression_type: 1, // zstd
+            compression_type: 1,        // zstd
             bloom_filter_fp_rate: 0.01, // 1% false positive rate
             enable_tiered_storage: true,
             hot_tier_days: 7,
@@ -159,16 +159,16 @@ mod tests {
             operations: Vec::new(),
             sequence_number: 100,
         };
-        
+
         batch.operations.push(WriteOperation::Put {
             key: b"key1".to_vec(),
             value: b"value1".to_vec(),
         });
-        
+
         batch.operations.push(WriteOperation::Delete {
             key: b"key2".to_vec(),
         });
-        
+
         assert_eq!(batch.operations.len(), 2);
         assert_eq!(batch.sequence_number, 100);
     }

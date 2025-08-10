@@ -81,11 +81,25 @@ impl std::fmt::Debug for LSMTree {
         f.debug_struct("LSMTree")
             .field("config", &self.config)
             .field("db_path", &self.db_path)
-            .field("next_file_number", &self.next_file_number.load(std::sync::atomic::Ordering::Relaxed))
+            .field(
+                "next_file_number",
+                &self
+                    .next_file_number
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            )
             .field("compaction_thread", &self.compaction_thread.is_some())
-            .field("shutdown", &self.shutdown.load(std::sync::atomic::Ordering::Relaxed))
-            .field("cache_hits", &self.cache_hits.load(std::sync::atomic::Ordering::Relaxed))
-            .field("cache_misses", &self.cache_misses.load(std::sync::atomic::Ordering::Relaxed))
+            .field(
+                "shutdown",
+                &self.shutdown.load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .field(
+                "cache_hits",
+                &self.cache_hits.load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .field(
+                "cache_misses",
+                &self.cache_misses.load(std::sync::atomic::Ordering::Relaxed),
+            )
             .finish()
     }
 }
@@ -205,22 +219,22 @@ impl LSMTree {
 
         // Load existing SSTable files
         lsm.recover_sstables()?;
-        
+
         // Start background compaction thread
         lsm.start_compaction_thread();
 
         Ok(lsm)
     }
-    
+
     fn recover_sstables(&mut self) -> Result<()> {
         eprintln!("LSM: Recovering existing SSTable files...");
-        
+
         // Check if LSM directory exists
         if !self.db_path.exists() {
             eprintln!("LSM: No existing LSM directory found");
             return Ok(());
         }
-        
+
         // Scan for .sst files
         let mut sst_files = Vec::new();
         for entry in std::fs::read_dir(&self.db_path)? {
@@ -232,11 +246,11 @@ impl LSMTree {
                 }
             }
         }
-        
+
         sst_files.sort(); // Sort by filename to maintain order
-        
+
         eprintln!("LSM: Found {} SSTable files to recover", sst_files.len());
-        
+
         // Load each SSTable file
         let mut levels = self.levels.write();
         for sst_path in sst_files {
@@ -254,7 +268,7 @@ impl LSMTree {
                             }
                         }
                     }
-                    
+
                     // Add to level 0 (we'll let compaction reorganize later)
                     levels[0].add_sstable(Arc::new(sstable));
                 }
@@ -263,7 +277,7 @@ impl LSMTree {
                 }
             }
         }
-        
+
         eprintln!("LSM: Recovery complete");
         Ok(())
     }
@@ -276,7 +290,7 @@ impl LSMTree {
         // Check if rotation is needed while holding the write lock
         {
             let memtable = self.memtable.write();
-            
+
             // Check size before insert to avoid multiple threads trying to rotate
             if memtable.size_bytes() > self.config.memtable_size {
                 drop(memtable);
@@ -405,7 +419,7 @@ impl LSMTree {
     fn schedule_flush(&self, memtable: Arc<MemTable>) -> Result<()> {
         let file_number = self.next_file_number.fetch_add(1, Ordering::SeqCst);
         let sstable_path = self.db_path.join(format!("{:06}.sst", file_number));
-        
+
         eprintln!("LSM schedule_flush: creating SSTable at {:?}", sstable_path);
 
         // Build SSTable from memtable
@@ -423,7 +437,7 @@ impl LSMTree {
             builder.add(entry.key(), entry.value())?;
             entry_count += 1;
         }
-        
+
         eprintln!("LSM schedule_flush: writing {} entries", entry_count);
 
         // Safety check: only create SSTable if we have entries
@@ -486,31 +500,34 @@ impl LSMTree {
     pub fn flush(&self) -> Result<()> {
         // Force flush of current memtable
         eprintln!("LSM flush: rotating memtable");
-        
+
         // First, rotate the current memtable but don't flush it yet
         let mut memtable = self.memtable.write();
         let old_memtable = std::mem::take(&mut *memtable);
         drop(memtable);
-        
+
         let old_memtable = Arc::new(old_memtable);
         self.immutable_memtables.write().push(old_memtable);
-        
+
         // Now flush ALL immutable memtables synchronously
         loop {
             let memtable_to_flush = {
                 let mut immutable = self.immutable_memtables.write();
                 immutable.pop()
             };
-            
+
             match memtable_to_flush {
                 Some(memtable) => {
-                    eprintln!("LSM flush: flushing immutable memtable with {} entries", memtable.iter().count());
+                    eprintln!(
+                        "LSM flush: flushing immutable memtable with {} entries",
+                        memtable.iter().count()
+                    );
                     self.schedule_flush(memtable)?;
                 }
                 None => break,
             }
         }
-        
+
         eprintln!("LSM flush: all memtables flushed");
         Ok(())
     }

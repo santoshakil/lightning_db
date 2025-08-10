@@ -3,12 +3,12 @@
 //! Manages alerting and notification systems for performance regressions,
 //! including rate limiting, escalation, and multi-channel notifications.
 
-use super::{RegressionDetectionResult, RegressionSeverity, RegressionDetectorConfig};
+use super::{RegressionDetectionResult, RegressionDetectorConfig, RegressionSeverity};
 use crate::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, Duration};
-use serde::{Serialize, Deserialize};
+use std::time::{Duration, SystemTime};
 
 /// Alert manager for regression notifications
 pub struct AlertManager {
@@ -162,11 +162,18 @@ impl AlertManager {
     }
 
     /// Create alert from regression detection result
-    fn create_alert_from_regression(&self, regression: &RegressionDetectionResult) -> Result<Alert> {
-        let alert_id = format!("perf_regression_{}_{}",
+    fn create_alert_from_regression(
+        &self,
+        regression: &RegressionDetectionResult,
+    ) -> Result<Alert> {
+        let alert_id = format!(
+            "perf_regression_{}_{}",
             regression.operation_type,
-            regression.detection_timestamp.duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or_default().as_secs()
+            regression
+                .detection_timestamp
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
         );
 
         let title = format!(
@@ -179,14 +186,30 @@ impl AlertManager {
         let description = self.create_alert_description(regression);
 
         let mut metadata = HashMap::new();
-        metadata.insert("trace_id".to_string(), 
-            regression.current_performance.trace_id.clone().unwrap_or_default());
-        metadata.insert("span_id".to_string(), 
-            regression.current_performance.span_id.clone().unwrap_or_default());
-        metadata.insert("baseline_created".to_string(),
-            format!("{:?}", regression.baseline_performance.created_at));
-        metadata.insert("baseline_samples".to_string(),
-            regression.baseline_performance.sample_count.to_string());
+        metadata.insert(
+            "trace_id".to_string(),
+            regression
+                .current_performance
+                .trace_id
+                .clone()
+                .unwrap_or_default(),
+        );
+        metadata.insert(
+            "span_id".to_string(),
+            regression
+                .current_performance
+                .span_id
+                .clone()
+                .unwrap_or_default(),
+        );
+        metadata.insert(
+            "baseline_created".to_string(),
+            format!("{:?}", regression.baseline_performance.created_at),
+        );
+        metadata.insert(
+            "baseline_samples".to_string(),
+            regression.baseline_performance.sample_count.to_string(),
+        );
 
         Ok(Alert {
             id: alert_id,
@@ -206,7 +229,7 @@ impl AlertManager {
     /// Create detailed alert description
     fn create_alert_description(&self, regression: &RegressionDetectionResult) -> String {
         let mut description = String::new();
-        
+
         description.push_str(&format!(
             "Performance regression detected for operation: {}\n\n",
             regression.operation_type
@@ -267,11 +290,15 @@ impl AlertManager {
     /// Send alert to appropriate channels based on severity
     fn send_alert_to_channels(&self, alert: &Alert) -> Result<()> {
         let channels_to_use = self.select_channels_for_severity(alert.severity);
-        
+
         for channel in &self.alert_channels {
             if channels_to_use.contains(&channel.get_channel_type()) {
                 if let Err(e) = channel.send_alert(alert) {
-                    eprintln!("Failed to send alert via {:?}: {}", channel.get_channel_type(), e);
+                    eprintln!(
+                        "Failed to send alert via {:?}: {}",
+                        channel.get_channel_type(),
+                        e
+                    );
                     // Continue with other channels
                 }
             }
@@ -294,43 +321,49 @@ impl AlertManager {
                 AlertChannelType::Email,
                 AlertChannelType::Log,
             ],
-            RegressionSeverity::Moderate => vec![
-                AlertChannelType::Slack,
-                AlertChannelType::Log,
-            ],
-            RegressionSeverity::Minor => vec![
-                AlertChannelType::Log,
-                AlertChannelType::Metrics,
-            ],
+            RegressionSeverity::Moderate => vec![AlertChannelType::Slack, AlertChannelType::Log],
+            RegressionSeverity::Minor => vec![AlertChannelType::Log, AlertChannelType::Metrics],
         }
     }
 
     /// Check if alert should be sent based on rate limiting
-    fn should_send_alert(&self, operation_type: &str, severity: RegressionSeverity) -> Result<bool> {
+    fn should_send_alert(
+        &self,
+        operation_type: &str,
+        severity: RegressionSeverity,
+    ) -> Result<bool> {
         if let Ok(mut rate_limiter) = self.rate_limiter.lock() {
             // Check global rate limit
             let now = SystemTime::now();
-            if now.duration_since(rate_limiter.global_limit.hour_start).unwrap_or_default().as_secs() >= 3600 {
+            if now
+                .duration_since(rate_limiter.global_limit.hour_start)
+                .unwrap_or_default()
+                .as_secs()
+                >= 3600
+            {
                 // Reset hourly counter
                 rate_limiter.global_limit.hour_start = now;
                 rate_limiter.global_limit.alerts_this_hour = 0;
             }
 
-            if rate_limiter.global_limit.alerts_this_hour >= rate_limiter.global_limit.max_alerts_per_hour {
+            if rate_limiter.global_limit.alerts_this_hour
+                >= rate_limiter.global_limit.max_alerts_per_hour
+            {
                 return Ok(false); // Global rate limit exceeded
             }
 
             // Check operation-specific rate limit
             let cooldown_duration = Duration::from_secs(self.config.alert_cooldown_minutes * 60);
-            
+
             if let Some(op_limit) = rate_limiter.operation_limits.get(operation_type) {
                 if now < op_limit.cooldown_until {
                     return Ok(false); // Still in cooldown
                 }
-                
+
                 // Critical alerts bypass some rate limiting
                 if severity != RegressionSeverity::Critical {
-                    let time_since_last = now.duration_since(op_limit.last_alert).unwrap_or_default();
+                    let time_since_last =
+                        now.duration_since(op_limit.last_alert).unwrap_or_default();
                     if time_since_last < cooldown_duration {
                         return Ok(false); // Too soon since last alert
                     }
@@ -347,30 +380,33 @@ impl AlertManager {
     fn update_rate_limiter(&self, operation_type: &str) -> Result<()> {
         if let Ok(mut rate_limiter) = self.rate_limiter.lock() {
             let now = SystemTime::now();
-            
+
             // Update global count
             rate_limiter.global_limit.alerts_this_hour += 1;
-            
+
             // Update operation-specific limit
             let cooldown_duration = Duration::from_secs(self.config.alert_cooldown_minutes * 60);
-            let op_limit = rate_limiter.operation_limits.entry(operation_type.to_string())
+            let op_limit = rate_limiter
+                .operation_limits
+                .entry(operation_type.to_string())
                 .or_insert_with(|| OperationRateLimit {
                     last_alert: SystemTime::UNIX_EPOCH,
                     alert_count: 0,
                     cooldown_until: SystemTime::UNIX_EPOCH,
                 });
-            
+
             op_limit.last_alert = now;
             op_limit.alert_count += 1;
             op_limit.cooldown_until = now + cooldown_duration;
-            
+
             // Exponential backoff for repeated alerts
             if op_limit.alert_count > 3 {
                 let backoff_multiplier = (op_limit.alert_count - 3).min(8); // Cap at 8x
-                op_limit.cooldown_until = now + cooldown_duration * (2_u32.pow(backoff_multiplier as u32));
+                op_limit.cooldown_until =
+                    now + cooldown_duration * (2_u32.pow(backoff_multiplier as u32));
             }
         }
-        
+
         Ok(())
     }
 
@@ -378,21 +414,24 @@ impl AlertManager {
     fn suppress_alert(&self, regression: &RegressionDetectionResult) -> Result<()> {
         if let Ok(mut history) = self.alert_history.lock() {
             let key = format!("{}_{:?}", regression.operation_type, regression.severity);
-            
+
             if let Some(suppressed) = history.suppressed_alerts.get_mut(&key) {
                 suppressed.last_occurrence = SystemTime::now();
                 suppressed.count += 1;
             } else {
                 let alert = self.create_alert_from_regression(regression)?;
-                history.suppressed_alerts.insert(key, SuppressedAlert {
-                    first_occurrence: SystemTime::now(),
-                    last_occurrence: SystemTime::now(),
-                    count: 1,
-                    original_alert: alert,
-                });
+                history.suppressed_alerts.insert(
+                    key,
+                    SuppressedAlert {
+                        first_occurrence: SystemTime::now(),
+                        last_occurrence: SystemTime::now(),
+                        count: 1,
+                        original_alert: alert,
+                    },
+                );
             }
         }
-        
+
         Ok(())
     }
 
@@ -400,18 +439,22 @@ impl AlertManager {
     fn update_alert_history(&self, alert: &Alert) -> Result<()> {
         if let Ok(mut history) = self.alert_history.lock() {
             history.alerts.push_back(alert.clone());
-            history.last_alert_by_operation.insert(alert.operation_type.clone(), alert.timestamp);
-            
+            history
+                .last_alert_by_operation
+                .insert(alert.operation_type.clone(), alert.timestamp);
+
             // Keep only recent alerts
             while history.alerts.len() > 1000 {
                 history.alerts.pop_front();
             }
-            
+
             // Clean up old suppressed alerts
             let cutoff = SystemTime::now() - Duration::from_secs(24 * 3600); // 24 hours
-            history.suppressed_alerts.retain(|_, suppressed| suppressed.last_occurrence > cutoff);
+            history
+                .suppressed_alerts
+                .retain(|_, suppressed| suppressed.last_occurrence > cutoff);
         }
-        
+
         Ok(())
     }
 
@@ -419,10 +462,16 @@ impl AlertManager {
     fn schedule_escalation(&self, alert: &Alert) -> Result<()> {
         // This would typically integrate with a task scheduler
         // For now, we'll just log the escalation requirement
-        if matches!(alert.severity, RegressionSeverity::Critical | RegressionSeverity::Major) {
-            println!("⚠️  Escalation scheduled for alert: {} in 15 minutes", alert.id);
+        if matches!(
+            alert.severity,
+            RegressionSeverity::Critical | RegressionSeverity::Major
+        ) {
+            println!(
+                "⚠️  Escalation scheduled for alert: {} in 15 minutes",
+                alert.id
+            );
         }
-        
+
         Ok(())
     }
 
@@ -448,24 +497,30 @@ impl AlertManager {
     pub fn get_alert_statistics(&self, hours: u64) -> Result<AlertStatistics> {
         if let Ok(history) = self.alert_history.lock() {
             let cutoff = SystemTime::now() - Duration::from_secs(hours * 3600);
-            
-            let recent_alerts: Vec<_> = history.alerts.iter()
+
+            let recent_alerts: Vec<_> = history
+                .alerts
+                .iter()
                 .filter(|alert| alert.timestamp > cutoff)
                 .collect();
-            
+
             let mut by_severity = HashMap::new();
             let mut by_operation = HashMap::new();
-            
+
             for alert in &recent_alerts {
                 *by_severity.entry(alert.severity).or_insert(0) += 1;
-                *by_operation.entry(alert.operation_type.clone()).or_insert(0) += 1;
+                *by_operation
+                    .entry(alert.operation_type.clone())
+                    .or_insert(0) += 1;
             }
-            
-            let suppressed_count = history.suppressed_alerts.values()
+
+            let suppressed_count = history
+                .suppressed_alerts
+                .values()
                 .filter(|s| s.last_occurrence > cutoff)
                 .map(|s| s.count)
                 .sum();
-            
+
             Ok(AlertStatistics {
                 total_alerts: recent_alerts.len(),
                 suppressed_alerts: suppressed_count,
@@ -481,12 +536,12 @@ impl AlertManager {
     /// Test all alert channels
     pub fn test_all_channels(&self) -> HashMap<AlertChannelType, bool> {
         let mut results = HashMap::new();
-        
+
         for channel in &self.alert_channels {
             let test_result = channel.test_connection().unwrap_or(false);
             results.insert(channel.get_channel_type(), test_result);
         }
-        
+
         results
     }
 }
@@ -526,16 +581,16 @@ impl AlertChannel for ConsoleAlertChannel {
         println!("Degradation: {:.1}%", alert.degradation_percentage * 100.0);
         println!("Confidence: {:.1}%", alert.statistical_confidence * 100.0);
         println!("Time: {:?}", alert.timestamp);
-        
+
         if !alert.recommended_actions.is_empty() {
             println!("\nRecommended Actions:");
             for (i, action) in alert.recommended_actions.iter().enumerate() {
                 println!("  {}. {}", i + 1, action);
             }
         }
-        
+
         println!("{}", "=".repeat(60));
-        
+
         Ok(())
     }
 
@@ -620,13 +675,19 @@ impl AlertChannel for WebhookAlertChannel {
     fn send_alert(&self, alert: &Alert) -> Result<()> {
         // In a real implementation, this would make an HTTP request
         println!("🔗 Webhook alert sent to: {}", self.webhook_url);
-        println!("Alert payload: {}", serde_json::to_string_pretty(alert).unwrap_or_default());
+        println!(
+            "Alert payload: {}",
+            serde_json::to_string_pretty(alert).unwrap_or_default()
+        );
         Ok(())
     }
 
     fn test_connection(&self) -> Result<bool> {
         // In a real implementation, this would test the webhook endpoint
-        println!("✅ Webhook alert channel test successful (URL: {})", self.webhook_url);
+        println!(
+            "✅ Webhook alert channel test successful (URL: {})",
+            self.webhook_url
+        );
         Ok(true)
     }
 
@@ -641,8 +702,8 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_test_regression() -> RegressionDetectionResult {
-        use super::super::{PerformanceMetric, PerformanceBaseline};
-        
+        use super::super::{PerformanceBaseline, PerformanceMetric};
+
         let current_performance = PerformanceMetric {
             timestamp: SystemTime::now(),
             operation_type: "test_op".to_string(),
@@ -691,11 +752,11 @@ mod tests {
     fn test_alert_manager_creation() {
         let config = RegressionDetectorConfig::default();
         let mut manager = AlertManager::new(config);
-        
+
         // Add test channels
         manager.add_channel(Box::new(ConsoleAlertChannel));
         manager.add_channel(Box::new(LogAlertChannel::new(LogLevel::Warn)));
-        
+
         assert_eq!(manager.alert_channels.len(), 2);
     }
 
@@ -703,10 +764,10 @@ mod tests {
     fn test_alert_creation() {
         let config = RegressionDetectorConfig::default();
         let manager = AlertManager::new(config);
-        
+
         let regression = create_test_regression();
         let alert = manager.create_alert_from_regression(&regression).unwrap();
-        
+
         assert_eq!(alert.operation_type, "test_op");
         assert_eq!(alert.severity, RegressionSeverity::Major);
         assert!(alert.degradation_percentage > 0.0);
@@ -717,10 +778,10 @@ mod tests {
     fn test_channel_selection() {
         let config = RegressionDetectorConfig::default();
         let manager = AlertManager::new(config);
-        
+
         let critical_channels = manager.select_channels_for_severity(RegressionSeverity::Critical);
         let minor_channels = manager.select_channels_for_severity(RegressionSeverity::Minor);
-        
+
         assert!(critical_channels.len() > minor_channels.len());
         assert!(critical_channels.contains(&AlertChannelType::PagerDuty));
         assert!(!minor_channels.contains(&AlertChannelType::PagerDuty));
@@ -731,16 +792,20 @@ mod tests {
         let mut config = RegressionDetectorConfig::default();
         config.alert_cooldown_minutes = 0; // No cooldown for test
         let manager = AlertManager::new(config);
-        
+
         // First alert should be allowed
-        let should_send = manager.should_send_alert("test_op", RegressionSeverity::Major).unwrap();
+        let should_send = manager
+            .should_send_alert("test_op", RegressionSeverity::Major)
+            .unwrap();
         assert!(should_send);
-        
+
         // Update rate limiter
         manager.update_rate_limiter("test_op").unwrap();
-        
+
         // Second alert should still be allowed (no cooldown set)
-        let should_send = manager.should_send_alert("test_op", RegressionSeverity::Major).unwrap();
+        let should_send = manager
+            .should_send_alert("test_op", RegressionSeverity::Major)
+            .unwrap();
         assert!(should_send);
     }
 
@@ -749,10 +814,10 @@ mod tests {
         let channel = ConsoleAlertChannel;
         let config = RegressionDetectorConfig::default();
         let manager = AlertManager::new(config);
-        
+
         let regression = create_test_regression();
         let alert = manager.create_alert_from_regression(&regression).unwrap();
-        
+
         // This will print to console - visual test
         assert!(channel.send_alert(&alert).is_ok());
         assert!(channel.test_connection().unwrap());
@@ -763,13 +828,13 @@ mod tests {
     fn test_webhook_alert_channel() {
         let channel = WebhookAlertChannel::new("https://hooks.slack.com/test".to_string())
             .with_header("Content-Type".to_string(), "application/json".to_string());
-        
+
         let config = RegressionDetectorConfig::default();
         let manager = AlertManager::new(config);
-        
+
         let regression = create_test_regression();
         let alert = manager.create_alert_from_regression(&regression).unwrap();
-        
+
         assert!(channel.send_alert(&alert).is_ok());
         assert!(channel.test_connection().unwrap());
         assert_eq!(channel.get_channel_type(), AlertChannelType::Webhook);

@@ -286,9 +286,9 @@ mod tests {
 
         // Test insert and get
         let page = Page::new(1);
-        cache.insert(1, page.clone()).unwrap();
+        cache.insert(1, page.clone()).expect("Failed to insert page");
 
-        let cached = cache.get(1).unwrap();
+        let cached = cache.get(1).expect("Failed to get cached page");
         assert_eq!(cached.page.id, 1);
 
         // Test miss
@@ -305,13 +305,13 @@ mod tests {
 
         // Fill cache
         for i in 0..3 {
-            cache.insert(i, Page::new(i)).unwrap();
+            cache.insert(i, Page::new(i)).expect("Failed to insert page");
         }
 
         assert_eq!(cache.size(), 3);
 
         // Insert one more - should trigger eviction
-        cache.insert(3, Page::new(3)).unwrap();
+        cache.insert(3, Page::new(3)).expect("Failed to insert page");
         assert_eq!(cache.size(), 3);
 
         // At least one of the first 3 should have been evicted
@@ -329,8 +329,8 @@ mod tests {
         let cache = SegmentedLockFreeCache::new(100, 4);
 
         // Test basic operations
-        cache.insert(1, Page::new(1)).unwrap();
-        cache.insert(2, Page::new(2)).unwrap();
+        cache.insert(1, Page::new(1)).expect("Failed to insert page");
+        cache.insert(2, Page::new(2)).expect("Failed to insert page");
 
         assert!(cache.get(1).is_some());
         assert!(cache.get(2).is_some());

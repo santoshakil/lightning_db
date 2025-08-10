@@ -4,13 +4,13 @@
 //! with performance benchmarks, integration tests, and deployment verification.
 
 use crate::{Database, LightningDbConfig, Result};
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, Instant};
-use std::path::{Path, PathBuf};
-use std::collections::HashMap;
 use parking_lot::RwLock;
-use serde::{Serialize, Deserialize};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
 
 /// Production validation coordinator
 pub struct ProductionValidator {
@@ -382,7 +382,7 @@ impl ProductionValidator {
             println!("  Running: {}...", scenario.name);
             let scenario_result = self.run_benchmark_scenario(db, scenario)?;
             results.scenarios_tested += 1;
-            
+
             // Update peak throughput
             if scenario_result.throughput > results.peak_throughput_ops_sec {
                 results.peak_throughput_ops_sec = scenario_result.throughput;
@@ -402,15 +402,21 @@ impl ProductionValidator {
         // Validate performance claims
         results.performance_vs_claims.measured_read_ops_sec = results.peak_throughput_ops_sec;
         results.performance_vs_claims.measured_write_ops_sec = results.sustained_throughput_ops_sec;
-        results.performance_vs_claims.meets_claims = 
-            results.performance_vs_claims.measured_read_ops_sec >= results.performance_vs_claims.claimed_read_ops_sec * 0.9 &&
-            results.performance_vs_claims.measured_write_ops_sec >= results.performance_vs_claims.claimed_write_ops_sec * 0.9;
+        results.performance_vs_claims.meets_claims =
+            results.performance_vs_claims.measured_read_ops_sec
+                >= results.performance_vs_claims.claimed_read_ops_sec * 0.9
+                && results.performance_vs_claims.measured_write_ops_sec
+                    >= results.performance_vs_claims.claimed_write_ops_sec * 0.9;
 
         Ok(results)
     }
 
     /// Run a specific benchmark scenario
-    fn run_benchmark_scenario(&self, db: &Arc<Database>, scenario: &BenchmarkScenario) -> Result<ScenarioResult> {
+    fn run_benchmark_scenario(
+        &self,
+        db: &Arc<Database>,
+        scenario: &BenchmarkScenario,
+    ) -> Result<ScenarioResult> {
         let mut operations = 0u64;
         let mut latencies = Vec::new();
         let start = Instant::now();
@@ -435,7 +441,7 @@ impl ProductionValidator {
                     latencies.push(op_start.elapsed().as_micros() as f64);
                     operations += 1;
                 }
-            },
+            }
             WorkloadType::RandomWrites => {
                 while start.elapsed() < Duration::from_secs(10) {
                     let (key, value) = &test_data[operations as usize % test_data.len()];
@@ -444,13 +450,14 @@ impl ProductionValidator {
                     latencies.push(op_start.elapsed().as_micros() as f64);
                     operations += 1;
                 }
-            },
+            }
             WorkloadType::MixedReadWrite(read_percentage) => {
                 use rand::Rng as _;
+                use rand::prelude::*;
                 let mut rng = rand::rng();
                 while start.elapsed() < Duration::from_secs(10) {
                     let op_start = Instant::now();
-                    if rng.gen_bool(read_percentage) {
+                    if rng.gen::<f64>() < read_percentage {
                         let key = &test_data[operations as usize % test_data.len()].0;
                         let _ = db.get(key)?;
                     } else {
@@ -460,7 +467,7 @@ impl ProductionValidator {
                     latencies.push(op_start.elapsed().as_micros() as f64);
                     operations += 1;
                 }
-            },
+            }
             _ => {
                 // Other workload types
             }
@@ -586,7 +593,7 @@ impl ProductionValidator {
         for item in &self.deployment_validator.checklist.items {
             results.checklist_items_total += 1;
             let check_result = (item.validation_fn)(db)?;
-            
+
             if check_result.passed {
                 results.checklist_items_passed += 1;
                 println!("  ✓ {}: {}", item.name, check_result.message);
@@ -623,21 +630,27 @@ impl ProductionValidator {
         if results.benchmark_results.performance_vs_claims.meets_claims {
             score += 40.0;
         } else {
-            let performance_ratio = results.benchmark_results.performance_vs_claims.measured_read_ops_sec / 
-                                   results.benchmark_results.performance_vs_claims.claimed_read_ops_sec;
+            let performance_ratio = results
+                .benchmark_results
+                .performance_vs_claims
+                .measured_read_ops_sec
+                / results
+                    .benchmark_results
+                    .performance_vs_claims
+                    .claimed_read_ops_sec;
             score += 40.0 * performance_ratio.min(1.0);
         }
         weight_sum += 40.0;
 
         // Integration score (30% weight)
-        let integration_ratio = results.integration_results.scenarios_passed as f64 / 
-                               results.integration_results.scenarios_tested.max(1) as f64;
+        let integration_ratio = results.integration_results.scenarios_passed as f64
+            / results.integration_results.scenarios_tested.max(1) as f64;
         score += 30.0 * integration_ratio;
         weight_sum += 30.0;
 
         // Deployment score (30% weight)
-        let deployment_ratio = results.deployment_results.checklist_items_passed as f64 / 
-                              results.deployment_results.checklist_items_total.max(1) as f64;
+        let deployment_ratio = results.deployment_results.checklist_items_passed as f64
+            / results.deployment_results.checklist_items_total.max(1) as f64;
         score += 30.0 * deployment_ratio;
         weight_sum += 30.0;
 
@@ -646,9 +659,9 @@ impl ProductionValidator {
 
     /// Determine if Lightning DB is production ready
     fn determine_production_readiness(&self, results: &ValidationResults) -> bool {
-        results.overall_score >= 90.0 && 
-        results.deployment_results.critical_issues.is_empty() &&
-        results.benchmark_results.performance_vs_claims.meets_claims
+        results.overall_score >= 90.0
+            && results.deployment_results.critical_issues.is_empty()
+            && results.benchmark_results.performance_vs_claims.meets_claims
     }
 
     /// Generate recommendations based on results
@@ -672,8 +685,10 @@ impl ProductionValidator {
                 priority: RecommendationPriority::Critical,
                 category: "Integration".to_string(),
                 title: "Feature Compatibility Issues".to_string(),
-                description: format!("Found {} feature compatibility issues", 
-                                   results.integration_results.compatibility_issues.len()),
+                description: format!(
+                    "Found {} feature compatibility issues",
+                    results.integration_results.compatibility_issues.len()
+                ),
                 impact: "Features may not work correctly together".to_string(),
             });
         }
@@ -696,10 +711,10 @@ impl ProductionValidator {
     /// Generate detailed HTML report
     fn generate_detailed_report(&self, results: &ValidationResults) -> Result<PathBuf> {
         use std::fs;
-        
+
         // Create report directory
         fs::create_dir_all(&self.config.report_output_dir)?;
-        
+
         let report_path = self.config.report_output_dir.join(format!(
             "lightning_db_validation_report_{}.html",
             chrono::Utc::now().format("%Y%m%d_%H%M%S")
@@ -713,7 +728,8 @@ impl ProductionValidator {
 
     /// Generate HTML report content
     fn generate_html_report(&self, results: &ValidationResults) -> String {
-        format!(r#"
+        format!(
+            r#"
 <!DOCTYPE html>
 <html>
 <head>
@@ -793,19 +809,77 @@ impl ProductionValidator {
 </body>
 </html>
         "#,
-            if results.overall_score >= 90.0 { "#28a745" } else if results.overall_score >= 70.0 { "#ffc107" } else { "#dc3545" },
-            if results.overall_score >= 90.0 { "#28a745" } else if results.overall_score >= 70.0 { "#ffc107" } else { "#dc3545" },
+            if results.overall_score >= 90.0 {
+                "#28a745"
+            } else if results.overall_score >= 70.0 {
+                "#ffc107"
+            } else {
+                "#dc3545"
+            },
+            if results.overall_score >= 90.0 {
+                "#28a745"
+            } else if results.overall_score >= 70.0 {
+                "#ffc107"
+            } else {
+                "#dc3545"
+            },
             results.overall_score,
-            if results.production_ready { "ready" } else { "not-ready" },
-            if results.production_ready { "✅ PRODUCTION READY" } else { "❌ NOT PRODUCTION READY" },
+            if results.production_ready {
+                "ready"
+            } else {
+                "not-ready"
+            },
+            if results.production_ready {
+                "✅ PRODUCTION READY"
+            } else {
+                "❌ NOT PRODUCTION READY"
+            },
             chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
             results.lightning_db_version,
-            results.benchmark_results.performance_vs_claims.claimed_read_ops_sec,
-            results.benchmark_results.performance_vs_claims.measured_read_ops_sec,
-            if results.benchmark_results.performance_vs_claims.measured_read_ops_sec >= results.benchmark_results.performance_vs_claims.claimed_read_ops_sec * 0.9 { "✅" } else { "❌" },
-            results.benchmark_results.performance_vs_claims.claimed_write_ops_sec,
-            results.benchmark_results.performance_vs_claims.measured_write_ops_sec,
-            if results.benchmark_results.performance_vs_claims.measured_write_ops_sec >= results.benchmark_results.performance_vs_claims.claimed_write_ops_sec * 0.9 { "✅" } else { "❌" },
+            results
+                .benchmark_results
+                .performance_vs_claims
+                .claimed_read_ops_sec,
+            results
+                .benchmark_results
+                .performance_vs_claims
+                .measured_read_ops_sec,
+            if results
+                .benchmark_results
+                .performance_vs_claims
+                .measured_read_ops_sec
+                >= results
+                    .benchmark_results
+                    .performance_vs_claims
+                    .claimed_read_ops_sec
+                    * 0.9
+            {
+                "✅"
+            } else {
+                "❌"
+            },
+            results
+                .benchmark_results
+                .performance_vs_claims
+                .claimed_write_ops_sec,
+            results
+                .benchmark_results
+                .performance_vs_claims
+                .measured_write_ops_sec,
+            if results
+                .benchmark_results
+                .performance_vs_claims
+                .measured_write_ops_sec
+                >= results
+                    .benchmark_results
+                    .performance_vs_claims
+                    .claimed_write_ops_sec
+                    * 0.9
+            {
+                "✅"
+            } else {
+                "❌"
+            },
             results.integration_results.scenarios_passed,
             results.integration_results.scenarios_tested,
             results.integration_results.feature_interactions_tested,
@@ -819,21 +893,24 @@ impl ProductionValidator {
 
     /// Format recommendations as HTML
     fn format_recommendations(&self, recommendations: &[Recommendation]) -> String {
-        recommendations.iter()
-            .map(|r| format!(
-                r#"<div class="recommendation {}">
+        recommendations
+            .iter()
+            .map(|r| {
+                format!(
+                    r#"<div class="recommendation {}">
                     <strong>{}</strong>: {}<br>
                     <small>Impact: {}</small>
                 </div>"#,
-                match r.priority {
-                    RecommendationPriority::Critical => "critical",
-                    RecommendationPriority::High => "high",
-                    _ => "",
-                },
-                r.title,
-                r.description,
-                r.impact
-            ))
+                    match r.priority {
+                        RecommendationPriority::Critical => "critical",
+                        RecommendationPriority::High => "high",
+                        _ => "",
+                    },
+                    r.title,
+                    r.description,
+                    r.impact
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -843,33 +920,58 @@ impl ProductionValidator {
         println!("\n===========================================\n");
         println!("📊 VALIDATION SUMMARY\n");
         println!("Overall Score: {:.1}%", results.overall_score);
-        println!("Production Ready: {}", 
-                 if results.production_ready { "✅ YES" } else { "❌ NO" });
-        
+        println!(
+            "Production Ready: {}",
+            if results.production_ready {
+                "✅ YES"
+            } else {
+                "❌ NO"
+            }
+        );
+
         println!("\nPerformance:");
-        println!("  Peak Throughput: {:.0} ops/sec", results.benchmark_results.peak_throughput_ops_sec);
-        println!("  Meets Claims: {}", 
-                 if results.benchmark_results.performance_vs_claims.meets_claims { "✅" } else { "❌" });
-        
+        println!(
+            "  Peak Throughput: {:.0} ops/sec",
+            results.benchmark_results.peak_throughput_ops_sec
+        );
+        println!(
+            "  Meets Claims: {}",
+            if results.benchmark_results.performance_vs_claims.meets_claims {
+                "✅"
+            } else {
+                "❌"
+            }
+        );
+
         println!("\nIntegration:");
-        println!("  Tests Passed: {}/{}", 
-                 results.integration_results.scenarios_passed,
-                 results.integration_results.scenarios_tested);
-        
+        println!(
+            "  Tests Passed: {}/{}",
+            results.integration_results.scenarios_passed,
+            results.integration_results.scenarios_tested
+        );
+
         println!("\nDeployment:");
-        println!("  Checklist: {}/{}", 
-                 results.deployment_results.checklist_items_passed,
-                 results.deployment_results.checklist_items_total);
-        println!("  Critical Issues: {}", results.deployment_results.critical_issues.len());
-        
+        println!(
+            "  Checklist: {}/{}",
+            results.deployment_results.checklist_items_passed,
+            results.deployment_results.checklist_items_total
+        );
+        println!(
+            "  Critical Issues: {}",
+            results.deployment_results.critical_issues.len()
+        );
+
         if !results.recommendations.is_empty() {
             println!("\n⚠️  Top Recommendations:");
             for (i, rec) in results.recommendations.iter().take(3).enumerate() {
                 println!("  {}. {}", i + 1, rec.title);
             }
         }
-        
-        println!("\n📄 Detailed report: {}", results.detailed_report_path.display());
+
+        println!(
+            "\n📄 Detailed report: {}",
+            results.detailed_report_path.display()
+        );
         println!("\n===========================================\n");
     }
 }
@@ -960,9 +1062,15 @@ impl IntegrationTester {
         };
 
         // Define feature compatibility
-        feature_matrix.compatibility.insert((Feature::Transactions, Feature::Compression), true);
-        feature_matrix.compatibility.insert((Feature::Encryption, Feature::Backup), true);
-        feature_matrix.compatibility.insert((Feature::Monitoring, Feature::Tracing), true);
+        feature_matrix
+            .compatibility
+            .insert((Feature::Transactions, Feature::Compression), true);
+        feature_matrix
+            .compatibility
+            .insert((Feature::Encryption, Feature::Backup), true);
+        feature_matrix
+            .compatibility
+            .insert((Feature::Monitoring, Feature::Tracing), true);
 
         Self {
             test_scenarios,
@@ -984,11 +1092,13 @@ impl DeploymentValidator {
             category: ChecklistCategory::Performance,
             name: "Performance Meets Requirements".to_string(),
             description: "Database meets advertised performance claims".to_string(),
-            validation_fn: |_db| Ok(CheckResult {
-                passed: true,
-                message: "Performance validated".to_string(),
-                recommendation: None,
-            }),
+            validation_fn: |_db| {
+                Ok(CheckResult {
+                    passed: true,
+                    message: "Performance validated".to_string(),
+                    recommendation: None,
+                })
+            },
             critical: true,
         });
 
@@ -996,11 +1106,13 @@ impl DeploymentValidator {
             category: ChecklistCategory::Reliability,
             name: "Crash Recovery Works".to_string(),
             description: "Database recovers correctly from crashes".to_string(),
-            validation_fn: |_db| Ok(CheckResult {
-                passed: true,
-                message: "Crash recovery tested".to_string(),
-                recommendation: None,
-            }),
+            validation_fn: |_db| {
+                Ok(CheckResult {
+                    passed: true,
+                    message: "Crash recovery tested".to_string(),
+                    recommendation: None,
+                })
+            },
             critical: true,
         });
 
@@ -1008,30 +1120,36 @@ impl DeploymentValidator {
             category: ChecklistCategory::Security,
             name: "Encryption Enabled".to_string(),
             description: "Data encryption is properly configured".to_string(),
-            validation_fn: |_db| Ok(CheckResult {
-                passed: true,
-                message: "Encryption configured".to_string(),
-                recommendation: None,
-            }),
+            validation_fn: |_db| {
+                Ok(CheckResult {
+                    passed: true,
+                    message: "Encryption configured".to_string(),
+                    recommendation: None,
+                })
+            },
             critical: false,
         });
 
         let environment_tests = vec![
             EnvironmentTest {
                 name: "Disk Space Available".to_string(),
-                test_fn: || Ok(EnvironmentResult {
-                    passed: true,
-                    environment: "Linux x86_64".to_string(),
-                    issues: Vec::new(),
-                }),
+                test_fn: || {
+                    Ok(EnvironmentResult {
+                        passed: true,
+                        environment: "Linux x86_64".to_string(),
+                        issues: Vec::new(),
+                    })
+                },
             },
             EnvironmentTest {
                 name: "Memory Requirements".to_string(),
-                test_fn: || Ok(EnvironmentResult {
-                    passed: true,
-                    environment: "8GB RAM available".to_string(),
-                    issues: Vec::new(),
-                }),
+                test_fn: || {
+                    Ok(EnvironmentResult {
+                        passed: true,
+                        environment: "8GB RAM available".to_string(),
+                        issues: Vec::new(),
+                    })
+                },
             },
         ];
 
@@ -1145,14 +1263,14 @@ mod tests {
     fn test_score_calculation() {
         let validator = ProductionValidator::new(ValidationConfig::default());
         let mut results = ValidationResults::default();
-        
+
         // Perfect scores
         results.benchmark_results.performance_vs_claims.meets_claims = true;
         results.integration_results.scenarios_tested = 10;
         results.integration_results.scenarios_passed = 10;
         results.deployment_results.checklist_items_total = 10;
         results.deployment_results.checklist_items_passed = 10;
-        
+
         let score = validator.calculate_overall_score(&results);
         assert_eq!(score, 100.0);
     }

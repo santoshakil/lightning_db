@@ -1,17 +1,17 @@
 //! Data Corruption Detection and Self-Healing
-//! 
+//!
 //! This module provides mechanisms to detect data corruption and
 //! automatically recover when possible, ensuring database integrity.
 
-use crate::{Database, Result, Error};
 use crate::storage::PAGE_SIZE;
+use crate::{Database, Error, Result};
+use crc32fast::Hasher;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
-use crc32fast::Hasher;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Corruption detection and healing statistics
 #[derive(Debug, Default)]
@@ -36,11 +36,11 @@ impl CorruptionStats {
             self.success_rate()
         )
     }
-    
+
     pub fn success_rate(&self) -> f64 {
         let attempts = self.healing_attempts.load(Ordering::Relaxed);
         let successes = self.healing_successes.load(Ordering::Relaxed);
-        
+
         if attempts == 0 {
             100.0
         } else {
@@ -113,7 +113,7 @@ impl CorruptionDetector {
             healing_enabled,
         }
     }
-    
+
     /// Start background corruption detection
     pub fn start(&self, db: Arc<Database>) -> thread::JoinHandle<()> {
         let stats = self.stats.clone();
@@ -121,35 +121,41 @@ impl CorruptionDetector {
         let scan_interval = self.scan_interval;
         let page_checksums = self.page_checksums.clone();
         let healing_enabled = self.healing_enabled;
-        
+
         running.store(true, Ordering::Relaxed);
-        
+
         thread::spawn(move || {
             info!("Corruption detector started");
-            
+
             while running.load(Ordering::Relaxed) {
                 let scan_start = Instant::now();
-                
+
                 // Perform corruption scan
                 match scan_for_corruption(&db, &stats, &page_checksums) {
                     Ok(corruptions) => {
                         if !corruptions.is_empty() {
                             warn!("Detected {} corruptions", corruptions.len());
-                            
+
                             if healing_enabled {
                                 // Attempt to heal corruptions
                                 for corruption in corruptions {
                                     if corruption.can_heal {
                                         match heal_corruption(&db, &corruption, &stats) {
                                             Ok(_) => {
-                                                info!("Successfully healed corruption: {:?}", corruption);
+                                                info!(
+                                                    "Successfully healed corruption: {:?}",
+                                                    corruption
+                                                );
                                             }
                                             Err(e) => {
                                                 error!("Failed to heal corruption: {}", e);
                                             }
                                         }
                                     } else {
-                                        error!("Unrecoverable corruption detected: {:?}", corruption);
+                                        error!(
+                                            "Unrecoverable corruption detected: {:?}",
+                                            corruption
+                                        );
                                         stats.unrecoverable_errors.fetch_add(1, Ordering::Relaxed);
                                     }
                                 }
@@ -160,27 +166,27 @@ impl CorruptionDetector {
                         error!("Corruption scan failed: {}", e);
                     }
                 }
-                
+
                 let scan_duration = scan_start.elapsed();
                 if scan_duration < scan_interval {
                     thread::sleep(scan_interval - scan_duration);
                 }
             }
-            
+
             info!("Corruption detector stopped");
         })
     }
-    
+
     /// Stop the corruption detector
     pub fn stop(&self) {
         self.running.store(false, Ordering::Relaxed);
     }
-    
+
     /// Get current statistics
     pub fn stats(&self) -> &CorruptionStats {
         &self.stats
     }
-    
+
     /// Manually trigger a corruption scan
     pub fn scan_now(&self, db: &Database) -> Result<Vec<CorruptionInfo>> {
         scan_for_corruption(db, &self.stats, &self.page_checksums)
@@ -195,11 +201,11 @@ fn scan_for_corruption(
 ) -> Result<Vec<CorruptionInfo>> {
     let mut corruptions = Vec::new();
     let page_count = db.page_manager.page_count();
-    
+
     // Scan each page
     for page_id in 0..page_count {
         stats.pages_checked.fetch_add(1, Ordering::Relaxed);
-        
+
         // Check page integrity
         match check_page_integrity(db, page_id as u64, checksums) {
             Ok(None) => {
@@ -225,7 +231,7 @@ fn scan_for_corruption(
             }
         }
     }
-    
+
     Ok(corruptions)
 }
 
@@ -250,9 +256,9 @@ fn check_page_integrity(
             }));
         }
     };
-    
+
     let page_data = page.data();
-    
+
     // Verify page size
     if page_data.len() != PAGE_SIZE {
         return Ok(Some(CorruptionInfo {
@@ -265,17 +271,17 @@ fn check_page_integrity(
             can_heal: true,
         }));
     }
-    
+
     // Calculate and verify checksum
     let calculated_checksum = calculate_checksum(&page_data);
-    
+
     let mut checksum_cache = checksums.write().unwrap();
     match checksum_cache.get(&page_id) {
         Some(&stored_checksum) => {
             if calculated_checksum != stored_checksum {
                 // Check if it's bit rot or actual corruption
                 let corruption_type = detect_corruption_pattern(&page_data);
-                
+
                 return Ok(Some(CorruptionInfo {
                     corruption_type,
                     page_id,
@@ -298,7 +304,7 @@ fn check_page_integrity(
             checksum_cache.insert(page_id, calculated_checksum);
         }
     }
-    
+
     // Check page header structure
     if !validate_page_header(&page_data) {
         return Ok(Some(CorruptionInfo {
@@ -311,7 +317,7 @@ fn check_page_integrity(
             can_heal: true,
         }));
     }
-    
+
     Ok(None)
 }
 
@@ -327,7 +333,7 @@ pub fn detect_corruption_pattern(data: &[u8]) -> CorruptionType {
     // Check for common bit rot patterns
     let mut zero_count = 0;
     let mut ff_count = 0;
-    
+
     for &byte in data {
         if byte == 0x00 {
             zero_count += 1;
@@ -335,9 +341,9 @@ pub fn detect_corruption_pattern(data: &[u8]) -> CorruptionType {
             ff_count += 1;
         }
     }
-    
+
     let total = data.len();
-    
+
     // If more than 90% of the page is zeros or 0xFF, likely bit rot
     if zero_count > total * 9 / 10 || ff_count > total * 9 / 10 {
         CorruptionType::BitRot
@@ -351,7 +357,7 @@ fn validate_page_header(data: &[u8]) -> bool {
     if data.len() < 16 {
         return false;
     }
-    
+
     // Check magic bytes (example)
     let magic = &data[0..4];
     magic == b"LDBP" || magic == b"\x00\x00\x00\x00"
@@ -364,14 +370,14 @@ fn heal_corruption(
     stats: &Arc<CorruptionStats>,
 ) -> Result<()> {
     stats.healing_attempts.fetch_add(1, Ordering::Relaxed);
-    
+
     let strategy = determine_healing_strategy(corruption);
-    
+
     info!(
         "Attempting to heal corruption on page {} using {:?}",
         corruption.page_id, strategy
     );
-    
+
     match strategy {
         HealingStrategy::RecalculateChecksum => {
             // For checksum mismatches that might be false positives
@@ -387,20 +393,20 @@ fn heal_corruption(
                 Err(e) => Err(e),
             }
         }
-        
+
         HealingStrategy::UseRedundantCopy => {
             // If we have redundant copies (e.g., from replication)
             // For now, this is a placeholder
             warn!("Redundant copy healing not implemented");
             Err(Error::NotImplemented("Redundant copy healing".to_string()))
         }
-        
+
         HealingStrategy::RebuildFromIndex => {
             // Rebuild page from index information
             warn!("Index rebuild healing not implemented");
             Err(Error::NotImplemented("Index rebuild healing".to_string()))
         }
-        
+
         HealingStrategy::RestoreFromWAL => {
             // Restore from write-ahead log
             if db.improved_wal.is_some() || db.wal.is_some() {
@@ -411,7 +417,7 @@ fn heal_corruption(
                 Err(Error::WalNotAvailable)
             }
         }
-        
+
         HealingStrategy::MarkPageAsDead => {
             // Mark page as dead and allocate new one
             // This is a last resort that may cause data loss
@@ -421,7 +427,7 @@ fn heal_corruption(
             stats.corruptions_repaired.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
-        
+
         HealingStrategy::RequestBackupRestore => {
             // Request manual intervention
             error!(
@@ -442,21 +448,13 @@ fn determine_healing_strategy(corruption: &CorruptionInfo) -> HealingStrategy {
         (CorruptionType::ChecksumMismatch, CorruptionSeverity::Low) => {
             HealingStrategy::RecalculateChecksum
         }
-        (CorruptionType::BitRot, _) => {
-            HealingStrategy::UseRedundantCopy
-        }
+        (CorruptionType::BitRot, _) => HealingStrategy::UseRedundantCopy,
         (CorruptionType::InvalidPageHeader, CorruptionSeverity::Medium) => {
             HealingStrategy::RebuildFromIndex
         }
-        (CorruptionType::PartialWrite, _) => {
-            HealingStrategy::RestoreFromWAL
-        }
-        (_, CorruptionSeverity::Critical) => {
-            HealingStrategy::RequestBackupRestore
-        }
-        _ => {
-            HealingStrategy::MarkPageAsDead
-        }
+        (CorruptionType::PartialWrite, _) => HealingStrategy::RestoreFromWAL,
+        (_, CorruptionSeverity::Critical) => HealingStrategy::RequestBackupRestore,
+        _ => HealingStrategy::MarkPageAsDead,
     }
 }
 
@@ -468,18 +466,14 @@ pub struct IntegrityMonitor {
 }
 
 impl IntegrityMonitor {
-    pub fn new(
-        scan_interval: Duration,
-        healing_enabled: bool,
-        alert_threshold: u64,
-    ) -> Self {
+    pub fn new(scan_interval: Duration, healing_enabled: bool, alert_threshold: u64) -> Self {
         Self {
             detector: Arc::new(CorruptionDetector::new(scan_interval, healing_enabled)),
             alert_threshold,
             alert_callback: None,
         }
     }
-    
+
     /// Set alert callback for corruption notifications
     pub fn set_alert_callback<F>(&mut self, callback: F)
     where
@@ -487,23 +481,23 @@ impl IntegrityMonitor {
     {
         self.alert_callback = Some(Box::new(callback));
     }
-    
+
     /// Start monitoring
     pub fn start(&self, db: Arc<Database>) -> thread::JoinHandle<()> {
         self.detector.start(db)
     }
-    
+
     /// Get current statistics
     pub fn stats(&self) -> &CorruptionStats {
         self.detector.stats()
     }
-    
+
     /// Check if corruption rate exceeds threshold
     pub fn is_healthy(&self) -> bool {
         let stats = self.detector.stats();
         let detected = stats.corruptions_detected.load(Ordering::Relaxed);
         let repaired = stats.corruptions_repaired.load(Ordering::Relaxed);
-        
+
         (detected - repaired) < self.alert_threshold
     }
 }
@@ -511,24 +505,24 @@ impl IntegrityMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_checksum_calculation() {
         let data1 = vec![0u8; PAGE_SIZE];
         let data2 = vec![255u8; PAGE_SIZE];
-        
+
         let checksum1 = calculate_checksum(&data1);
         let checksum2 = calculate_checksum(&data2);
-        
+
         assert_ne!(checksum1, checksum2);
     }
-    
+
     #[test]
     fn test_corruption_pattern_detection() {
         let zeros = vec![0u8; 1024];
         let ones = vec![0xFFu8; 1024];
         let mixed: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
-        
+
         assert_eq!(detect_corruption_pattern(&zeros), CorruptionType::BitRot);
         assert_eq!(detect_corruption_pattern(&ones), CorruptionType::BitRot);
         assert_eq!(
@@ -536,7 +530,7 @@ mod tests {
             CorruptionType::ChecksumMismatch
         );
     }
-    
+
     #[test]
     fn test_healing_strategy_selection() {
         let low_severity = CorruptionInfo {
@@ -548,12 +542,12 @@ mod tests {
             detected_at: Instant::now(),
             can_heal: true,
         };
-        
+
         assert!(matches!(
             determine_healing_strategy(&low_severity),
             HealingStrategy::RecalculateChecksum
         ));
-        
+
         let critical = CorruptionInfo {
             corruption_type: CorruptionType::StructuralDamage,
             page_id: 2,
@@ -563,7 +557,7 @@ mod tests {
             detected_at: Instant::now(),
             can_heal: false,
         };
-        
+
         assert!(matches!(
             determine_healing_strategy(&critical),
             HealingStrategy::RequestBackupRestore

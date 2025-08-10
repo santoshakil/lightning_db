@@ -4,7 +4,7 @@
 //! and provides recommendations for optimal Lightning DB configuration.
 
 use crate::Result;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Hardware detector
 pub struct HardwareDetector {
@@ -149,9 +149,7 @@ struct CacheInfo {
 impl HardwareDetector {
     /// Create a new hardware detector
     pub fn new() -> Self {
-        Self {
-            cache_info: None,
-        }
+        Self { cache_info: None }
     }
 
     /// Detect hardware capabilities
@@ -204,10 +202,10 @@ impl HardwareDetector {
     fn detect_cpu_arch(&self) -> String {
         #[cfg(target_arch = "x86_64")]
         return "x86_64".to_string();
-        
+
         #[cfg(target_arch = "aarch64")]
         return "aarch64".to_string();
-        
+
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         return "unknown".to_string();
     }
@@ -262,12 +260,9 @@ impl HardwareDetector {
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
-            
+
             // Get total memory
-            if let Ok(output) = Command::new("sysctl")
-                .args(&["-n", "hw.memsize"])
-                .output()
-            {
+            if let Ok(output) = Command::new("sysctl").args(&["-n", "hw.memsize"]).output() {
                 if let Ok(bytes_str) = String::from_utf8(output.stdout) {
                     if let Ok(bytes) = bytes_str.trim().parse::<u64>() {
                         let total_mb = bytes / 1024 / 1024;
@@ -319,7 +314,7 @@ impl HardwareDetector {
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
-            
+
             let mut sizes = CacheSizes {
                 l1_data_kb: 32,
                 l1_instruction_kb: 32,
@@ -401,12 +396,9 @@ impl HardwareDetector {
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
-            
+
             // On macOS, check if using APFS (likely SSD)
-            if let Ok(output) = Command::new("diskutil")
-                .args(&["info", "/"])
-                .output()
-            {
+            if let Ok(output) = Command::new("diskutil").args(&["info", "/"]).output() {
                 if let Ok(info) = String::from_utf8(output.stdout) {
                     if info.contains("Solid State") || info.contains("APFS") {
                         return StorageType::SSD;
@@ -446,37 +438,37 @@ impl HardwareDetector {
 
     /// Benchmark actual storage I/O performance
     fn benchmark_storage_io(&self) -> Result<Option<f64>> {
-        use std::time::Instant;
         use std::io::Write;
-        
+        use std::time::Instant;
+
         // Create a temporary test file
         let test_data = vec![0u8; 1024 * 1024]; // 1MB test data
         let temp_dir = std::env::temp_dir();
         let test_file = temp_dir.join("lightning_db_io_test");
-        
+
         let start = Instant::now();
-        
+
         // Perform write test
-        let mut file = std::fs::File::create(&test_file)
-            .map_err(|e| crate::Error::Io(e.to_string()))?;
-        
+        let mut file =
+            std::fs::File::create(&test_file).map_err(|e| crate::Error::Io(e.to_string()))?;
+
         for _ in 0..10 {
             file.write_all(&test_data)
                 .map_err(|e| crate::Error::Io(e.to_string()))?;
         }
-        
+
         file.sync_all()
             .map_err(|e| crate::Error::Io(e.to_string()))?;
-        
+
         let write_duration = start.elapsed();
-        
+
         // Clean up
         let _ = std::fs::remove_file(&test_file);
-        
+
         // Calculate bandwidth (10MB written)
         let mb_written = 10.0;
         let bandwidth = mb_written / write_duration.as_secs_f64();
-        
+
         Ok(Some(bandwidth))
     }
 
@@ -488,13 +480,14 @@ impl HardwareDetector {
                 let count = nodes
                     .filter_map(|entry| entry.ok())
                     .filter(|entry| {
-                        entry.file_name()
+                        entry
+                            .file_name()
                             .to_str()
                             .map(|s| s.starts_with("node"))
                             .unwrap_or(false)
                     })
                     .count();
-                
+
                 if count > 0 {
                     return count;
                 }
@@ -553,7 +546,7 @@ impl HardwareDetector {
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
-            
+
             if let Ok(output) = Command::new("sysctl")
                 .args(&["-n", "hw.physicalcpu"])
                 .output()
@@ -588,7 +581,7 @@ impl HardwareDetector {
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
-            
+
             if let Ok(output) = Command::new("sysctl")
                 .args(&["-n", "machdep.cpu.brand_string"])
                 .output()
@@ -606,12 +599,14 @@ impl HardwareDetector {
     fn detect_cpu_frequency(&self) -> Option<u32> {
         #[cfg(target_os = "linux")]
         {
-            if let Ok(freq_str) = fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/base_frequency") {
+            if let Ok(freq_str) =
+                fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/base_frequency")
+            {
                 if let Ok(freq_khz) = freq_str.trim().parse::<u32>() {
                     return Some(freq_khz / 1000); // Convert to MHz
                 }
             }
-            
+
             // Fallback: try cpuinfo
             if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
                 for line in cpuinfo.lines() {
@@ -629,7 +624,7 @@ impl HardwareDetector {
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
-            
+
             if let Ok(output) = Command::new("sysctl")
                 .args(&["-n", "hw.cpufrequency"])
                 .output()
@@ -662,11 +657,12 @@ impl HardwareDetector {
             if let Ok(block_devices) = fs::read_dir("/sys/block") {
                 for entry in block_devices.filter_map(|e| e.ok()) {
                     let device_name = entry.file_name().to_string_lossy().to_string();
-                    
+
                     // Skip loop, ram, and other virtual devices
-                    if device_name.starts_with("loop") 
-                        || device_name.starts_with("ram") 
-                        || device_name.starts_with("dm-") {
+                    if device_name.starts_with("loop")
+                        || device_name.starts_with("ram")
+                        || device_name.starts_with("dm-")
+                    {
                         continue;
                     }
 
@@ -674,7 +670,8 @@ impl HardwareDetector {
                         StorageType::NVME
                     } else {
                         // Check rotational
-                        let rotational_path = format!("/sys/block/{}/queue/rotational", device_name);
+                        let rotational_path =
+                            format!("/sys/block/{}/queue/rotational", device_name);
                         if let Ok(rotational) = fs::read_to_string(&rotational_path) {
                             if rotational.trim() == "0" {
                                 StorageType::SSD
@@ -704,7 +701,11 @@ impl HardwareDetector {
                         name: device_name.clone(),
                         device_type,
                         size_gb,
-                        interface: if device_name.starts_with("nvme") { "NVMe".to_string() } else { "SATA".to_string() },
+                        interface: if device_name.starts_with("nvme") {
+                            "NVMe".to_string()
+                        } else {
+                            "SATA".to_string()
+                        },
                         bandwidth_mb_per_sec: None, // Would require benchmarking
                     });
                 }
@@ -714,11 +715,8 @@ impl HardwareDetector {
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
-            
-            if let Ok(output) = Command::new("diskutil")
-                .args(&["list", "-plist"])
-                .output()
-            {
+
+            if let Ok(output) = Command::new("diskutil").args(&["list", "-plist"]).output() {
                 // Parse plist output to get disk information
                 // Simplified implementation
                 devices.push(StorageDevice {
@@ -743,7 +741,7 @@ impl HardwareDetector {
                 _ => continue,
             }
         }
-        
+
         for device in devices {
             match device.device_type {
                 StorageType::SSD => return StorageType::SSD,
@@ -751,7 +749,8 @@ impl HardwareDetector {
             }
         }
 
-        devices.first()
+        devices
+            .first()
             .map(|d| d.device_type)
             .unwrap_or(StorageType::Unknown)
     }
@@ -764,7 +763,10 @@ impl HardwareDetector {
         {
             // Check for NVIDIA GPUs
             if let Ok(output) = std::process::Command::new("nvidia-smi")
-                .args(&["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"])
+                .args(&[
+                    "--query-gpu=name,memory.total",
+                    "--format=csv,noheader,nounits",
+                ])
                 .output()
             {
                 if output.status.success() {
@@ -802,7 +804,7 @@ impl HardwareDetector {
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
-            
+
             // Check for Metal support (indicates GPU)
             if let Ok(output) = Command::new("system_profiler")
                 .args(&["SPDisplaysDataType", "-xml"])
@@ -833,7 +835,7 @@ impl HardwareDetector {
             if let Ok(net_devices) = fs::read_dir("/sys/class/net") {
                 for entry in net_devices.filter_map(|e| e.ok()) {
                     let if_name = entry.file_name().to_string_lossy().to_string();
-                    
+
                     // Determine interface type
                     let interface_type = if if_name == "lo" {
                         NetworkType::Loopback
@@ -880,11 +882,8 @@ impl HardwareDetector {
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
-            
-            if let Ok(output) = Command::new("ifconfig")
-                .args(&["-l"])
-                .output()
-            {
+
+            if let Ok(output) = Command::new("ifconfig").args(&["-l"]).output() {
                 if let Ok(if_list) = String::from_utf8(output.stdout) {
                     for if_name in if_list.split_whitespace() {
                         let interface_type = if if_name == "lo0" {
@@ -954,7 +953,9 @@ impl HardwareDetector {
         #[cfg(target_os = "linux")]
         {
             let cpu_governor = {
-                if let Ok(governor) = fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor") {
+                if let Ok(governor) =
+                    fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
+                {
                     Some(governor.trim().to_string())
                 } else {
                     None
@@ -990,7 +991,7 @@ impl HardwareDetector {
     /// Get recommended configuration based on hardware
     pub fn recommend_config(&self, hw: &HardwareInfo) -> RecommendedConfig {
         let mut recommendations = Vec::new();
-        
+
         // Cache size recommendation (use 25% of available memory)
         let recommended_cache_mb = hw.available_memory_mb / 4;
         recommendations.push(format!(
@@ -1001,7 +1002,8 @@ impl HardwareDetector {
         // CPU optimization
         if hw.cpu_count >= 8 {
             recommendations.push("Enable prefetch_enabled with 4+ workers".to_string());
-            recommendations.push("Use optimized_transactions and optimized_page_manager".to_string());
+            recommendations
+                .push("Use optimized_transactions and optimized_page_manager".to_string());
         }
 
         // Storage optimization
@@ -1071,7 +1073,7 @@ mod tests {
     fn test_hardware_detection() {
         let detector = HardwareDetector::new();
         let hw_info = detector.detect().unwrap();
-        
+
         assert!(hw_info.cpu_count > 0);
         assert!(hw_info.total_memory_mb > 0);
     }

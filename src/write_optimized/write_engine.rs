@@ -3,21 +3,21 @@
 //! Main engine that integrates MemTables, SSTables, WAL, Compaction, and Tiered Storage
 //! for optimal write performance while maintaining good read performance.
 
-use crate::{Result, Error};
-use crate::write_optimized::{
-    MemTableManager, SSTableReader, SSTableBuilder, WriteAheadLog, WalEntry,
-    CompactionManager, CompactionStrategy, TieredStorageManager, StorageTier,
-    WriteOptimizedConfig, WriteBatch, WriteOperation, WriteEngineStats,
-};
 use crate::write_optimized::tiered_storage::TierConfig;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use parking_lot::{RwLock, Mutex};
+use crate::write_optimized::{
+    CompactionManager, CompactionStrategy, MemTableManager, SSTableBuilder, SSTableReader,
+    StorageTier, TieredStorageManager, WalEntry, WriteAheadLog, WriteBatch, WriteEngineStats,
+    WriteOperation, WriteOptimizedConfig,
+};
+use crate::{Error, Result};
+use crossbeam_channel::{unbounded, Receiver, Sender};
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH, Instant, Duration};
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::thread;
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Write engine configuration
 #[derive(Debug, Clone)]
@@ -40,7 +40,7 @@ impl WriteEngineConfig {
         let hot_tier_dir = data_dir.join("hot");
         let warm_tier_dir = data_dir.join("warm");
         let cold_tier_dir = data_dir.join("cold");
-        
+
         Self {
             base: WriteOptimizedConfig::default(),
             data_dir,
@@ -102,7 +102,7 @@ impl WriteOptimizedEngine {
         std::fs::create_dir_all(&config.hot_tier_dir)?;
         std::fs::create_dir_all(&config.warm_tier_dir)?;
         std::fs::create_dir_all(&config.cold_tier_dir)?;
-        
+
         // Create WAL
         let wal_dir = config.data_dir.join("wal");
         let wal = Arc::new(WriteAheadLog::new(
@@ -110,13 +110,13 @@ impl WriteOptimizedEngine {
             64 * 1024 * 1024, // 64MB per WAL file
             config.base.wal_sync_mode,
         )?);
-        
+
         // Create MemTable manager
         let memtable_manager = Arc::new(MemTableManager::new(
             config.base.memtable_size,
             config.base.num_memtables,
         ));
-        
+
         // Create compaction manager
         let compaction_manager = Arc::new(Mutex::new(CompactionManager::new(
             CompactionStrategy::Leveled,
@@ -124,10 +124,10 @@ impl WriteOptimizedEngine {
             config.base.compaction_threads,
             config.hot_tier_dir.clone(),
         )?));
-        
+
         // Create tiered storage manager
         let tiered_storage = Arc::new(TieredStorageManager::new(Duration::from_secs(300))); // 5 min evaluation
-        
+
         // Configure storage tiers
         tiered_storage.add_tier(TierConfig::hot_tier(
             config.hot_tier_dir.clone(),
@@ -141,9 +141,9 @@ impl WriteOptimizedEngine {
             config.cold_tier_dir.clone(),
             1024 * 1024 * 1024 * 1024, // 1TB cold tier
         ))?;
-        
+
         let (flush_sender, flush_receiver) = unbounded();
-        
+
         Ok(Self {
             config,
             memtable_manager,
@@ -163,14 +163,14 @@ impl WriteOptimizedEngine {
     /// Start the engine
     pub fn start(&mut self) -> Result<()> {
         self.running.store(true, Ordering::SeqCst);
-        
+
         // Start compaction manager
         self.compaction_manager.lock().start()?;
-        
+
         // Start tiered storage manager
         let tiered_storage = Arc::clone(&self.tiered_storage);
         // Note: We can't call start on immutable reference, would need different design
-        
+
         // Start flush worker
         let flush_receiver = self.flush_receiver.clone();
         let wal = Arc::clone(&self.wal);
@@ -179,7 +179,7 @@ impl WriteOptimizedEngine {
         let stats = Arc::clone(&self.stats);
         let compaction_manager = Arc::clone(&self.compaction_manager);
         let tiered_storage = Arc::clone(&self.tiered_storage);
-        
+
         let flush_worker = thread::Builder::new()
             .name("flush-worker".to_string())
             .spawn(move || {
@@ -201,14 +201,14 @@ impl WriteOptimizedEngine {
                     }
                 }
             })?;
-        
+
         self.workers.push(flush_worker);
-        
+
         // Start background flush monitor
         let memtable_manager = Arc::clone(&self.memtable_manager);
         let flush_sender = self.flush_sender.clone();
         let running = Arc::clone(&self.running);
-        
+
         let monitor_worker = thread::Builder::new()
             .name("flush-monitor".to_string())
             .spawn(move || {
@@ -218,36 +218,38 @@ impl WriteOptimizedEngine {
                             memtable,
                             target_tier: StorageTier::Hot, // New data goes to hot tier
                         };
-                        
+
                         if flush_sender.send(flush_request).is_err() {
                             break;
                         }
                     }
-                    
+
                     thread::sleep(Duration::from_millis(100));
                 }
             })?;
-        
+
         self.workers.push(monitor_worker);
-        
+
         Ok(())
     }
 
     /// Stop the engine
     pub fn stop(&mut self) -> Result<()> {
         self.running.store(false, Ordering::SeqCst);
-        
+
         // Stop workers
         for worker in self.workers.drain(..) {
-            worker.join().map_err(|_| Error::Generic("Failed to join worker thread".to_string()))?;
+            worker
+                .join()
+                .map_err(|_| Error::Generic("Failed to join worker thread".to_string()))?;
         }
-        
+
         // Stop compaction manager
         self.compaction_manager.lock().stop()?;
-        
+
         // Close WAL
         self.wal.close()?;
-        
+
         Ok(())
     }
 
@@ -255,65 +257,66 @@ impl WriteOptimizedEngine {
     pub fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         let start = Instant::now();
         let sequence = self.sequence_generator.fetch_add(1, Ordering::SeqCst);
-        
+
         // Write to WAL first
         if self.config.base.enable_wal {
-            let wal_entry = WalEntry::put(sequence, key.clone(), value.clone());
+            let wal_entry = WalEntry::put(sequence, key.clone(), value.clone())?;
             self.wal.append(wal_entry)?;
         }
-        
+
         // Calculate sizes before moving values
         let key_len = key.len() as u64;
         let value_len = value.len() as u64;
-        
+
         // Write to MemTable
         self.memtable_manager.put(key.clone(), value)?;
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write();
             stats.total_writes += 1;
             stats.bytes_written += key_len + value_len;
         }
-        
+
         // Record access pattern
         let latency_us = start.elapsed().as_micros() as f64;
-        self.tiered_storage.record_access("memtable", false, latency_us);
-        
+        self.tiered_storage
+            .record_access("memtable", false, latency_us);
+
         Ok(())
     }
 
     /// Delete a key
     pub fn delete(&self, key: Vec<u8>) -> Result<()> {
         let sequence = self.sequence_generator.fetch_add(1, Ordering::SeqCst);
-        
+
         // Write to WAL first
         if self.config.base.enable_wal {
-            let wal_entry = WalEntry::delete(sequence, key.clone());
+            let wal_entry = WalEntry::delete(sequence, key.clone())?;
             self.wal.append(wal_entry)?;
         }
-        
+
         // Write to MemTable
         self.memtable_manager.delete(key)?;
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write();
             stats.total_deletes += 1;
         }
-        
+
         Ok(())
     }
 
     /// Get a value by key
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let start = Instant::now();
-        
+
         // Check MemTables first
         if let Some(value) = self.memtable_manager.get(key) {
             return Ok(Some(value));
         }
-        
+
         // Check SSTables from newest to oldest
         let sstables = self.sstables_by_level.read();
         for level in 0..self.config.base.max_levels {
@@ -323,16 +326,19 @@ impl WriteOptimizedEngine {
                     if !sstable.may_contain(key) {
                         continue;
                     }
-                    
-                    let file_name = sstable.metadata().file_path
+
+                    let file_name = sstable
+                        .metadata()
+                        .file_path
                         .file_name()
                         .unwrap()
                         .to_string_lossy();
-                    
+
                     match sstable.get(key) {
                         Ok(Some(value)) => {
                             let latency_us = start.elapsed().as_micros() as f64;
-                            self.tiered_storage.record_access(&file_name, true, latency_us);
+                            self.tiered_storage
+                                .record_access(&file_name, true, latency_us);
                             return Ok(Some(value));
                         }
                         Ok(None) => continue,
@@ -341,7 +347,7 @@ impl WriteOptimizedEngine {
                 }
             }
         }
-        
+
         Ok(None)
     }
 
@@ -352,16 +358,16 @@ impl WriteOptimizedEngine {
             for operation in &batch.operations {
                 let wal_entry = match operation {
                     WriteOperation::Put { key, value } => {
-                        WalEntry::put(batch.sequence_number, key.clone(), value.clone())
+                        WalEntry::put(batch.sequence_number, key.clone(), value.clone())?
                     }
                     WriteOperation::Delete { key } => {
-                        WalEntry::delete(batch.sequence_number, key.clone())
+                        WalEntry::delete(batch.sequence_number, key.clone())?
                     }
                 };
                 self.wal.append(wal_entry)?;
             }
         }
-        
+
         // Apply operations to MemTable
         for operation in &batch.operations {
             match operation {
@@ -373,7 +379,7 @@ impl WriteOptimizedEngine {
                 }
             }
         }
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write();
@@ -389,40 +395,44 @@ impl WriteOptimizedEngine {
                 }
             }
         }
-        
+
         Ok(())
     }
 
     /// Force flush of all MemTables
     pub fn flush(&self) -> Result<Vec<FlushResult>> {
         let mut results = Vec::new();
-        
+
         // Get all immutable MemTables
         while let Some(memtable) = self.memtable_manager.get_flush_candidate() {
             let result = self.flush_memtable(memtable, StorageTier::Hot)?;
             results.push(result);
         }
-        
+
         Ok(results)
     }
 
     /// Flush a single MemTable
-    fn flush_memtable(&self, memtable: Arc<crate::write_optimized::MemTable>, target_tier: StorageTier) -> Result<FlushResult> {
+    fn flush_memtable(
+        &self,
+        memtable: Arc<crate::write_optimized::MemTable>,
+        target_tier: StorageTier,
+    ) -> Result<FlushResult> {
         let start = Instant::now();
         let tier_path = self.tiered_storage.get_tier_path(&target_tier)?;
-        
+
         // Create SSTable from MemTable
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        
+
         let sstable_path = tier_path.join(format!("sstable_{}.sst", timestamp));
         let mut builder = SSTableBuilder::new(&sstable_path, 0, self.config.base.compression_type)?;
-        
+
         let mut flushed_entries = 0;
         let mut flushed_bytes = 0;
-        
+
         // Write all entries from MemTable to SSTable
         for (key, entry) in memtable.iter() {
             match entry.entry_type {
@@ -440,32 +450,38 @@ impl WriteOptimizedEngine {
             }
             flushed_entries += 1;
         }
-        
+
         // Finalize SSTable
         let metadata = builder.finish()?;
-        
+
         // Open as reader and add to engine
         let sstable_reader = Arc::new(SSTableReader::open(&sstable_path)?);
-        
+
         // Add to level 0
         {
             let mut sstables = self.sstables_by_level.write();
-            sstables.entry(0).or_default().push(Arc::clone(&sstable_reader));
+            sstables
+                .entry(0)
+                .or_default()
+                .push(Arc::clone(&sstable_reader));
         }
-        
+
         // Add to tiered storage
-        self.tiered_storage.add_sstable(Arc::clone(&sstable_reader), target_tier)?;
-        
+        self.tiered_storage
+            .add_sstable(Arc::clone(&sstable_reader), target_tier)?;
+
         // Add to compaction manager
-        self.compaction_manager.lock().add_sstable(0, sstable_reader)?;
-        
+        self.compaction_manager
+            .lock()
+            .add_sstable(0, sstable_reader)?;
+
         // Update statistics
         {
             let mut stats = self.stats.write();
             stats.total_flushes += 1;
             stats.num_sstables += 1;
         }
-        
+
         Ok(FlushResult {
             sstable_metadata: vec![metadata],
             flushed_entries,
@@ -485,18 +501,18 @@ impl WriteOptimizedEngine {
     ) -> Result<()> {
         let start = Instant::now();
         let tier_path = tiered_storage.get_tier_path(&request.target_tier)?;
-        
+
         // Create SSTable from MemTable
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        
+
         let sstable_path = tier_path.join(format!("bg_sstable_{}.sst", timestamp));
         let mut builder = SSTableBuilder::new(&sstable_path, 0, config.base.compression_type)?;
-        
+
         let mut _flushed_entries = 0;
-        
+
         // Write all entries from MemTable to SSTable
         for (key, entry) in request.memtable.iter() {
             match entry.entry_type {
@@ -512,19 +528,19 @@ impl WriteOptimizedEngine {
             }
             _flushed_entries += 1;
         }
-        
+
         // Finalize SSTable
         let _metadata = builder.finish()?;
-        
+
         // Update statistics
         {
             let mut stats = stats.write();
             stats.total_flushes += 1;
             stats.num_sstables += 1;
         }
-        
+
         let _flush_time = start.elapsed();
-        
+
         Ok(())
     }
 
@@ -544,7 +560,9 @@ impl WriteOptimizedEngine {
     }
 
     /// Get tier statistics
-    pub fn tier_stats(&self) -> HashMap<StorageTier, crate::write_optimized::tiered_storage::TierStats> {
+    pub fn tier_stats(
+        &self,
+    ) -> HashMap<StorageTier, crate::write_optimized::tiered_storage::TierStats> {
         self.tiered_storage.get_tier_stats()
     }
 
@@ -562,14 +580,15 @@ impl WriteOptimizedEngine {
     pub fn recover(&self) -> Result<u64> {
         let wal_dir = self.config.data_dir.join("wal");
         let recovery = crate::write_optimized::wal::WalRecovery::recover(&wal_dir)?;
-        
+
         let mut recovered_entries = 0;
-        
+
         recovery.apply(|entry| {
             match entry.header.entry_type {
                 crate::write_optimized::wal::WalEntryType::Put => {
                     if let Some(ref value) = entry.value {
-                        self.memtable_manager.put(entry.key.clone(), value.clone())?;
+                        self.memtable_manager
+                            .put(entry.key.clone(), value.clone())?;
                         recovered_entries += 1;
                     }
                 }
@@ -583,7 +602,7 @@ impl WriteOptimizedEngine {
             }
             Ok(())
         })?;
-        
+
         Ok(recovered_entries)
     }
 
@@ -616,7 +635,7 @@ mod tests {
     fn test_write_engine_config() {
         let dir = TempDir::new().unwrap();
         let config = WriteEngineConfig::new(dir.path().to_path_buf());
-        
+
         assert_eq!(config.data_dir, dir.path());
         assert_eq!(config.hot_tier_dir, dir.path().join("hot"));
         assert_eq!(config.warm_tier_dir, dir.path().join("warm"));
@@ -627,9 +646,9 @@ mod tests {
     fn test_write_engine_creation() {
         let dir = TempDir::new().unwrap();
         let config = WriteEngineConfig::new(dir.path().to_path_buf());
-        
+
         let engine = WriteOptimizedEngine::new(config).unwrap();
-        
+
         // Check that directories were created
         assert!(dir.path().join("hot").exists());
         assert!(dir.path().join("warm").exists());
@@ -641,22 +660,22 @@ mod tests {
     fn test_write_engine_basic_operations() {
         let dir = TempDir::new().unwrap();
         let config = WriteEngineConfig::new(dir.path().to_path_buf());
-        
+
         let mut engine = WriteOptimizedEngine::new(config).unwrap();
         engine.start().unwrap();
-        
+
         // Test put and get
         engine.put(b"key1".to_vec(), b"value1".to_vec()).unwrap();
         let result = engine.get(b"key1").unwrap();
         assert_eq!(result, Some(b"value1".to_vec()));
-        
+
         // Test delete
         engine.delete(b"key1".to_vec()).unwrap();
         let result = engine.get(b"key1").unwrap();
         assert_eq!(result, None);
-        
+
         engine.stop().unwrap();
-        
+
         // Check statistics
         let stats = engine.stats();
         assert_eq!(stats.total_writes, 1);
@@ -667,34 +686,34 @@ mod tests {
     fn test_write_batch() {
         let dir = TempDir::new().unwrap();
         let config = WriteEngineConfig::new(dir.path().to_path_buf());
-        
+
         let mut engine = WriteOptimizedEngine::new(config).unwrap();
         engine.start().unwrap();
-        
+
         let batch = WriteBatch {
             operations: vec![
-                WriteOperation::Put { 
-                    key: b"key1".to_vec(), 
-                    value: b"value1".to_vec() 
+                WriteOperation::Put {
+                    key: b"key1".to_vec(),
+                    value: b"value1".to_vec(),
                 },
-                WriteOperation::Put { 
-                    key: b"key2".to_vec(), 
-                    value: b"value2".to_vec() 
+                WriteOperation::Put {
+                    key: b"key2".to_vec(),
+                    value: b"value2".to_vec(),
                 },
-                WriteOperation::Delete { 
-                    key: b"key3".to_vec() 
+                WriteOperation::Delete {
+                    key: b"key3".to_vec(),
                 },
             ],
             sequence_number: 100,
         };
-        
+
         engine.write_batch(batch).unwrap();
-        
+
         // Verify results
         assert_eq!(engine.get(b"key1").unwrap(), Some(b"value1".to_vec()));
         assert_eq!(engine.get(b"key2").unwrap(), Some(b"value2".to_vec()));
         assert_eq!(engine.get(b"key3").unwrap(), None);
-        
+
         engine.stop().unwrap();
     }
 }

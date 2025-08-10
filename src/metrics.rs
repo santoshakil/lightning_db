@@ -291,7 +291,7 @@ impl OperationGuard {
 
             let status = if success { "success" } else { "failure" };
             OPERATION_COUNTER
-                .with_label_values(&[&self.operation, status])
+                .with_label_values(&[&self.operation, &status.to_string()])
                 .inc();
         }
     }
@@ -307,7 +307,7 @@ impl Drop for OperationGuard {
                 .observe(duration);
 
             OPERATION_COUNTER
-                .with_label_values(&[&self.operation, "failure"])
+                .with_label_values(&[&self.operation, &"failure".to_string()])
                 .inc();
         }
     }

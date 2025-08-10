@@ -1,6 +1,16 @@
 pub mod recovery_fixes;
+pub mod corruption_validator;
+pub mod safe_recovery;
 
 pub use recovery_fixes::WALRecoveryContext;
+pub use corruption_validator::{
+    WalCorruptionValidator, ValidationConfig, CorruptionReport, WalCorruptionType,
+    CorruptionSeverity, RecoveryAction, RecoveryDecision, ValidationStats,
+};
+pub use safe_recovery::{
+    SafeWalRecovery, RecoveryReport, RecoveryConfig, CorruptionDetails, 
+    RecoveryStatus, DataLossAssessment, ImpactAssessment,
+};
 
 pub type LogSequenceNumber = u64;
 pub type WalEntry = WALEntry;
@@ -143,7 +153,10 @@ pub struct BasicWriteAheadLog {
 impl std::fmt::Debug for BasicWriteAheadLog {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BasicWriteAheadLog")
-            .field("next_lsn", &self.next_lsn.load(std::sync::atomic::Ordering::Relaxed))
+            .field(
+                "next_lsn",
+                &self.next_lsn.load(std::sync::atomic::Ordering::Relaxed),
+            )
             .finish()
     }
 }
@@ -251,13 +264,27 @@ impl WriteAheadLog for BasicWriteAheadLog {
 
             match bincode::decode_from_slice::<WALEntry, _>(&data, bincode::config::standard()) {
                 Ok((entry, _)) => {
-                    if entry.verify_checksum() {
-                        operations.push(entry.operation);
+                    if !entry.verify_checksum() {
+                        // CRITICAL: Checksum verification failed - corruption detected
+                        return Err(crate::error::Error::WalChecksumMismatch {
+                            offset: file.stream_position().unwrap_or(0),
+                            expected: {
+                                let mut test_entry = entry.clone();
+                                test_entry.checksum = 0;
+                                test_entry.calculate_checksum();
+                                test_entry.checksum
+                            },
+                            found: entry.checksum,
+                        });
                     }
+                    operations.push(entry.operation);
                 }
-                Err(_) => {
-                    // Skip corrupted entry
-                    continue;
+                Err(deserialization_error) => {
+                    // CRITICAL: Deserialization failed - binary corruption detected
+                    return Err(crate::error::Error::WalBinaryCorruption {
+                        offset: file.stream_position().unwrap_or(0),
+                        details: format!("Entry deserialization failed: {}", deserialization_error),
+                    });
                 }
             }
         }

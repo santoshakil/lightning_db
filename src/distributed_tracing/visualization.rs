@@ -3,12 +3,12 @@
 //! Provides web-based visualization and analysis tools for Lightning DB traces,
 //! including trace viewers, performance analysis, and debugging utilities.
 
-use super::{Span, SpanStatus, SpanKind};
+use super::{Span, SpanKind, SpanStatus};
 use crate::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
-use serde::{Serialize, Deserialize};
 // serde_json imports will be added when needed for HTML generation
 
 /// Web-based trace viewer for Lightning DB traces
@@ -122,7 +122,8 @@ impl TraceViewer {
                     continue;
                 }
 
-                let trace_view = traces.entry(span.trace_id.clone())
+                let trace_view = traces
+                    .entry(span.trace_id.clone())
                     .or_insert_with(|| TraceView::new(span.trace_id.clone()));
 
                 trace_view.add_span(span)?;
@@ -156,7 +157,8 @@ impl TraceViewer {
     /// Search traces by criteria
     pub fn search_traces(&self, criteria: &SearchCriteria) -> Vec<TraceView> {
         if let Ok(traces) = self.traces.lock() {
-            traces.values()
+            traces
+                .values()
                 .filter(|trace| criteria.matches(trace))
                 .cloned()
                 .collect()
@@ -169,11 +171,11 @@ impl TraceViewer {
     pub fn generate_service_map(&self) -> ServiceMap {
         if let Ok(traces) = self.traces.lock() {
             let mut service_map = ServiceMap::new();
-            
+
             for trace in traces.values() {
                 service_map.add_trace(trace);
             }
-            
+
             service_map
         } else {
             ServiceMap::new()
@@ -193,9 +195,7 @@ impl TraceViewer {
     pub fn export_json(&self, trace_ids: Option<Vec<String>>) -> Result<String> {
         if let Ok(traces) = self.traces.lock() {
             let export_traces: Vec<&TraceView> = if let Some(ids) = trace_ids {
-                ids.iter()
-                    .filter_map(|id| traces.get(id))
-                    .collect()
+                ids.iter().filter_map(|id| traces.get(id)).collect()
             } else {
                 traces.values().collect()
             };
@@ -208,10 +208,12 @@ impl TraceViewer {
 
     /// Generate HTML trace viewer
     pub fn generate_html_viewer(&self, trace_id: &str) -> Result<String> {
-        let trace = self.get_trace(trace_id)
+        let trace = self
+            .get_trace(trace_id)
             .ok_or_else(|| crate::Error::Generic(format!("Trace {} not found", trace_id)))?;
 
-        let html = format!(r#"
+        let html = format!(
+            r#"
 <!DOCTYPE html>
 <html>
 <head>
@@ -279,17 +281,19 @@ impl TraceViewer {
 
         // Also enforce max traces limit
         if traces.len() > self.config.max_traces {
-            let mut trace_pairs: Vec<_> = traces.iter()
+            let mut trace_pairs: Vec<_> = traces
+                .iter()
                 .map(|(id, trace)| (id.clone(), trace.created_at))
                 .collect();
             trace_pairs.sort_by_key(|(_, created_at)| *created_at);
-            
+
             let to_remove = traces.len() - self.config.max_traces;
-            let ids_to_remove: Vec<String> = trace_pairs.iter()
+            let ids_to_remove: Vec<String> = trace_pairs
+                .iter()
                 .take(to_remove)
                 .map(|(id, _)| id.clone())
                 .collect();
-            
+
             for trace_id in ids_to_remove {
                 traces.remove(&trace_id);
             }
@@ -304,13 +308,19 @@ impl TraceViewer {
             _ => "",
         };
 
-        let critical_class = if span.is_critical_path { " critical-path" } else { "" };
+        let critical_class = if span.is_critical_path {
+            " critical-path"
+        } else {
+            ""
+        };
 
-        let duration_str = span.duration_micros
+        let duration_str = span
+            .duration_micros
             .map(|d| format!("{:.2}ms", d as f64 / 1000.0))
             .unwrap_or_else(|| "ongoing".to_string());
 
-        let mut html = format!(r#"
+        let mut html = format!(
+            r#"
 <div class="span {}{}" style="margin-left: {}px;">
     <div class="span-header" onclick="toggleSpan('{}')">
         {} <span class="duration">{}</span>
@@ -320,7 +330,8 @@ impl TraceViewer {
         <p><strong>Span ID:</strong> {}</p>
         <p><strong>Kind:</strong> {:?}</p>
         "#,
-            status_class, critical_class,
+            status_class,
+            critical_class,
             span.depth * 20,
             span.span_id,
             span.operation_name,
@@ -345,8 +356,8 @@ impl TraceViewer {
             html.push_str("<div><strong>Logs:</strong><ul>");
             for log in &span.logs {
                 html.push_str(&format!(
-                    "<li>[{}] {}: {}</li>", 
-                    log.level, 
+                    "<li>[{}] {}: {}</li>",
+                    log.level,
                     log.relative_time_micros as f64 / 1000.0,
                     log.message
                 ));
@@ -366,11 +377,15 @@ impl TraceViewer {
     }
 
     /// Generate HTML for service map
-    fn generate_service_map_html(&self, service_map: &HashMap<String, ServiceInfo>) -> Result<String> {
+    fn generate_service_map_html(
+        &self,
+        service_map: &HashMap<String, ServiceInfo>,
+    ) -> Result<String> {
         let mut html = String::from("<div class='services'>");
 
         for (service_name, info) in service_map {
-            html.push_str(&format!(r#"
+            html.push_str(&format!(
+                r#"
 <div class="service">
     <h3>{}</h3>
     <p>Spans: {} | Errors: {} | Avg Duration: {:.2}ms</p>
@@ -427,11 +442,15 @@ impl TraceView {
         }
 
         // Update service map
-        let service_name = span.tags.get("service.name")
+        let service_name = span
+            .tags
+            .get("service.name")
             .unwrap_or(&"unknown".to_string())
             .clone();
 
-        let service_info = self.service_map.entry(service_name.clone())
+        let service_info = self
+            .service_map
+            .entry(service_name.clone())
             .or_insert_with(|| ServiceInfo {
                 name: service_name.clone(),
                 span_count: 0,
@@ -446,13 +465,16 @@ impl TraceView {
         }
 
         if let Some(duration) = span.duration_micros() {
-            service_info.avg_duration_micros = 
-                (service_info.avg_duration_micros * (service_info.span_count - 1) as f64 + duration as f64) 
+            service_info.avg_duration_micros = (service_info.avg_duration_micros
+                * (service_info.span_count - 1) as f64
+                + duration as f64)
                 / service_info.span_count as f64;
         }
 
         // Update operation stats
-        let op_stats = service_info.operations.entry(span.operation_name.clone())
+        let op_stats = service_info
+            .operations
+            .entry(span.operation_name.clone())
             .or_insert_with(|| OperationStats {
                 operation_name: span.operation_name.clone(),
                 count: 0,
@@ -464,9 +486,9 @@ impl TraceView {
 
         op_stats.count += 1;
         if let Some(duration) = span.duration_micros() {
-            op_stats.avg_duration_micros = 
-                (op_stats.avg_duration_micros * (op_stats.count - 1) as f64 + duration as f64) 
-                / op_stats.count as f64;
+            op_stats.avg_duration_micros =
+                (op_stats.avg_duration_micros * (op_stats.count - 1) as f64 + duration as f64)
+                    / op_stats.count as f64;
         }
         op_stats.error_rate = service_info.error_count as f64 / service_info.span_count as f64;
 
@@ -482,12 +504,14 @@ impl TraceView {
     /// Build span hierarchy
     fn build_hierarchy(&mut self) -> Result<()> {
         // Find root span (no parent)
-        if let Some(root_idx) = self.all_spans.iter()
-            .position(|s| s.parent_span_id.is_none()) {
-            
+        if let Some(root_idx) = self
+            .all_spans
+            .iter()
+            .position(|s| s.parent_span_id.is_none())
+        {
             let root_span = self.all_spans[root_idx].clone();
             self.root_span = self.build_span_tree(&root_span, 0)?;
-            
+
             if let Some(duration) = self.root_span.duration_micros {
                 self.total_duration_micros = duration;
             }
@@ -504,12 +528,15 @@ impl TraceView {
         // Calculate percentage of trace
         if self.total_duration_micros > 0 {
             if let Some(span_duration) = span.duration_micros {
-                span.percentage_of_trace = (span_duration as f64 / self.total_duration_micros as f64) * 100.0;
+                span.percentage_of_trace =
+                    (span_duration as f64 / self.total_duration_micros as f64) * 100.0;
             }
         }
 
         // Find children
-        let children: Vec<SpanView> = self.all_spans.iter()
+        let children: Vec<SpanView> = self
+            .all_spans
+            .iter()
             .filter(|s| s.parent_span_id.as_ref() == Some(&parent.span_id))
             .map(|child| self.build_span_tree(child, depth + 1))
             .collect::<Result<Vec<_>>>()?;
@@ -528,8 +555,11 @@ impl TraceView {
             critical_path.push(current_span.span_id.clone());
 
             // Find child with longest duration
-            if let Some(longest_child) = current_span.children.iter()
-                .max_by_key(|s| s.duration_micros.unwrap_or(0)) {
+            if let Some(longest_child) = current_span
+                .children
+                .iter()
+                .max_by_key(|s| s.duration_micros.unwrap_or(0))
+            {
                 current_span = longest_child;
             } else {
                 break;
@@ -547,7 +577,7 @@ impl TraceView {
     /// Mark spans on critical path recursively
     fn mark_critical_path_recursive(span: &mut SpanView, critical_path: &[String]) {
         span.is_critical_path = critical_path.contains(&span.span_id);
-        
+
         for child in &mut span.children {
             TraceView::mark_critical_path_recursive(child, critical_path);
         }
@@ -578,13 +608,16 @@ impl SpanView {
 
     /// Create span view from span
     fn from_span(span: &Span) -> Self {
-        let logs = span.logs.iter()
+        let logs = span
+            .logs
+            .iter()
             .map(|log| SpanLogView {
                 timestamp: log.timestamp,
                 level: format!("{:?}", log.level),
                 message: log.message.clone(),
                 fields: log.fields.clone(),
-                relative_time_micros: log.timestamp
+                relative_time_micros: log
+                    .timestamp
                     .duration_since(span.start_time)
                     .unwrap_or_default()
                     .as_micros() as u64,
@@ -595,7 +628,9 @@ impl SpanView {
             span_id: span.span_id.clone(),
             parent_span_id: span.parent_span_id.clone(),
             operation_name: span.operation_name.clone(),
-            service_name: span.tags.get("service.name")
+            service_name: span
+                .tags
+                .get("service.name")
                 .unwrap_or(&"unknown".to_string())
                 .clone(),
             start_time: span.start_time,
@@ -637,7 +672,11 @@ impl SearchCriteria {
 
         // Check operation name
         if let Some(ref operation) = self.operation_name {
-            if !trace.all_spans.iter().any(|s| s.operation_name == *operation) {
+            if !trace
+                .all_spans
+                .iter()
+                .any(|s| s.operation_name == *operation)
+            {
                 return false;
             }
         }
@@ -667,9 +706,11 @@ impl SearchCriteria {
 
         // Check tag filters
         for (key, value) in &self.tag_filters {
-            if !trace.all_spans.iter().any(|s| 
-                s.tags.get(key).map(|v| v == value).unwrap_or(false)
-            ) {
+            if !trace
+                .all_spans
+                .iter()
+                .any(|s| s.tags.get(key).map(|v| v == value).unwrap_or(false))
+            {
                 return false;
             }
         }
@@ -725,7 +766,9 @@ impl ServiceMap {
     pub fn add_trace(&mut self, trace: &TraceView) {
         // Add services
         for (name, info) in &trace.service_map {
-            let node = self.services.entry(name.clone())
+            let node = self
+                .services
+                .entry(name.clone())
                 .or_insert_with(|| ServiceMapNode {
                     name: name.clone(),
                     request_rate: 0.0,
@@ -743,16 +786,15 @@ impl ServiceMap {
         // Add connections (simplified - based on parent-child relationships)
         for span in &trace.all_spans {
             if let Some(parent_id) = &span.parent_span_id {
-                if let Some(parent_span) = trace.all_spans.iter()
-                    .find(|s| s.span_id == *parent_id) {
-                    
+                if let Some(parent_span) = trace.all_spans.iter().find(|s| s.span_id == *parent_id)
+                {
                     if parent_span.service_name != span.service_name {
                         // This is a cross-service call
                         self.add_connection(
                             &parent_span.service_name,
                             &span.service_name,
                             span.duration_micros.unwrap_or(0),
-                            matches!(span.status, SpanStatus::Error(_))
+                            matches!(span.status, SpanStatus::Error(_)),
                         );
                     }
                 }
@@ -762,17 +804,20 @@ impl ServiceMap {
 
     /// Add a connection between services
     fn add_connection(&mut self, from: &str, to: &str, duration_micros: u64, is_error: bool) {
-        if let Some(connection) = self.connections.iter_mut()
-            .find(|c| c.from_service == from && c.to_service == to) {
-            
+        if let Some(connection) = self
+            .connections
+            .iter_mut()
+            .find(|c| c.from_service == from && c.to_service == to)
+        {
             connection.request_count += 1;
             if is_error {
                 connection.error_count += 1;
             }
-            
+
             // Update average duration
-            connection.avg_duration_micros = 
-                (connection.avg_duration_micros * (connection.request_count - 1) as f64 + duration_micros as f64) 
+            connection.avg_duration_micros = (connection.avg_duration_micros
+                * (connection.request_count - 1) as f64
+                + duration_micros as f64)
                 / connection.request_count as f64;
         } else {
             self.connections.push(ServiceConnection {
@@ -822,21 +867,25 @@ impl PerformanceStats {
         let total_traces = traces.len();
         let total_spans: usize = traces.iter().map(|t| t.span_count).sum();
         let total_errors: usize = traces.iter().map(|t| t.error_count).sum();
-        
-        let avg_trace_duration_micros = traces.iter()
+
+        let avg_trace_duration_micros = traces
+            .iter()
             .map(|t| t.total_duration_micros as f64)
-            .sum::<f64>() / total_traces as f64;
+            .sum::<f64>()
+            / total_traces as f64;
 
         let error_rate = total_errors as f64 / total_spans as f64;
 
         // Find slowest traces
-        let mut trace_durations: Vec<_> = traces.iter()
+        let mut trace_durations: Vec<_> = traces
+            .iter()
             .map(|t| (t.trace_id.clone(), t.total_duration_micros))
             .collect();
         trace_durations.sort_by_key(|(_, duration)| *duration);
         trace_durations.reverse();
-        
-        let slowest_traces = trace_durations.into_iter()
+
+        let slowest_traces = trace_durations
+            .into_iter()
             .take(10)
             .map(|(id, _)| id)
             .collect();
@@ -847,7 +896,7 @@ impl PerformanceStats {
             avg_trace_duration_micros,
             error_rate,
             throughput_traces_per_minute: 0.0, // Would need time window calculation
-            top_operations: Vec::new(), // Would need aggregation across traces
+            top_operations: Vec::new(),        // Would need aggregation across traces
             slowest_traces,
         }
     }
@@ -898,13 +947,13 @@ impl TraceStreamer {
     pub fn add_span(&self, span: Span) -> Result<()> {
         if let Ok(mut buffer) = self.buffer.lock() {
             buffer.push_back(span);
-            
+
             // Maintain buffer size limit
             while buffer.len() > self.config.buffer_size {
                 buffer.pop_front();
             }
         }
-        
+
         Ok(())
     }
 
@@ -970,7 +1019,7 @@ mod tests {
     #[test]
     fn test_search_criteria() {
         let trace = TraceView::new("test_trace".to_string());
-        
+
         let criteria = SearchCriteria {
             service_name: Some("test_service".to_string()),
             operation_name: None,

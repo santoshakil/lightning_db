@@ -4,9 +4,9 @@
 //! customizable styling, colors, and layout options.
 
 use crate::Result;
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 
 /// Output formatter for REPL results
 pub struct OutputFormatter {
@@ -104,19 +104,19 @@ pub struct ColorScheme {
 impl Default for ColorScheme {
     fn default() -> Self {
         Self {
-            header: "\x1b[1;36m",    // Bold cyan
-            border: "\x1b[90m",      // Dark gray
-            data: "\x1b[0m",         // Default
-            key: "\x1b[1;34m",       // Bold blue
-            value: "\x1b[32m",       // Green
-            null: "\x1b[90m",        // Dark gray
-            number: "\x1b[33m",      // Yellow
-            boolean: "\x1b[35m",     // Magenta
-            string: "\x1b[32m",      // Green
-            error: "\x1b[1;31m",     // Bold red
-            warning: "\x1b[1;33m",   // Bold yellow
-            success: "\x1b[1;32m",   // Bold green
-            reset: "\x1b[0m",        // Reset
+            header: "\x1b[1;36m",  // Bold cyan
+            border: "\x1b[90m",    // Dark gray
+            data: "\x1b[0m",       // Default
+            key: "\x1b[1;34m",     // Bold blue
+            value: "\x1b[32m",     // Green
+            null: "\x1b[90m",      // Dark gray
+            number: "\x1b[33m",    // Yellow
+            boolean: "\x1b[35m",   // Magenta
+            string: "\x1b[32m",    // Green
+            error: "\x1b[1;31m",   // Bold red
+            warning: "\x1b[1;33m", // Bold yellow
+            success: "\x1b[1;32m", // Bold green
+            reset: "\x1b[0m",      // Reset
         }
     }
 }
@@ -178,8 +178,10 @@ impl OutputFormatter {
     pub fn format_data_with_style(&self, data: &FormattableData, style: &FormatStyle) -> String {
         match self.format_data_impl(data, style) {
             Ok(formatted) => formatted,
-            Err(e) => format!("{}Formatting error: {}{}", 
-                self.color_scheme.error, e, self.color_scheme.reset),
+            Err(e) => format!(
+                "{}Formatting error: {}{}",
+                self.color_scheme.error, e, self.color_scheme.reset
+            ),
         }
     }
 
@@ -197,7 +199,11 @@ impl OutputFormatter {
     }
 
     /// Format a single record
-    fn format_single_record(&self, record: &HashMap<String, JsonValue>, style: &FormatStyle) -> Result<String> {
+    fn format_single_record(
+        &self,
+        record: &HashMap<String, JsonValue>,
+        style: &FormatStyle,
+    ) -> Result<String> {
         match style {
             FormatStyle::Table => self.format_single_record_as_table(record),
             FormatStyle::Json => Ok(serde_json::to_string(record).unwrap_or_default()),
@@ -211,7 +217,11 @@ impl OutputFormatter {
     }
 
     /// Format multiple records
-    fn format_multiple_records(&self, records: &[HashMap<String, JsonValue>], style: &FormatStyle) -> Result<String> {
+    fn format_multiple_records(
+        &self,
+        records: &[HashMap<String, JsonValue>],
+        style: &FormatStyle,
+    ) -> Result<String> {
         if records.is_empty() {
             return Ok("No results".to_string());
         }
@@ -219,7 +229,9 @@ impl OutputFormatter {
         match style {
             FormatStyle::Table => self.format_multiple_records_as_table(records),
             FormatStyle::Json => Ok(serde_json::to_string(records).unwrap_or_default()),
-            FormatStyle::JsonPretty => Ok(serde_json::to_string_pretty(records).unwrap_or_default()),
+            FormatStyle::JsonPretty => {
+                Ok(serde_json::to_string_pretty(records).unwrap_or_default())
+            }
             FormatStyle::Csv => self.format_multiple_records_as_csv(records),
             FormatStyle::Yaml => self.format_multiple_records_as_yaml(records),
             FormatStyle::Raw => self.format_multiple_records_as_raw(records),
@@ -229,7 +241,12 @@ impl OutputFormatter {
     }
 
     /// Format key-value pair
-    fn format_key_value(&self, key: &str, value: &Option<Vec<u8>>, style: &FormatStyle) -> Result<String> {
+    fn format_key_value(
+        &self,
+        key: &str,
+        value: &Option<Vec<u8>>,
+        style: &FormatStyle,
+    ) -> Result<String> {
         match value {
             Some(val) => {
                 let value_str = String::from_utf8_lossy(val);
@@ -246,7 +263,10 @@ impl OutputFormatter {
                     FormatStyle::Json | FormatStyle::JsonPretty => {
                         let mut map = HashMap::new();
                         map.insert("key".to_string(), JsonValue::String(key.to_string()));
-                        map.insert("value".to_string(), JsonValue::String(value_str.to_string()));
+                        map.insert(
+                            "value".to_string(),
+                            JsonValue::String(value_str.to_string()),
+                        );
                         if *style == FormatStyle::JsonPretty {
                             Ok(serde_json::to_string_pretty(&map).unwrap_or_default())
                         } else {
@@ -255,19 +275,22 @@ impl OutputFormatter {
                     }
                     FormatStyle::Csv => Ok(format!("key,value\n\"{}\",\"{}\"", key, value_str)),
                     FormatStyle::Raw => Ok(value_str.to_string()),
-                    FormatStyle::Compact => Ok(format!("{} = {}", 
+                    FormatStyle::Compact => Ok(format!(
+                        "{} = {}",
                         self.colorize(key, self.color_scheme.key),
-                        self.colorize(&value_str, self.color_scheme.value))),
+                        self.colorize(&value_str, self.color_scheme.value)
+                    )),
                     _ => Ok(format!("{}: {}", key, value_str)),
                 }
             }
-            None => {
-                match style {
-                    FormatStyle::Json | FormatStyle::JsonPretty => Ok("null".to_string()),
-                    _ => Ok(format!("{}: {}", key, 
-                        self.colorize("(not found)", self.color_scheme.null))),
-                }
-            }
+            None => match style {
+                FormatStyle::Json | FormatStyle::JsonPretty => Ok("null".to_string()),
+                _ => Ok(format!(
+                    "{}: {}",
+                    key,
+                    self.colorize("(not found)", self.color_scheme.null)
+                )),
+            },
         }
     }
 
@@ -279,24 +302,27 @@ impl OutputFormatter {
                 output.push_str(&self.format_table_border_top(&["key"]));
                 output.push_str(&self.format_table_header(&["key"]));
                 output.push_str(&self.format_table_border_middle(&["key"]));
-                
-                let display_keys = if self.config.max_rows > 0 && keys.len() > self.config.max_rows {
+
+                let display_keys = if self.config.max_rows > 0 && keys.len() > self.config.max_rows
+                {
                     &keys[..self.config.max_rows]
                 } else {
                     keys
                 };
-                
+
                 for key in display_keys {
                     output.push_str(&self.format_table_row(&[key]));
                 }
-                
+
                 if self.config.max_rows > 0 && keys.len() > self.config.max_rows {
-                    output.push_str(&format!("{}... and {} more{}\n", 
-                        self.color_scheme.border, 
+                    output.push_str(&format!(
+                        "{}... and {} more{}\n",
+                        self.color_scheme.border,
                         keys.len() - self.config.max_rows,
-                        self.color_scheme.reset));
+                        self.color_scheme.reset
+                    ));
                 }
-                
+
                 output.push_str(&self.format_table_border_bottom(&["key"]));
                 Ok(output)
             }
@@ -314,9 +340,7 @@ impl OutputFormatter {
                 }
                 Ok(output)
             }
-            FormatStyle::Raw | FormatStyle::Compact => {
-                Ok(keys.join("\n"))
-            }
+            FormatStyle::Raw | FormatStyle::Compact => Ok(keys.join("\n")),
             _ => Ok(keys.join(", ")),
         }
     }
@@ -326,7 +350,10 @@ impl OutputFormatter {
         match style {
             FormatStyle::Json | FormatStyle::JsonPretty => {
                 let mut map = HashMap::new();
-                map.insert("message".to_string(), JsonValue::String(message.to_string()));
+                map.insert(
+                    "message".to_string(),
+                    JsonValue::String(message.to_string()),
+                );
                 if *style == FormatStyle::JsonPretty {
                     Ok(serde_json::to_string_pretty(&map).unwrap_or_default())
                 } else {
@@ -357,22 +384,25 @@ impl OutputFormatter {
     /// Format single record as table
     fn format_single_record_as_table(&self, record: &HashMap<String, JsonValue>) -> Result<String> {
         let mut output = String::new();
-        
+
         output.push_str(&self.format_table_border_top(&["property", "value"]));
         output.push_str(&self.format_table_header(&["property", "value"]));
         output.push_str(&self.format_table_border_middle(&["property", "value"]));
-        
+
         for (key, value) in record {
             let value_str = self.format_json_value(value);
             output.push_str(&self.format_table_row(&[key, &value_str]));
         }
-        
+
         output.push_str(&self.format_table_border_bottom(&["property", "value"]));
         Ok(output)
     }
 
     /// Format multiple records as table
-    fn format_multiple_records_as_table(&self, records: &[HashMap<String, JsonValue>]) -> Result<String> {
+    fn format_multiple_records_as_table(
+        &self,
+        records: &[HashMap<String, JsonValue>],
+    ) -> Result<String> {
         if records.is_empty() {
             return Ok("No results".to_string());
         }
@@ -387,7 +417,7 @@ impl OutputFormatter {
         let columns: Vec<String> = columns.into_iter().collect();
 
         let mut output = String::new();
-        
+
         // Add row numbers column if enabled
         let headers = if self.config.show_row_numbers {
             let mut h = vec!["#".to_string()];
@@ -396,44 +426,47 @@ impl OutputFormatter {
         } else {
             columns.clone()
         };
-        
+
         let header_refs: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
-        
+
         output.push_str(&self.format_table_border_top(&header_refs));
         output.push_str(&self.format_table_header(&header_refs));
         output.push_str(&self.format_table_border_middle(&header_refs));
-        
+
         let display_records = if self.config.max_rows > 0 && records.len() > self.config.max_rows {
             &records[..self.config.max_rows]
         } else {
             records
         };
-        
+
         for (row_idx, record) in display_records.iter().enumerate() {
             let mut row_data = Vec::new();
-            
+
             if self.config.show_row_numbers {
                 row_data.push((row_idx + 1).to_string());
             }
-            
+
             for column in &columns {
-                let value = record.get(column)
+                let value = record
+                    .get(column)
                     .map(|v| self.format_json_value(v))
                     .unwrap_or_else(|| self.colorize("", self.color_scheme.null));
                 row_data.push(value);
             }
-            
+
             let row_refs: Vec<&str> = row_data.iter().map(|s| s.as_str()).collect();
             output.push_str(&self.format_table_row(&row_refs));
         }
-        
+
         if self.config.max_rows > 0 && records.len() > self.config.max_rows {
-            output.push_str(&format!("{}... and {} more rows{}\n", 
-                self.color_scheme.border, 
+            output.push_str(&format!(
+                "{}... and {} more rows{}\n",
+                self.color_scheme.border,
                 records.len() - self.config.max_rows,
-                self.color_scheme.reset));
+                self.color_scheme.reset
+            ));
         }
-        
+
         output.push_str(&self.format_table_border_bottom(&header_refs));
         Ok(output)
     }
@@ -441,25 +474,34 @@ impl OutputFormatter {
     /// Format stats as table
     fn format_stats_as_table(&self, stats: &DatabaseStats) -> Result<String> {
         let mut output = String::new();
-        
+
         output.push_str(&self.format_table_border_top(&["metric", "value"]));
         output.push_str(&self.format_table_header(&["metric", "value"]));
         output.push_str(&self.format_table_border_middle(&["metric", "value"]));
-        
+
         let stats_data = vec![
             ("Total Keys", format!("{}", stats.total_keys)),
             ("Total Size", self.format_bytes(stats.total_size_bytes)),
-            ("Cache Hit Rate", format!("{:.2}%", stats.cache_hit_rate * 100.0)),
-            ("Operations/sec", format!("{:.0}", stats.operations_per_second)),
-            ("Active Transactions", format!("{}", stats.active_transactions)),
+            (
+                "Cache Hit Rate",
+                format!("{:.2}%", stats.cache_hit_rate * 100.0),
+            ),
+            (
+                "Operations/sec",
+                format!("{:.0}", stats.operations_per_second),
+            ),
+            (
+                "Active Transactions",
+                format!("{}", stats.active_transactions),
+            ),
             ("Uptime", self.format_duration(stats.uptime_seconds)),
             ("Version", stats.version.clone()),
         ];
-        
+
         for (metric, value) in stats_data {
             output.push_str(&self.format_table_row(&[metric, &value]));
         }
-        
+
         output.push_str(&self.format_table_border_bottom(&["metric", "value"]));
         Ok(output)
     }
@@ -470,21 +512,25 @@ impl OutputFormatter {
         if matches!(self.config.table_border_style, BorderStyle::None) {
             return String::new();
         }
-        
+
         let chars = self.get_border_chars();
         let mut border = String::new();
-        
+
         border.push_str(&self.colorize(&chars.top_left.to_string(), self.color_scheme.border));
-        
+
         for (i, column) in columns.iter().enumerate() {
             let width = self.calculate_column_width(column);
-            border.push_str(&self.colorize(&chars.horizontal.to_string().repeat(width + 2), self.color_scheme.border));
-            
+            border.push_str(&self.colorize(
+                &chars.horizontal.to_string().repeat(width + 2),
+                self.color_scheme.border,
+            ));
+
             if i < columns.len() - 1 {
-                border.push_str(&self.colorize(&chars.top_tee.to_string(), self.color_scheme.border));
+                border
+                    .push_str(&self.colorize(&chars.top_tee.to_string(), self.color_scheme.border));
             }
         }
-        
+
         border.push_str(&self.colorize(&chars.top_right.to_string(), self.color_scheme.border));
         border.push('\n');
         border
@@ -494,22 +540,24 @@ impl OutputFormatter {
         if matches!(self.config.table_border_style, BorderStyle::None) {
             return format!("{}\n", columns.join(" | "));
         }
-        
+
         let chars = self.get_border_chars();
         let mut header = String::new();
-        
+
         header.push_str(&self.colorize(&chars.vertical.to_string(), self.color_scheme.border));
-        
+
         for (i, column) in columns.iter().enumerate() {
             let width = self.calculate_column_width(column);
             let padded = format!(" {:<width$} ", column, width = width);
             header.push_str(&self.colorize(&padded, self.color_scheme.header));
-            
+
             if i < columns.len() - 1 {
-                header.push_str(&self.colorize(&chars.vertical.to_string(), self.color_scheme.border));
+                header.push_str(
+                    &self.colorize(&chars.vertical.to_string(), self.color_scheme.border),
+                );
             }
         }
-        
+
         header.push_str(&self.colorize(&chars.vertical.to_string(), self.color_scheme.border));
         header.push('\n');
         header
@@ -519,21 +567,24 @@ impl OutputFormatter {
         if matches!(self.config.table_border_style, BorderStyle::None) {
             return String::new();
         }
-        
+
         let chars = self.get_border_chars();
         let mut border = String::new();
-        
+
         border.push_str(&self.colorize(&chars.left_tee.to_string(), self.color_scheme.border));
-        
+
         for (i, column) in columns.iter().enumerate() {
             let width = self.calculate_column_width(column);
-            border.push_str(&self.colorize(&chars.horizontal.to_string().repeat(width + 2), self.color_scheme.border));
-            
+            border.push_str(&self.colorize(
+                &chars.horizontal.to_string().repeat(width + 2),
+                self.color_scheme.border,
+            ));
+
             if i < columns.len() - 1 {
                 border.push_str(&self.colorize(&chars.cross.to_string(), self.color_scheme.border));
             }
         }
-        
+
         border.push_str(&self.colorize(&chars.right_tee.to_string(), self.color_scheme.border));
         border.push('\n');
         border
@@ -543,23 +594,23 @@ impl OutputFormatter {
         if matches!(self.config.table_border_style, BorderStyle::None) {
             return format!("{}\n", columns.join(" | "));
         }
-        
+
         let chars = self.get_border_chars();
         let mut row = String::new();
-        
+
         row.push_str(&self.colorize(&chars.vertical.to_string(), self.color_scheme.border));
-        
+
         for (i, column) in columns.iter().enumerate() {
             let width = self.calculate_column_width(column);
             let truncated = self.truncate_text(column, width);
             let padded = format!(" {:<width$} ", truncated, width = width);
             row.push_str(&self.colorize(&padded, self.color_scheme.data));
-            
+
             if i < columns.len() - 1 {
                 row.push_str(&self.colorize(&chars.vertical.to_string(), self.color_scheme.border));
             }
         }
-        
+
         row.push_str(&self.colorize(&chars.vertical.to_string(), self.color_scheme.border));
         row.push('\n');
         row
@@ -569,21 +620,26 @@ impl OutputFormatter {
         if matches!(self.config.table_border_style, BorderStyle::None) {
             return String::new();
         }
-        
+
         let chars = self.get_border_chars();
         let mut border = String::new();
-        
+
         border.push_str(&self.colorize(&chars.bottom_left.to_string(), self.color_scheme.border));
-        
+
         for (i, column) in columns.iter().enumerate() {
             let width = self.calculate_column_width(column);
-            border.push_str(&self.colorize(&chars.horizontal.to_string().repeat(width + 2), self.color_scheme.border));
-            
+            border.push_str(&self.colorize(
+                &chars.horizontal.to_string().repeat(width + 2),
+                self.color_scheme.border,
+            ));
+
             if i < columns.len() - 1 {
-                border.push_str(&self.colorize(&chars.bottom_tee.to_string(), self.color_scheme.border));
+                border.push_str(
+                    &self.colorize(&chars.bottom_tee.to_string(), self.color_scheme.border),
+                );
             }
         }
-        
+
         border.push_str(&self.colorize(&chars.bottom_right.to_string(), self.color_scheme.border));
         border.push('\n');
         border
@@ -593,17 +649,27 @@ impl OutputFormatter {
 
     fn format_single_record_as_csv(&self, record: &HashMap<String, JsonValue>) -> Result<String> {
         let keys: Vec<_> = record.keys().collect();
-        let mut output = format!("{}\n", keys.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(","));
-        
-        let values: Vec<String> = keys.iter()
+        let mut output = format!(
+            "{}\n",
+            keys.iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
+        let values: Vec<String> = keys
+            .iter()
             .map(|k| format!("\"{}\"", self.format_json_value(record.get(*k).unwrap())))
             .collect();
         output.push_str(&values.join(","));
-        
+
         Ok(output)
     }
 
-    fn format_multiple_records_as_csv(&self, records: &[HashMap<String, JsonValue>]) -> Result<String> {
+    fn format_multiple_records_as_csv(
+        &self,
+        records: &[HashMap<String, JsonValue>],
+    ) -> Result<String> {
         if records.is_empty() {
             return Ok(String::new());
         }
@@ -618,11 +684,13 @@ impl OutputFormatter {
         let columns: Vec<String> = columns.into_iter().collect();
 
         let mut output = format!("{}\n", columns.join(","));
-        
+
         for record in records {
-            let values: Vec<String> = columns.iter()
+            let values: Vec<String> = columns
+                .iter()
                 .map(|col| {
-                    let value = record.get(col)
+                    let value = record
+                        .get(col)
                         .map(|v| self.format_json_value(v))
                         .unwrap_or_default();
                     format!("\"{}\"", value.replace('"', "\"\""))
@@ -630,7 +698,7 @@ impl OutputFormatter {
                 .collect();
             output.push_str(&format!("{}\n", values.join(",")));
         }
-        
+
         Ok(output)
     }
 
@@ -643,7 +711,10 @@ impl OutputFormatter {
         Ok(output)
     }
 
-    fn format_multiple_records_as_yaml(&self, records: &[HashMap<String, JsonValue>]) -> Result<String> {
+    fn format_multiple_records_as_yaml(
+        &self,
+        records: &[HashMap<String, JsonValue>],
+    ) -> Result<String> {
         let mut output = String::new();
         for (i, record) in records.iter().enumerate() {
             output.push_str(&format!("---\nrecord_{}:\n", i));
@@ -655,16 +726,21 @@ impl OutputFormatter {
     }
 
     fn format_single_record_as_raw(&self, record: &HashMap<String, JsonValue>) -> Result<String> {
-        Ok(record.values()
+        Ok(record
+            .values()
             .map(|v| self.format_json_value(v))
             .collect::<Vec<_>>()
             .join(" "))
     }
 
-    fn format_multiple_records_as_raw(&self, records: &[HashMap<String, JsonValue>]) -> Result<String> {
+    fn format_multiple_records_as_raw(
+        &self,
+        records: &[HashMap<String, JsonValue>],
+    ) -> Result<String> {
         let mut output = String::new();
         for record in records {
-            let line = record.values()
+            let line = record
+                .values()
                 .map(|v| self.format_json_value(v))
                 .collect::<Vec<_>>()
                 .join(" ");
@@ -673,19 +749,31 @@ impl OutputFormatter {
         Ok(output)
     }
 
-    fn format_single_record_as_compact(&self, record: &HashMap<String, JsonValue>) -> Result<String> {
-        let pairs: Vec<String> = record.iter()
-            .map(|(k, v)| format!("{}={}", 
-                self.colorize(k, self.color_scheme.key),
-                self.colorize(&self.format_json_value(v), self.color_scheme.value)))
+    fn format_single_record_as_compact(
+        &self,
+        record: &HashMap<String, JsonValue>,
+    ) -> Result<String> {
+        let pairs: Vec<String> = record
+            .iter()
+            .map(|(k, v)| {
+                format!(
+                    "{}={}",
+                    self.colorize(k, self.color_scheme.key),
+                    self.colorize(&self.format_json_value(v), self.color_scheme.value)
+                )
+            })
             .collect();
         Ok(pairs.join(" "))
     }
 
-    fn format_multiple_records_as_compact(&self, records: &[HashMap<String, JsonValue>]) -> Result<String> {
+    fn format_multiple_records_as_compact(
+        &self,
+        records: &[HashMap<String, JsonValue>],
+    ) -> Result<String> {
         let mut output = String::new();
         for record in records {
-            let pairs: Vec<String> = record.iter()
+            let pairs: Vec<String> = record
+                .iter()
                 .map(|(k, v)| format!("{}={}", k, self.format_json_value(v)))
                 .collect();
             output.push_str(&format!("{}\n", pairs.join(" ")));
@@ -696,42 +784,51 @@ impl OutputFormatter {
     fn format_single_record_as_tree(&self, record: &HashMap<String, JsonValue>) -> Result<String> {
         let mut output = String::new();
         let keys: Vec<_> = record.keys().collect();
-        
+
         for (i, key) in keys.iter().enumerate() {
             let is_last = i == keys.len() - 1;
             let prefix = if is_last { "└── " } else { "├── " };
             let value = self.format_json_value(record.get(*key).unwrap());
-            
-            output.push_str(&format!("{}{}: {}\n", prefix, 
+
+            output.push_str(&format!(
+                "{}{}: {}\n",
+                prefix,
                 self.colorize(key, self.color_scheme.key),
-                self.colorize(&value, self.color_scheme.value)));
+                self.colorize(&value, self.color_scheme.value)
+            ));
         }
-        
+
         Ok(output)
     }
 
-    fn format_multiple_records_as_tree(&self, records: &[HashMap<String, JsonValue>]) -> Result<String> {
+    fn format_multiple_records_as_tree(
+        &self,
+        records: &[HashMap<String, JsonValue>],
+    ) -> Result<String> {
         let mut output = String::new();
-        
+
         for (record_idx, record) in records.iter().enumerate() {
             output.push_str(&format!("Record {}\n", record_idx + 1));
-            
+
             let keys: Vec<_> = record.keys().collect();
             for (i, key) in keys.iter().enumerate() {
                 let is_last = i == keys.len() - 1;
                 let prefix = if is_last { "└── " } else { "├── " };
                 let value = self.format_json_value(record.get(*key).unwrap());
-                
-                output.push_str(&format!("{}{}: {}\n", prefix, 
+
+                output.push_str(&format!(
+                    "{}{}: {}\n",
+                    prefix,
                     self.colorize(key, self.color_scheme.key),
-                    self.colorize(&value, self.color_scheme.value)));
+                    self.colorize(&value, self.color_scheme.value)
+                ));
             }
-            
+
             if record_idx < records.len() - 1 {
                 output.push('\n');
             }
         }
-        
+
         Ok(output)
     }
 
@@ -845,41 +942,81 @@ struct BorderChars {
 impl BorderChars {
     fn none() -> Self {
         Self {
-            horizontal: ' ', vertical: ' ', top_left: ' ', top_right: ' ',
-            bottom_left: ' ', bottom_right: ' ', left_tee: ' ', right_tee: ' ',
-            top_tee: ' ', bottom_tee: ' ', cross: ' ',
+            horizontal: ' ',
+            vertical: ' ',
+            top_left: ' ',
+            top_right: ' ',
+            bottom_left: ' ',
+            bottom_right: ' ',
+            left_tee: ' ',
+            right_tee: ' ',
+            top_tee: ' ',
+            bottom_tee: ' ',
+            cross: ' ',
         }
     }
 
     fn simple() -> Self {
         Self {
-            horizontal: '-', vertical: '|', top_left: '+', top_right: '+',
-            bottom_left: '+', bottom_right: '+', left_tee: '+', right_tee: '+',
-            top_tee: '+', bottom_tee: '+', cross: '+',
+            horizontal: '-',
+            vertical: '|',
+            top_left: '+',
+            top_right: '+',
+            bottom_left: '+',
+            bottom_right: '+',
+            left_tee: '+',
+            right_tee: '+',
+            top_tee: '+',
+            bottom_tee: '+',
+            cross: '+',
         }
     }
 
     fn rounded() -> Self {
         Self {
-            horizontal: '─', vertical: '│', top_left: '╭', top_right: '╮',
-            bottom_left: '╰', bottom_right: '╯', left_tee: '├', right_tee: '┤',
-            top_tee: '┬', bottom_tee: '┴', cross: '┼',
+            horizontal: '─',
+            vertical: '│',
+            top_left: '╭',
+            top_right: '╮',
+            bottom_left: '╰',
+            bottom_right: '╯',
+            left_tee: '├',
+            right_tee: '┤',
+            top_tee: '┬',
+            bottom_tee: '┴',
+            cross: '┼',
         }
     }
 
     fn double() -> Self {
         Self {
-            horizontal: '═', vertical: '║', top_left: '╔', top_right: '╗',
-            bottom_left: '╚', bottom_right: '╝', left_tee: '╠', right_tee: '╣',
-            top_tee: '╦', bottom_tee: '╩', cross: '╬',
+            horizontal: '═',
+            vertical: '║',
+            top_left: '╔',
+            top_right: '╗',
+            bottom_left: '╚',
+            bottom_right: '╝',
+            left_tee: '╠',
+            right_tee: '╣',
+            top_tee: '╦',
+            bottom_tee: '╩',
+            cross: '╬',
         }
     }
 
     fn thick() -> Self {
         Self {
-            horizontal: '━', vertical: '┃', top_left: '┏', top_right: '┓',
-            bottom_left: '┗', bottom_right: '┛', left_tee: '┣', right_tee: '┫',
-            top_tee: '┳', bottom_tee: '┻', cross: '╋',
+            horizontal: '━',
+            vertical: '┃',
+            top_left: '┏',
+            top_right: '┓',
+            bottom_left: '┗',
+            bottom_right: '┛',
+            left_tee: '┣',
+            right_tee: '┫',
+            top_tee: '┳',
+            bottom_tee: '┻',
+            cross: '╋',
         }
     }
 }
@@ -897,7 +1034,9 @@ mod tests {
     #[test]
     fn test_format_key_value() {
         let formatter = OutputFormatter::new(FormatStyle::Raw);
-        let result = formatter.format_key_value("test_key", &Some(b"test_value".to_vec()), &FormatStyle::Raw).unwrap();
+        let result = formatter
+            .format_key_value("test_key", &Some(b"test_value".to_vec()), &FormatStyle::Raw)
+            .unwrap();
         assert_eq!(result, "test_value");
     }
 
@@ -921,14 +1060,23 @@ mod tests {
     fn test_truncate_text() {
         let formatter = OutputFormatter::new(FormatStyle::Table);
         assert_eq!(formatter.truncate_text("short", 10), "short");
-        assert_eq!(formatter.truncate_text("this is a very long text", 10), "this is...");
+        assert_eq!(
+            formatter.truncate_text("this is a very long text", 10),
+            "this is..."
+        );
     }
 
     #[test]
     fn test_json_value_formatting() {
         let formatter = OutputFormatter::new(FormatStyle::Table);
-        assert!(formatter.format_json_value(&JsonValue::Null).contains("null"));
-        assert!(formatter.format_json_value(&JsonValue::Bool(true)).contains("true"));
-        assert!(formatter.format_json_value(&JsonValue::String("test".to_string())).contains("test"));
+        assert!(formatter
+            .format_json_value(&JsonValue::Null)
+            .contains("null"));
+        assert!(formatter
+            .format_json_value(&JsonValue::Bool(true))
+            .contains("true"));
+        assert!(formatter
+            .format_json_value(&JsonValue::String("test".to_string()))
+            .contains("test"));
     }
 }

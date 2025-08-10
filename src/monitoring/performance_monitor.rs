@@ -4,11 +4,14 @@
 //! and performance regression detection.
 
 use crate::{Database, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, RwLock, atomic::{AtomicU64, AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, RwLock,
+};
 use std::time::{Duration, Instant, SystemTime};
-use serde::{Serialize, Deserialize};
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 /// Performance monitor for Lightning DB
 pub struct PerformanceMonitor {
@@ -181,7 +184,7 @@ pub struct PerformanceTrend {
     pub metric_name: String,
     pub trend_direction: TrendDirection,
     pub trend_strength: f64, // 0.0 to 1.0
-    pub confidence: f64, // 0.0 to 1.0
+    pub confidence: f64,     // 0.0 to 1.0
     pub analysis_window: Duration,
     pub data_points: usize,
 }
@@ -394,7 +397,10 @@ impl PerformanceMonitor {
             self.detect_regressions()?;
         }
 
-        debug!("Performance data collection completed in {:?}", collection_start.elapsed());
+        debug!(
+            "Performance data collection completed in {:?}",
+            collection_start.elapsed()
+        );
         Ok(())
     }
 
@@ -405,20 +411,33 @@ impl PerformanceMonitor {
 
     /// Get performance history
     pub fn get_performance_history(&self) -> Vec<PerformanceSnapshot> {
-        self.performance_history.read().unwrap().iter().cloned().collect()
+        self.performance_history
+            .read()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect()
     }
 
     /// Record an operation for performance tracking
     pub fn record_operation(&self, duration: Duration, bytes_processed: u64, operation_type: &str) {
-        self.counters.operations_completed.fetch_add(1, Ordering::Relaxed);
-        self.counters.total_operation_time.fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
+        self.counters
+            .operations_completed
+            .fetch_add(1, Ordering::Relaxed);
+        self.counters
+            .total_operation_time
+            .fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
 
         match operation_type {
             "read" => {
-                self.counters.bytes_read.fetch_add(bytes_processed, Ordering::Relaxed);
+                self.counters
+                    .bytes_read
+                    .fetch_add(bytes_processed, Ordering::Relaxed);
             }
             "write" => {
-                self.counters.bytes_written.fetch_add(bytes_processed, Ordering::Relaxed);
+                self.counters
+                    .bytes_written
+                    .fetch_add(bytes_processed, Ordering::Relaxed);
             }
             _ => {}
         }
@@ -436,20 +455,32 @@ impl PerformanceMonitor {
     /// Record transaction completion
     pub fn record_transaction(&self, success: bool) {
         if success {
-            self.counters.transactions_completed.fetch_add(1, Ordering::Relaxed);
+            self.counters
+                .transactions_completed
+                .fetch_add(1, Ordering::Relaxed);
         } else {
-            self.counters.transactions_failed.fetch_add(1, Ordering::Relaxed);
+            self.counters
+                .transactions_failed
+                .fetch_add(1, Ordering::Relaxed);
         }
     }
 
     /// Record compaction
     pub fn record_compaction(&self, bytes_processed: u64) {
-        self.counters.compactions_completed.fetch_add(1, Ordering::Relaxed);
-        self.counters.compaction_bytes_processed.fetch_add(bytes_processed, Ordering::Relaxed);
+        self.counters
+            .compactions_completed
+            .fetch_add(1, Ordering::Relaxed);
+        self.counters
+            .compaction_bytes_processed
+            .fetch_add(bytes_processed, Ordering::Relaxed);
     }
 
     /// Collect throughput metrics
-    fn collect_throughput_metrics(&self, _database: &Database, performance: &mut PerformanceData) -> Result<()> {
+    fn collect_throughput_metrics(
+        &self,
+        _database: &Database,
+        performance: &mut PerformanceData,
+    ) -> Result<()> {
         // Calculate throughput from counters
         let _operations_completed = self.counters.operations_completed.load(Ordering::Relaxed);
         let bytes_read = self.counters.bytes_read.load(Ordering::Relaxed);
@@ -464,7 +495,11 @@ impl PerformanceMonitor {
     }
 
     /// Collect latency metrics
-    fn collect_latency_metrics(&self, _database: &Database, performance: &mut PerformanceData) -> Result<()> {
+    fn collect_latency_metrics(
+        &self,
+        _database: &Database,
+        performance: &mut PerformanceData,
+    ) -> Result<()> {
         let total_ops = self.counters.operations_completed.load(Ordering::Relaxed);
         let total_time_ns = self.counters.total_operation_time.load(Ordering::Relaxed);
 
@@ -487,7 +522,11 @@ impl PerformanceMonitor {
     }
 
     /// Collect cache metrics
-    fn collect_cache_metrics(&self, _database: &Database, performance: &mut PerformanceData) -> Result<()> {
+    fn collect_cache_metrics(
+        &self,
+        _database: &Database,
+        performance: &mut PerformanceData,
+    ) -> Result<()> {
         let cache_hits = self.counters.cache_hits.load(Ordering::Relaxed);
         let cache_misses = self.counters.cache_misses.load(Ordering::Relaxed);
         let total_accesses = cache_hits + cache_misses;
@@ -496,8 +535,8 @@ impl PerformanceMonitor {
             performance.cache_efficiency = CacheEfficiency {
                 hit_rate: cache_hits as f64 / total_accesses as f64,
                 miss_rate: cache_misses as f64 / total_accesses as f64,
-                eviction_rate: 0.05, // Placeholder
-                fill_rate: 0.1, // Placeholder
+                eviction_rate: 0.05,     // Placeholder
+                fill_rate: 0.1,          // Placeholder
                 memory_efficiency: 0.85, // Placeholder
             };
         }
@@ -506,10 +545,14 @@ impl PerformanceMonitor {
     }
 
     /// Collect I/O metrics
-    fn collect_io_metrics(&self, _database: &Database, performance: &mut PerformanceData) -> Result<()> {
+    fn collect_io_metrics(
+        &self,
+        _database: &Database,
+        performance: &mut PerformanceData,
+    ) -> Result<()> {
         performance.io_performance = IoPerformance {
-            read_iops: 1000.0, // Placeholder
-            write_iops: 500.0, // Placeholder
+            read_iops: 1000.0,          // Placeholder
+            write_iops: 500.0,          // Placeholder
             read_bandwidth_mbps: 100.0, // Placeholder
             write_bandwidth_mbps: 50.0, // Placeholder
             average_read_latency: Duration::from_micros(100),
@@ -521,7 +564,11 @@ impl PerformanceMonitor {
     }
 
     /// Collect transaction metrics
-    fn collect_transaction_metrics(&self, _database: &Database, performance: &mut PerformanceData) -> Result<()> {
+    fn collect_transaction_metrics(
+        &self,
+        _database: &Database,
+        performance: &mut PerformanceData,
+    ) -> Result<()> {
         let completed = self.counters.transactions_completed.load(Ordering::Relaxed);
         let failed = self.counters.transactions_failed.load(Ordering::Relaxed);
         let total = completed + failed;
@@ -534,8 +581,11 @@ impl PerformanceMonitor {
 
         // Compaction efficiency
         let compactions = self.counters.compactions_completed.load(Ordering::Relaxed);
-        let compaction_bytes = self.counters.compaction_bytes_processed.load(Ordering::Relaxed);
-        
+        let compaction_bytes = self
+            .counters
+            .compaction_bytes_processed
+            .load(Ordering::Relaxed);
+
         if compactions > 0 && compaction_bytes > 0 {
             performance.compaction_efficiency = 0.75; // Placeholder calculation
         }
@@ -549,10 +599,10 @@ impl PerformanceMonitor {
     fn collect_resource_utilization(&self, performance: &mut PerformanceData) -> Result<()> {
         // Placeholder implementation - would use system APIs
         performance.resource_utilization = ResourceUtilization {
-            cpu_usage: 25.0, // 25% CPU usage
+            cpu_usage: 25.0,                       // 25% CPU usage
             memory_usage: 512.0 * 1024.0 * 1024.0, // 512MB
-            disk_io_usage: 10.0, // 10% I/O utilization
-            network_usage: 1.0, // 1% network utilization
+            disk_io_usage: 10.0,                   // 10% I/O utilization
+            network_usage: 1.0,                    // 1% network utilization
         };
 
         Ok(())
@@ -561,7 +611,7 @@ impl PerformanceMonitor {
     /// Add performance data to history
     fn add_to_history(&self, performance: PerformanceData, collection_duration: Duration) {
         let mut history = self.performance_history.write().unwrap();
-        
+
         history.push_back(PerformanceSnapshot {
             performance,
             timestamp: SystemTime::now(),
@@ -673,13 +723,13 @@ impl PerformanceMonitor {
         for i in 0..num_operations {
             let key = format!("benchmark_mixed_{}", i);
             let value = format!("value_{}", i);
-            
+
             // Write
             database.put(key.as_bytes(), value.as_bytes())?;
-            
+
             // Read
             database.get(key.as_bytes())?;
-            
+
             // Update (every 10th operation)
             if i % 10 == 0 {
                 let updated_value = format!("updated_value_{}", i);
@@ -736,7 +786,7 @@ impl PerformanceMonitor {
             .iter()
             .map(|s| s.performance.read_throughput)
             .collect();
-        
+
         if let Some(trend) = self.calculate_trend("read_throughput", &read_throughput_values) {
             trends.push(trend);
         }
@@ -746,7 +796,7 @@ impl PerformanceMonitor {
             .iter()
             .map(|s| s.performance.write_throughput)
             .collect();
-        
+
         if let Some(trend) = self.calculate_trend("write_throughput", &write_throughput_values) {
             trends.push(trend);
         }
@@ -756,7 +806,7 @@ impl PerformanceMonitor {
             .iter()
             .map(|s| s.performance.latency_percentiles.p95.as_secs_f64())
             .collect();
-        
+
         if let Some(trend) = self.calculate_trend("p95_latency", &latency_values) {
             trends.push(trend);
         }
@@ -778,7 +828,7 @@ impl PerformanceMonitor {
         let x2_sum: f64 = (0..values.len()).map(|i| (i as f64).powi(2)).sum();
 
         let slope = (n * xy_sum - x_sum * y_sum) / (n * x2_sum - x_sum.powi(2));
-        
+
         let trend_direction = if slope > 0.05 {
             TrendDirection::Improving
         } else if slope < -0.05 {
@@ -808,7 +858,10 @@ impl PerformanceMonitor {
 
         for (baseline_name, baseline) in baselines.iter() {
             if let Some(regression) = self.check_regression_against_baseline(&current, baseline) {
-                info!("Performance regression detected: {} vs {}", regression.metric_name, baseline_name);
+                info!(
+                    "Performance regression detected: {} vs {}",
+                    regression.metric_name, baseline_name
+                );
                 regressions.push(regression);
             }
         }
@@ -826,7 +879,7 @@ impl PerformanceMonitor {
         if let Some(&baseline_value) = baseline.metrics.get("read_throughput") {
             let current_value = current.read_throughput;
             let degradation = ((baseline_value - current_value) / baseline_value * 100.0).abs();
-            
+
             if degradation > self.config.regression_threshold {
                 return Some(PerformanceRegression {
                     metric_name: "read_throughput".to_string(),
@@ -850,13 +903,19 @@ impl PerformanceMonitor {
     /// Establish performance baseline
     pub fn establish_baseline(&self, baseline_name: String) -> Result<()> {
         let current = self.current_performance.read().unwrap();
-        
+
         let mut metrics = HashMap::new();
         metrics.insert("read_throughput".to_string(), current.read_throughput);
         metrics.insert("write_throughput".to_string(), current.write_throughput);
-        metrics.insert("transaction_success_rate".to_string(), current.transaction_success_rate);
-        metrics.insert("cache_hit_rate".to_string(), current.cache_efficiency.hit_rate);
-        
+        metrics.insert(
+            "transaction_success_rate".to_string(),
+            current.transaction_success_rate,
+        );
+        metrics.insert(
+            "cache_hit_rate".to_string(),
+            current.cache_efficiency.hit_rate,
+        );
+
         let baseline = PerformanceBaseline {
             baseline_name: baseline_name.clone(),
             metrics,
@@ -886,8 +945,6 @@ pub struct PerformanceRegression {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    
 
     #[test]
     fn test_performance_monitor_creation() {
@@ -898,10 +955,10 @@ mod tests {
     #[test]
     fn test_performance_monitoring_lifecycle() {
         let monitor = PerformanceMonitor::new();
-        
+
         monitor.start_monitoring();
         assert!(monitor.is_monitoring.load(Ordering::Relaxed));
-        
+
         monitor.stop_monitoring();
         assert!(!monitor.is_monitoring.load(Ordering::Relaxed));
     }
@@ -909,14 +966,17 @@ mod tests {
     #[test]
     fn test_operation_recording() {
         let monitor = PerformanceMonitor::new();
-        
+
         monitor.record_operation(Duration::from_millis(100), 1024, "read");
         monitor.record_operation(Duration::from_millis(200), 2048, "write");
-        
-        let ops_completed = monitor.counters.operations_completed.load(Ordering::Relaxed);
+
+        let ops_completed = monitor
+            .counters
+            .operations_completed
+            .load(Ordering::Relaxed);
         let bytes_read = monitor.counters.bytes_read.load(Ordering::Relaxed);
         let bytes_written = monitor.counters.bytes_written.load(Ordering::Relaxed);
-        
+
         assert_eq!(ops_completed, 2);
         assert_eq!(bytes_read, 1024);
         assert_eq!(bytes_written, 2048);
@@ -925,14 +985,14 @@ mod tests {
     #[test]
     fn test_cache_recording() {
         let monitor = PerformanceMonitor::new();
-        
+
         monitor.record_cache_access(true);
         monitor.record_cache_access(false);
         monitor.record_cache_access(true);
-        
+
         let hits = monitor.counters.cache_hits.load(Ordering::Relaxed);
         let misses = monitor.counters.cache_misses.load(Ordering::Relaxed);
-        
+
         assert_eq!(hits, 2);
         assert_eq!(misses, 1);
     }
@@ -940,13 +1000,13 @@ mod tests {
     #[test]
     fn test_trend_calculation() {
         let monitor = PerformanceMonitor::new();
-        
+
         // Increasing trend
         let increasing_values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         if let Some(trend) = monitor.calculate_trend("test_metric", &increasing_values) {
             matches!(trend.trend_direction, TrendDirection::Improving);
         }
-        
+
         // Stable trend
         let stable_values = vec![5.0, 5.1, 4.9, 5.0, 5.1];
         if let Some(trend) = monitor.calculate_trend("test_metric", &stable_values) {
@@ -957,10 +1017,10 @@ mod tests {
     #[test]
     fn test_baseline_establishment() {
         let monitor = PerformanceMonitor::new();
-        
+
         let result = monitor.establish_baseline("test_baseline".to_string());
         assert!(result.is_ok());
-        
+
         let baselines = monitor.baselines.read().unwrap();
         assert!(baselines.contains_key("test_baseline"));
     }

@@ -22,8 +22,14 @@ impl std::fmt::Debug for MetricsCollector {
         f.debug_struct("MetricsCollector")
             .field("collection_interval", &self.collection_interval)
             .field("history_size", &self.history_size)
-            .field("shutdown", &self.shutdown.load(std::sync::atomic::Ordering::Relaxed))
-            .field("has_collection_thread", &self.collection_thread.read().is_some())
+            .field(
+                "shutdown",
+                &self.shutdown.load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .field(
+                "has_collection_thread",
+                &self.collection_thread.read().is_some(),
+            )
             .finish()
     }
 }
@@ -161,17 +167,18 @@ impl MetricsCollector {
     pub fn get_summary_metrics(&self) -> HashMap<String, serde_json::Value> {
         let snapshot = self.get_current_snapshot();
         let mut metrics = HashMap::new();
-        
+
         // Total operations
         metrics.insert(
             "total_operations".to_string(),
             serde_json::Value::Number(serde_json::Number::from(snapshot.reads + snapshot.writes)),
         );
-        
+
         // Calculate collection duration
         let history = self.history.read();
         let duration_secs = if !history.is_empty() {
-            history.last()
+            history
+                .last()
                 .map(|last| last.timestamp.elapsed().as_secs_f64())
                 .unwrap_or(1.0)
         } else {
@@ -181,10 +188,10 @@ impl MetricsCollector {
             "collection_duration_secs".to_string(),
             serde_json::Value::Number(
                 serde_json::Number::from_f64(duration_secs)
-                    .unwrap_or_else(|| serde_json::Number::from(1))
+                    .unwrap_or_else(|| serde_json::Number::from(1)),
             ),
         );
-        
+
         // Latency metrics
         metrics.insert(
             "avg_latency_us".to_string(),
@@ -202,7 +209,7 @@ impl MetricsCollector {
             "p95_latency_us".to_string(),
             serde_json::Value::Number(serde_json::Number::from((avg_latency * 3) / 2)), // Approximate p95 as 1.5x average
         );
-        
+
         // Error rate
         let total_ops = snapshot.reads + snapshot.writes;
         let error_rate = if total_ops > 0 {
@@ -214,10 +221,10 @@ impl MetricsCollector {
             "error_rate".to_string(),
             serde_json::Value::Number(
                 serde_json::Number::from_f64(error_rate)
-                    .unwrap_or_else(|| serde_json::Number::from(0))
+                    .unwrap_or_else(|| serde_json::Number::from(0)),
             ),
         );
-        
+
         metrics
     }
 

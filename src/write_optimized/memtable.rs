@@ -4,12 +4,12 @@
 //! flushed to disk as SSTables. It uses a skip list for efficient insertion
 //! and range queries.
 
-use crate::{Result, Error};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use crate::{Error, Result};
 use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use serde::{Serialize, Deserialize};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Entry types in the memtable
@@ -103,8 +103,8 @@ impl MemTable {
     /// Insert a key-value pair
     pub fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         if *self.frozen.read() {
-            return Err(Error::InvalidOperation { 
-                reason: "MemTable is frozen".to_string() 
+            return Err(Error::InvalidOperation {
+                reason: "MemTable is frozen".to_string(),
             });
         }
 
@@ -114,7 +114,7 @@ impl MemTable {
 
         let mut data = self.data.write();
         data.insert(key, entry);
-        
+
         self.size.fetch_add(entry_size, Ordering::Relaxed);
         self.num_entries.fetch_add(1, Ordering::Relaxed);
 
@@ -124,8 +124,8 @@ impl MemTable {
     /// Delete a key
     pub fn delete(&self, key: Vec<u8>) -> Result<()> {
         if *self.frozen.read() {
-            return Err(Error::InvalidOperation { 
-                reason: "MemTable is frozen".to_string() 
+            return Err(Error::InvalidOperation {
+                reason: "MemTable is frozen".to_string(),
             });
         }
 
@@ -135,7 +135,7 @@ impl MemTable {
 
         let mut data = self.data.write();
         data.insert(key, entry);
-        
+
         self.size.fetch_add(entry_size, Ordering::Relaxed);
         self.num_entries.fetch_add(1, Ordering::Relaxed);
 
@@ -145,11 +145,9 @@ impl MemTable {
     /// Get a value by key
     pub fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
         let data = self.data.read();
-        data.get(key).and_then(|entry| {
-            match entry.entry_type {
-                EntryType::Put => entry.value.clone(),
-                EntryType::Delete => None,
-            }
+        data.get(key).and_then(|entry| match entry.entry_type {
+            EntryType::Put => entry.value.clone(),
+            EntryType::Delete => None,
         })
     }
 
@@ -181,11 +179,9 @@ impl MemTable {
     /// Create an iterator over all entries
     pub fn iter(&self) -> MemTableIterator {
         let data = self.data.read();
-        let entries: Vec<(Vec<u8>, MemTableEntry)> = data
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        
+        let entries: Vec<(Vec<u8>, MemTableEntry)> =
+            data.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+
         MemTableIterator {
             entries,
             current: 0,
@@ -196,11 +192,9 @@ impl MemTable {
     pub fn range(&self, start: &[u8], end: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
         let data = self.data.read();
         data.range(start.to_vec()..end.to_vec())
-            .filter_map(|(k, entry)| {
-                match entry.entry_type {
-                    EntryType::Put => entry.value.as_ref().map(|v| (k.clone(), v.clone())),
-                    EntryType::Delete => None,
-                }
+            .filter_map(|(k, entry)| match entry.entry_type {
+                EntryType::Put => entry.value.as_ref().map(|v| (k.clone(), v.clone())),
+                EntryType::Delete => None,
             })
             .collect()
     }
@@ -272,7 +266,7 @@ impl MemTableManager {
     pub fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         loop {
             let active = self.active.read();
-            
+
             // Try to insert into active memtable
             match active.put(key.clone(), value.clone()) {
                 Ok(()) => {
@@ -300,7 +294,7 @@ impl MemTableManager {
     pub fn delete(&self, key: Vec<u8>) -> Result<()> {
         loop {
             let active = self.active.read();
-            
+
             match active.delete(key.clone()) {
                 Ok(()) => {
                     if active.should_flush() {
@@ -348,8 +342,8 @@ impl MemTableManager {
 
         // Check if we have too many immutable memtables
         if immutable.len() >= self.max_immutable {
-            return Err(Error::ResourceExhausted { 
-                resource: "Immutable memtables".to_string() 
+            return Err(Error::ResourceExhausted {
+                resource: "Immutable memtables".to_string(),
             });
         }
 
@@ -403,33 +397,33 @@ mod tests {
     #[test]
     fn test_memtable_basic_operations() {
         let memtable = MemTable::new(1024 * 1024);
-        
+
         // Test put
         memtable.put(b"key1".to_vec(), b"value1".to_vec()).unwrap();
         memtable.put(b"key2".to_vec(), b"value2".to_vec()).unwrap();
-        
+
         // Test get
         assert_eq!(memtable.get(b"key1"), Some(b"value1".to_vec()));
         assert_eq!(memtable.get(b"key2"), Some(b"value2".to_vec()));
         assert_eq!(memtable.get(b"key3"), None);
-        
+
         // Test delete
         memtable.delete(b"key1".to_vec()).unwrap();
         assert_eq!(memtable.get(b"key1"), None);
-        
+
         assert_eq!(memtable.num_entries(), 3); // 2 puts + 1 delete
     }
 
     #[test]
     fn test_memtable_freeze() {
         let memtable = MemTable::new(1024);
-        
+
         memtable.put(b"key1".to_vec(), b"value1".to_vec()).unwrap();
         assert!(!memtable.is_frozen());
-        
+
         memtable.freeze();
         assert!(memtable.is_frozen());
-        
+
         // Should not be able to write to frozen memtable
         assert!(memtable.put(b"key2".to_vec(), b"value2".to_vec()).is_err());
     }
@@ -437,12 +431,12 @@ mod tests {
     #[test]
     fn test_memtable_range_scan() {
         let memtable = MemTable::new(1024 * 1024);
-        
+
         memtable.put(b"a".to_vec(), b"value_a".to_vec()).unwrap();
         memtable.put(b"b".to_vec(), b"value_b".to_vec()).unwrap();
         memtable.put(b"c".to_vec(), b"value_c".to_vec()).unwrap();
         memtable.put(b"d".to_vec(), b"value_d".to_vec()).unwrap();
-        
+
         let range = memtable.range(b"b", b"d");
         assert_eq!(range.len(), 2);
         assert_eq!(range[0].0, b"b");
@@ -452,15 +446,15 @@ mod tests {
     #[test]
     fn test_memtable_manager() {
         let manager = MemTableManager::new(1024, 2);
-        
+
         // Test basic operations
         manager.put(b"key1".to_vec(), b"value1".to_vec()).unwrap();
         assert_eq!(manager.get(b"key1"), Some(b"value1".to_vec()));
-        
+
         // Test delete
         manager.delete(b"key1".to_vec()).unwrap();
         assert_eq!(manager.get(b"key1"), None);
-        
+
         // Test stats
         let stats = manager.stats();
         assert_eq!(stats.num_immutable, 0);

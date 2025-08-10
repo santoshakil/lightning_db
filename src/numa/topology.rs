@@ -3,10 +3,10 @@
 //! This module detects and maps the NUMA topology of the system,
 //! providing information about NUMA nodes, CPU cores, and memory layout.
 
-use crate::{Result, Error};
+use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use serde::{Serialize, Deserialize};
 
 /// NUMA topology information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,12 +89,12 @@ impl NumaTopology {
         {
             Self::detect_linux()
         }
-        
+
         #[cfg(target_os = "macos")]
         {
             Self::detect_macos()
         }
-        
+
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
             Self::detect_fallback()
@@ -107,7 +107,7 @@ impl NumaTopology {
         let mut nodes = Vec::new();
         let mut cpu_to_node = HashMap::new();
         let mut node_distances = HashMap::new();
-        
+
         // Check if NUMA is available
         if !Path::new("/sys/devices/system/node").exists() {
             return Self::detect_fallback();
@@ -116,30 +116,30 @@ impl NumaTopology {
         // Discover NUMA nodes
         let node_dirs = fs::read_dir("/sys/devices/system/node/")?;
         let mut node_ids = Vec::new();
-        
+
         for entry in node_dirs {
             let entry = entry?;
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            
+
             if name_str.starts_with("node") {
                 if let Ok(node_id) = name_str[4..].parse::<u32>() {
                     node_ids.push(node_id);
                 }
             }
         }
-        
+
         node_ids.sort();
-        
+
         // Process each NUMA node
         for node_id in &node_ids {
             let node = Self::detect_node_info_linux(*node_id)?;
-            
+
             // Update CPU to node mapping
             for cpu_id in &node.cpu_list {
                 cpu_to_node.insert(*cpu_id, *node_id);
             }
-            
+
             nodes.push(node);
         }
 
@@ -161,7 +161,7 @@ impl NumaTopology {
         }
 
         let total_memory_mb = nodes.iter().map(|n| n.memory_size_mb).sum();
-        
+
         Ok(NumaTopology {
             node_count: nodes.len() as u32,
             nodes,
@@ -176,7 +176,7 @@ impl NumaTopology {
     #[cfg(target_os = "linux")]
     fn detect_node_info_linux(node_id: u32) -> Result<NumaNode> {
         let node_path = format!("/sys/devices/system/node/node{}", node_id);
-        
+
         // Read CPU list
         let cpulist_path = format!("{}/cpulist", node_path);
         let cpu_list = if let Ok(cpulist_str) = fs::read_to_string(&cpulist_path) {
@@ -187,11 +187,12 @@ impl NumaTopology {
 
         // Read memory information
         let meminfo_path = format!("{}/meminfo", node_path);
-        let (memory_size_mb, free_memory_mb) = if let Ok(meminfo) = fs::read_to_string(&meminfo_path) {
-            Self::parse_node_meminfo(&meminfo)?
-        } else {
-            (0, 0)
-        };
+        let (memory_size_mb, free_memory_mb) =
+            if let Ok(meminfo) = fs::read_to_string(&meminfo_path) {
+                Self::parse_node_meminfo(&meminfo)?
+            } else {
+                (0, 0)
+            };
 
         // Detect CPU information
         let mut cpus = Vec::new();
@@ -203,7 +204,7 @@ impl NumaTopology {
 
         // Estimate memory bandwidth (simplified)
         let memory_bandwidth_gbps = Self::estimate_node_bandwidth(node_id, &cpus);
-        
+
         // Collect cache sizes
         let cache_sizes = Self::collect_cache_sizes(&cpus);
 
@@ -223,14 +224,14 @@ impl NumaTopology {
     #[cfg(target_os = "linux")]
     fn detect_cpu_info_linux(cpu_id: u32) -> Result<CpuInfo> {
         let cpu_path = format!("/sys/devices/system/cpu/cpu{}", cpu_id);
-        
+
         // Read topology information
         let topology_path = format!("{}/topology", cpu_path);
         let physical_id = Self::read_topology_value(&topology_path, "physical_package_id")?;
         let core_id = Self::read_topology_value(&topology_path, "core_id")?;
         let thread_siblings = Self::read_topology_value(&topology_path, "thread_siblings_list")
             .unwrap_or_else(|_| cpu_id.to_string());
-        
+
         // Determine if this is a hyperthread
         let is_hyperthread = thread_siblings.contains(',') || thread_siblings.contains('-');
         let thread_id = if is_hyperthread { 1 } else { 0 };
@@ -246,7 +247,7 @@ impl NumaTopology {
 
         // Read CPU features from /proc/cpuinfo
         let features = Self::read_cpu_features(cpu_id)?;
-        
+
         // Read cache information
         let cache_info = Self::read_cache_info_linux(cpu_id)?;
 
@@ -266,7 +267,7 @@ impl NumaTopology {
     #[cfg(target_os = "linux")]
     fn read_cache_info_linux(cpu_id: u32) -> Result<CacheInfo> {
         let cache_path = format!("/sys/devices/system/cpu/cpu{}/cache", cpu_id);
-        
+
         let mut l1d_size_kb = 32;
         let mut l1i_size_kb = 32;
         let mut l2_size_kb = 256;
@@ -323,13 +324,13 @@ impl NumaTopology {
     #[cfg(target_os = "macos")]
     fn detect_macos() -> Result<Self> {
         use std::process::Command;
-        
+
         // macOS doesn't have traditional NUMA, but we can detect CPU topology
         let output = Command::new("sysctl")
             .args(&["-n", "hw.ncpu"])
             .output()
             .map_err(|e| Error::Generic(format!("Failed to get CPU count: {}", e)))?;
-        
+
         let cpu_count = String::from_utf8_lossy(&output.stdout)
             .trim()
             .parse::<u32>()
@@ -340,18 +341,18 @@ impl NumaTopology {
             .args(&["-n", "hw.memsize"])
             .output()
             .map_err(|e| Error::Generic(format!("Failed to get memory size: {}", e)))?;
-        
+
         let memory_bytes = String::from_utf8_lossy(&output.stdout)
             .trim()
             .parse::<u64>()
             .unwrap_or(8 * 1024 * 1024 * 1024); // Default 8GB
-        
+
         let memory_mb = memory_bytes / (1024 * 1024);
 
         // Create a single NUMA node for macOS
         let mut cpus = Vec::new();
         let mut cpu_list = Vec::new();
-        
+
         for cpu_id in 0..cpu_count {
             cpu_list.push(cpu_id);
             cpus.push(CpuInfo {
@@ -386,7 +387,7 @@ impl NumaTopology {
             node_count: 1,
             nodes: vec![node],
             cpu_to_node,
-            node_distances: [(( 0, 0), 1.0)].iter().cloned().collect(),
+            node_distances: [((0, 0), 1.0)].iter().cloned().collect(),
             total_memory_mb: memory_mb,
             memory_bandwidth: HashMap::new(),
         })
@@ -401,7 +402,7 @@ impl NumaTopology {
 
         let mut cpus = Vec::new();
         let mut cpu_list = Vec::new();
-        
+
         for cpu_id in 0..cpu_count {
             cpu_list.push(cpu_id);
             cpus.push(CpuInfo {
@@ -451,27 +452,30 @@ impl NumaTopology {
     /// Parse CPU list string (e.g., "0-3,8-11")
     fn parse_cpu_list(cpulist: &str) -> Result<Vec<u32>> {
         let mut cpu_list = Vec::new();
-        
+
         for range in cpulist.split(',') {
             if range.contains('-') {
                 let parts: Vec<&str> = range.split('-').collect();
                 if parts.len() == 2 {
-                    let start = parts[0].parse::<u32>()
+                    let start = parts[0]
+                        .parse::<u32>()
                         .map_err(|e| Error::ParseError(format!("Invalid CPU range: {}", e)))?;
-                    let end = parts[1].parse::<u32>()
+                    let end = parts[1]
+                        .parse::<u32>()
                         .map_err(|e| Error::ParseError(format!("Invalid CPU range: {}", e)))?;
-                    
+
                     for cpu_id in start..=end {
                         cpu_list.push(cpu_id);
                     }
                 }
             } else {
-                let cpu_id = range.parse::<u32>()
+                let cpu_id = range
+                    .parse::<u32>()
                     .map_err(|e| Error::ParseError(format!("Invalid CPU ID: {}", e)))?;
                 cpu_list.push(cpu_id);
             }
         }
-        
+
         Ok(cpu_list)
     }
 
@@ -479,7 +483,7 @@ impl NumaTopology {
     fn parse_node_meminfo(meminfo: &str) -> Result<(u64, u64)> {
         let mut total_kb = 0u64;
         let mut free_kb = 0u64;
-        
+
         for line in meminfo.lines() {
             if line.starts_with("Node") && line.contains("MemTotal:") {
                 if let Some(value) = line.split_whitespace().nth(2) {
@@ -491,7 +495,7 @@ impl NumaTopology {
                 }
             }
         }
-        
+
         Ok((total_kb / 1024, free_kb / 1024)) // Convert to MB
     }
 
@@ -501,8 +505,10 @@ impl NumaTopology {
         let path = format!("{}/{}", topology_path, filename);
         let content = fs::read_to_string(&path)
             .map_err(|e| Error::Generic(format!("Failed to read {}: {}", path, e)))?;
-        
-        content.trim().parse::<u32>()
+
+        content
+            .trim()
+            .parse::<u32>()
             .map_err(|e| Error::ParseError(format!("Invalid topology value: {}", e)))
     }
 
@@ -520,8 +526,10 @@ impl NumaTopology {
                 }
             }
         }
-        
-        Err(Error::Generic("Could not determine CPU frequency".to_string()))
+
+        Err(Error::Generic(
+            "Could not determine CPU frequency".to_string(),
+        ))
     }
 
     /// Read CPU features
@@ -540,18 +548,18 @@ impl NumaTopology {
     /// Estimate memory bandwidth between nodes
     fn estimate_memory_bandwidth(node_ids: &[u32]) -> HashMap<(u32, u32), f64> {
         let mut bandwidth = HashMap::new();
-        
+
         for &node_from in node_ids {
             for &node_to in node_ids {
                 let bw = if node_from == node_to {
                     100.0 // Local memory bandwidth in GB/s
                 } else {
-                    25.0  // Inter-node bandwidth in GB/s
+                    25.0 // Inter-node bandwidth in GB/s
                 };
                 bandwidth.insert((node_from, node_to), bw);
             }
         }
-        
+
         bandwidth
     }
 
@@ -560,20 +568,20 @@ impl NumaTopology {
         // Estimate based on CPU count and type
         let base_bandwidth = 25.0; // GB/s per memory channel
         let memory_channels = (cpus.len() / 4).max(1) as f64; // Estimate memory channels
-        
+
         base_bandwidth * memory_channels
     }
 
     /// Collect cache sizes from CPUs
     fn collect_cache_sizes(cpus: &[CpuInfo]) -> HashMap<u32, u64> {
         let mut cache_sizes = HashMap::new();
-        
+
         if let Some(cpu) = cpus.first() {
             cache_sizes.insert(1, cpu.cache_info.l1d_size_kb as u64 * 1024);
             cache_sizes.insert(2, cpu.cache_info.l2_size_kb as u64 * 1024);
             cache_sizes.insert(3, cpu.cache_info.l3_size_kb as u64 * 1024);
         }
-        
+
         cache_sizes
     }
 
@@ -581,17 +589,17 @@ impl NumaTopology {
     #[cfg(target_os = "macos")]
     fn get_macos_cpu_frequency() -> Result<u32> {
         use std::process::Command;
-        
+
         let output = Command::new("sysctl")
             .args(&["-n", "hw.cpufrequency"])
             .output()
             .map_err(|e| Error::Generic(format!("Failed to get CPU frequency: {}", e)))?;
-        
+
         let freq_hz = String::from_utf8_lossy(&output.stdout)
             .trim()
             .parse::<u64>()
             .unwrap_or(2400000000); // Default 2.4GHz
-        
+
         Ok((freq_hz / 1000000) as u32) // Convert to MHz
     }
 
@@ -611,14 +619,12 @@ impl NumaTopology {
     /// Get macOS cache information
     #[cfg(target_os = "macos")]
     fn get_macos_cache_info() -> CacheInfo {
-        
-        
         // Try to get cache sizes from sysctl
         let l1d_size = Self::get_sysctl_value("hw.l1dcachesize").unwrap_or(32768) / 1024;
         let l1i_size = Self::get_sysctl_value("hw.l1icachesize").unwrap_or(32768) / 1024;
         let l2_size = Self::get_sysctl_value("hw.l2cachesize").unwrap_or(262144) / 1024;
         let l3_size = Self::get_sysctl_value("hw.l3cachesize").unwrap_or(8388608) / 1024;
-        
+
         CacheInfo {
             l1d_size_kb: l1d_size as u32,
             l1i_size_kb: l1i_size as u32,
@@ -632,12 +638,9 @@ impl NumaTopology {
     #[cfg(target_os = "macos")]
     fn get_sysctl_value(key: &str) -> Option<u64> {
         use std::process::Command;
-        
-        let output = Command::new("sysctl")
-            .args(&["-n", key])
-            .output()
-            .ok()?;
-        
+
+        let output = Command::new("sysctl").args(&["-n", key]).output().ok()?;
+
         String::from_utf8_lossy(&output.stdout)
             .trim()
             .parse::<u64>()
@@ -666,7 +669,10 @@ impl NumaTopology {
 
     /// Get memory bandwidth between nodes
     pub fn get_memory_bandwidth(&self, from: u32, to: u32) -> f64 {
-        self.memory_bandwidth.get(&(from, to)).copied().unwrap_or(25.0)
+        self.memory_bandwidth
+            .get(&(from, to))
+            .copied()
+            .unwrap_or(25.0)
     }
 }
 
@@ -678,7 +684,7 @@ mod tests {
     fn test_topology_detection() {
         let result = NumaTopology::detect();
         assert!(result.is_ok());
-        
+
         let topology = result.unwrap();
         assert!(topology.node_count > 0);
         assert!(!topology.nodes.is_empty());
@@ -688,7 +694,7 @@ mod tests {
     fn test_cpu_list_parsing() {
         let result = NumaTopology::parse_cpu_list("0-3,8-11");
         assert!(result.is_ok());
-        
+
         let cpu_list = result.unwrap();
         assert_eq!(cpu_list, vec![0, 1, 2, 3, 8, 9, 10, 11]);
     }
@@ -697,7 +703,7 @@ mod tests {
     fn test_single_cpu_parsing() {
         let result = NumaTopology::parse_cpu_list("5");
         assert!(result.is_ok());
-        
+
         let cpu_list = result.unwrap();
         assert_eq!(cpu_list, vec![5]);
     }

@@ -4,18 +4,19 @@
 //! alerting capabilities for Lightning DB. Integrates with the distributed tracing
 //! system to provide deep performance insights and early warning systems.
 
-use crate::Result;
 use crate::distributed_tracing::Span;
-use std::collections::{HashMap, VecDeque, BTreeMap};
-use std::sync::{Arc, RwLock, Mutex};
-use std::time::{SystemTime, Duration};
-use serde::{Serialize, Deserialize};
+use crate::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, SystemTime};
 
-pub mod baseline_profiler;
-pub mod statistical_analysis;
 pub mod alert_manager;
-pub mod trend_analysis;
+pub mod baseline_profiler;
 pub mod bisection_tools;
+pub mod performance_tracker;
+pub mod statistical_analysis;
+pub mod trend_analysis;
 
 /// Main performance regression detection system
 pub struct PerformanceRegressionDetector {
@@ -105,10 +106,10 @@ pub struct RegressionDetectionResult {
 /// Severity levels for performance regressions
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RegressionSeverity {
-    Minor,      // 10-20% degradation
-    Moderate,   // 20-40% degradation
-    Major,      // 40-70% degradation
-    Critical,   // >70% degradation
+    Minor,    // 10-20% degradation
+    Moderate, // 20-40% degradation
+    Major,    // 40-70% degradation
+    Critical, // >70% degradation
 }
 
 /// Storage for performance metrics and baselines
@@ -157,9 +158,7 @@ impl PerformanceRegressionDetector {
             config.clone(),
         ));
 
-        let alert_manager = Arc::new(alert_manager::AlertManager::new(
-            config.clone(),
-        ));
+        let alert_manager = Arc::new(alert_manager::AlertManager::new(config.clone()));
 
         let trend_analyzer = Arc::new(trend_analysis::TrendAnalyzer::new(
             metrics_storage.clone(),
@@ -186,12 +185,15 @@ impl PerformanceRegressionDetector {
         // Store the metric
         if let Ok(mut storage) = self.metrics_storage.write() {
             let timestamp = metric.timestamp;
-            storage.metrics.entry(timestamp)
+            storage
+                .metrics
+                .entry(timestamp)
                 .or_insert_with(Vec::new)
                 .push(metric.clone());
 
             // Update operation statistics
-            let op_stats = storage.operation_stats
+            let op_stats = storage
+                .operation_stats
                 .entry(metric.operation_type.clone())
                 .or_insert_with(|| OperationStatistics {
                     total_samples: 0,
@@ -211,13 +213,15 @@ impl PerformanceRegressionDetector {
             }
 
             // Update moving average
-            let recent_durations: Vec<f64> = op_stats.recent_samples
+            let recent_durations: Vec<f64> = op_stats
+                .recent_samples
                 .iter()
                 .map(|m| m.duration_micros as f64)
                 .collect();
-            
+
             if !recent_durations.is_empty() {
-                op_stats.moving_average = recent_durations.iter().sum::<f64>() / recent_durations.len() as f64;
+                op_stats.moving_average =
+                    recent_durations.iter().sum::<f64>() / recent_durations.len() as f64;
             }
 
             // Clean up old metrics
@@ -286,7 +290,10 @@ impl PerformanceRegressionDetector {
     }
 
     /// Check for performance regression
-    pub fn check_for_regression(&self, metric: &PerformanceMetric) -> Result<Option<RegressionDetectionResult>> {
+    pub fn check_for_regression(
+        &self,
+        metric: &PerformanceMetric,
+    ) -> Result<Option<RegressionDetectionResult>> {
         // Get baseline for this operation type
         let baseline = if let Ok(storage) = self.metrics_storage.read() {
             storage.baselines.get(&metric.operation_type).cloned()
@@ -298,13 +305,16 @@ impl PerformanceRegressionDetector {
             Some(b) => b,
             None => {
                 // No baseline yet, trigger baseline creation if we have enough samples
-                self.baseline_profiler.try_create_baseline(&metric.operation_type)?;
+                self.baseline_profiler
+                    .try_create_baseline(&metric.operation_type)?;
                 return Ok(None);
             }
         };
 
         // Use statistical analyzer to detect regression
-        let regression_result = self.statistical_analyzer.analyze_regression(metric, &baseline)?;
+        let regression_result = self
+            .statistical_analyzer
+            .analyze_regression(metric, &baseline)?;
 
         if let Some(mut result) = regression_result {
             // Add recommended actions based on severity
@@ -313,7 +323,7 @@ impl PerformanceRegressionDetector {
             // Store detection result
             if let Ok(mut storage) = self.metrics_storage.write() {
                 storage.recent_detections.push_back(result.clone());
-                
+
                 // Keep only recent detections
                 while storage.recent_detections.len() > 1000 {
                     storage.recent_detections.pop_front();
@@ -351,9 +361,14 @@ impl PerformanceRegressionDetector {
     }
 
     /// Get recent regression detections
-    pub fn get_recent_detections(&self, limit: Option<usize>) -> Result<Vec<RegressionDetectionResult>> {
+    pub fn get_recent_detections(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<Vec<RegressionDetectionResult>> {
         if let Ok(storage) = self.metrics_storage.read() {
-            let detections: Vec<_> = storage.recent_detections.iter()
+            let detections: Vec<_> = storage
+                .recent_detections
+                .iter()
                 .rev()
                 .take(limit.unwrap_or(100))
                 .cloned()
@@ -365,16 +380,25 @@ impl PerformanceRegressionDetector {
     }
 
     /// Get performance trends for an operation
-    pub fn get_performance_trends(&self, operation_type: &str, hours: u64) -> Result<Vec<PerformanceMetric>> {
+    pub fn get_performance_trends(
+        &self,
+        operation_type: &str,
+        hours: u64,
+    ) -> Result<Vec<PerformanceMetric>> {
         self.trend_analyzer.get_trends(operation_type, hours)
     }
 
     /// Start bisection analysis for a detected regression
-    pub fn start_bisection_analysis(&self, regression: &RegressionDetectionResult) -> Result<bisection_tools::BisectionSession> {
+    pub fn start_bisection_analysis(
+        &self,
+        regression: &RegressionDetectionResult,
+    ) -> Result<bisection_tools::BisectionSession> {
         if let Ok(mut tools) = self.bisection_tools.lock() {
             tools.start_bisection(regression)
         } else {
-            Err(crate::Error::Generic("Failed to acquire bisection tools lock".to_string()))
+            Err(crate::Error::Generic(
+                "Failed to acquire bisection tools lock".to_string(),
+            ))
         }
     }
 
@@ -387,13 +411,13 @@ impl PerformanceRegressionDetector {
     pub fn generate_performance_report(&self) -> Result<PerformanceReport> {
         let baselines = self.get_baselines()?;
         let recent_detections = self.get_recent_detections(Some(50))?;
-        
+
         let mut operation_summaries = HashMap::new();
-        
+
         if let Ok(storage) = self.metrics_storage.read() {
             for (op_type, stats) in &storage.operation_stats {
                 let trend_data = self.trend_analyzer.get_trends(op_type, 24)?;
-                
+
                 let summary = OperationSummary {
                     operation_type: op_type.clone(),
                     total_samples: stats.total_samples,
@@ -403,7 +427,7 @@ impl PerformanceRegressionDetector {
                     baseline: baselines.get(op_type).cloned(),
                     recent_performance: trend_data.last().cloned(),
                 };
-                
+
                 operation_summaries.insert(op_type.clone(), summary);
             }
         }
@@ -411,7 +435,8 @@ impl PerformanceRegressionDetector {
         Ok(PerformanceReport {
             generated_at: SystemTime::now(),
             total_operations_tracked: operation_summaries.len(),
-            active_regressions: recent_detections.iter()
+            active_regressions: recent_detections
+                .iter()
                 .filter(|d| d.detected && d.severity >= RegressionSeverity::Major)
                 .count(),
             recent_detections,
@@ -426,35 +451,47 @@ impl PerformanceRegressionDetector {
 
         match result.severity {
             RegressionSeverity::Critical => {
-                recommendations.push("IMMEDIATE ACTION REQUIRED: Critical performance regression detected".to_string());
+                recommendations.push(
+                    "IMMEDIATE ACTION REQUIRED: Critical performance regression detected"
+                        .to_string(),
+                );
                 recommendations.push("Consider rolling back recent changes".to_string());
                 recommendations.push("Scale up resources immediately".to_string());
-                recommendations.push("Enable detailed profiling for root cause analysis".to_string());
+                recommendations
+                    .push("Enable detailed profiling for root cause analysis".to_string());
             }
             RegressionSeverity::Major => {
                 recommendations.push("Major performance degradation detected".to_string());
-                recommendations.push("Review recent code changes for performance impacts".to_string());
+                recommendations
+                    .push("Review recent code changes for performance impacts".to_string());
                 recommendations.push("Consider increasing resource allocation".to_string());
                 recommendations.push("Run detailed performance profiling".to_string());
             }
             RegressionSeverity::Moderate => {
                 recommendations.push("Moderate performance regression detected".to_string());
-                recommendations.push("Monitor closely and investigate during maintenance window".to_string());
+                recommendations
+                    .push("Monitor closely and investigate during maintenance window".to_string());
                 recommendations.push("Consider optimization opportunities".to_string());
             }
             RegressionSeverity::Minor => {
                 recommendations.push("Minor performance regression detected".to_string());
-                recommendations.push("Monitor trend and investigate if degradation continues".to_string());
+                recommendations
+                    .push("Monitor trend and investigate if degradation continues".to_string());
             }
         }
 
         // Add specific recommendations based on metric type
-        if result.current_performance.memory_usage_bytes > result.baseline_performance.memory_baseline * 2 {
+        if result.current_performance.memory_usage_bytes
+            > result.baseline_performance.memory_baseline * 2
+        {
             recommendations.push("High memory usage detected - check for memory leaks".to_string());
         }
 
-        if result.current_performance.cpu_usage_percent > result.baseline_performance.cpu_baseline * 1.5 {
-            recommendations.push("High CPU usage detected - check for CPU-intensive operations".to_string());
+        if result.current_performance.cpu_usage_percent
+            > result.baseline_performance.cpu_baseline * 1.5
+        {
+            recommendations
+                .push("High CPU usage detected - check for CPU-intensive operations".to_string());
         }
 
         if result.current_performance.error_rate > 0.1 {
@@ -470,13 +507,17 @@ impl PerformanceRegressionDetector {
         let cutoff_time = SystemTime::now() - retention_duration;
 
         // Remove old metrics
-        storage.metrics.retain(|&timestamp, _| timestamp > cutoff_time);
+        storage
+            .metrics
+            .retain(|&timestamp, _| timestamp > cutoff_time);
 
         // Cleanup recent detections
         let detection_retention = Duration::from_secs(self.config.baseline_window_hours * 3600 * 3); // Keep 3x baseline window
         let detection_cutoff = SystemTime::now() - detection_retention;
-        
-        storage.recent_detections.retain(|detection| detection.detection_timestamp > detection_cutoff);
+
+        storage
+            .recent_detections
+            .retain(|detection| detection.detection_timestamp > detection_cutoff);
 
         // Enforce max storage limits
         if storage.metrics.len() > self.config.max_stored_metrics {
@@ -504,13 +545,15 @@ impl PerformanceRegressionDetector {
                     TrendDirection::Degrading => 0.3,
                     TrendDirection::Unknown => 0.6,
                 };
-                
+
                 // Reduce health if recent regression
                 let regression_penalty = if let Some(last_regression) = stats.last_regression {
-                    let time_since = SystemTime::now().duration_since(last_regression)
-                        .unwrap_or_default().as_secs() as f64;
+                    let time_since = SystemTime::now()
+                        .duration_since(last_regression)
+                        .unwrap_or_default()
+                        .as_secs() as f64;
                     let hours_since = time_since / 3600.0;
-                    
+
                     if hours_since < 1.0 {
                         0.5 // Recent regression, significant penalty
                     } else if hours_since < 24.0 {
@@ -521,7 +564,7 @@ impl PerformanceRegressionDetector {
                 } else {
                     0.0
                 };
-                
+
                 let adjusted_health: f64 = op_health - regression_penalty;
                 health_sum += adjusted_health.max(0.0);
             }
@@ -602,7 +645,7 @@ mod tests {
     fn test_regression_detector_creation() {
         let config = RegressionDetectorConfig::default();
         let detector = PerformanceRegressionDetector::new(config);
-        
+
         let baselines = detector.get_baselines().unwrap();
         assert!(baselines.is_empty());
     }
@@ -611,7 +654,7 @@ mod tests {
     fn test_metric_recording() {
         let config = RegressionDetectorConfig::default();
         let detector = PerformanceRegressionDetector::new(config);
-        
+
         let metric = PerformanceMetric {
             timestamp: SystemTime::now(),
             operation_type: "test_operation".to_string(),
@@ -624,7 +667,7 @@ mod tests {
             trace_id: None,
             span_id: None,
         };
-        
+
         assert!(detector.record_metric(metric).is_ok());
     }
 
@@ -632,7 +675,7 @@ mod tests {
     fn test_health_score_calculation() {
         let config = RegressionDetectorConfig::default();
         let detector = PerformanceRegressionDetector::new(config);
-        
+
         // With no data, should return high health score
         let score = detector.calculate_health_score().unwrap();
         assert_eq!(score, 1.0);
@@ -642,7 +685,7 @@ mod tests {
     fn test_performance_report_generation() {
         let config = RegressionDetectorConfig::default();
         let detector = PerformanceRegressionDetector::new(config);
-        
+
         let report = detector.generate_performance_report().unwrap();
         assert_eq!(report.total_operations_tracked, 0);
         assert_eq!(report.active_regressions, 0);

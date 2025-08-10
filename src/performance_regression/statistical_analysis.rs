@@ -3,7 +3,10 @@
 //! Provides statistical methods for detecting performance regressions by comparing
 //! current performance metrics against established baselines.
 
-use super::{PerformanceMetric, PerformanceBaseline, RegressionDetectionResult, RegressionSeverity, RegressionDetectorConfig};
+use super::{
+    PerformanceBaseline, PerformanceMetric, RegressionDetectionResult, RegressionDetectorConfig,
+    RegressionSeverity,
+};
 use crate::Result;
 use std::time::SystemTime;
 
@@ -56,7 +59,7 @@ impl Default for RegressionAnalysisConfig {
             primary_test: StatisticalTest::WelchTTest,
             fallback_tests: vec![StatisticalTest::ZScore, StatisticalTest::Threshold],
             significance_level: 0.05, // 5% significance level
-            minimum_effect_size: 0.2,  // Cohen's d >= 0.2 (small effect)
+            minimum_effect_size: 0.2, // Cohen's d >= 0.2 (small effect)
             bootstrap_samples: 1000,
         }
     }
@@ -183,7 +186,7 @@ impl StatisticalAnalyzer {
     ) -> Result<StatisticalTestResult> {
         let degradation = self.calculate_degradation_percentage(metric, baseline);
         let threshold = self.config.detection_sensitivity;
-        
+
         let is_significant = degradation.abs() >= threshold;
         let effect_size = degradation.abs();
 
@@ -207,7 +210,7 @@ impl StatisticalAnalyzer {
             return self.threshold_test(metric, baseline);
         }
 
-        let z_score = (metric.duration_micros as f64 - baseline.mean_duration_micros) 
+        let z_score = (metric.duration_micros as f64 - baseline.mean_duration_micros)
             / baseline.std_deviation_micros;
 
         let p_value = self.calculate_z_test_p_value(z_score);
@@ -234,7 +237,7 @@ impl StatisticalAnalyzer {
             return self.z_score_test(metric, baseline);
         }
 
-        let t_statistic = (metric.duration_micros as f64 - baseline.mean_duration_micros) 
+        let t_statistic = (metric.duration_micros as f64 - baseline.mean_duration_micros)
             / (baseline.std_deviation_micros / (baseline.sample_count as f64).sqrt());
 
         let degrees_of_freedom = baseline.sample_count - 1;
@@ -272,17 +275,18 @@ impl StatisticalAnalyzer {
         let current_std = baseline_std * 0.5; // Conservative estimate
         let current_n = 1.0;
 
-        let pooled_se = ((baseline_std * baseline_std / baseline_n) + 
-                        (current_std * current_std / current_n)).sqrt();
+        let pooled_se = ((baseline_std * baseline_std / baseline_n)
+            + (current_std * current_std / current_n))
+            .sqrt();
 
         let t_statistic = (current_value - baseline_mean) / pooled_se;
 
         // Welch's degrees of freedom
         let s1_sq_n1 = (baseline_std * baseline_std) / baseline_n;
         let s2_sq_n2 = (current_std * current_std) / current_n;
-        let df = (s1_sq_n1 + s2_sq_n2).powi(2) / 
-                 ((s1_sq_n1 * s1_sq_n1) / (baseline_n - 1.0) + 
-                  (s2_sq_n2 * s2_sq_n2) / (current_n - 1.0));
+        let df = (s1_sq_n1 + s2_sq_n2).powi(2)
+            / ((s1_sq_n1 * s1_sq_n1) / (baseline_n - 1.0)
+                + (s2_sq_n2 * s2_sq_n2) / (current_n - 1.0));
 
         let p_value = self.calculate_t_test_p_value(t_statistic, df as usize);
         let is_significant = p_value < 0.05;
@@ -307,7 +311,7 @@ impl StatisticalAnalyzer {
         // For single observation, use simplified rank-based approach
         let current_value = metric.duration_micros as f64;
         let baseline_mean = baseline.mean_duration_micros;
-        
+
         // Estimate rank based on percentiles
         let rank_estimate = if current_value <= baseline.p50_duration_micros as f64 {
             0.5
@@ -319,8 +323,8 @@ impl StatisticalAnalyzer {
 
         // Convert rank to test statistic
         let u_statistic = rank_estimate * baseline.sample_count as f64;
-        let z_statistic = (u_statistic - (baseline.sample_count as f64 / 2.0)) / 
-                         (baseline.sample_count as f64 / 12.0).sqrt();
+        let z_statistic = (u_statistic - (baseline.sample_count as f64 / 2.0))
+            / (baseline.sample_count as f64 / 12.0).sqrt();
 
         let p_value = self.calculate_z_test_p_value(z_statistic);
         let is_significant = p_value < 0.05;
@@ -344,18 +348,19 @@ impl StatisticalAnalyzer {
     ) -> Result<StatisticalTestResult> {
         // For single observation, estimate how unusual it is within the baseline distribution
         let current_value = metric.duration_micros as f64;
-        
+
         // Calculate CDF position in baseline distribution (assuming normal)
-        let z_score = (current_value - baseline.mean_duration_micros) / baseline.std_deviation_micros;
+        let z_score =
+            (current_value - baseline.mean_duration_micros) / baseline.std_deviation_micros;
         let cdf_position = self.normal_cdf(z_score);
-        
+
         // KS statistic is maximum deviation from expected CDF
         let ks_statistic = (cdf_position - 0.5).abs(); // Compare against median
-        
+
         // Approximate p-value for KS test
         let n = baseline.sample_count as f64;
         let p_value = 2.0 * (-2.0 * n * ks_statistic * ks_statistic).exp();
-        
+
         let is_significant = p_value < 0.05;
         let effect_size = ks_statistic;
 
@@ -383,7 +388,8 @@ impl StatisticalAnalyzer {
             self.calculate_z_test_p_value(t_statistic)
         } else {
             // Simple approximation for small df
-            let adjusted_t = t_statistic * (df as f64 / (df as f64 + t_statistic * t_statistic)).sqrt();
+            let adjusted_t =
+                t_statistic * (df as f64 / (df as f64 + t_statistic * t_statistic)).sqrt();
             self.calculate_z_test_p_value(adjusted_t) * (1.0 + 1.0 / (4.0 * df as f64))
         }
     }
@@ -391,12 +397,12 @@ impl StatisticalAnalyzer {
     /// Normal CDF approximation
     fn normal_cdf(&self, x: f64) -> f64 {
         // Abramowitz and Stegun approximation
-        let a1 =  0.254829592;
+        let a1 = 0.254829592;
         let a2 = -0.284496736;
-        let a3 =  1.421413741;
+        let a3 = 1.421413741;
         let a4 = -1.453152027;
-        let a5 =  1.061405429;
-        let p  =  0.3275911;
+        let a5 = 1.061405429;
+        let p = 0.3275911;
 
         let sign = if x < 0.0 { -1.0 } else { 1.0 };
         let x = x.abs();
@@ -429,10 +435,8 @@ impl StatisticalAnalyzer {
 
         // If multiple tests available, require at least 2 to agree
         if test_results.len() > 2 {
-            let significant_count = test_results.iter()
-                .filter(|r| r.is_significant)
-                .count();
-            
+            let significant_count = test_results.iter().filter(|r| r.is_significant).count();
+
             significant_count >= 2
         } else {
             true
@@ -502,7 +506,8 @@ impl StatisticalAnalyzer {
         } else if avg_confidence > 0.8 {
             recommendations.push("Moderate statistical confidence - monitor closely".to_string());
         } else {
-            recommendations.push("Low statistical confidence - collect more data before acting".to_string());
+            recommendations
+                .push("Low statistical confidence - collect more data before acting".to_string());
         }
 
         // Test-specific recommendations
@@ -510,13 +515,20 @@ impl StatisticalAnalyzer {
             if test_result.is_significant {
                 match test_result.test_type {
                     StatisticalTest::WelchTTest => {
-                        recommendations.push("Welch's t-test confirms regression with unequal variances considered".to_string());
+                        recommendations.push(
+                            "Welch's t-test confirms regression with unequal variances considered"
+                                .to_string(),
+                        );
                     }
                     StatisticalTest::MannWhitneyU => {
-                        recommendations.push("Non-parametric test confirms regression (distribution-free)".to_string());
+                        recommendations.push(
+                            "Non-parametric test confirms regression (distribution-free)"
+                                .to_string(),
+                        );
                     }
                     StatisticalTest::KolmogorovSmirnov => {
-                        recommendations.push("Distribution comparison shows significant change".to_string());
+                        recommendations
+                            .push("Distribution comparison shows significant change".to_string());
                     }
                     _ => {}
                 }
@@ -526,7 +538,8 @@ impl StatisticalAnalyzer {
         // Effect size recommendations
         let primary_effect_size = test_results.first().map(|r| r.effect_size).unwrap_or(0.0);
         if primary_effect_size > 2.0 {
-            recommendations.push("Very large effect size - immediate investigation required".to_string());
+            recommendations
+                .push("Very large effect size - immediate investigation required".to_string());
         } else if primary_effect_size > 0.8 {
             recommendations.push("Large effect size - significant performance impact".to_string());
         } else if primary_effect_size > 0.5 {
@@ -535,20 +548,27 @@ impl StatisticalAnalyzer {
 
         // Baseline quality recommendations
         if baseline.sample_count < 50 {
-            recommendations.push("Small baseline sample size - consider collecting more baseline data".to_string());
+            recommendations.push(
+                "Small baseline sample size - consider collecting more baseline data".to_string(),
+            );
         }
 
         if baseline.std_deviation_micros / baseline.mean_duration_micros > 0.5 {
-            recommendations.push("High baseline variability - performance may be naturally unstable".to_string());
+            recommendations.push(
+                "High baseline variability - performance may be naturally unstable".to_string(),
+            );
         }
 
         // Multi-metric recommendations
         if metric.memory_usage_bytes as f64 > baseline.memory_baseline as f64 * 1.5 {
-            recommendations.push("Memory usage also increased - potential memory-related regression".to_string());
+            recommendations.push(
+                "Memory usage also increased - potential memory-related regression".to_string(),
+            );
         }
 
         if metric.cpu_usage_percent > baseline.cpu_baseline * 1.5 {
-            recommendations.push("CPU usage also increased - potential CPU-related regression".to_string());
+            recommendations
+                .push("CPU usage also increased - potential CPU-related regression".to_string());
         }
 
         if degradation_percentage > 0.0 {
@@ -584,7 +604,8 @@ impl StatisticalAnalyzer {
         }
 
         // Calculate how many bootstrap means are more extreme than current value
-        let more_extreme_count = bootstrap_means.iter()
+        let more_extreme_count = bootstrap_means
+            .iter()
             .filter(|&&mean| (mean - baseline_mean).abs() >= (current_value - baseline_mean).abs())
             .count();
 
@@ -594,16 +615,16 @@ impl StatisticalAnalyzer {
     /// Generate a normal random sample (Box-Muller transform)
     fn generate_normal_sample(&self, mean: f64, std_dev: f64) -> f64 {
         use std::f64::consts::PI;
-        
+
         // Simple linear congruential generator for reproducible randomness
         static mut SEED: u64 = 12345;
         unsafe {
             SEED = SEED.wrapping_mul(1103515245).wrapping_add(12345);
             let u1 = (SEED as f64) / (u64::MAX as f64);
-            
+
             SEED = SEED.wrapping_mul(1103515245).wrapping_add(12345);
             let u2 = (SEED as f64) / (u64::MAX as f64);
-            
+
             let z = (-2.0 * u1.ln()).sqrt() * (2.0 * PI * u2).cos();
             mean + std_dev * z
         }
@@ -657,10 +678,10 @@ mod tests {
     fn test_degradation_calculation() {
         let config = RegressionDetectorConfig::default();
         let analyzer = StatisticalAnalyzer::new(config);
-        
+
         let baseline = create_test_baseline();
         let metric = create_test_metric(1200); // 20% slower
-        
+
         let degradation = analyzer.calculate_degradation_percentage(&metric, &baseline);
         assert!((degradation - 0.2).abs() < 0.001); // Should be ~20%
     }
@@ -669,10 +690,10 @@ mod tests {
     fn test_z_score_test() {
         let config = RegressionDetectorConfig::default();
         let analyzer = StatisticalAnalyzer::new(config);
-        
+
         let baseline = create_test_baseline();
         let metric = create_test_metric(1300); // 3 standard deviations from mean
-        
+
         let result = analyzer.z_score_test(&metric, &baseline).unwrap();
         assert!(result.is_significant);
         assert!(result.test_statistic > 2.0); // Should be ~3.0
@@ -682,7 +703,7 @@ mod tests {
     fn test_normal_cdf() {
         let config = RegressionDetectorConfig::default();
         let analyzer = StatisticalAnalyzer::new(config);
-        
+
         // Test known values
         assert!((analyzer.normal_cdf(0.0) - 0.5).abs() < 0.001);
         assert!(analyzer.normal_cdf(1.96) > 0.975); // ~97.5% for z=1.96
@@ -693,10 +714,10 @@ mod tests {
     fn test_regression_analysis_no_regression() {
         let config = RegressionDetectorConfig::default();
         let analyzer = StatisticalAnalyzer::new(config);
-        
+
         let baseline = create_test_baseline();
         let metric = create_test_metric(1050); // Small change within threshold
-        
+
         let result = analyzer.analyze_regression(&metric, &baseline).unwrap();
         assert!(result.is_none()); // Should not detect regression
     }
@@ -706,13 +727,13 @@ mod tests {
         let mut config = RegressionDetectorConfig::default();
         config.detection_sensitivity = 0.1; // 10% threshold
         let analyzer = StatisticalAnalyzer::new(config);
-        
+
         let baseline = create_test_baseline();
         let metric = create_test_metric(1500); // 50% slower - clear regression
-        
+
         let result = analyzer.analyze_regression(&metric, &baseline).unwrap();
         assert!(result.is_some());
-        
+
         let regression = result.unwrap();
         assert!(regression.detected);
         assert!(regression.degradation_percentage > 0.4); // Should be ~50%
@@ -723,24 +744,32 @@ mod tests {
     fn test_severity_determination() {
         let config = RegressionDetectorConfig::default();
         let analyzer = StatisticalAnalyzer::new(config);
-        
+
         assert_eq!(analyzer.determine_severity(0.1), RegressionSeverity::Minor);
-        assert_eq!(analyzer.determine_severity(0.3), RegressionSeverity::Moderate);
+        assert_eq!(
+            analyzer.determine_severity(0.3),
+            RegressionSeverity::Moderate
+        );
         assert_eq!(analyzer.determine_severity(0.5), RegressionSeverity::Major);
-        assert_eq!(analyzer.determine_severity(0.8), RegressionSeverity::Critical);
+        assert_eq!(
+            analyzer.determine_severity(0.8),
+            RegressionSeverity::Critical
+        );
     }
 
     #[test]
     fn test_multiple_statistical_tests() {
         let config = RegressionDetectorConfig::default();
         let analyzer = StatisticalAnalyzer::new(config);
-        
+
         let baseline = create_test_baseline();
         let metric = create_test_metric(1400); // Clear regression
-        
+
         let analysis_config = RegressionAnalysisConfig::default();
-        let test_results = analyzer.perform_statistical_tests(&metric, &baseline, &analysis_config).unwrap();
-        
+        let test_results = analyzer
+            .perform_statistical_tests(&metric, &baseline, &analysis_config)
+            .unwrap();
+
         assert!(!test_results.is_empty());
         assert!(test_results.iter().any(|r| r.is_significant));
     }

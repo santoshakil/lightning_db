@@ -3,19 +3,19 @@
 //! Provides comprehensive telemetry integration including metrics, traces, and logs
 //! for production observability with industry-standard tools.
 
-use crate::{Result, Error};
+use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
-use serde::{Serialize, Deserialize};
-use tracing::{info, error, debug};
+use tracing::{debug, error, info};
 
 // Import common telemetry types from other modules
-use super::metrics_collector::{DatabaseMetrics, CompactionStats, MemoryStats, IoStats};
+use super::alert_manager::{Alert, AlertSeverity};
 use super::health_checker::HealthStatus;
+use super::metrics_collector::{CompactionStats, DatabaseMetrics, IoStats, MemoryStats};
 use super::performance_monitor::PerformanceData;
 use super::resource_tracker::ResourceUsage;
-use super::alert_manager::{Alert, AlertSeverity};
 
 /// OpenTelemetry provider for Lightning DB
 pub struct OpenTelemetryProvider {
@@ -59,7 +59,10 @@ impl Default for TelemetryConfig {
     fn default() -> Self {
         let mut resource_attributes = HashMap::new();
         resource_attributes.insert("service.name".to_string(), "lightning_db".to_string());
-        resource_attributes.insert("service.version".to_string(), env!("CARGO_PKG_VERSION").to_string());
+        resource_attributes.insert(
+            "service.version".to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        );
 
         Self {
             service_name: "lightning_db".to_string(),
@@ -201,12 +204,12 @@ pub struct OtlpHttpMetricExporter {
 impl OtlpHttpMetricExporter {
     pub fn new(endpoint: String) -> Self {
         let mut headers = HashMap::new();
-        headers.insert("Content-Type".to_string(), "application/x-protobuf".to_string());
+        headers.insert(
+            "Content-Type".to_string(),
+            "application/x-protobuf".to_string(),
+        );
 
-        Self {
-            endpoint,
-            headers,
-        }
+        Self { endpoint, headers }
     }
 
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
@@ -222,12 +225,16 @@ impl MetricExporter for OtlpHttpMetricExporter {
         }
 
         let _payload = self.encode_metrics(metrics.clone())?;
-        
+
         // In a real implementation, this would make an HTTP request to the OTLP endpoint
         // For now, we'll just log the export operation
-        debug!("Would export {} metrics to endpoint: {}", metrics.len(), self.endpoint);
+        debug!(
+            "Would export {} metrics to endpoint: {}",
+            metrics.len(),
+            self.endpoint
+        );
         debug!("Metrics payload size: {} bytes", _payload.len());
-        
+
         Ok(())
     }
 
@@ -261,12 +268,12 @@ pub struct OtlpHttpTraceExporter {
 impl OtlpHttpTraceExporter {
     pub fn new(endpoint: String) -> Self {
         let mut headers = HashMap::new();
-        headers.insert("Content-Type".to_string(), "application/x-protobuf".to_string());
+        headers.insert(
+            "Content-Type".to_string(),
+            "application/x-protobuf".to_string(),
+        );
 
-        Self {
-            endpoint,
-            headers,
-        }
+        Self { endpoint, headers }
     }
 }
 
@@ -277,11 +284,15 @@ impl TraceExporter for OtlpHttpTraceExporter {
         }
 
         let _payload = self.encode_spans(spans.clone())?;
-        
+
         // In a real implementation, this would make an HTTP request to the OTLP endpoint
-        debug!("Would export {} spans to endpoint: {}", spans.len(), self.endpoint);
+        debug!(
+            "Would export {} spans to endpoint: {}",
+            spans.len(),
+            self.endpoint
+        );
         debug!("Trace payload size: {} bytes", _payload.len());
-        
+
         Ok(())
     }
 
@@ -338,9 +349,12 @@ impl TraceExporter for ConsoleExporter {
         for span in spans {
             println!("Span: {} ({})", span.name, span.span_id);
             println!("  Trace ID: {}", span.trace_id);
-            println!("  Duration: {:?}", 
-                span.end_time.and_then(|_end| span.start_time.elapsed().ok())
-                    .unwrap_or(Duration::from_secs(0)));
+            println!(
+                "  Duration: {:?}",
+                span.end_time
+                    .and_then(|_end| span.start_time.elapsed().ok())
+                    .unwrap_or(Duration::from_secs(0))
+            );
         }
         Ok(())
     }
@@ -355,7 +369,8 @@ impl LogExporter for ConsoleExporter {
     fn export(&self, logs: Vec<LogRecord>) -> Result<()> {
         println!("=== {} Logs Export ===", self.name);
         for log in logs {
-            println!("[{}] {}: {}", 
+            println!(
+                "[{}] {}: {}",
                 log.timestamp
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .unwrap_or(Duration::from_secs(0))
@@ -394,7 +409,10 @@ impl OpenTelemetryProvider {
             }
         }
 
-        info!("Initializing OpenTelemetry provider for {}", self.config.service_name);
+        info!(
+            "Initializing OpenTelemetry provider for {}",
+            self.config.service_name
+        );
 
         // Setup metric exporters
         if self.config.enable_metrics {
@@ -415,7 +433,7 @@ impl OpenTelemetryProvider {
             let mut initialized = self.initialized.write().unwrap();
             *initialized = true;
         }
-        
+
         info!("OpenTelemetry provider initialized successfully");
         Ok(())
     }
@@ -423,7 +441,7 @@ impl OpenTelemetryProvider {
     /// Export metrics
     pub fn export_metrics(&self, metrics: DatabaseMetrics) -> Result<()> {
         let metric_data = self.convert_database_metrics(metrics)?;
-        
+
         for exporter in &self.metric_exporters {
             if let Err(e) = exporter.export(metric_data.clone()) {
                 error!("Failed to export metrics: {}", e);
@@ -453,7 +471,7 @@ impl OpenTelemetryProvider {
     /// Export alert
     pub fn export_alert(&self, alert: Alert) -> Result<()> {
         let alert_log = self.convert_alert_to_log(alert)?;
-        
+
         for exporter in &self.log_exporters {
             if let Err(e) = exporter.export(vec![alert_log.clone()]) {
                 error!("Failed to export alert: {}", e);
@@ -560,7 +578,10 @@ impl OpenTelemetryProvider {
     }
 
     /// Convert performance data to metrics
-    fn convert_performance_to_metrics(&self, _performance: PerformanceData) -> Result<DatabaseMetrics> {
+    fn convert_performance_to_metrics(
+        &self,
+        _performance: PerformanceData,
+    ) -> Result<DatabaseMetrics> {
         // Placeholder implementation
         Ok(DatabaseMetrics {
             total_operations: 0,

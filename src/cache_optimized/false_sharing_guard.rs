@@ -5,8 +5,8 @@
 //! database operations.
 
 use super::CACHE_LINE_SIZE;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Pad a type to cache line boundaries to prevent false sharing
 #[repr(align(64))]
@@ -100,7 +100,8 @@ impl IsolatedAtomicCounter {
         success: Ordering,
         failure: Ordering,
     ) -> Result<u64, u64> {
-        self.value.compare_exchange_weak(current, new, success, failure)
+        self.value
+            .compare_exchange_weak(current, new, success, failure)
     }
 }
 
@@ -278,7 +279,7 @@ impl StripedCounter {
         // Use thread ID hash to distribute load across stripes
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         std::thread::current().id().hash(&mut hasher);
         hasher.finish() as usize & self.stripe_mask
@@ -419,7 +420,7 @@ impl FalseSharingMonitor {
         let false_sharing_detected = cache_miss_rate > self.threshold;
 
         self.last_sample = now;
-        
+
         Some(FalseSharingReport {
             timestamp: now,
             cache_miss_rate,
@@ -445,7 +446,7 @@ impl FalseSharingMonitor {
         let mut hasher = DefaultHasher::new();
         self.start_time.elapsed().as_nanos().hash(&mut hasher);
         let hash = hasher.finish();
-        
+
         // Generate a value between 0.0 and 1.0
         (hash % 100) as f64 / 100.0
     }
@@ -500,7 +501,10 @@ mod tests {
 
     #[test]
     fn test_cache_line_padding() {
-        assert_eq!(std::mem::align_of::<CacheLinePadded<u64>>(), CACHE_LINE_SIZE);
+        assert_eq!(
+            std::mem::align_of::<CacheLinePadded<u64>>(),
+            CACHE_LINE_SIZE
+        );
         assert_eq!(std::mem::size_of::<CacheLinePadded<u64>>(), CACHE_LINE_SIZE);
     }
 
@@ -508,10 +512,10 @@ mod tests {
     fn test_isolated_atomic_counter() {
         let counter = IsolatedAtomicCounter::new(0);
         assert_eq!(counter.load(Ordering::Relaxed), 0);
-        
+
         counter.store(42, Ordering::Relaxed);
         assert_eq!(counter.load(Ordering::Relaxed), 42);
-        
+
         let old = counter.fetch_add(8, Ordering::Relaxed);
         assert_eq!(old, 42);
         assert_eq!(counter.load(Ordering::Relaxed), 50);
@@ -520,12 +524,12 @@ mod tests {
     #[test]
     fn test_striped_counter() {
         let counter = StripedCounter::new(4);
-        
+
         counter.increment();
         counter.add(5);
-        
+
         assert_eq!(counter.get_total(), 6);
-        
+
         counter.reset();
         assert_eq!(counter.get_total(), 0);
     }
@@ -533,29 +537,29 @@ mod tests {
     #[test]
     fn test_cache_aligned_array() {
         let mut array = CacheAlignedArray::new();
-        
+
         array.push(1);
         array.push(2);
         array.push(3);
-        
+
         assert_eq!(array.len(), 3);
         assert_eq!(array.get(1), Some(&2));
-        
+
         if let Some(value) = array.get_mut(1) {
             *value = 20;
         }
-        
+
         assert_eq!(array[1], 20);
     }
 
     #[test]
     fn test_per_thread_stats() {
         let stats = PerThreadStats::new();
-        
+
         stats.record_operation();
         stats.record_cache_hit();
         stats.record_cache_miss();
-        
+
         let summary = stats.get_summary();
         assert_eq!(summary.operations, 1);
         assert_eq!(summary.cache_hits, 1);
@@ -567,10 +571,10 @@ mod tests {
     fn test_false_sharing_detector() {
         let detector = FalseSharingDetector::new(0.1);
         assert!(detector.is_enabled());
-        
+
         detector.disable();
         assert!(!detector.is_enabled());
-        
+
         detector.enable();
         assert!(detector.is_enabled());
     }
@@ -580,7 +584,7 @@ mod tests {
         let counter = Arc::new(StripedCounter::new(8));
         let num_threads = 4;
         let ops_per_thread = 1000;
-        
+
         let handles: Vec<_> = (0..num_threads)
             .map(|_| {
                 let counter = Arc::clone(&counter);
@@ -591,11 +595,11 @@ mod tests {
                 })
             })
             .collect();
-        
+
         for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("Failed to join thread");
         }
-        
+
         assert_eq!(counter.get_total(), num_threads * ops_per_thread);
     }
 
@@ -603,14 +607,14 @@ mod tests {
     fn test_cache_optimized_builder() {
         let counter = CacheOptimizedBuilder::atomic_counter(100);
         assert_eq!(counter.load(Ordering::Relaxed), 100);
-        
+
         let striped = CacheOptimizedBuilder::striped_counter();
         striped.increment();
         assert_eq!(striped.get_total(), 1);
-        
+
         let array = CacheOptimizedBuilder::cache_aligned_array::<i32>();
         assert!(array.is_empty());
-        
+
         let stats = CacheOptimizedBuilder::per_thread_stats();
         stats.record_operation();
         assert_eq!(stats.get_summary().operations, 1);

@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
-use crate::utils::retry::RetryableOperations;
 use crate::storage::PageType;
+use crate::utils::retry::RetryableOperations;
 use crc32fast::Hasher;
 use memmap2::{MmapMut, MmapOptions};
 use std::fs::OpenOptions;
@@ -38,7 +38,7 @@ impl Page {
         } else {
             PageType::default()
         };
-        
+
         Self {
             id,
             data: Arc::new(data),
@@ -388,7 +388,7 @@ impl PageManager {
     pub fn free_page_count(&self) -> usize {
         self.free_pages.len()
     }
-    
+
     /// Check if a page is in the free list
     pub fn is_free_page(&self, page_id: PageId) -> bool {
         self.free_pages.contains(&page_id)

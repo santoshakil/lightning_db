@@ -4,21 +4,24 @@
 //! database reliability under extreme conditions including power loss,
 //! corruption, resource exhaustion, and byzantine failures.
 
-use crate::{Database, Result, LightningDbConfig};
-use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
+use crate::{Database, LightningDbConfig, Result};
+use parking_lot::{Mutex, RwLock};
+use std::collections::{HashMap, VecDeque};
+use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+};
 use std::thread;
 use std::time::{Duration, SystemTime};
-use std::path::{Path, PathBuf};
-use parking_lot::{RwLock, Mutex};
-use std::collections::{HashMap, VecDeque};
 
-pub mod power_loss;
-pub mod corruption_injection;
-pub mod resource_exhaustion;
-pub mod crash_consistency;
 pub mod byzantine_failures;
+pub mod corruption_injection;
+pub mod crash_consistency;
 pub mod durability_verification;
 pub mod integrity_monitor;
+pub mod power_loss;
+pub mod resource_exhaustion;
 
 /// Chaos engineering test coordinator
 pub struct ChaosCoordinator {
@@ -135,7 +138,7 @@ impl Default for ResourceLimits {
             max_file_descriptors: 100,
             max_threads: 50,
             disk_write_throttle: Some(10 * 1024 * 1024), // 10MB/s
-            network_bandwidth_limit: Some(1024 * 1024),   // 1MB/s
+            network_bandwidth_limit: Some(1024 * 1024),  // 1MB/s
         }
     }
 }
@@ -165,16 +168,16 @@ pub enum ByzantineFailureType {
 pub trait ChaosTest: Send + Sync {
     /// Name of the chaos test
     fn name(&self) -> &str;
-    
+
     /// Initialize the test
     fn initialize(&mut self, config: &ChaosConfig) -> Result<()>;
-    
+
     /// Execute the chaos test
     fn execute(&mut self, db: Arc<Database>, duration: Duration) -> Result<ChaosTestResult>;
-    
+
     /// Cleanup after test
     fn cleanup(&mut self) -> Result<()>;
-    
+
     /// Verify system integrity after test
     fn verify_integrity(&self, db: Arc<Database>) -> Result<IntegrityReport>;
 }
@@ -391,7 +394,7 @@ impl ChaosCoordinator {
     pub fn new(config: ChaosConfig) -> Self {
         let failure_injector = Arc::new(FailureInjector::new());
         let integrity_monitor = Arc::new(IntegrityMonitor::new(config.integrity_check_interval));
-        
+
         Self {
             config,
             test_registry: HashMap::new(),
@@ -411,18 +414,19 @@ impl ChaosCoordinator {
     pub fn run_chaos_suite(&mut self, db_path: &Path) -> Result<ChaosTestResults> {
         println!("🌪️  Starting Chaos Engineering Test Suite");
         println!("=====================================");
-        
+
         // Initialize all tests
         for test in self.test_registry.values_mut() {
             test.initialize(&self.config)?;
         }
 
         // Start integrity monitoring
-        self.integrity_monitor.start_continuous_verification(db_path)?;
+        self.integrity_monitor
+            .start_continuous_verification(db_path)?;
 
         // Run tests with various failure scenarios
         let test_scenarios = self.generate_test_scenarios();
-        
+
         for scenario in test_scenarios {
             self.execute_scenario(scenario, db_path)?;
         }
@@ -432,10 +436,10 @@ impl ChaosCoordinator {
 
         // Collect and analyze results
         let results = self.analyze_results()?;
-        
+
         // Generate recommendations
         let recommendations = self.generate_recommendations(&results);
-        
+
         let mut final_results = results;
         final_results.recommendations = recommendations;
 
@@ -443,16 +447,18 @@ impl ChaosCoordinator {
         println!("   Total tests run: {}", final_results.total_tests_run);
         println!("   Tests passed: {}", final_results.tests_passed);
         println!("   Tests failed: {}", final_results.tests_failed);
-        println!("   Data integrity score: {:.2}%", 
-                 final_results.durability_verification.data_integrity_score * 100.0);
-        
+        println!(
+            "   Data integrity score: {:.2}%",
+            final_results.durability_verification.data_integrity_score * 100.0
+        );
+
         Ok(final_results)
     }
 
     /// Generate test scenarios based on configuration
     fn generate_test_scenarios(&self) -> Vec<TestScenario> {
         let mut scenarios = Vec::new();
-        
+
         // Power loss scenarios
         if self.config.power_loss_enabled {
             scenarios.push(TestScenario {
@@ -505,7 +511,7 @@ impl ChaosCoordinator {
     /// Execute a specific test scenario
     fn execute_scenario(&mut self, scenario: TestScenario, db_path: &Path) -> Result<()> {
         println!("\n🧪 Running scenario: {}", scenario.name);
-        
+
         // Create test database instance with WAL enabled for crash recovery
         let config = LightningDbConfig {
             use_improved_wal: true,
@@ -516,16 +522,17 @@ impl ChaosCoordinator {
 
         // Enable failure injection for this scenario
         self.failure_injector.enable();
-        
+
         // Configure injection points
         for injection_point in &scenario.failure_injection_points {
-            self.failure_injector.add_injection_point(injection_point.clone())?;
+            self.failure_injector
+                .add_injection_point(injection_point.clone())?;
         }
 
         // Run the test
         if let Some(test) = self.test_registry.get_mut(&scenario.test_type) {
             let result = test.execute(Arc::clone(&db), scenario.duration)?;
-            
+
             // Record results
             self.record_test_result(result);
         }
@@ -543,13 +550,13 @@ impl ChaosCoordinator {
     fn record_test_result(&self, result: ChaosTestResult) {
         let mut results = self.results_collector.lock();
         results.total_tests_run += 1;
-        
+
         if result.passed {
             results.tests_passed += 1;
         } else {
             results.tests_failed += 1;
         }
-        
+
         results.total_failures_injected += result.failures_injected;
         results.total_failures_recovered += result.failures_recovered;
         results.total_corruptions_detected += result.integrity_report.corrupted_pages;
@@ -559,13 +566,16 @@ impl ChaosCoordinator {
     fn verify_post_scenario_integrity(&self, db: &Arc<Database>) -> Result<()> {
         // Perform comprehensive integrity check
         let integrity_report = self.integrity_monitor.perform_full_check(db)?;
-        
+
         if integrity_report.unrepairable_errors > 0 {
-            println!("   ⚠️  Found {} unrepairable errors", integrity_report.unrepairable_errors);
+            println!(
+                "   ⚠️  Found {} unrepairable errors",
+                integrity_report.unrepairable_errors
+            );
         } else {
             println!("   ✅ Database integrity verified");
         }
-        
+
         Ok(())
     }
 
@@ -578,41 +588,38 @@ impl ChaosCoordinator {
     /// Generate recommendations based on results
     fn generate_recommendations(&self, results: &ChaosTestResults) -> Vec<String> {
         let mut recommendations = Vec::new();
-        
+
         // Check data integrity score
         if results.durability_verification.data_integrity_score < 0.99 {
-            recommendations.push(
-                "Consider increasing fsync frequency for better durability".to_string()
-            );
+            recommendations
+                .push("Consider increasing fsync frequency for better durability".to_string());
         }
-        
+
         // Check unrecoverable failures
         if !results.unrecoverable_failures.is_empty() {
             recommendations.push(
-                "Implement additional recovery mechanisms for detected failure modes".to_string()
+                "Implement additional recovery mechanisms for detected failure modes".to_string(),
             );
         }
-        
+
         // Check performance impact
         if results.performance_impact.degradation_percentage > 20.0 {
-            recommendations.push(
-                "Optimize failure recovery paths to reduce performance impact".to_string()
-            );
+            recommendations
+                .push("Optimize failure recovery paths to reduce performance impact".to_string());
         }
-        
+
         // Check corruption recovery rate
         let recovery_rate = if results.total_corruptions_detected > 0 {
             results.total_failures_recovered as f64 / results.total_corruptions_detected as f64
         } else {
             1.0
         };
-        
+
         if recovery_rate < 0.95 {
-            recommendations.push(
-                "Enhance corruption detection and recovery mechanisms".to_string()
-            );
+            recommendations
+                .push("Enhance corruption detection and recovery mechanisms".to_string());
         }
-        
+
         recommendations
     }
 }
@@ -768,7 +775,7 @@ pub fn get_failure_injector() -> Option<Arc<FailureInjector>> {
     thread_local! {
         static FAILURE_INJECTOR: Option<Arc<FailureInjector>> = None;
     }
-    
+
     FAILURE_INJECTOR.with(|fi| fi.clone())
 }
 
@@ -788,7 +795,7 @@ mod tests {
     fn test_failure_injector() {
         let injector = FailureInjector::new();
         assert!(!injector.should_fail());
-        
+
         injector.enable();
         injector.inject_power_loss();
         assert!(injector.should_fail());

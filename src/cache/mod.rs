@@ -2,6 +2,7 @@ pub mod adaptive_sizing;
 pub mod advanced_cache;
 pub mod arc_cache;
 pub mod batch_eviction;
+pub mod deadlock_free_arc;
 pub mod lock_free_cache;
 pub mod memory_pool;
 pub mod optimized_arc;
@@ -13,16 +14,17 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 pub use adaptive_sizing::{
-    AdaptiveCacheSizer, AdaptiveSizingConfig, WorkloadPattern, CachePerformanceMetrics,
-    SizingDecision, SizingReason, CacheTier, CacheAllocation, AdaptiveSizingStats, CacheWarmer,
+    AdaptiveCacheSizer, AdaptiveSizingConfig, AdaptiveSizingStats, CacheAllocation,
+    CachePerformanceMetrics, CacheTier, CacheWarmer, SizingDecision, SizingReason, WorkloadPattern,
 };
 pub use arc_cache::{ArcCache, ArcCacheStats};
 pub use batch_eviction::{BatchEvictingArcCache, BatchEvictionConfig, BatchEvictionStats};
+pub use deadlock_free_arc::DeadlockFreeArcCache;
 pub use lock_free_cache::{LockFreeCache, SegmentedLockFreeCache};
 pub use memory_pool::MemoryPool;
 pub use prewarming::{
-    CachePrewarmer, PrewarmingConfig, WarmingPriority, AccessPattern, PatternType,
-    PrefetchRequest, WarmingStats,
+    AccessPattern, CachePrewarmer, PatternType, PrefetchRequest, PrewarmingConfig, WarmingPriority,
+    WarmingStats,
 };
 
 #[derive(Debug, Clone)]

@@ -3,11 +3,11 @@
 //! Uses machine learning and heuristics to automatically optimize database
 //! configuration based on workload patterns and system performance.
 
+use super::{HardwareInfo, TuningConfig, WorkloadProfile};
 use crate::Result;
-use super::{TuningConfig, HardwareInfo, WorkloadProfile};
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Auto-tuning engine
 pub struct AutoTuner {
@@ -21,10 +21,10 @@ pub struct AutoTuner {
 /// Tuning strategy
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TuningStrategy {
-    HillClimbing,      // Local optimization
-    SimulatedAnnealing, // Global optimization with random exploration
-    GeneticAlgorithm,  // Population-based optimization
-    BayesianOptimization, // Model-based optimization
+    HillClimbing,          // Local optimization
+    SimulatedAnnealing,    // Global optimization with random exploration
+    GeneticAlgorithm,      // Population-based optimization
+    BayesianOptimization,  // Model-based optimization
     ReinforcementLearning, // Learn from feedback
 }
 
@@ -213,12 +213,12 @@ impl AutoTuner {
     ) -> Result<HashMap<String, ParameterValue>> {
         let mut new_params = current_params.clone();
         let tunable_params = self.get_tunable_parameters(hardware, workload);
-        
+
         // Calculate temperature (decreases over time)
         let temperature = 1.0 / (self.tuning_history.len() as f64 + 1.0).sqrt();
-        
+
         let mut rng = rand::rng();
-        
+
         // Potentially modify multiple parameters based on temperature
         for param in &tunable_params {
             if rng.gen::<f64>() < temperature * param.importance {
@@ -242,33 +242,34 @@ impl AutoTuner {
     ) -> Result<HashMap<String, ParameterValue>> {
         // Simplified Bayesian optimization
         // In production, would use Gaussian processes or similar
-        
+
         let mut new_params = current_params.clone();
         let workload_key = self.get_workload_fingerprint(workload);
-        
+
         // If we have a good configuration for this workload, use it as a base
         if let Some(best_config) = self.best_configs.get(&workload_key) {
             if best_config.attempts > 5 {
                 // Use best known configuration with small perturbations
                 new_params = best_config.parameters.clone();
-                
+
                 // Add small random perturbations
                 let tunable_params = self.get_tunable_parameters(hardware, workload);
                 let mut rng = rand::rng();
-                
+
                 if rng.gen::<f64>() < self.exploration_rate {
-                    if let Some(param) = tunable_params.get(rng.gen_range(0..tunable_params.len())) {
+                    if let Some(param) = tunable_params.get(rng.gen_range(0..tunable_params.len()))
+                    {
                         new_params.insert(
                             param.name.clone(),
                             self.adjust_parameter(&param.value, param, 0.1)?,
                         );
                     }
                 }
-                
+
                 return Ok(new_params);
             }
         }
-        
+
         // Otherwise, use exploration
         self.simulated_annealing_step(current_params, _current_score, hardware, workload)
     }
@@ -329,7 +330,12 @@ impl AutoTuner {
             name: "compression_type".to_string(),
             value: ParameterValue::Enum(
                 "zstd".to_string(),
-                vec!["none".to_string(), "lz4".to_string(), "zstd".to_string(), "snappy".to_string()],
+                vec![
+                    "none".to_string(),
+                    "lz4".to_string(),
+                    "zstd".to_string(),
+                    "snappy".to_string(),
+                ],
             ),
             min_value: ParameterValue::Enum("none".to_string(), vec![]),
             max_value: ParameterValue::Enum("zstd".to_string(), vec![]),
@@ -359,11 +365,11 @@ impl AutoTuner {
                     Some(ParameterValue::Integer(s)) => *s,
                     _ => 1,
                 };
-                
+
                 let range = ((*max - *min) as f64 * magnitude * 0.2) as i64;
                 let delta = rng.gen_range(-range..=range) / step * step;
                 let new_val = (*val + delta).clamp(*min, *max);
-                
+
                 Ok(ParameterValue::Integer(new_val))
             }
             (
@@ -374,7 +380,7 @@ impl AutoTuner {
                 let range = (*max - *min) * magnitude * 0.2;
                 let delta = rng.gen_range(-range..=range);
                 let new_val = (*val + delta).clamp(*min, *max);
-                
+
                 Ok(ParameterValue::Float(new_val))
             }
             (ParameterValue::Boolean(val), _, _) => {
@@ -387,7 +393,10 @@ impl AutoTuner {
             (ParameterValue::Enum(current, options), _, _) => {
                 if rng.gen::<f64>() < magnitude * 0.2 && !options.is_empty() {
                     let new_idx = rng.gen_range(0..options.len());
-                    Ok(ParameterValue::Enum(options[new_idx].clone(), options.clone()))
+                    Ok(ParameterValue::Enum(
+                        options[new_idx].clone(),
+                        options.clone(),
+                    ))
                 } else {
                     Ok(ParameterValue::Enum(current.clone(), options.clone()))
                 }
@@ -399,26 +408,36 @@ impl AutoTuner {
     /// Get learning progress
     pub fn get_progress(&self) -> TuningProgress {
         let total_attempts = self.tuning_history.len();
-        let successful_attempts = self.tuning_history.iter()
+        let successful_attempts = self
+            .tuning_history
+            .iter()
             .filter(|a| a.performance_score > 0.0)
             .count();
-        
-        let best_score = self.tuning_history.iter()
+
+        let best_score = self
+            .tuning_history
+            .iter()
             .map(|a| a.performance_score)
             .fold(0.0, f64::max);
-        
+
         let improvement_rate = if total_attempts > 10 {
-            let recent_avg = self.tuning_history.iter()
+            let recent_avg = self
+                .tuning_history
+                .iter()
                 .rev()
                 .take(5)
                 .map(|a| a.performance_score)
-                .sum::<f64>() / 5.0;
-            
-            let initial_avg = self.tuning_history.iter()
+                .sum::<f64>()
+                / 5.0;
+
+            let initial_avg = self
+                .tuning_history
+                .iter()
                 .take(5)
                 .map(|a| a.performance_score)
-                .sum::<f64>() / 5.0;
-            
+                .sum::<f64>()
+                / 5.0;
+
             if initial_avg > 0.0 {
                 (recent_avg - initial_avg) / initial_avg
             } else {
@@ -473,7 +492,7 @@ mod tests {
     #[test]
     fn test_parameter_adjustment() {
         let tuner = AutoTuner::new(TuningConfig::default());
-        
+
         let param = ConfigParameter {
             name: "test_param".to_string(),
             value: ParameterValue::Integer(100),

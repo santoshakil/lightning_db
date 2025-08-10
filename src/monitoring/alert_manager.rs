@@ -3,12 +3,15 @@
 //! Comprehensive alerting system with configurable conditions, severity levels,
 //! notification channels, and alert lifecycle management.
 
-use crate::{Database, Result, Error};
+use crate::{Database, Error, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, RwLock, atomic::{AtomicU64, Ordering}};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, RwLock,
+};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use serde::{Serialize, Deserialize};
-use tracing::{info, error, debug};
+use tracing::{debug, error, info};
 
 use super::health_checker::HealthStatus;
 use super::metrics_collector::DatabaseMetrics;
@@ -157,9 +160,7 @@ pub enum AlertCondition {
         window: Duration,
     },
     /// Health status condition
-    HealthStatus {
-        status: HealthStatusCondition,
-    },
+    HealthStatus { status: HealthStatusCondition },
     /// Resource usage condition
     ResourceUsage {
         resource: String,
@@ -235,7 +236,9 @@ pub trait NotificationChannel {
     fn name(&self) -> &str;
     fn send_alert(&self, alert: &Alert) -> Result<()>;
     fn send_alert_resolution(&self, alert: &Alert) -> Result<()>;
-    fn is_enabled(&self) -> bool { true }
+    fn is_enabled(&self) -> bool {
+        true
+    }
 }
 
 /// Console notification channel (for development)
@@ -263,7 +266,11 @@ impl NotificationChannel for ConsoleNotificationChannel {
             return Ok(());
         }
 
-        println!("🚨 ALERT [{}]: {}", alert.severity.to_string().to_uppercase(), alert.name);
+        println!(
+            "🚨 ALERT [{}]: {}",
+            alert.severity.to_string().to_uppercase(),
+            alert.name
+        );
         println!("   Message: {}", alert.message);
         println!("   Severity: {:?}", alert.severity);
         println!("   Time: {:?}", alert.timestamp);
@@ -280,12 +287,24 @@ impl NotificationChannel for ConsoleNotificationChannel {
             return Ok(());
         }
 
-        println!("✅ RESOLVED [{}]: {}", alert.severity.to_string().to_uppercase(), alert.name);
-        println!("   Resolution: {}", alert.resolution_message.as_deref().unwrap_or("Alert resolved"));
-        println!("   Duration: {:?}", 
-            alert.resolved_at.and_then(|resolved| 
-                resolved.duration_since(alert.timestamp).ok()
-            ).unwrap_or(Duration::from_secs(0))
+        println!(
+            "✅ RESOLVED [{}]: {}",
+            alert.severity.to_string().to_uppercase(),
+            alert.name
+        );
+        println!(
+            "   Resolution: {}",
+            alert
+                .resolution_message
+                .as_deref()
+                .unwrap_or("Alert resolved")
+        );
+        println!(
+            "   Duration: {:?}",
+            alert
+                .resolved_at
+                .and_then(|resolved| resolved.duration_since(alert.timestamp).ok())
+                .unwrap_or(Duration::from_secs(0))
         );
         println!();
 
@@ -364,7 +383,10 @@ impl NotificationChannel for WebhookNotificationChannel {
             "state": "resolved"
         });
 
-        debug!("Webhook resolution sent to {}: {}", self.webhook_url, payload);
+        debug!(
+            "Webhook resolution sent to {}: {}",
+            self.webhook_url, payload
+        );
         Ok(())
     }
 
@@ -391,9 +413,9 @@ impl AlertManager {
         };
 
         // Add default notification channel
-        manager.add_notification_channel(Box::new(
-            ConsoleNotificationChannel::new("console".to_string())
-        ));
+        manager.add_notification_channel(Box::new(ConsoleNotificationChannel::new(
+            "console".to_string(),
+        )));
 
         // Register default alert rules
         manager.register_default_rules();
@@ -405,7 +427,7 @@ impl AlertManager {
     fn register_default_rules(&self) {
         let default_rules = vec![
             AlertRule {
-                name: "high_error_rate".to_string(), 
+                name: "high_error_rate".to_string(),
                 description: "High error rate detected".to_string(),
                 condition: AlertCondition::MetricThreshold {
                     metric: "error_rate".to_string(),
@@ -437,7 +459,8 @@ impl AlertManager {
                 enabled: true,
                 evaluation_interval: Duration::from_secs(60),
                 for_duration: Duration::from_secs(180), // 3 minutes
-                message_template: "Average latency is {{value}}ms, exceeding threshold of 1000ms".to_string(),
+                message_template: "Average latency is {{value}}ms, exceeding threshold of 1000ms"
+                    .to_string(),
                 resolve_condition: Some(AlertCondition::MetricThreshold {
                     metric: "average_latency_ms".to_string(),
                     operator: ComparisonOperator::LessThan,
@@ -457,7 +480,8 @@ impl AlertManager {
                 enabled: true,
                 evaluation_interval: Duration::from_secs(120),
                 for_duration: Duration::from_secs(600), // 10 minutes
-                message_template: "Cache hit rate is {{value}}%, below threshold of 80%".to_string(),
+                message_template: "Cache hit rate is {{value}}%, below threshold of 80%"
+                    .to_string(),
                 resolve_condition: Some(AlertCondition::MetricThreshold {
                     metric: "cache_hit_rate".to_string(),
                     operator: ComparisonOperator::GreaterThan,
@@ -506,15 +530,10 @@ impl AlertManager {
         resources: &ResourceUsage,
     ) -> Result<()> {
         let rules = self.alert_rules.read().unwrap().clone();
-        
+
         for rule in rules.iter().filter(|r| r.enabled) {
-            let condition_met = self.evaluate_condition(
-                &rule.condition,
-                metrics,
-                health,
-                performance,
-                resources,
-            )?;
+            let condition_met =
+                self.evaluate_condition(&rule.condition, metrics, health, performance, resources)?;
 
             if condition_met {
                 self.handle_condition_met(rule, metrics)?;
@@ -539,47 +558,73 @@ impl AlertManager {
         resources: &ResourceUsage,
     ) -> Result<bool> {
         match condition {
-            AlertCondition::MetricThreshold { metric, operator, threshold } => {
+            AlertCondition::MetricThreshold {
+                metric,
+                operator,
+                threshold,
+            } => {
                 let value = self.get_metric_value(metric, metrics, performance, resources)?;
                 Ok(self.compare_values(value, *threshold, operator))
             }
-            AlertCondition::PerformanceDegradation { metric, degradation_percent, window: _ } => {
-                let current_value = self.get_metric_value(metric, metrics, performance, resources)?;
+            AlertCondition::PerformanceDegradation {
+                metric,
+                degradation_percent,
+                window: _,
+            } => {
+                let current_value =
+                    self.get_metric_value(metric, metrics, performance, resources)?;
                 // Simplified: would need historical values for proper degradation detection
                 let baseline_value = current_value * 1.2; // Simulate 20% worse baseline
                 let degradation = ((baseline_value - current_value) / baseline_value * 100.0).abs();
                 Ok(degradation > *degradation_percent)
             }
-            AlertCondition::HealthStatus { status } => {
-                match (health, status) {
-                    (HealthStatus::Unhealthy(_), HealthStatusCondition::Unhealthy) => Ok(true),
-                    (HealthStatus::Degraded(_), HealthStatusCondition::Degraded) => Ok(true),
-                    (HealthStatus::Unknown, HealthStatusCondition::Unknown) => Ok(true),
-                    _ => Ok(false),
-                }
-            }
-            AlertCondition::ResourceUsage { resource, operator, threshold } => {
+            AlertCondition::HealthStatus { status } => match (health, status) {
+                (HealthStatus::Unhealthy(_), HealthStatusCondition::Unhealthy) => Ok(true),
+                (HealthStatus::Degraded(_), HealthStatusCondition::Degraded) => Ok(true),
+                (HealthStatus::Unknown, HealthStatusCondition::Unknown) => Ok(true),
+                _ => Ok(false),
+            },
+            AlertCondition::ResourceUsage {
+                resource,
+                operator,
+                threshold,
+            } => {
                 let value = match resource.as_str() {
                     "cpu_usage_percent" => resources.cpu_usage_percent,
                     "memory_usage_percent" => resources.memory_usage_bytes as f64,
                     "disk_usage_bytes" => resources.disk_usage_bytes as f64,
-                    _ => return Err(Error::Generic(format!("Unknown resource metric: {}", resource))),
+                    _ => {
+                        return Err(Error::Generic(format!(
+                            "Unknown resource metric: {}",
+                            resource
+                        )))
+                    }
                 };
                 Ok(self.compare_values(value, *threshold, operator))
             }
-            AlertCondition::Composite { operator, conditions } => {
-                let results: Result<Vec<bool>> = conditions.iter()
+            AlertCondition::Composite {
+                operator,
+                conditions,
+            } => {
+                let results: Result<Vec<bool>> = conditions
+                    .iter()
                     .map(|c| self.evaluate_condition(c, metrics, health, performance, resources))
                     .collect();
-                
+
                 match operator {
                     LogicalOperator::And => Ok(results?.iter().all(|&x| x)),
                     LogicalOperator::Or => Ok(results?.iter().any(|&x| x)),
                 }
             }
-            AlertCondition::Rate { metric, operator, rate_threshold, window: _ } => {
+            AlertCondition::Rate {
+                metric,
+                operator,
+                rate_threshold,
+                window: _,
+            } => {
                 // Simplified rate calculation - would need time series data
-                let current_value = self.get_metric_value(metric, metrics, performance, resources)?;
+                let current_value =
+                    self.get_metric_value(metric, metrics, performance, resources)?;
                 let rate = current_value; // Placeholder - would calculate actual rate
                 Ok(self.compare_values(rate, *rate_threshold, operator))
             }
@@ -627,17 +672,18 @@ impl AlertManager {
     /// Handle when a condition is met
     fn handle_condition_met(&self, rule: &AlertRule, metrics: &DatabaseMetrics) -> Result<()> {
         let alert_key = format!("{}_{}", rule.name, "default");
-        
+
         let mut active_alerts = self.active_alerts.write().unwrap();
-        
+
         if let Some(existing_alert) = active_alerts.get_mut(&alert_key) {
             // Update existing alert
             existing_alert.fire_count += 1;
             existing_alert.last_updated = SystemTime::now();
             existing_alert.state = AlertState::Firing;
-            
+
             // Send notification if needed (e.g., on escalation)
-            if existing_alert.fire_count % 10 == 0 { // Every 10th fire
+            if existing_alert.fire_count % 10 == 0 {
+                // Every 10th fire
                 self.send_alert_notification(existing_alert)?;
             }
         } else {
@@ -661,10 +707,10 @@ impl AlertManager {
 
             // Send notification
             self.send_alert_notification(&alert)?;
-            
+
             // Record event
             self.record_alert_event(&alert, AlertEventType::Created)?;
-            
+
             active_alerts.insert(alert_key, alert);
         }
 
@@ -675,9 +721,9 @@ impl AlertManager {
     fn handle_condition_not_met(&self, rule: &AlertRule) -> Result<()> {
         if let Some(_resolve_condition) = &rule.resolve_condition {
             let alert_key = format!("{}_{}", rule.name, "default");
-            
+
             let mut active_alerts = self.active_alerts.write().unwrap();
-            
+
             if let Some(alert) = active_alerts.get_mut(&alert_key) {
                 if matches!(alert.state, AlertState::Firing) {
                     // Mark as resolved
@@ -685,13 +731,13 @@ impl AlertManager {
                     alert.resolved_at = Some(SystemTime::now());
                     alert.resolution_message = Some("Alert condition no longer met".to_string());
                     alert.last_updated = SystemTime::now();
-                    
+
                     // Send resolution notification
                     self.send_alert_resolution(alert)?;
-                    
+
                     // Record event
                     self.record_alert_event(alert, AlertEventType::Resolved)?;
-                    
+
                     // Remove from active alerts
                     active_alerts.remove(&alert_key);
                 }
@@ -704,7 +750,7 @@ impl AlertManager {
     /// Send alert notification to all channels
     fn send_alert_notification(&self, alert: &Alert) -> Result<()> {
         let channels = self.notification_channels.read().unwrap();
-        
+
         for channel in channels.iter() {
             if channel.is_enabled() {
                 if let Err(e) = channel.send_alert(alert) {
@@ -719,11 +765,15 @@ impl AlertManager {
     /// Send alert resolution notification
     fn send_alert_resolution(&self, alert: &Alert) -> Result<()> {
         let channels = self.notification_channels.read().unwrap();
-        
+
         for channel in channels.iter() {
             if channel.is_enabled() {
                 if let Err(e) = channel.send_alert_resolution(alert) {
-                    error!("Failed to send alert resolution via {}: {}", channel.name(), e);
+                    error!(
+                        "Failed to send alert resolution via {}: {}",
+                        channel.name(),
+                        e
+                    );
                 }
             }
         }
@@ -735,16 +785,35 @@ impl AlertManager {
     fn format_alert_message(&self, template: &str, metrics: &DatabaseMetrics) -> String {
         // Simple template substitution - would use a proper template engine in production
         template
-            .replace("{{error_rate}}", &format!("{:.2}", metrics.error_rate * 100.0))
-            .replace("{{average_latency_ms}}", &format!("{:.0}", metrics.average_latency.as_millis()))
-            .replace("{{cache_hit_rate}}", &format!("{:.2}", metrics.cache_hit_rate * 100.0))
-            .replace("{{operations_per_second}}", &format!("{:.0}", metrics.operations_per_second))
+            .replace(
+                "{{error_rate}}",
+                &format!("{:.2}", metrics.error_rate * 100.0),
+            )
+            .replace(
+                "{{average_latency_ms}}",
+                &format!("{:.0}", metrics.average_latency.as_millis()),
+            )
+            .replace(
+                "{{cache_hit_rate}}",
+                &format!("{:.2}", metrics.cache_hit_rate * 100.0),
+            )
+            .replace(
+                "{{operations_per_second}}",
+                &format!("{:.0}", metrics.operations_per_second),
+            )
     }
 
     /// Record alert event
     fn record_alert_event(&self, alert: &Alert, event_type: AlertEventType) -> Result<()> {
         let event = AlertEvent {
-            event_id: format!("event_{}_{}", alert.id, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()),
+            event_id: format!(
+                "event_{}_{}",
+                alert.id,
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+            ),
             alert_id: alert.id.clone(),
             event_type: event_type.clone(),
             timestamp: SystemTime::now(),
@@ -767,7 +836,7 @@ impl AlertManager {
     fn cleanup_expired_alerts(&self) -> Result<()> {
         let now = SystemTime::now();
         let mut active_alerts = self.active_alerts.write().unwrap();
-        
+
         let expired_keys: Vec<String> = active_alerts
             .iter()
             .filter(|(_, alert)| {
@@ -784,7 +853,7 @@ impl AlertManager {
             if let Some(mut alert) = active_alerts.remove(&key) {
                 alert.state = AlertState::Expired;
                 alert.last_updated = now;
-                
+
                 self.record_alert_event(&alert, AlertEventType::Expired)?;
                 info!("Alert {} expired", alert.name);
             }
@@ -795,7 +864,12 @@ impl AlertManager {
 
     /// Get active alerts
     pub fn get_active_alerts(&self) -> Vec<Alert> {
-        self.active_alerts.read().unwrap().values().cloned().collect()
+        self.active_alerts
+            .read()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect()
     }
 
     /// Get alert history
@@ -807,7 +881,7 @@ impl AlertManager {
     pub fn get_alert_stats(&self) -> AlertStats {
         let active_alerts = self.active_alerts.read().unwrap();
         let history = self.alert_history.read().unwrap();
-        
+
         let mut stats_by_severity = HashMap::new();
         for alert in active_alerts.values() {
             *stats_by_severity.entry(alert.severity.clone()).or_insert(0) += 1;
@@ -824,14 +898,15 @@ impl AlertManager {
     /// Get most frequent alert from history
     fn get_most_frequent_alert(&self, history: &VecDeque<AlertEvent>) -> Option<String> {
         let mut alert_counts = HashMap::new();
-        
+
         for event in history {
             if matches!(event.event_type, AlertEventType::Created) {
                 *alert_counts.entry(event.alert_id.clone()).or_insert(0) += 1;
             }
         }
-        
-        alert_counts.into_iter()
+
+        alert_counts
+            .into_iter()
             .max_by_key(|(_, count)| *count)
             .map(|(alert_id, _)| alert_id)
     }
@@ -859,8 +934,6 @@ impl ToString for AlertSeverity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    
 
     #[test]
     fn test_alert_manager_creation() {
@@ -883,14 +956,16 @@ mod tests {
             threshold: 80.0,
         };
 
-        let result = manager.evaluate_condition(&condition, &metrics, &health, &performance, &resources).unwrap();
+        let result = manager
+            .evaluate_condition(&condition, &metrics, &health, &performance, &resources)
+            .unwrap();
         assert!(!result); // 50% < 80%
     }
 
     #[test]
     fn test_comparison_operators() {
         let manager = AlertManager::new();
-        
+
         assert!(manager.compare_values(10.0, 5.0, &ComparisonOperator::GreaterThan));
         assert!(!manager.compare_values(5.0, 10.0, &ComparisonOperator::GreaterThan));
         assert!(manager.compare_values(5.0, 10.0, &ComparisonOperator::LessThan));
@@ -902,7 +977,7 @@ mod tests {
         let channel = ConsoleNotificationChannel::new("test".to_string());
         assert_eq!(channel.name(), "test");
         assert!(channel.is_enabled());
-        
+
         let alert = Alert {
             id: "test_alert".to_string(),
             name: "Test Alert".to_string(),

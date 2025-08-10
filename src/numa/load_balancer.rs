@@ -3,14 +3,14 @@
 //! This module provides intelligent load balancing across NUMA nodes
 //! to optimize memory locality and minimize cross-node traffic.
 
-use crate::Result;
 use crate::numa::topology::NumaTopology;
-use std::sync::Arc;
+use crate::Result;
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
-use parking_lot::RwLock;
-use serde::{Serialize, Deserialize};
 
 /// NUMA load balancer
 pub struct NumaLoadBalancer {
@@ -64,9 +64,9 @@ pub struct NodeMetrics {
 }
 
 mod instant_serde {
-    use std::time::Instant;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    
+    use std::time::Instant;
+
     pub fn serialize<S>(instant: &Instant, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -75,7 +75,7 @@ mod instant_serde {
         let elapsed = instant.elapsed().as_millis() as u64;
         elapsed.serialize(serializer)
     }
-    
+
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Instant, D::Error>
     where
         D: Deserializer<'de>,
@@ -122,7 +122,7 @@ impl NumaLoadBalancer {
     /// Create a new NUMA load balancer
     pub fn new(topology: Arc<NumaTopology>, distribution: WorkloadDistribution) -> Result<Self> {
         let mut node_metrics = HashMap::new();
-        
+
         // Initialize metrics for each node
         for node in topology.get_nodes() {
             node_metrics.insert(node.id, NodeMetrics::default());
@@ -140,27 +140,28 @@ impl NumaLoadBalancer {
 
     /// Start monitoring and load balancing
     pub fn start_monitoring(&self) -> Result<()> {
-        self.monitoring_active.store(true, std::sync::atomic::Ordering::Relaxed);
-        
+        self.monitoring_active
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+
         // Start background monitoring thread
         let node_metrics = Arc::clone(&self.node_metrics);
         let topology = Arc::clone(&self.topology);
         let monitoring_active = Arc::clone(&self.monitoring_active);
-        
+
         thread::spawn(move || {
             let mut last_rebalance = Instant::now();
-            
+
             while monitoring_active.load(std::sync::atomic::Ordering::Relaxed) {
                 // Update node metrics
                 Self::update_node_metrics_background(&node_metrics, &topology);
-                
+
                 // Check if rebalancing is needed
                 if last_rebalance.elapsed() > Duration::from_secs(30) {
                     // Rebalance every 30 seconds if needed
                     last_rebalance = Instant::now();
                     // Rebalancing logic would go here
                 }
-                
+
                 thread::sleep(Duration::from_secs(5));
             }
         });
@@ -171,7 +172,8 @@ impl NumaLoadBalancer {
 
     /// Stop monitoring
     pub fn stop_monitoring(&self) {
-        self.monitoring_active.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.monitoring_active
+            .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Get the preferred NUMA node for a thread
@@ -201,7 +203,7 @@ impl NumaLoadBalancer {
     /// Get the least loaded NUMA node
     pub fn get_least_loaded_node(&self) -> u32 {
         let metrics = self.node_metrics.read();
-        
+
         let mut best_node = 0;
         let mut best_score = f64::MAX;
 
@@ -218,21 +220,11 @@ impl NumaLoadBalancer {
     /// Select optimal node based on distribution strategy
     pub fn select_optimal_node(&self) -> Result<u32> {
         match &self.distribution {
-            WorkloadDistribution::RoundRobin => {
-                self.select_round_robin()
-            }
-            WorkloadDistribution::LeastLoaded => {
-                Ok(self.get_least_loaded_node())
-            }
-            WorkloadDistribution::Weighted => {
-                self.select_weighted()
-            }
-            WorkloadDistribution::LocalityAware => {
-                self.select_locality_aware()
-            }
-            WorkloadDistribution::CustomWeights(weights) => {
-                self.select_custom_weighted(weights)
-            }
+            WorkloadDistribution::RoundRobin => self.select_round_robin(),
+            WorkloadDistribution::LeastLoaded => Ok(self.get_least_loaded_node()),
+            WorkloadDistribution::Weighted => self.select_weighted(),
+            WorkloadDistribution::LocalityAware => self.select_locality_aware(),
+            WorkloadDistribution::CustomWeights(weights) => self.select_custom_weighted(weights),
         }
     }
 
@@ -256,7 +248,7 @@ impl NumaLoadBalancer {
     /// Calculate load imbalance across nodes
     pub fn calculate_load_imbalance(&self) -> f64 {
         let metrics = self.node_metrics.read();
-        
+
         if metrics.is_empty() {
             return 0.0;
         }
@@ -264,7 +256,7 @@ impl NumaLoadBalancer {
         let scores: Vec<f64> = metrics.values().map(|m| m.load_score).collect();
         let avg_score = scores.iter().sum::<f64>() / scores.len() as f64;
         let max_score = scores.iter().cloned().fold(0.0f64, f64::max);
-        
+
         if avg_score > 0.0 {
             (max_score - avg_score) / avg_score
         } else {
@@ -275,10 +267,13 @@ impl NumaLoadBalancer {
     /// Trigger manual rebalancing
     pub fn rebalance(&self) -> Result<()> {
         let imbalance = self.calculate_load_imbalance();
-        
+
         if imbalance > self.rebalance_threshold {
-            println!("Rebalancing NUMA load (imbalance: {:.2}%)", imbalance * 100.0);
-            
+            println!(
+                "Rebalancing NUMA load (imbalance: {:.2}%)",
+                imbalance * 100.0
+            );
+
             // In a real implementation, this would migrate threads between nodes
             // For now, we'll just update the assignments
             self.redistribute_threads()?;
@@ -292,7 +287,7 @@ impl NumaLoadBalancer {
         // Simple round-robin based on current assignments
         let assignments = self.thread_assignments.read();
         let node_count = self.topology.get_node_count();
-        
+
         // Count assignments per node
         let mut node_counts = HashMap::new();
         for &node_id in assignments.values() {
@@ -317,7 +312,7 @@ impl NumaLoadBalancer {
     /// Select node using weighted strategy
     fn select_weighted(&self) -> Result<u32> {
         let metrics = self.node_metrics.read();
-        
+
         // Calculate weights based on node capacity
         let mut best_node = 0;
         let mut best_weight = 0.0;
@@ -326,9 +321,13 @@ impl NumaLoadBalancer {
             if let Some(node_metrics) = metrics.get(&node.id) {
                 // Weight based on available capacity
                 let cpu_weight = 1.0 - node_metrics.cpu_utilization;
-                let memory_weight = 1.0 - (node_metrics.memory_usage as f64 / node.memory_size_mb as f64 / 1024.0 / 1024.0);
+                let memory_weight = 1.0
+                    - (node_metrics.memory_usage as f64
+                        / node.memory_size_mb as f64
+                        / 1024.0
+                        / 1024.0);
                 let combined_weight = (cpu_weight + memory_weight) / 2.0;
-                
+
                 if combined_weight > best_weight {
                     best_weight = combined_weight;
                     best_node = node.id;
@@ -349,7 +348,7 @@ impl NumaLoadBalancer {
     /// Select node using custom weights
     fn select_custom_weighted(&self, weights: &HashMap<u32, f64>) -> Result<u32> {
         let metrics = self.node_metrics.read();
-        
+
         let mut best_node = 0;
         let mut best_score = f64::MIN;
 
@@ -358,7 +357,7 @@ impl NumaLoadBalancer {
                 // Combine custom weight with current load
                 let load_factor = 1.0 - node_metrics.load_score / 100.0; // Normalize load score
                 let score = weight * load_factor;
-                
+
                 if score > best_score {
                     best_score = score;
                     best_node = node_id;
@@ -373,13 +372,13 @@ impl NumaLoadBalancer {
     fn redistribute_threads(&self) -> Result<()> {
         let metrics = self.node_metrics.read();
         let mut assignments = self.thread_assignments.write();
-        
+
         // Identify overloaded and underloaded nodes
         let avg_load = metrics.values().map(|m| m.load_score).sum::<f64>() / metrics.len() as f64;
-        
+
         let mut overloaded_nodes = Vec::new();
         let mut underloaded_nodes = Vec::new();
-        
+
         for (&node_id, node_metrics) in metrics.iter() {
             if node_metrics.load_score > avg_load * 1.2 {
                 overloaded_nodes.push(node_id);
@@ -394,19 +393,20 @@ impl NumaLoadBalancer {
             if underloaded_nodes.is_empty() {
                 break;
             }
-            
+
             // Find threads on overloaded node
-            let threads_to_move: Vec<_> = assignments.iter()
+            let threads_to_move: Vec<_> = assignments
+                .iter()
                 .filter(|(_, &node_id)| node_id == overloaded_node)
                 .map(|(&thread_id, _)| thread_id)
                 .take(1) // Move one thread at a time
                 .collect();
-            
+
             for thread_id in threads_to_move {
                 if let Some(&target_node) = underloaded_nodes.first() {
                     assignments.insert(thread_id, target_node);
                     moved_count += 1;
-                    
+
                     // Remove from underloaded if it's getting busy
                     if moved_count >= 1 {
                         underloaded_nodes.remove(0);
@@ -416,7 +416,10 @@ impl NumaLoadBalancer {
         }
 
         if moved_count > 0 {
-            println!("Redistributed {} threads for better NUMA balance", moved_count);
+            println!(
+                "Redistributed {} threads for better NUMA balance",
+                moved_count
+            );
         }
 
         Ok(())
@@ -425,10 +428,10 @@ impl NumaLoadBalancer {
     /// Background thread for updating node metrics
     fn update_node_metrics_background(
         node_metrics: &Arc<RwLock<HashMap<u32, NodeMetrics>>>,
-        topology: &Arc<NumaTopology>
+        topology: &Arc<NumaTopology>,
     ) {
         let mut metrics = node_metrics.write();
-        
+
         for node in topology.get_nodes() {
             if let Some(node_metric) = metrics.get_mut(&node.id) {
                 // Update metrics from system (simplified)
@@ -437,7 +440,7 @@ impl NumaLoadBalancer {
                 node_metric.memory_usage = Self::measure_memory_usage(node.id);
                 node_metric.cache_miss_rate = Self::measure_cache_miss_rate(node.id);
                 node_metric.avg_latency_us = Self::measure_avg_latency(node.id);
-                
+
                 // Calculate composite load score
                 node_metric.load_score = Self::calculate_load_score(node_metric);
             }
@@ -483,10 +486,10 @@ impl NumaLoadBalancer {
         let latency_score = (metrics.avg_latency_us / 100.0).min(100.0); // Normalize to 0-100
         let cache_score = metrics.cache_miss_rate * 100.0;
 
-        cpu_weight * cpu_score +
-        memory_weight * memory_score +
-        latency_weight * latency_score +
-        cache_weight * cache_score
+        cpu_weight * cpu_score
+            + memory_weight * memory_score
+            + latency_weight * latency_score
+            + cache_weight * cache_score
     }
 }
 
@@ -512,14 +515,14 @@ mod tests {
     #[test]
     fn test_node_selection_strategies() {
         let topology = Arc::new(NumaTopology::detect().unwrap());
-        
+
         let strategies = vec![
             WorkloadDistribution::RoundRobin,
             WorkloadDistribution::LeastLoaded,
             WorkloadDistribution::Weighted,
             WorkloadDistribution::LocalityAware,
         ];
-        
+
         for distribution in strategies {
             let balancer = NumaLoadBalancer::new(topology.clone(), distribution).unwrap();
             let result = balancer.select_optimal_node();
@@ -531,7 +534,7 @@ mod tests {
     fn test_load_imbalance_calculation() {
         let topology = Arc::new(NumaTopology::detect().unwrap());
         let balancer = NumaLoadBalancer::new(topology, WorkloadDistribution::LeastLoaded).unwrap();
-        
+
         // Add some test metrics
         for node in balancer.topology.get_nodes() {
             let metrics = NodeMetrics {
@@ -540,7 +543,7 @@ mod tests {
             };
             balancer.update_node_metrics(node.id, metrics);
         }
-        
+
         let imbalance = balancer.calculate_load_imbalance();
         assert!(imbalance >= 0.0);
     }
@@ -549,12 +552,12 @@ mod tests {
     fn test_thread_assignment() {
         let topology = Arc::new(NumaTopology::detect().unwrap());
         let balancer = NumaLoadBalancer::new(topology, WorkloadDistribution::RoundRobin).unwrap();
-        
+
         let thread_id = thread::current().id();
         let node = balancer.get_preferred_node_for_thread(thread_id);
-        
+
         assert!(node.is_some());
-        
+
         // Second call should return the same node
         let node2 = balancer.get_preferred_node_for_thread(thread_id);
         assert_eq!(node, node2);

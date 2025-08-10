@@ -3,30 +3,30 @@
 //! Provides unified interface for various compression algorithms with hardware acceleration
 //! support and performance optimization features.
 
-use crate::{Result, Error};
-use super::{CompressionLevel, CompressionAlgorithm, HardwareCapabilities};
+use super::{CompressionAlgorithm, CompressionLevel, HardwareCapabilities};
+use crate::{Error, Result};
 
 /// Trait for compression algorithms
 pub trait CompressionAlgorithmTrait: Send + Sync {
     /// Compress data with specified level
     fn compress(&self, data: &[u8], level: CompressionLevel) -> Result<Vec<u8>>;
-    
+
     /// Decompress data
     fn decompress(&self, compressed_data: &[u8]) -> Result<Vec<u8>>;
-    
+
     /// Get algorithm name
     fn name(&self) -> &'static str;
-    
+
     /// Check if hardware acceleration is available
     fn supports_hardware_acceleration(&self) -> bool {
         false
     }
-    
+
     /// Get recommended block size for this algorithm
     fn recommended_block_size(&self) -> usize {
         64 * 1024 // 64KB default
     }
-    
+
     /// Estimate compression ratio for data type
     fn estimate_compression_ratio(&self, data: &[u8]) -> f64 {
         // Simple entropy-based estimation
@@ -48,15 +48,15 @@ impl CompressionAlgorithmTrait for NoCompression {
     fn compress(&self, data: &[u8], _level: CompressionLevel) -> Result<Vec<u8>> {
         Ok(data.to_vec())
     }
-    
+
     fn decompress(&self, compressed_data: &[u8]) -> Result<Vec<u8>> {
         Ok(compressed_data.to_vec())
     }
-    
+
     fn name(&self) -> &'static str {
         "none"
     }
-    
+
     fn recommended_block_size(&self) -> usize {
         1024 * 1024 // 1MB for no compression
     }
@@ -73,7 +73,7 @@ impl LZ4Compression {
             high_compression: false,
         }
     }
-    
+
     pub fn with_high_compression() -> Self {
         Self {
             high_compression: true,
@@ -86,7 +86,7 @@ impl CompressionAlgorithmTrait for LZ4Compression {
         if data.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let compressed = if self.high_compression || level.as_int() > 6 {
             // Use HC compression for higher levels
             lz4_flex::compress_prepend_size(data)
@@ -94,19 +94,19 @@ impl CompressionAlgorithmTrait for LZ4Compression {
             // Use fast compression for lower levels
             lz4_flex::compress_prepend_size(data)
         };
-        
+
         Ok(compressed)
     }
-    
+
     fn decompress(&self, compressed_data: &[u8]) -> Result<Vec<u8>> {
         if compressed_data.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         lz4_flex::decompress_size_prepended(compressed_data)
             .map_err(|e| Error::Compression(format!("LZ4 decompression failed: {}", e)))
     }
-    
+
     fn name(&self) -> &'static str {
         if self.high_compression {
             "lz4hc"
@@ -114,11 +114,11 @@ impl CompressionAlgorithmTrait for LZ4Compression {
             "lz4"
         }
     }
-    
+
     fn recommended_block_size(&self) -> usize {
         64 * 1024 // 64KB optimal for LZ4
     }
-    
+
     fn estimate_compression_ratio(&self, data: &[u8]) -> f64 {
         // LZ4 typically achieves 2-3x compression on text, less on binary
         let entropy = calculate_entropy(data);
@@ -146,7 +146,7 @@ impl CompressionAlgorithmTrait for ZstdCompression {
         if data.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let compression_level = match level {
             CompressionLevel::Fastest => 1,
             CompressionLevel::Fast => 3,
@@ -154,28 +154,28 @@ impl CompressionAlgorithmTrait for ZstdCompression {
             CompressionLevel::High => 9,
             CompressionLevel::Maximum => 19,
         };
-        
+
         zstd::encode_all(data, compression_level)
             .map_err(|e| Error::Compression(format!("Zstd compression failed: {}", e)))
     }
-    
+
     fn decompress(&self, compressed_data: &[u8]) -> Result<Vec<u8>> {
         if compressed_data.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         zstd::decode_all(compressed_data)
             .map_err(|e| Error::Compression(format!("Zstd decompression failed: {}", e)))
     }
-    
+
     fn name(&self) -> &'static str {
         "zstd"
     }
-    
+
     fn recommended_block_size(&self) -> usize {
         128 * 1024 // 128KB optimal for Zstd
     }
-    
+
     fn estimate_compression_ratio(&self, data: &[u8]) -> f64 {
         // Zstd typically achieves better compression than LZ4
         let entropy = calculate_entropy(data);
@@ -205,30 +205,32 @@ impl CompressionAlgorithmTrait for SnappyCompression {
         if data.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let mut encoder = snap::raw::Encoder::new();
-        encoder.compress_vec(data)
+        encoder
+            .compress_vec(data)
             .map_err(|e| Error::Compression(format!("Snappy compression failed: {}", e)))
     }
-    
+
     fn decompress(&self, compressed_data: &[u8]) -> Result<Vec<u8>> {
         if compressed_data.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let mut decoder = snap::raw::Decoder::new();
-        decoder.decompress_vec(compressed_data)
+        decoder
+            .decompress_vec(compressed_data)
             .map_err(|e| Error::Compression(format!("Snappy decompression failed: {}", e)))
     }
-    
+
     fn name(&self) -> &'static str {
         "snappy"
     }
-    
+
     fn recommended_block_size(&self) -> usize {
         32 * 1024 // 32KB optimal for Snappy
     }
-    
+
     fn estimate_compression_ratio(&self, data: &[u8]) -> f64 {
         // Snappy prioritizes speed over compression ratio
         let entropy = calculate_entropy(data);
@@ -259,25 +261,25 @@ impl CompressionAlgorithmTrait for LZMACompression {
         if data.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let compression_level = level.as_int() as u32;
-        
+
         // Note: This is a placeholder - real implementation would use lzma-rs or similar
         Err(Error::Compression("LZMA not implemented".to_string()))
     }
-    
+
     fn decompress(&self, _compressed_data: &[u8]) -> Result<Vec<u8>> {
         Err(Error::Compression("LZMA not implemented".to_string()))
     }
-    
+
     fn name(&self) -> &'static str {
         "lzma"
     }
-    
+
     fn recommended_block_size(&self) -> usize {
         256 * 1024 // 256KB for LZMA
     }
-    
+
     fn estimate_compression_ratio(&self, data: &[u8]) -> f64 {
         // LZMA achieves excellent compression but is slow
         let entropy = calculate_entropy(data);
@@ -310,25 +312,25 @@ impl CompressionAlgorithmTrait for BrotliCompression {
         if data.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let compression_level = level.as_int() as u32;
-        
+
         // Note: This is a placeholder - real implementation would use brotli crate
         Err(Error::Compression("Brotli not implemented".to_string()))
     }
-    
+
     fn decompress(&self, _compressed_data: &[u8]) -> Result<Vec<u8>> {
         Err(Error::Compression("Brotli not implemented".to_string()))
     }
-    
+
     fn name(&self) -> &'static str {
         "brotli"
     }
-    
+
     fn recommended_block_size(&self) -> usize {
         128 * 1024 // 128KB for Brotli
     }
-    
+
     fn estimate_compression_ratio(&self, data: &[u8]) -> f64 {
         // Brotli achieves excellent compression on text
         let entropy = calculate_entropy(data);
@@ -354,7 +356,7 @@ impl HardwareAcceleratedCompression {
     pub fn new(hardware: &HardwareCapabilities) -> Result<Self> {
         // For now, use Zstd as fallback
         let fallback = Box::new(ZstdCompression::new());
-        
+
         Ok(Self {
             hardware: hardware.clone(),
             fallback,
@@ -369,32 +371,32 @@ impl CompressionAlgorithmTrait for HardwareAcceleratedCompression {
             // TODO: Implement actual hardware acceleration
             // For now, fall back to software implementation
         }
-        
+
         // Use fallback algorithm
         self.fallback.compress(data, level)
     }
-    
+
     fn decompress(&self, compressed_data: &[u8]) -> Result<Vec<u8>> {
         if self.hardware.has_compression_acceleration() {
             // TODO: Implement actual hardware acceleration
         }
-        
+
         self.fallback.decompress(compressed_data)
     }
-    
+
     fn name(&self) -> &'static str {
         "hardware"
     }
-    
+
     fn supports_hardware_acceleration(&self) -> bool {
         true
     }
-    
+
     fn recommended_block_size(&self) -> usize {
         // Hardware accelerated compression often works better with larger blocks
         1024 * 1024 // 1MB
     }
-    
+
     fn estimate_compression_ratio(&self, data: &[u8]) -> f64 {
         // Delegate to fallback algorithm
         self.fallback.estimate_compression_ratio(data)
@@ -424,7 +426,8 @@ impl CompressionAlgorithmFactory {
                     Ok(Box::new(HardwareAcceleratedCompression::new(hw)?))
                 } else {
                     Err(Error::InvalidOperation {
-                        reason: "Hardware capabilities required for hardware acceleration".to_string()
+                        reason: "Hardware capabilities required for hardware acceleration"
+                            .to_string(),
                     })
                 }
             }
@@ -438,7 +441,7 @@ impl CompressionAlgorithmFactory {
             }
         }
     }
-    
+
     /// Get available algorithms
     pub fn available_algorithms() -> Vec<CompressionAlgorithm> {
         let algorithms = vec![
@@ -447,13 +450,13 @@ impl CompressionAlgorithmFactory {
             CompressionAlgorithm::Zstd,
             CompressionAlgorithm::Snappy,
         ];
-        
+
         #[cfg(feature = "lzma")]
         algorithms.push(CompressionAlgorithm::LZMA);
-        
+
         #[cfg(feature = "brotli")]
         algorithms.push(CompressionAlgorithm::Brotli);
-        
+
         algorithms
     }
 }
@@ -463,22 +466,22 @@ fn calculate_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
     }
-    
+
     let mut counts = [0u32; 256];
     for &byte in data {
         counts[byte as usize] += 1;
     }
-    
+
     let len = data.len() as f64;
     let mut entropy = 0.0;
-    
+
     for count in counts.iter() {
         if *count > 0 {
             let p = *count as f64 / len;
             entropy -= p * p.log2();
         }
     }
-    
+
     entropy
 }
 
@@ -500,7 +503,7 @@ impl AlgorithmPerformance {
         let ratio_score = (1.0 - self.compression_ratio) * 100.0; // Higher compression is better
         let speed_score = self.throughput_mb_s / 10.0; // Normalize throughput
         let memory_score = 100.0 / (1.0 + self.memory_usage_mb / 100.0); // Lower memory is better
-        
+
         (ratio_score + speed_score + memory_score) / 3.0
     }
 }
@@ -508,92 +511,96 @@ impl AlgorithmPerformance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_no_compression() {
         let compressor = NoCompression::new();
         let data = b"Hello, World!";
-        
+
         let compressed = compressor.compress(data, CompressionLevel::Fast).unwrap();
         assert_eq!(compressed, data);
-        
+
         let decompressed = compressor.decompress(&compressed).unwrap();
         assert_eq!(decompressed, data);
     }
-    
+
     #[test]
     fn test_lz4_compression() {
         let compressor = LZ4Compression::new();
         let data = b"Hello, World! This is a test string that should compress well.";
-        
+
         let compressed = compressor.compress(data, CompressionLevel::Fast).unwrap();
         assert!(compressed.len() < data.len());
-        
+
         let decompressed = compressor.decompress(&compressed).unwrap();
         assert_eq!(decompressed, data);
     }
-    
+
     #[test]
     fn test_zstd_compression() {
         let compressor = ZstdCompression::new();
         let data = b"Hello, World! This is a test string that should compress well.";
-        
-        let compressed = compressor.compress(data, CompressionLevel::Balanced).unwrap();
+
+        let compressed = compressor
+            .compress(data, CompressionLevel::Balanced)
+            .unwrap();
         assert!(compressed.len() < data.len());
-        
+
         let decompressed = compressor.decompress(&compressed).unwrap();
         assert_eq!(decompressed, data);
     }
-    
+
     #[test]
     fn test_snappy_compression() {
         let compressor = SnappyCompression::new();
         let data = b"Hello, World! This is a test string that should compress well.";
-        
+
         let compressed = compressor.compress(data, CompressionLevel::Fast).unwrap();
         assert!(compressed.len() < data.len());
-        
+
         let decompressed = compressor.decompress(&compressed).unwrap();
         assert_eq!(decompressed, data);
     }
-    
+
     #[test]
     fn test_entropy_calculation() {
         // High entropy data (random)
         let random_data = (0..256).map(|i| i as u8).collect::<Vec<_>>();
         let entropy = calculate_entropy(&random_data);
         assert!(entropy > 7.0);
-        
+
         // Low entropy data (repetitive)
         let repetitive_data = vec![b'A'; 1000];
         let entropy = calculate_entropy(&repetitive_data);
         assert!(entropy < 1.0);
     }
-    
+
     #[test]
     fn test_algorithm_factory() {
         let algorithms = CompressionAlgorithmFactory::available_algorithms();
         assert!(!algorithms.is_empty());
         assert!(algorithms.contains(&CompressionAlgorithm::LZ4));
         assert!(algorithms.contains(&CompressionAlgorithm::Zstd));
-        
+
         let lz4 = CompressionAlgorithmFactory::create(CompressionAlgorithm::LZ4, None).unwrap();
         assert_eq!(lz4.name(), "lz4");
     }
-    
+
     #[test]
     fn test_compression_levels() {
         let compressor = ZstdCompression::new();
         let data = b"This is test data for compression level testing. ".repeat(100);
-        
+
         let fast = compressor.compress(&data, CompressionLevel::Fast).unwrap();
-        let balanced = compressor.compress(&data, CompressionLevel::Balanced).unwrap();
+        let balanced = compressor
+            .compress(&data, CompressionLevel::Balanced)
+            .unwrap();
         let high = compressor.compress(&data, CompressionLevel::High).unwrap();
-        
+
         // Higher compression levels should achieve better compression
         // (though this isn't guaranteed for all data)
         assert!(high.len() <= balanced.len());
-        
+
         // All should decompress correctly
         assert_eq!(compressor.decompress(&fast).unwrap(), data);
         assert_eq!(compressor.decompress(&balanced).unwrap(), data);

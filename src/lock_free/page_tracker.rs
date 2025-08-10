@@ -331,7 +331,8 @@ mod tests {
         let mut all_freed = HashSet::new();
 
         for handle in handles {
-            let (allocated, freed) = handle.join().unwrap();
+            let (allocated, freed) = handle.join()
+                .expect("Thread panicked during concurrent allocation test");
             all_allocated.extend(allocated);
             for page in freed {
                 all_freed.insert(page);
@@ -363,7 +364,8 @@ mod tests {
                     tracker_clone.free(page); // Free immediately for reuse
                 }
             });
-            handle.join().unwrap();
+            handle.join()
+                .expect("Thread panicked during unique allocation verification");
         }
 
         let stats = tracker.stats();

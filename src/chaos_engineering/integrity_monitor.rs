@@ -3,15 +3,18 @@
 //! Continuous monitoring and verification of database integrity including
 //! checksums, structural consistency, referential integrity, and anomaly detection.
 
-use crate::{Database, Result};
 use crate::chaos_engineering::IntegrityReport;
-use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
+use crate::{Database, Result};
+use parking_lot::RwLock;
+use rand::{rng, Rng};
+use sha2::Digest;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
-use std::collections::{HashMap, VecDeque};
-use parking_lot::RwLock;
-use rand::{Rng, thread_rng};
-use sha2::Digest;
 
 /// Comprehensive integrity monitoring system
 pub struct IntegrityMonitor {
@@ -78,7 +81,7 @@ pub struct AlertThresholds {
 impl Default for AlertThresholds {
     fn default() -> Self {
         Self {
-            checksum_failure_rate: 0.001, // 0.1%
+            checksum_failure_rate: 0.001,  // 0.1%
             structural_error_rate: 0.0001, // 0.01%
             anomaly_detection_sensitivity: 0.95,
             response_time_threshold_ms: 1000,
@@ -342,7 +345,7 @@ impl AnomalyModel for StatisticalAnomalyModel {
     fn detect(&self, metrics: &SystemMetrics) -> Option<AnomalyScore> {
         // Simplified statistical anomaly detection
         // In production, would use more sophisticated algorithms
-        
+
         // Check for performance anomalies
         if metrics.average_latency_ms > 100.0 {
             return Some(AnomalyScore {
@@ -353,7 +356,7 @@ impl AnomalyModel for StatisticalAnomalyModel {
                 suggested_action: "Investigate high latency causes".to_string(),
             });
         }
-        
+
         // Check for error rate spikes
         if metrics.error_rate > 0.05 {
             return Some(AnomalyScore {
@@ -364,7 +367,7 @@ impl AnomalyModel for StatisticalAnomalyModel {
                 suggested_action: "Check error logs and system health".to_string(),
             });
         }
-        
+
         None
     }
 
@@ -378,7 +381,10 @@ struct LogAlertHandler;
 
 impl AlertHandler for LogAlertHandler {
     fn handle(&self, alert: &Alert) -> Result<()> {
-        println!("[{:?}] {}: {}", alert.severity, alert.title, alert.description);
+        println!(
+            "[{:?}] {}: {}",
+            alert.severity, alert.title, alert.description
+        );
         Ok(())
     }
 
@@ -392,13 +398,11 @@ impl IntegrityMonitor {
     pub fn new(config: IntegrityMonitorConfig) -> Self {
         let anomaly_detector = Arc::new(AnomalyDetector {
             anomalies_detected: AtomicU64::new(0),
-            detection_models: RwLock::new(vec![
-                Box::new(StatisticalAnomalyModel {
-                    name: "Statistical Detector".to_string(),
-                    threshold_multiplier: 3.0,
-                    window_size: 100,
-                }),
-            ]),
+            detection_models: RwLock::new(vec![Box::new(StatisticalAnomalyModel {
+                name: "Statistical Detector".to_string(),
+                threshold_multiplier: 3.0,
+                window_size: 100,
+            })]),
             anomaly_history: RwLock::new(VecDeque::with_capacity(1000)),
             baseline_metrics: RwLock::new(BaselineMetrics {
                 avg_read_ops: 1000.0,
@@ -414,9 +418,7 @@ impl IntegrityMonitor {
             alerts: RwLock::new(VecDeque::with_capacity(10000)),
             alert_count: AtomicU64::new(0),
             critical_alerts: AtomicU64::new(0),
-            alert_handlers: RwLock::new(vec![
-                Box::new(LogAlertHandler),
-            ]),
+            alert_handlers: RwLock::new(vec![Box::new(LogAlertHandler)]),
         });
 
         Self {
@@ -437,7 +439,9 @@ impl IntegrityMonitor {
         }
 
         println!("🔍 Starting continuous integrity monitoring...");
-        self.continuous_monitor.enabled.store(true, Ordering::SeqCst);
+        self.continuous_monitor
+            .enabled
+            .store(true, Ordering::SeqCst);
 
         let monitor = Arc::clone(&self.continuous_monitor);
         let config = self.config.clone();
@@ -450,7 +454,7 @@ impl IntegrityMonitor {
         let handle = thread::spawn(move || {
             while monitor.enabled.load(Ordering::Acquire) {
                 let start_time = SystemTime::now();
-                
+
                 // Perform integrity checks
                 let report = Self::perform_integrity_check(
                     &db,
@@ -481,8 +485,10 @@ impl IntegrityMonitor {
     /// Stop continuous monitoring
     pub fn stop_monitoring(&self) {
         println!("🛑 Stopping integrity monitoring...");
-        self.continuous_monitor.enabled.store(false, Ordering::SeqCst);
-        
+        self.continuous_monitor
+            .enabled
+            .store(false, Ordering::SeqCst);
+
         if let Some(handle) = self.continuous_monitor.monitoring_thread.write().take() {
             let _ = handle.join();
         }
@@ -491,7 +497,7 @@ impl IntegrityMonitor {
     /// Perform comprehensive integrity check
     pub fn perform_full_check(&self, db: &Arc<Database>) -> Result<IntegrityReport> {
         println!("🔍 Performing comprehensive integrity check...");
-        
+
         let start_time = SystemTime::now();
         let mut report = IntegrityReport {
             pages_verified: 0,
@@ -524,22 +530,28 @@ impl IntegrityMonitor {
         }
 
         // Attempt repairs if enabled
-        if self.config.auto_repair_enabled && 
-           (report.checksum_failures > 0 || report.structural_errors > 0) {
+        if self.config.auto_repair_enabled
+            && (report.checksum_failures > 0 || report.structural_errors > 0)
+        {
             let repair_results = self.attempt_auto_repair(db)?;
             report.repaired_errors = repair_results.successful_repairs;
             report.unrepairable_errors = repair_results.failed_repairs;
         }
 
         report.verification_duration = start_time.elapsed().unwrap_or_default();
-        
+
         // Generate alerts based on findings
         self.generate_integrity_alerts(&report)?;
 
-        println!("✔️  Integrity check completed in {:?}", report.verification_duration);
+        println!(
+            "✔️  Integrity check completed in {:?}",
+            report.verification_duration
+        );
         println!("   Pages verified: {}", report.pages_verified);
-        println!("   Issues found: {}", 
-                 report.checksum_failures + report.structural_errors);
+        println!(
+            "   Issues found: {}",
+            report.checksum_failures + report.structural_errors
+        );
 
         Ok(report)
     }
@@ -547,7 +559,7 @@ impl IntegrityMonitor {
     /// Verify all checksums
     fn verify_all_checksums(&self, db: &Arc<Database>) -> Result<ChecksumResults> {
         println!("   Verifying checksums...");
-        
+
         let mut results = ChecksumResults {
             pages_checked: 0,
             failures: 0,
@@ -558,31 +570,39 @@ impl IntegrityMonitor {
         // In real implementation, would iterate through all pages
         let total_pages = 10000;
         let sample_size = (total_pages as f64 * self.config.sampling_rate) as usize;
-        
+
         for i in 0..sample_size {
             results.pages_checked += 1;
-            
+
             // Simulate checksum calculation and verification
-            if thread_rng().gen_bool(0.001) { // 0.1% failure rate for testing
+            if rng().gen_bool(0.001) {
+                // 0.1% failure rate for testing
                 results.failures += 1;
                 results.failure_locations.push(format!("page_{}", i));
-                
+
                 let failure = ChecksumFailure {
                     location: format!("page_{}", i),
-                    expected: thread_rng().gen(),
-                    actual: thread_rng().gen(),
+                    expected: rng().gen(),
+                    actual: rng().gen(),
                     timestamp: SystemTime::now(),
                     data_size: 4096,
                     repair_attempted: false,
                     repair_successful: false,
                 };
-                
-                self.checksum_verifier.failure_locations.write().push(failure);
-                self.checksum_verifier.checksum_failures.fetch_add(1, Ordering::Relaxed);
+
+                self.checksum_verifier
+                    .failure_locations
+                    .write()
+                    .push(failure);
+                self.checksum_verifier
+                    .checksum_failures
+                    .fetch_add(1, Ordering::Relaxed);
             }
         }
 
-        self.checksum_verifier.verified_pages.fetch_add(results.pages_checked, Ordering::Relaxed);
+        self.checksum_verifier
+            .verified_pages
+            .fetch_add(results.pages_checked, Ordering::Relaxed);
         *self.checksum_verifier.last_verification.write() = SystemTime::now();
 
         Ok(results)
@@ -591,7 +611,7 @@ impl IntegrityMonitor {
     /// Validate all structural integrity
     fn validate_all_structures(&self, db: &Arc<Database>) -> Result<StructuralResults> {
         println!("   Validating structural integrity...");
-        
+
         let mut results = StructuralResults {
             pages_validated: 0,
             errors_found: 0,
@@ -600,15 +620,16 @@ impl IntegrityMonitor {
 
         // Simulate structural validation
         let structures_to_check = 1000;
-        
+
         for i in 0..structures_to_check {
             results.pages_validated += 1;
-            
+
             // Simulate various structural checks
-            if thread_rng().gen_bool(0.0001) { // 0.01% error rate
+            if rng().gen_bool(0.0001) {
+                // 0.01% error rate
                 results.errors_found += 1;
-                
-                let error_type = match thread_rng().gen_range(0..6) {
+
+                let error_type = match rng().gen_range(0..6) {
                     0 => StructuralErrorType::InvalidPageHeader,
                     1 => StructuralErrorType::CorruptedIndex,
                     2 => StructuralErrorType::BrokenLinkage,
@@ -616,23 +637,23 @@ impl IntegrityMonitor {
                     4 => StructuralErrorType::OverflowChain,
                     _ => StructuralErrorType::MetadataInconsistency,
                 };
-                
+
                 *results.error_types.entry(error_type).or_insert(0) += 1;
-                self.structural_validator.error_patterns.write()
+                self.structural_validator
+                    .error_patterns
+                    .write()
                     .entry(error_type)
                     .and_modify(|c| *c += 1)
                     .or_insert(1);
             }
         }
 
-        self.structural_validator.validations_performed.fetch_add(
-            results.pages_validated, 
-            Ordering::Relaxed
-        );
-        self.structural_validator.structural_errors.fetch_add(
-            results.errors_found, 
-            Ordering::Relaxed
-        );
+        self.structural_validator
+            .validations_performed
+            .fetch_add(results.pages_validated, Ordering::Relaxed);
+        self.structural_validator
+            .structural_errors
+            .fetch_add(results.errors_found, Ordering::Relaxed);
 
         // Record validation result
         let validation_result = ValidationResult {
@@ -649,7 +670,9 @@ impl IntegrityMonitor {
             },
         };
 
-        self.structural_validator.validation_history.write()
+        self.structural_validator
+            .validation_history
+            .write()
             .push_back(validation_result);
 
         Ok(results)
@@ -658,7 +681,7 @@ impl IntegrityMonitor {
     /// Check all referential integrity
     fn check_all_references(&self, db: &Arc<Database>) -> Result<ReferenceResults> {
         println!("   Checking referential integrity...");
-        
+
         let mut results = ReferenceResults {
             references_checked: 0,
             violations: 0,
@@ -667,14 +690,15 @@ impl IntegrityMonitor {
 
         // Simulate reference checking
         let references_to_check = 5000;
-        
+
         for i in 0..references_to_check {
             results.references_checked += 1;
-            
+
             // Simulate reference validation
-            if thread_rng().gen_bool(0.0001) { // 0.01% violation rate
+            if rng().gen_bool(0.0001) {
+                // 0.01% violation rate
                 results.violations += 1;
-                
+
                 let orphaned = OrphanedReference {
                     source_key: format!("source_{}", i).into_bytes(),
                     target_key: format!("target_{}", i).into_bytes(),
@@ -682,20 +706,21 @@ impl IntegrityMonitor {
                     constraint_violated: "foreign_key_constraint".to_string(),
                     cleanup_attempted: false,
                 };
-                
+
                 results.orphaned_references.push(format!("ref_{}", i));
-                self.referential_checker.orphaned_references.write().push(orphaned);
+                self.referential_checker
+                    .orphaned_references
+                    .write()
+                    .push(orphaned);
             }
         }
 
-        self.referential_checker.checks_performed.fetch_add(
-            results.references_checked, 
-            Ordering::Relaxed
-        );
-        self.referential_checker.violations_found.fetch_add(
-            results.violations, 
-            Ordering::Relaxed
-        );
+        self.referential_checker
+            .checks_performed
+            .fetch_add(results.references_checked, Ordering::Relaxed);
+        self.referential_checker
+            .violations_found
+            .fetch_add(results.violations, Ordering::Relaxed);
 
         Ok(results)
     }
@@ -703,7 +728,7 @@ impl IntegrityMonitor {
     /// Attempt automatic repair of detected issues
     fn attempt_auto_repair(&self, db: &Arc<Database>) -> Result<RepairResults> {
         println!("   Attempting automatic repairs...");
-        
+
         let mut results = RepairResults {
             repair_attempts: 0,
             successful_repairs: 0,
@@ -714,9 +739,10 @@ impl IntegrityMonitor {
         let checksum_failures = self.checksum_verifier.failure_locations.read().clone();
         for mut failure in checksum_failures {
             results.repair_attempts += 1;
-            
+
             // Simulate repair attempt
-            if thread_rng().gen_bool(0.8) { // 80% success rate
+            if rng().gen_bool(0.8) {
+                // 80% success rate
                 results.successful_repairs += 1;
                 failure.repair_attempted = true;
                 failure.repair_successful = true;
@@ -733,7 +759,7 @@ impl IntegrityMonitor {
     /// Generate alerts based on integrity findings
     fn generate_integrity_alerts(&self, report: &IntegrityReport) -> Result<()> {
         let total_issues = report.checksum_failures + report.structural_errors;
-        
+
         if total_issues == 0 {
             return Ok(());
         }
@@ -749,7 +775,10 @@ impl IntegrityMonitor {
         };
 
         let alert = Alert {
-            id: self.alert_manager.alert_count.fetch_add(1, Ordering::Relaxed),
+            id: self
+                .alert_manager
+                .alert_count
+                .fetch_add(1, Ordering::Relaxed),
             timestamp: SystemTime::now(),
             severity,
             source: "IntegrityMonitor".to_string(),
@@ -770,7 +799,9 @@ impl IntegrityMonitor {
         self.alert_manager.trigger_alert(alert)?;
 
         if severity >= AlertSeverity::Critical {
-            self.alert_manager.critical_alerts.fetch_add(1, Ordering::Relaxed);
+            self.alert_manager
+                .critical_alerts
+                .fetch_add(1, Ordering::Relaxed);
         }
 
         Ok(())
@@ -798,14 +829,14 @@ impl IntegrityMonitor {
         // Collect current metrics
         let metrics = SystemMetrics {
             timestamp: SystemTime::now(),
-            read_ops_per_sec: thread_rng().gen_range(900.0..1100.0),
-            write_ops_per_sec: thread_rng().gen_range(400.0..600.0),
-            average_latency_ms: thread_rng().gen_range(0.8..1.2),
-            memory_usage_mb: thread_rng().gen_range(100..200),
-            disk_usage_mb: thread_rng().gen_range(1000..2000),
-            error_rate: thread_rng().gen_range(0.0..0.002),
-            cache_hit_rate: thread_rng().gen_range(0.85..0.95),
-            page_fault_rate: thread_rng().gen_range(0.0..0.01),
+            read_ops_per_sec: rng().gen_range(900.0..1100.0),
+            write_ops_per_sec: rng().gen_range(400.0..600.0),
+            average_latency_ms: rng().gen_range(0.8..1.2),
+            memory_usage_mb: rng().gen_range(100..200),
+            disk_usage_mb: rng().gen_range(1000..2000),
+            error_rate: rng().gen_range(0.0..0.002),
+            cache_hit_rate: rng().gen_range(0.85..0.95),
+            page_fault_rate: rng().gen_range(0.0..0.01),
         };
 
         // Check for anomalies
@@ -813,8 +844,10 @@ impl IntegrityMonitor {
         for model in models.iter() {
             if let Some(anomaly_score) = model.detect(&metrics) {
                 if anomaly_score.score > config.alert_thresholds.anomaly_detection_sensitivity {
-                    anomaly_detector.anomalies_detected.fetch_add(1, Ordering::Relaxed);
-                    
+                    anomaly_detector
+                        .anomalies_detected
+                        .fetch_add(1, Ordering::Relaxed);
+
                     let anomaly = DetectedAnomaly {
                         timestamp: SystemTime::now(),
                         anomaly_type: anomaly_score.anomaly_type,
@@ -828,15 +861,18 @@ impl IntegrityMonitor {
                         metrics_snapshot: metrics.clone(),
                         response_taken: None,
                     };
-                    
+
                     anomaly_detector.anomaly_history.write().push_back(anomaly);
                 }
             }
         }
 
         // Update baseline metrics
-        anomaly_detector.baseline_metrics.write()
-            .metrics_history.push_back(metrics);
+        anomaly_detector
+            .baseline_metrics
+            .write()
+            .metrics_history
+            .push_back(metrics);
 
         Ok(report)
     }
@@ -848,9 +884,9 @@ impl IntegrityMonitor {
         config: &IntegrityMonitorConfig,
     ) {
         // Check if thresholds are exceeded
-        let checksum_failure_rate = report.checksum_failures as f64 / 
-                                   report.pages_verified.max(1) as f64;
-        
+        let checksum_failure_rate =
+            report.checksum_failures as f64 / report.pages_verified.max(1) as f64;
+
         if checksum_failure_rate > config.alert_thresholds.checksum_failure_rate {
             let alert = Alert {
                 id: alert_manager.alert_count.fetch_add(1, Ordering::Relaxed),
@@ -870,7 +906,7 @@ impl IntegrityMonitor {
                 ],
                 auto_resolved: false,
             };
-            
+
             let _ = alert_manager.trigger_alert(alert);
         }
     }
@@ -880,11 +916,26 @@ impl IntegrityMonitor {
         MonitoringStatus {
             monitoring_active: self.continuous_monitor.enabled.load(Ordering::Relaxed),
             total_checks: self.continuous_monitor.check_count.load(Ordering::Relaxed),
-            total_violations: self.continuous_monitor.total_violations.load(Ordering::Relaxed),
-            checksum_failures: self.checksum_verifier.checksum_failures.load(Ordering::Relaxed),
-            structural_errors: self.structural_validator.structural_errors.load(Ordering::Relaxed),
-            referential_violations: self.referential_checker.violations_found.load(Ordering::Relaxed),
-            anomalies_detected: self.anomaly_detector.anomalies_detected.load(Ordering::Relaxed),
+            total_violations: self
+                .continuous_monitor
+                .total_violations
+                .load(Ordering::Relaxed),
+            checksum_failures: self
+                .checksum_verifier
+                .checksum_failures
+                .load(Ordering::Relaxed),
+            structural_errors: self
+                .structural_validator
+                .structural_errors
+                .load(Ordering::Relaxed),
+            referential_violations: self
+                .referential_checker
+                .violations_found
+                .load(Ordering::Relaxed),
+            anomalies_detected: self
+                .anomaly_detector
+                .anomalies_detected
+                .load(Ordering::Relaxed),
             critical_alerts: self.alert_manager.critical_alerts.load(Ordering::Relaxed),
             last_check_time: *self.continuous_monitor.last_check.read(),
         }
@@ -982,13 +1033,13 @@ impl AlertManager {
     fn trigger_alert(&self, alert: Alert) -> Result<()> {
         // Store alert
         self.alerts.write().push_back(alert.clone());
-        
+
         // Notify all handlers
         let handlers = self.alert_handlers.read();
         for handler in handlers.iter() {
             let _ = handler.handle(&alert);
         }
-        
+
         Ok(())
     }
 }
@@ -1014,7 +1065,7 @@ mod tests {
     fn test_integrity_monitor_creation() {
         let config = IntegrityMonitorConfig::default();
         let monitor = IntegrityMonitor::new(config);
-        
+
         let status = monitor.get_status();
         assert!(!status.monitoring_active);
         assert_eq!(status.total_checks, 0);

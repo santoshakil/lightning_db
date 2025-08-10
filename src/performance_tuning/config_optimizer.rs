@@ -3,9 +3,9 @@
 //! Generates optimal Lightning DB configurations based on hardware capabilities,
 //! workload characteristics, and optimization goals.
 
-use crate::{LightningDbConfig, Result, WalSyncMode};
 use super::{HardwareInfo, WorkloadProfile, WorkloadType};
-use serde::{Serialize, Deserialize};
+use crate::{LightningDbConfig, Result, WalSyncMode};
+use serde::{Deserialize, Serialize};
 
 /// Configuration optimizer
 pub struct ConfigOptimizer {
@@ -17,10 +17,10 @@ pub struct ConfigOptimizer {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum OptimizationGoal {
     Throughput,        // Maximize operations per second
-    Latency,          // Minimize response time
-    Balanced,         // Balance throughput and latency
+    Latency,           // Minimize response time
+    Balanced,          // Balance throughput and latency
     ResourceEfficient, // Minimize resource usage
-    CostOptimized,    // Optimize for cloud/cost efficiency
+    CostOptimized,     // Optimize for cloud/cost efficiency
 }
 
 /// Optimization constraints
@@ -36,10 +36,10 @@ pub struct OptimizationConstraints {
 /// Durability requirements
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DurabilityLevel {
-    BestEffort,    // May lose recent writes on crash
-    Standard,      // Standard durability with WAL
-    High,          // Synchronous WAL writes
-    Maximum,       // Sync to disk on every operation
+    BestEffort, // May lose recent writes on crash
+    Standard,   // Standard durability with WAL
+    High,       // Synchronous WAL writes
+    Maximum,    // Sync to disk on every operation
 }
 
 /// Consistency requirements
@@ -93,7 +93,11 @@ impl ConfigOptimizer {
     }
 
     /// Apply hardware-based optimizations
-    fn apply_hardware_optimizations(&self, config: &mut LightningDbConfig, hardware: &HardwareInfo) {
+    fn apply_hardware_optimizations(
+        &self,
+        config: &mut LightningDbConfig,
+        hardware: &HardwareInfo,
+    ) {
         // Cache size: Use 25-50% of available memory depending on workload
         let cache_percentage = match self.optimization_goal {
             OptimizationGoal::Throughput => 0.5,
@@ -101,8 +105,9 @@ impl ConfigOptimizer {
             OptimizationGoal::ResourceEfficient => 0.15,
             _ => 0.25,
         };
-        
-        config.cache_size = (hardware.available_memory_mb as f64 * cache_percentage * 1024.0 * 1024.0) as u64;
+
+        config.cache_size =
+            (hardware.available_memory_mb as f64 * cache_percentage * 1024.0 * 1024.0) as u64;
 
         // CPU optimizations
         if hardware.cpu_count >= 8 {
@@ -152,7 +157,11 @@ impl ConfigOptimizer {
     }
 
     /// Apply workload-based optimizations
-    fn apply_workload_optimizations(&self, config: &mut LightningDbConfig, workload: &WorkloadProfile) {
+    fn apply_workload_optimizations(
+        &self,
+        config: &mut LightningDbConfig,
+        workload: &WorkloadProfile,
+    ) {
         match workload.workload_type {
             WorkloadType::OLTP => {
                 config.compression_enabled = false; // Low latency
@@ -321,8 +330,9 @@ impl ConfigOptimizer {
 
         // Cache size scoring
         let optimal_cache = (hardware.available_memory_mb * 1024 * 1024 / 4) as u64;
-        let cache_score = 1.0 - ((config.cache_size as f64 - optimal_cache as f64).abs() 
-            / optimal_cache as f64).min(1.0);
+        let cache_score = 1.0
+            - ((config.cache_size as f64 - optimal_cache as f64).abs() / optimal_cache as f64)
+                .min(1.0);
         score += cache_score * 0.3;
 
         // Workload alignment scoring
@@ -336,7 +346,11 @@ impl ConfigOptimizer {
         score += workload_score * 0.3;
 
         // Hardware utilization scoring
-        let cpu_score = if config.prefetch_enabled && hardware.cpu_count >= 8 { 1.0 } else { 0.8 };
+        let cpu_score = if config.prefetch_enabled && hardware.cpu_count >= 8 {
+            1.0
+        } else {
+            0.8
+        };
         score += cpu_score * 0.2;
 
         // Goal alignment scoring
@@ -377,7 +391,8 @@ impl ConfigOptimizer {
         explanations.push(format!(
             "Cache size set to {} MB ({:.0}% of available memory) for {:?} workload",
             config.cache_size / 1024 / 1024,
-            (config.cache_size as f64 / (hardware.available_memory_mb as f64 * 1024.0 * 1024.0)) * 100.0,
+            (config.cache_size as f64 / (hardware.available_memory_mb as f64 * 1024.0 * 1024.0))
+                * 100.0,
             workload.workload_type
         ));
 
@@ -439,7 +454,7 @@ mod tests {
     fn test_hardware_optimizations() {
         let optimizer = ConfigOptimizer::new(OptimizationGoal::Throughput);
         let mut config = LightningDbConfig::default();
-        
+
         let hardware = HardwareInfo {
             cpu_count: 16,
             physical_cores: 8,
@@ -477,7 +492,7 @@ mod tests {
         };
 
         optimizer.apply_hardware_optimizations(&mut config, &hardware);
-        
+
         assert!(config.cache_size > 0);
         assert!(config.prefetch_enabled);
         assert!(config.use_optimized_transactions);
@@ -487,7 +502,7 @@ mod tests {
     fn test_workload_optimizations() {
         let optimizer = ConfigOptimizer::new(OptimizationGoal::Balanced);
         let mut config = LightningDbConfig::default();
-        
+
         let workload = WorkloadProfile {
             workload_type: WorkloadType::OLTP,
             read_ratio: 0.7,
@@ -497,7 +512,7 @@ mod tests {
         };
 
         optimizer.apply_workload_optimizations(&mut config, &workload);
-        
+
         assert!(!config.compression_enabled); // OLTP disables compression
         assert_eq!(config.write_batch_size, 100);
     }

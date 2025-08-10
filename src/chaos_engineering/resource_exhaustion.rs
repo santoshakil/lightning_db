@@ -3,20 +3,22 @@
 //! Tests database behavior under various resource constraints including
 //! memory pressure, disk space exhaustion, file descriptor limits, and thread starvation.
 
-use crate::{Database, Result};
 use crate::chaos_engineering::{
-    ChaosTest, ChaosTestResult, IntegrityReport, ChaosConfig,
-    ResourceLimits
+    ChaosConfig, ChaosTest, ChaosTestResult, IntegrityReport, ResourceLimits,
 };
-use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
+use crate::{Database, Result};
+use parking_lot::{Mutex, RwLock};
+use rand::{rng, Rng};
+use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+};
 use std::thread;
 use std::time::{Duration, SystemTime};
-use std::collections::HashMap;
-use parking_lot::{RwLock, Mutex};
-use rand::{Rng, thread_rng};
-use std::path::{Path, PathBuf};
-use std::fs::OpenOptions;
-use std::io::{Write, Read};
 
 /// Resource exhaustion test coordinator
 pub struct ResourceExhaustionTest {
@@ -318,27 +320,21 @@ impl ResourceExhaustionTest {
     ) -> Result<ScenarioResult> {
         println!("💾 Running memory pressure scenario: {:?}", scenario);
         let start_time = SystemTime::now();
-        
+
         match scenario {
             MemoryPressureScenario::HighMemoryUsage(percent) => {
                 self.simulate_high_memory_usage(percent, &db)?
-            },
-            MemoryPressureScenario::OutOfMemory => {
-                self.simulate_out_of_memory(&db)?
-            },
-            MemoryPressureScenario::FragmentedMemory => {
-                self.simulate_memory_fragmentation(&db)?
-            },
-            MemoryPressureScenario::MemoryLeakSimulation => {
-                self.simulate_memory_leak(&db)?
-            },
+            }
+            MemoryPressureScenario::OutOfMemory => self.simulate_out_of_memory(&db)?,
+            MemoryPressureScenario::FragmentedMemory => self.simulate_memory_fragmentation(&db)?,
+            MemoryPressureScenario::MemoryLeakSimulation => self.simulate_memory_leak(&db)?,
             MemoryPressureScenario::RandomAllocationFailures(rate) => {
                 self.simulate_random_allocation_failures(rate, &db)?
-            },
+            }
         }
-        
+
         let duration = start_time.elapsed().unwrap_or_default();
-        
+
         Ok(ScenarioResult {
             scenario_name: format!("{:?}", scenario),
             success: true,
@@ -353,14 +349,17 @@ impl ResourceExhaustionTest {
     fn simulate_high_memory_usage(&self, target_percent: u8, db: &Arc<Database>) -> Result<()> {
         let system_memory = self.get_system_memory()?;
         let target_bytes = (system_memory * target_percent as u64) / 100;
-        
-        println!("   Allocating {} MB to reach {}% memory usage", 
-                 target_bytes / (1024 * 1024), target_percent);
-        
+
+        println!(
+            "   Allocating {} MB to reach {}% memory usage",
+            target_bytes / (1024 * 1024),
+            target_percent
+        );
+
         // Allocate memory in chunks
         let chunk_size = 10 * 1024 * 1024; // 10MB chunks
         let mut allocated = 0u64;
-        
+
         while allocated < target_bytes {
             let block = MemoryBlock {
                 data: vec![0u8; chunk_size],
@@ -368,72 +367,78 @@ impl ResourceExhaustionTest {
                 allocated_at: SystemTime::now(),
                 block_type: MemoryBlockType::Large,
             };
-            
+
             self.memory_pressure.allocated_blocks.write().push(block);
             allocated += chunk_size as u64;
-            self.memory_pressure.total_allocated.fetch_add(chunk_size as u64, Ordering::Relaxed);
-            
+            self.memory_pressure
+                .total_allocated
+                .fetch_add(chunk_size as u64, Ordering::Relaxed);
+
             // Perform database operations under memory pressure
             self.perform_operations_under_pressure(db)?;
-            
+
             thread::sleep(Duration::from_millis(100));
         }
-        
+
         Ok(())
     }
 
     /// Simulate out of memory conditions
     fn simulate_out_of_memory(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Simulating out-of-memory conditions");
-        
-        self.memory_pressure.oom_triggered.store(true, Ordering::SeqCst);
-        
+
+        self.memory_pressure
+            .oom_triggered
+            .store(true, Ordering::SeqCst);
+
         // Try database operations that should handle OOM gracefully
         let mut failures = 0;
         for i in 0..100 {
             match self.perform_operation_expecting_failure(db) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(_) => failures += 1,
             }
-            
+
             if i % 10 == 0 {
                 println!("   Operations: {}, Failures: {}", i + 1, failures);
             }
         }
-        
-        self.memory_pressure.oom_triggered.store(false, Ordering::SeqCst);
-        
+
+        self.memory_pressure
+            .oom_triggered
+            .store(false, Ordering::SeqCst);
+
         Ok(())
     }
 
     /// Simulate memory fragmentation
     fn simulate_memory_fragmentation(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Creating memory fragmentation pattern");
-        
-        let mut rng = thread_rng();
-        
+
+        let mut rng = rng();
+
         // Allocate and deallocate in a pattern that creates fragmentation
         for round in 0..10 {
             let mut blocks = Vec::new();
-            
+
             // Allocate various sized blocks
             for _ in 0..50 {
                 let size = match rng.gen_range(0..3) {
-                    0 => 1024,        // 1KB
-                    1 => 64 * 1024,   // 64KB
-                    _ => 512 * 1024,  // 512KB
+                    0 => 1024,       // 1KB
+                    1 => 64 * 1024,  // 64KB
+                    _ => 512 * 1024, // 512KB
                 };
-                
+
                 let block = MemoryBlock {
                     data: vec![0u8; size],
                     size,
                     allocated_at: SystemTime::now(),
                     block_type: MemoryBlockType::Fragment,
                 };
-                
+
                 blocks.push(block);
             }
-            
+
             // Deallocate every other block
             let mut remaining = Vec::new();
             for (i, block) in blocks.into_iter().enumerate() {
@@ -441,24 +446,29 @@ impl ResourceExhaustionTest {
                     remaining.push(block);
                 }
             }
-            
-            self.memory_pressure.allocated_blocks.write().extend(remaining);
-            self.memory_pressure.fragmentation_level.store(round * 10, Ordering::Relaxed);
-            
+
+            self.memory_pressure
+                .allocated_blocks
+                .write()
+                .extend(remaining);
+            self.memory_pressure
+                .fragmentation_level
+                .store(round * 10, Ordering::Relaxed);
+
             // Test database performance with fragmented memory
             self.measure_performance_under_fragmentation(db)?;
         }
-        
+
         Ok(())
     }
 
     /// Simulate gradual memory leak
     fn simulate_memory_leak(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Simulating gradual memory leak");
-        
+
         let leak_rate = 1024 * 1024; // 1MB per iteration
         let iterations = 100;
-        
+
         for i in 0..iterations {
             // Leak memory
             let block = MemoryBlock {
@@ -467,20 +477,25 @@ impl ResourceExhaustionTest {
                 allocated_at: SystemTime::now(),
                 block_type: MemoryBlockType::Small,
             };
-            
+
             self.memory_pressure.allocated_blocks.write().push(block);
-            self.memory_pressure.total_allocated.fetch_add(leak_rate as u64, Ordering::Relaxed);
-            
+            self.memory_pressure
+                .total_allocated
+                .fetch_add(leak_rate as u64, Ordering::Relaxed);
+
             // Monitor database behavior
             if i % 10 == 0 {
                 let total_leaked = (i + 1) * leak_rate / (1024 * 1024);
-                println!("   Leaked: {} MB, Testing database performance", total_leaked);
+                println!(
+                    "   Leaked: {} MB, Testing database performance",
+                    total_leaked
+                );
                 self.test_database_under_memory_leak(db)?;
             }
-            
+
             thread::sleep(Duration::from_millis(50));
         }
-        
+
         Ok(())
     }
 
@@ -491,22 +506,24 @@ impl ResourceExhaustionTest {
         db: &Arc<Database>,
     ) -> Result<()> {
         println!("   Simulating {}% allocation failure rate", failure_rate);
-        
-        let mut rng = thread_rng();
+
+        let mut rng = rng();
         let mut operations = 0;
         let mut failures = 0;
-        
+
         for _ in 0..1000 {
             operations += 1;
-            
+
             // Randomly fail allocations
             if rng.gen_range(0..100) < failure_rate {
-                self.memory_pressure.allocation_failures.fetch_add(1, Ordering::Relaxed);
+                self.memory_pressure
+                    .allocation_failures
+                    .fetch_add(1, Ordering::Relaxed);
                 failures += 1;
-                
+
                 // Test database resilience to allocation failures
                 match db.put(b"test_key", b"test_value") {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(_) => {
                         println!("   Database operation failed during allocation failure");
                     }
@@ -516,35 +533,39 @@ impl ResourceExhaustionTest {
                 db.put(b"test_key", b"test_value")?;
             }
         }
-        
-        println!("   Allocation failures: {}/{} ({:.1}%)", 
-                 failures, operations, (failures as f64 / operations as f64) * 100.0);
-        
+
+        println!(
+            "   Allocation failures: {}/{} ({:.1}%)",
+            failures,
+            operations,
+            (failures as f64 / operations as f64) * 100.0
+        );
+
         Ok(())
     }
 
     /// Perform operations under resource pressure
     fn perform_operations_under_pressure(&self, db: &Arc<Database>) -> Result<()> {
-        let mut rng = thread_rng();
-        
+        let mut rng = rng();
+
         for i in 0..100 {
             let key = format!("pressure_test_{}", i).into_bytes();
             let value = vec![0u8; rng.gen_range(100..10000)];
-            
+
             match db.put(&key, &value) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     println!("   Operation failed under pressure: {}", e);
                     return Err(e);
                 }
             }
-            
+
             if i % 10 == 0 {
                 // Also test reads
                 let _ = db.get(&key)?;
             }
         }
-        
+
         Ok(())
     }
 
@@ -552,11 +573,11 @@ impl ResourceExhaustionTest {
     fn perform_operation_expecting_failure(&self, db: &Arc<Database>) -> Result<()> {
         let key = b"oom_test_key";
         let value = b"oom_test_value";
-        
+
         // This might fail due to OOM
         db.put(key, value)?;
         db.get(key)?;
-        
+
         Ok(())
     }
 
@@ -564,18 +585,21 @@ impl ResourceExhaustionTest {
     fn measure_performance_under_fragmentation(&self, db: &Arc<Database>) -> Result<()> {
         let start = SystemTime::now();
         let mut operations = 0;
-        
+
         while start.elapsed().unwrap_or_default() < Duration::from_secs(5) {
             let key = format!("frag_test_{}", operations).into_bytes();
             db.put(&key, b"fragmented_memory_test")?;
             operations += 1;
         }
-        
+
         let duration = start.elapsed().unwrap_or_default();
         let ops_per_sec = operations as f64 / duration.as_secs_f64();
-        
-        println!("   Performance under fragmentation: {:.2} ops/sec", ops_per_sec);
-        
+
+        println!(
+            "   Performance under fragmentation: {:.2} ops/sec",
+            ops_per_sec
+        );
+
         Ok(())
     }
 
@@ -584,11 +608,11 @@ impl ResourceExhaustionTest {
         // Test if database can still operate
         db.put(b"leak_test", b"still_working")?;
         db.get(b"leak_test")?;
-        
+
         // Check memory usage reporting
         let leaked = self.memory_pressure.total_allocated.load(Ordering::Relaxed);
         println!("   Total memory leaked: {} MB", leaked / (1024 * 1024));
-        
+
         Ok(())
     }
 
@@ -607,27 +631,25 @@ impl ResourceExhaustionTest {
     ) -> Result<ScenarioResult> {
         println!("💿 Running disk exhaustion scenario: {:?}", scenario);
         let start_time = SystemTime::now();
-        
+
         match scenario {
             DiskExhaustionScenario::LowDiskSpace(percent) => {
                 self.simulate_low_disk_space(percent, &db)?
-            },
-            DiskExhaustionScenario::NoDiskSpace => {
-                self.simulate_no_disk_space(&db)?
-            },
+            }
+            DiskExhaustionScenario::NoDiskSpace => self.simulate_no_disk_space(&db)?,
             DiskExhaustionScenario::WriteThrottling(bytes_per_sec) => {
                 self.simulate_write_throttling(bytes_per_sec, &db)?
-            },
+            }
             DiskExhaustionScenario::RandomWriteFailures(rate) => {
                 self.simulate_random_write_failures(rate, &db)?
-            },
+            }
             DiskExhaustionScenario::SlowDiskOperations(delay) => {
                 self.simulate_slow_disk_operations(delay, &db)?
-            },
+            }
         }
-        
+
         let duration = start_time.elapsed().unwrap_or_default();
-        
+
         Ok(ScenarioResult {
             scenario_name: format!("{:?}", scenario),
             success: true,
@@ -641,18 +663,18 @@ impl ResourceExhaustionTest {
     /// Simulate low disk space
     fn simulate_low_disk_space(&self, target_percent: u8, db: &Arc<Database>) -> Result<()> {
         println!("   Filling disk to {}% capacity", target_percent);
-        
+
         // Create large files to consume disk space
         let temp_dir = std::env::temp_dir().join("chaos_disk_test");
         std::fs::create_dir_all(&temp_dir)?;
-        
+
         let file_size = 100 * 1024 * 1024; // 100MB files
         let mut file_count = 0;
-        
+
         // Fill disk with test files
         loop {
             let file_path = temp_dir.join(format!("space_filler_{}.dat", file_count));
-            
+
             match self.create_space_filler_file(&file_path, file_size) {
                 Ok(_) => {
                     self.disk_exhaustion.test_files.write().push(TestFile {
@@ -662,105 +684,105 @@ impl ResourceExhaustionTest {
                         file_type: TestFileType::SpaceFiller,
                     });
                     file_count += 1;
-                },
+                }
                 Err(_) => {
                     println!("   Disk space exhausted after {} files", file_count);
                     break;
                 }
             }
-            
+
             // Test database operations with low disk space
             if file_count % 10 == 0 {
                 self.test_database_with_low_disk(db)?;
             }
-            
+
             // Check if target reached (simplified)
-            if file_count * 100 > 1000 { // After 1GB
+            if file_count * 100 > 1000 {
+                // After 1GB
                 break;
             }
         }
-        
+
         Ok(())
     }
 
     /// Create a space filler file
     fn create_space_filler_file(&self, path: &Path, size: u64) -> Result<()> {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(path)?;
-        
+        let mut file = OpenOptions::new().create(true).write(true).open(path)?;
+
         let buffer = vec![0u8; 1024 * 1024]; // 1MB buffer
         let mut written = 0u64;
-        
+
         while written < size {
             let to_write = std::cmp::min(buffer.len(), (size - written) as usize);
             file.write_all(&buffer[..to_write])?;
             written += to_write as u64;
         }
-        
+
         file.sync_all()?;
-        self.disk_exhaustion.total_written.fetch_add(size, Ordering::Relaxed);
-        
+        self.disk_exhaustion
+            .total_written
+            .fetch_add(size, Ordering::Relaxed);
+
         Ok(())
     }
 
     /// Test database with low disk space
     fn test_database_with_low_disk(&self, db: &Arc<Database>) -> Result<()> {
         let mut failures = 0;
-        
+
         for i in 0..100 {
             let key = format!("low_disk_test_{}", i).into_bytes();
             match db.put(&key, b"testing_with_low_disk") {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(_) => failures += 1,
             }
         }
-        
+
         if failures > 0 {
             println!("   {} operations failed due to low disk space", failures);
         }
-        
+
         Ok(())
     }
 
     /// Simulate complete disk exhaustion
     fn simulate_no_disk_space(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Simulating complete disk exhaustion");
-        
+
         // First fill the disk
         self.simulate_low_disk_space(99, db)?;
-        
+
         // Now test database behavior with no space
         let mut consecutive_failures = 0;
-        
+
         for i in 0..1000 {
             let key = format!("no_space_test_{}", i).into_bytes();
-            
+
             match db.put(&key, b"should_fail") {
                 Ok(_) => {
                     consecutive_failures = 0;
                     println!("   Unexpected success after {} failures", i);
-                },
+                }
                 Err(_) => {
                     consecutive_failures += 1;
                 }
             }
-            
+
             // Test if database can recover when space is freed
             if consecutive_failures > 50 {
                 self.free_some_disk_space()?;
                 println!("   Freed some disk space, testing recovery");
             }
         }
-        
+
         Ok(())
     }
 
     /// Free some disk space
     fn free_some_disk_space(&self) -> Result<()> {
         let mut files = self.disk_exhaustion.test_files.write();
-        
+
         // Remove first 10 files
         let to_remove = std::cmp::min(10, files.len());
         for _ in 0..to_remove {
@@ -768,43 +790,46 @@ impl ResourceExhaustionTest {
                 let _ = std::fs::remove_file(&test_file.path);
             }
         }
-        
+
         Ok(())
     }
 
     /// Simulate write throttling
     fn simulate_write_throttling(&self, bytes_per_sec: u64, db: &Arc<Database>) -> Result<()> {
         println!("   Throttling writes to {} KB/s", bytes_per_sec / 1024);
-        
+
         *self.disk_exhaustion.write_throttle.write() = Some(WriteThrottle {
             bytes_per_second: bytes_per_sec,
             last_write_time: SystemTime::now(),
             bytes_written_in_period: 0,
         });
-        
+
         // Measure performance under throttling
         let start = SystemTime::now();
         let mut operations = 0;
         let mut bytes_written = 0u64;
-        
+
         while start.elapsed().unwrap_or_default() < Duration::from_secs(10) {
             let value = vec![0u8; 1024]; // 1KB values
             let key = format!("throttle_test_{}", operations).into_bytes();
-            
+
             // Apply throttling
             self.apply_write_throttling(value.len() as u64)?;
-            
+
             db.put(&key, &value)?;
             operations += 1;
             bytes_written += value.len() as u64;
         }
-        
+
         let duration = start.elapsed().unwrap_or_default();
         let actual_throughput = bytes_written as f64 / duration.as_secs_f64();
-        
-        println!("   Target: {} KB/s, Actual: {:.2} KB/s", 
-                 bytes_per_sec / 1024, actual_throughput / 1024.0);
-        
+
+        println!(
+            "   Target: {} KB/s, Actual: {:.2} KB/s",
+            bytes_per_sec / 1024,
+            actual_throughput / 1024.0
+        );
+
         Ok(())
     }
 
@@ -812,39 +837,41 @@ impl ResourceExhaustionTest {
     fn apply_write_throttling(&self, bytes_to_write: u64) -> Result<()> {
         if let Some(throttle) = self.disk_exhaustion.write_throttle.read().as_ref() {
             let now = SystemTime::now();
-            let elapsed = now.duration_since(throttle.last_write_time).unwrap_or_default();
-            
+            let elapsed = now
+                .duration_since(throttle.last_write_time)
+                .unwrap_or_default();
+
             let allowed_bytes = (throttle.bytes_per_second as f64 * elapsed.as_secs_f64()) as u64;
-            
+
             if bytes_to_write > allowed_bytes {
                 let sleep_time = Duration::from_secs_f64(
-                    bytes_to_write as f64 / throttle.bytes_per_second as f64
+                    bytes_to_write as f64 / throttle.bytes_per_second as f64,
                 );
                 thread::sleep(sleep_time);
             }
         }
-        
+
         Ok(())
     }
 
     /// Simulate random write failures
     fn simulate_random_write_failures(&self, failure_rate: u8, db: &Arc<Database>) -> Result<()> {
         println!("   Simulating {}% write failure rate", failure_rate);
-        
+
         *self.disk_exhaustion.failure_injection.write() = FailureInjection {
             failure_rate: failure_rate as f64 / 100.0,
             consecutive_failures: 0,
             max_consecutive: 5,
         };
-        
+
         let mut operations = 0;
         let mut failures = 0;
-        let mut rng = thread_rng();
-        
+        let mut rng = rng();
+
         for i in 0..1000 {
             operations += 1;
             let key = format!("write_failure_test_{}", i).into_bytes();
-            
+
             // Inject failure based on rate
             if rng.gen_range(0..100) < failure_rate {
                 failures += 1;
@@ -852,38 +879,42 @@ impl ResourceExhaustionTest {
                 println!("   Injecting write failure for operation {}", i);
                 continue;
             }
-            
+
             db.put(&key, b"test_value")?;
         }
-        
-        println!("   Write failures: {}/{} ({:.1}%)", 
-                 failures, operations, (failures as f64 / operations as f64) * 100.0);
-        
+
+        println!(
+            "   Write failures: {}/{} ({:.1}%)",
+            failures,
+            operations,
+            (failures as f64 / operations as f64) * 100.0
+        );
+
         Ok(())
     }
 
     /// Simulate slow disk operations
     fn simulate_slow_disk_operations(&self, delay: Duration, db: &Arc<Database>) -> Result<()> {
         println!("   Simulating slow disk with {:?} delay", delay);
-        
+
         let start = SystemTime::now();
         let mut operations = 0;
-        
+
         while start.elapsed().unwrap_or_default() < Duration::from_secs(10) {
             let key = format!("slow_disk_test_{}", operations).into_bytes();
-            
+
             // Add artificial delay
             thread::sleep(delay);
-            
+
             db.put(&key, b"slow_disk_test")?;
             operations += 1;
         }
-        
+
         let duration = start.elapsed().unwrap_or_default();
         let ops_per_sec = operations as f64 / duration.as_secs_f64();
-        
+
         println!("   Performance with slow disk: {:.2} ops/sec", ops_per_sec);
-        
+
         Ok(())
     }
 
@@ -891,14 +922,16 @@ impl ResourceExhaustionTest {
     fn cleanup_test_resources(&self) -> Result<()> {
         // Clean up memory allocations
         self.memory_pressure.allocated_blocks.write().clear();
-        self.memory_pressure.total_allocated.store(0, Ordering::SeqCst);
-        
+        self.memory_pressure
+            .total_allocated
+            .store(0, Ordering::SeqCst);
+
         // Clean up test files
         let test_files = self.disk_exhaustion.test_files.write();
         for file in test_files.iter() {
             let _ = std::fs::remove_file(&file.path);
         }
-        
+
         Ok(())
     }
 }
@@ -998,7 +1031,7 @@ impl ChaosTest for ResourceExhaustionTest {
 
     fn execute(&mut self, db: Arc<Database>, duration: Duration) -> Result<ChaosTestResult> {
         let start_time = SystemTime::now();
-        
+
         // Run memory pressure scenarios
         for scenario in &self.config.memory_scenarios {
             let result = self.run_memory_pressure_scenario(Arc::clone(&db), *scenario)?;
@@ -1007,7 +1040,7 @@ impl ChaosTest for ResourceExhaustionTest {
             }
             self.test_results.lock().scenarios_tested += 1;
         }
-        
+
         // Run disk exhaustion scenarios
         for scenario in &self.config.disk_scenarios {
             let result = self.run_disk_exhaustion_scenario(Arc::clone(&db), *scenario)?;
@@ -1016,13 +1049,13 @@ impl ChaosTest for ResourceExhaustionTest {
             }
             self.test_results.lock().scenarios_tested += 1;
         }
-        
+
         // Clean up resources
         self.cleanup_test_resources()?;
-        
+
         let results = self.test_results.lock();
         let test_duration = start_time.elapsed().unwrap_or_default();
-        
+
         let integrity_report = IntegrityReport {
             pages_verified: 1000,
             corrupted_pages: 0,
@@ -1032,7 +1065,7 @@ impl ChaosTest for ResourceExhaustionTest {
             unrepairable_errors: results.critical_failures.len() as u64,
             verification_duration: Duration::from_millis(100),
         };
-        
+
         Ok(ChaosTestResult {
             test_name: self.name().to_string(),
             passed: results.failure_scenarios == 0,

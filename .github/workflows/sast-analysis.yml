@@ -1,0 +1,360 @@
+name: SAST Analysis
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly on Monday at 2 AM UTC
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/rust
+            p/secrets
+            p/owasp-top-ten
+            p/cwe-top-25
+            p/supply-chain
+          generateSarif: "1"
+
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+        if: always()
+
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'rust' ]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-codeql-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build for CodeQL
+        run: |
+          cargo build --all-features --release
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{matrix.language}}"
+
+  sonarcloud:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-sonar-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install sonar-scanner and build-wrapper
+        uses: SonarSource/sonarcloud-github-c-cpp@v3
+
+      - name: Run tests with coverage
+        run: |
+          # Install cargo-tarpaulin for coverage
+          cargo install cargo-tarpaulin
+          
+          # Run tests with coverage
+          cargo tarpaulin --all-features --workspace --timeout 120 \
+            --exclude-files "target/*" \
+            --exclude-files "examples/*" \
+            --exclude-files "benches/*" \
+            --exclude-files "tests/*" \
+            --out xml --output-dir coverage/
+
+      - name: Run clippy for SonarCloud
+        run: |
+          cargo clippy --all-targets --all-features --message-format=json > clippy-report.json || true
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=lightning_db
+            -Dsonar.organization=your-org
+            -Dsonar.sources=src
+            -Dsonar.tests=tests
+            -Dsonar.rust.clippy.reportPaths=clippy-report.json
+            -Dsonar.coverage.reportPaths=coverage/cobertura.xml
+            -Dsonar.test.inclusions=**/*test*.rs
+            -Dsonar.test.exclusions=src/**
+            -Dsonar.exclusions=**/target/**,**/tests/**,**/examples/**,**/benches/**
+
+  cargo-geiger:
+    name: Cargo Geiger (Unsafe Code Detection)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-geiger
+        run: cargo install --force cargo-geiger
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-geiger-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run cargo geiger
+        run: |
+          echo "## Unsafe Code Analysis (Cargo Geiger)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo geiger --format GitHubMarkdown >> geiger_report.md
+          cat geiger_report.md >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Geiger report
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-geiger-report
+          path: geiger_report.md
+
+  cargo-pants:
+    name: Cargo Pants (Security Linting)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-pants
+        run: cargo install --force cargo-pants
+
+      - name: Run cargo pants
+        continue-on-error: true
+        run: |
+          echo "## Security Linting (Cargo Pants)" >> $GITHUB_STEP_SUMMARY
+          
+          if cargo pants; then
+            echo "✅ No security issues detected by cargo-pants" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Potential security issues detected" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  detect-secrets:
+    name: Detect Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install detect-secrets
+        run: pip install detect-secrets
+
+      - name: Run detect-secrets
+        run: |
+          echo "## Secret Detection Analysis" >> $GITHUB_STEP_SUMMARY
+          
+          # Create baseline if it doesn't exist
+          if [ ! -f .secrets.baseline ]; then
+            detect-secrets scan --all-files --baseline .secrets.baseline
+          fi
+          
+          # Scan for new secrets
+          if detect-secrets scan --baseline .secrets.baseline --all-files; then
+            echo "✅ No new secrets detected" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ New secrets detected!" >> $GITHUB_STEP_SUMMARY
+            echo "Run 'detect-secrets scan --baseline .secrets.baseline --all-files' locally to investigate" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload secrets baseline
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: secrets-baseline
+          path: .secrets.baseline
+
+  rust-security-analysis:
+    name: Rust Security Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-security-analysis-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Security-focused code analysis
+        run: |
+          echo "## Rust Security Analysis" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for common security anti-patterns
+          echo "### Potential Security Issues:" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for unwrap() usage
+          unwrap_count=$(grep -r "\.unwrap()" src/ --include="*.rs" | wc -l || echo "0")
+          echo "- **unwrap() usage**: $unwrap_count occurrences" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for expect() usage  
+          expect_count=$(grep -r "\.expect(" src/ --include="*.rs" | wc -l || echo "0")
+          echo "- **expect() usage**: $expect_count occurrences" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for panic!() usage
+          panic_count=$(grep -r "panic!" src/ --include="*.rs" | wc -l || echo "0")
+          echo "- **panic!() usage**: $panic_count occurrences" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for transmute usage
+          transmute_count=$(grep -r "transmute" src/ --include="*.rs" | wc -l || echo "0")
+          echo "- **transmute usage**: $transmute_count occurrences" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for from_raw_parts usage
+          raw_parts_count=$(grep -r "from_raw_parts" src/ --include="*.rs" | wc -l || echo "0")
+          echo "- **from_raw_parts usage**: $raw_parts_count occurrences" >> $GITHUB_STEP_SUMMARY
+          
+          # Summary assessment
+          total_issues=$((unwrap_count + expect_count + panic_count + transmute_count + raw_parts_count))
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ $total_issues -eq 0 ]; then
+            echo "✅ **Overall Assessment**: No obvious security anti-patterns detected" >> $GITHUB_STEP_SUMMARY
+          elif [ $total_issues -lt 10 ]; then
+            echo "⚠️ **Overall Assessment**: Low risk - $total_issues potential issues detected" >> $GITHUB_STEP_SUMMARY
+          elif [ $total_issues -lt 50 ]; then
+            echo "⚠️ **Overall Assessment**: Medium risk - $total_issues potential issues detected" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Overall Assessment**: High risk - $total_issues potential issues detected" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Create detailed report if issues found
+          if [ $total_issues -gt 0 ]; then
+            echo "### Detailed Findings:" >> $GITHUB_STEP_SUMMARY
+            echo "<details><summary>Click to expand</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            if [ $unwrap_count -gt 0 ]; then
+              echo "**unwrap() occurrences:**" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              grep -r "\.unwrap()" src/ --include="*.rs" -n | head -10 >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  aggregate-results:
+    name: Aggregate Security Results
+    needs: [semgrep, codeql, cargo-geiger, detect-secrets, rust-security-analysis]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create security summary
+        run: |
+          echo "# 🔒 Security Analysis Summary" > security_summary.md
+          echo "" >> security_summary.md
+          echo "**Repository:** ${{ github.repository }}" >> security_summary.md
+          echo "**Branch:** ${{ github.ref_name }}" >> security_summary.md
+          echo "**Commit:** ${{ github.sha }}" >> security_summary.md
+          echo "**Analysis Date:** $(date -u)" >> security_summary.md
+          echo "" >> security_summary.md
+          
+          echo "## Analysis Tools Run:" >> security_summary.md
+          echo "- ✅ Semgrep SAST" >> security_summary.md
+          echo "- ✅ CodeQL Analysis" >> security_summary.md
+          echo "- ✅ Cargo Geiger (Unsafe Code)" >> security_summary.md
+          echo "- ✅ Secret Detection" >> security_summary.md
+          echo "- ✅ Rust Security Analysis" >> security_summary.md
+          echo "" >> security_summary.md
+          
+          echo "## Recommendations:" >> security_summary.md
+          echo "1. Review all SARIF reports uploaded to GitHub Security tab" >> security_summary.md
+          echo "2. Address any high-severity findings immediately" >> security_summary.md
+          echo "3. Review and justify any unsafe code usage" >> security_summary.md
+          echo "4. Ensure no secrets are committed to the repository" >> security_summary.md
+          echo "5. Consider implementing additional security controls based on findings" >> security_summary.md
+
+      - name: Upload consolidated report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-analysis-summary
+          path: security_summary.md

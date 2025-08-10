@@ -3,15 +3,18 @@
 //! Simulates sudden power loss scenarios to verify database crash recovery
 //! and data durability guarantees.
 
+use crate::chaos_engineering::{ChaosConfig, ChaosTest, ChaosTestResult, IntegrityReport};
 use crate::{Database, Result};
-use crate::chaos_engineering::{ChaosTest, ChaosTestResult, IntegrityReport, ChaosConfig};
-use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
+use parking_lot::{Mutex, RwLock};
+use rand::{rng, Rng};
+use std::collections::HashMap;
+use std::io::Write;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+};
 use std::thread;
 use std::time::{Duration, SystemTime};
-use std::io::{Write, Read};
-use parking_lot::{RwLock, Mutex};
-use rand::{Rng, thread_rng};
-use std::collections::HashMap;
 
 /// Power loss simulation test
 pub struct PowerLossTest {
@@ -170,27 +173,31 @@ impl PowerLossTest {
     }
 
     /// Simulate power loss at a specific point
-    fn simulate_power_loss(&self, db: &Arc<Database>, failure_point: PowerFailurePoint) -> Result<()> {
+    fn simulate_power_loss(
+        &self,
+        db: &Arc<Database>,
+        failure_point: PowerFailurePoint,
+    ) -> Result<()> {
         println!("⚡ Simulating power loss at {:?}", failure_point);
-        
+
         // Record in-flight writes
         self.capture_inflight_writes();
-        
+
         // Trigger kill switch
         self.kill_switch.store(true, Ordering::SeqCst);
-        
+
         // Force abort all operations
         self.force_abort_operations(db)?;
-        
+
         // Simulate OS buffer cache loss if configured
         if self.config.simulate_os_cache_loss {
             self.simulate_cache_loss()?;
         }
-        
+
         // Record power loss event
         let mut results = self.test_results.lock();
         results.power_loss_events += 1;
-        
+
         Ok(())
     }
 
@@ -198,7 +205,7 @@ impl PowerLossTest {
     fn capture_inflight_writes(&self) {
         let durable = self.write_tracker.durable_writes.read();
         let mut inflight = self.write_tracker.inflight_writes.write();
-        
+
         // Move non-fsynced writes to in-flight
         for (key, record) in durable.iter() {
             if !record.fsync_completed {
@@ -226,18 +233,27 @@ impl PowerLossTest {
 
     /// Run concurrent write workload
     fn run_write_workload(&self, db: Arc<Database>, thread_id: usize) -> Result<()> {
-        let mut rng = thread_rng();
-        
+        let mut rng = rng();
+
         for op in 0..self.config.operations_per_thread {
             // Check kill switch
             if self.kill_switch.load(Ordering::Acquire) {
                 break;
             }
-            
+
             // Generate write operation
             let key = format!("key_{}_{}", thread_id, op).into_bytes();
-            let value = format!("value_{}_{}_{}", thread_id, op, SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos()).into_bytes();
-            
+            let value = format!(
+                "value_{}_{}_{}",
+                thread_id,
+                op,
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            )
+            .into_bytes();
+
             // Track write attempt
             let write_record = WriteRecord {
                 key: key.clone(),
@@ -248,82 +264,96 @@ impl PowerLossTest {
                 wal_written: false,
                 failure_point: None,
             };
-            
-            self.write_tracker.total_writes.fetch_add(1, Ordering::Relaxed);
-            
+
+            self.write_tracker
+                .total_writes
+                .fetch_add(1, Ordering::Relaxed);
+
             // Inject failure based on probability
             if rng.gen::<f64>() < self.config.failure_probability {
-                let failure_point = self.failure_points[rng.gen_range(0..self.failure_points.len())];
+                let failure_point =
+                    self.failure_points[rng.gen_range(0..self.failure_points.len())];
                 self.inject_failure_at_point(&db, failure_point, write_record)?;
             } else {
                 // Normal write operation
                 self.perform_durable_write(&db, write_record)?;
             }
-            
+
             // Small delay to simulate realistic workload
             thread::sleep(Duration::from_micros(rng.gen_range(10..100)));
         }
-        
+
         Ok(())
     }
 
     /// Inject failure at specific point
-    fn inject_failure_at_point(&self, db: &Arc<Database>, failure_point: PowerFailurePoint, mut write_record: WriteRecord) -> Result<()> {
+    fn inject_failure_at_point(
+        &self,
+        db: &Arc<Database>,
+        failure_point: PowerFailurePoint,
+        mut write_record: WriteRecord,
+    ) -> Result<()> {
         write_record.failure_point = Some(failure_point);
-        
+
         match failure_point {
             PowerFailurePoint::BeforeWALWrite => {
                 // Crash before WAL write
                 self.simulate_power_loss(db, failure_point)?;
-            },
+            }
             PowerFailurePoint::DuringWALWrite => {
                 // Start WAL write but crash during
                 // This simulates partial WAL record
                 self.simulate_partial_wal_write(db, &write_record)?;
                 self.simulate_power_loss(db, failure_point)?;
-            },
+            }
             PowerFailurePoint::AfterWALWrite => {
                 // WAL written but crash before data write
                 write_record.wal_written = true;
                 self.write_to_wal(db, &write_record)?;
                 self.simulate_power_loss(db, failure_point)?;
-            },
+            }
             PowerFailurePoint::BeforeFsync => {
                 // All writes done but crash before fsync
                 write_record.wal_written = true;
                 self.write_to_wal(db, &write_record)?;
                 db.put(&write_record.key, &write_record.value)?;
                 self.simulate_power_loss(db, failure_point)?;
-            },
+            }
             _ => {
                 // Other failure points
                 self.simulate_power_loss(db, failure_point)?;
             }
         }
-        
+
         Ok(())
     }
 
     /// Perform a durable write operation
-    fn perform_durable_write(&self, db: &Arc<Database>, mut write_record: WriteRecord) -> Result<()> {
+    fn perform_durable_write(
+        &self,
+        db: &Arc<Database>,
+        mut write_record: WriteRecord,
+    ) -> Result<()> {
         // Write to WAL
         write_record.wal_written = true;
         self.write_to_wal(db, &write_record)?;
-        
+
         // Write to database
         db.put(&write_record.key, &write_record.value)?;
-        
+
         // Ensure durability
         db.sync()?;
         write_record.fsync_completed = true;
-        
+
         // Track as durable
-        self.write_tracker.durable_writes.write().insert(
-            write_record.key.clone(),
-            write_record
-        );
-        self.write_tracker.durable_count.fetch_add(1, Ordering::Relaxed);
-        
+        self.write_tracker
+            .durable_writes
+            .write()
+            .insert(write_record.key.clone(), write_record);
+        self.write_tracker
+            .durable_count
+            .fetch_add(1, Ordering::Relaxed);
+
         Ok(())
     }
 
@@ -342,11 +372,11 @@ impl PowerLossTest {
     /// Verify database integrity after recovery
     fn verify_recovery(&self, db: Arc<Database>) -> Result<RecoveryVerification> {
         println!("🔍 Verifying database recovery...");
-        
+
         let mut verification = RecoveryVerification::default();
         let durable_writes = self.write_tracker.durable_writes.read();
         let inflight_writes = self.write_tracker.inflight_writes.read();
-        
+
         // Check all durable writes
         for (key, record) in durable_writes.iter() {
             if record.fsync_completed {
@@ -359,7 +389,7 @@ impl PowerLossTest {
                             verification.corrupted_writes += 1;
                             println!("   ❌ Corrupted write detected for key: {:?}", key);
                         }
-                    },
+                    }
                     None => {
                         verification.lost_durable_writes += 1;
                         println!("   ❌ Lost durable write for key: {:?}", key);
@@ -367,7 +397,7 @@ impl PowerLossTest {
                 }
             }
         }
-        
+
         // Check in-flight writes
         for (key, record) in inflight_writes.iter() {
             match db.get(key)? {
@@ -378,17 +408,17 @@ impl PowerLossTest {
                     } else {
                         verification.partial_writes += 1;
                     }
-                },
+                }
                 None => {
                     // Expected - in-flight write was lost
                     verification.expected_losses += 1;
                 }
             }
         }
-        
+
         // Check for unexpected data
         verification.total_records = self.count_all_records(&db)?;
-        
+
         Ok(verification)
     }
 
@@ -431,22 +461,20 @@ impl ChaosTest for PowerLossTest {
 
     fn execute(&mut self, db: Arc<Database>, duration: Duration) -> Result<ChaosTestResult> {
         let start_time = SystemTime::now();
-        
+
         // Reset kill switch
         self.kill_switch.store(false, Ordering::SeqCst);
-        
+
         // Start concurrent writers
         let mut handles = vec![];
         for thread_id in 0..self.config.writer_threads {
             let db_clone = Arc::clone(&db);
             let test_clone = self.clone_for_thread();
-            
-            let handle = thread::spawn(move || {
-                test_clone.run_write_workload(db_clone, thread_id)
-            });
+
+            let handle = thread::spawn(move || test_clone.run_write_workload(db_clone, thread_id));
             handles.push(handle);
         }
-        
+
         // Run for specified duration or until failure
         let test_start = SystemTime::now();
         while test_start.elapsed().unwrap_or_default() < duration {
@@ -455,30 +483,30 @@ impl ChaosTest for PowerLossTest {
             }
             thread::sleep(Duration::from_millis(100));
         }
-        
+
         // Stop all writers
         self.kill_switch.store(true, Ordering::SeqCst);
-        
+
         // Wait for threads to complete
         for handle in handles {
             let _ = handle.join();
         }
-        
+
         // Simulate recovery
         let recovery_start = SystemTime::now();
-        
+
         // Re-open database (simulates crash recovery)
         drop(db); // Force close
         let recovered_db = Arc::new(Database::open(
             std::env::temp_dir().join("chaos_test_db"),
-            crate::LightningDbConfig::default()
+            crate::LightningDbConfig::default(),
         )?);
-        
+
         let recovery_time = recovery_start.elapsed().unwrap_or_default();
-        
+
         // Verify recovery
         let verification = self.verify_recovery(recovered_db)?;
-        
+
         // Calculate results
         let results = self.test_results.lock();
         let integrity_report = IntegrityReport {
@@ -488,24 +516,31 @@ impl ChaosTest for PowerLossTest {
             structural_errors: verification.partial_writes,
             repaired_errors: 0,
             unrepairable_errors: verification.lost_durable_writes,
-            verification_duration: SystemTime::now().duration_since(start_time).unwrap_or_default(),
+            verification_duration: SystemTime::now()
+                .duration_since(start_time)
+                .unwrap_or_default(),
         };
-        
-        let test_passed = verification.lost_durable_writes == 0 && 
-                         verification.corrupted_writes == 0;
-        
+
+        let test_passed =
+            verification.lost_durable_writes == 0 && verification.corrupted_writes == 0;
+
         Ok(ChaosTestResult {
             test_name: self.name().to_string(),
             passed: test_passed,
-            duration: SystemTime::now().duration_since(start_time).unwrap_or_default(),
+            duration: SystemTime::now()
+                .duration_since(start_time)
+                .unwrap_or_default(),
             failures_injected: results.power_loss_events,
-            failures_recovered: if test_passed { results.power_loss_events } else { 0 },
+            failures_recovered: if test_passed {
+                results.power_loss_events
+            } else {
+                0
+            },
             integrity_report,
             error_details: if !test_passed {
                 Some(format!(
                     "Lost {} durable writes, {} corrupted writes detected",
-                    verification.lost_durable_writes,
-                    verification.corrupted_writes
+                    verification.lost_durable_writes, verification.corrupted_writes
                 ))
             } else {
                 None
@@ -523,7 +558,7 @@ impl ChaosTest for PowerLossTest {
 
     fn verify_integrity(&self, db: Arc<Database>) -> Result<IntegrityReport> {
         let verification = self.verify_recovery(db)?;
-        
+
         Ok(IntegrityReport {
             pages_verified: verification.total_records,
             corrupted_pages: verification.corrupted_writes,
@@ -570,8 +605,7 @@ impl Default for PowerLossTestResults {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-
+    
     #[test]
     fn test_power_loss_config() {
         let config = PowerLossConfig::default();
@@ -588,7 +622,7 @@ mod tests {
             durable_count: AtomicU64::new(0),
             lost_writes: AtomicU64::new(0),
         };
-        
+
         tracker.total_writes.fetch_add(1, Ordering::Relaxed);
         assert_eq!(tracker.total_writes.load(Ordering::Relaxed), 1);
     }

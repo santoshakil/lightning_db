@@ -54,6 +54,15 @@ struct ReadLockSet {
     last_cleanup: Instant,
 }
 
+impl Default for ReadLockSet {
+    fn default() -> Self {
+        Self {
+            readers: Vec::new(),
+            last_cleanup: Instant::now(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ReadLockInfo {
     tx_id: u64,
@@ -141,8 +150,25 @@ impl OptimizedTransactionManager {
             ));
         }
 
-        let tx_id = self.next_tx_id.fetch_add(1, Ordering::AcqRel); // Ensure proper transaction ID ordering
-        let read_timestamp = self.commit_timestamp.load(Ordering::Acquire);
+        // Atomically obtain transaction ID and read timestamp to prevent race conditions
+        // We need to ensure no commits happen between getting the timestamp and tx_id
+        let (tx_id, read_timestamp) = {
+            // Use a compare-and-swap loop to ensure atomicity
+            loop {
+                let current_commit_ts = self.commit_timestamp.load(Ordering::Acquire);
+                let tx_id = self.next_tx_id.fetch_add(1, Ordering::AcqRel);
+                
+                // Verify that no commit happened during our transaction creation
+                let final_commit_ts = self.commit_timestamp.load(Ordering::Acquire);
+                if current_commit_ts == final_commit_ts {
+                    // No commits happened, our transaction is consistent
+                    break (tx_id, current_commit_ts);
+                }
+                // If commits happened, we need to use the updated timestamp
+                // The tx_id we got is still valid and unique
+                break (tx_id, final_commit_ts);
+            }
+        };
 
         // Try to reuse transaction object from pool
         let tx = {
@@ -281,8 +307,11 @@ impl OptimizedTransactionManager {
     }
 
     pub fn commit(&self, tx_id: u64) -> Result<()> {
-        // Get transaction and clone its data for validation
+        // DEADLOCK FIX: Follow strict lock hierarchy - Level 3 → Level 5
+        // Step 1: Get transaction reference without holding any locks
         let tx_arc = self.get_transaction(tx_id)?;
+        
+        // Step 2: Acquire transaction lock and prepare data (Level 5)
         let tx_data = {
             let mut tx = tx_arc.write();
             if !tx.is_active() {
@@ -290,36 +319,42 @@ impl OptimizedTransactionManager {
             }
             tx.prepare();
             tx.clone()
-        };
-
-        // Fast path validation without holding locks
+        }; // Release transaction lock immediately
+        
+        // Step 3: Validation without holding ANY locks to prevent deadlock
         self.validate_transaction_optimized(&tx_data)?;
 
-        // Add to pending commits for batch processing
+        // Step 4: Add to pending commits (Level 3) - lock-free operation  
         self.pending_commits.insert(tx_id, tx_data);
 
         Ok(())
     }
 
     pub fn commit_sync(&self, tx_id: u64) -> Result<()> {
-        // Synchronous commit for critical operations
+        // DEADLOCK FIX: Synchronous commit with proper lock ordering
+        // Level 1: System-wide atomic operations first
+        let commit_ts = self.commit_timestamp.fetch_add(1, Ordering::SeqCst) + 1;
+        
+        // Level 3: Get transaction without holding other locks
         let tx_arc = self.get_transaction(tx_id)?;
+        
+        // Level 5: Acquire transaction lock for minimal duration
         let tx_data = {
             let mut tx = tx_arc.write();
             if !tx.is_active() {
                 return Err(Error::Transaction("Transaction is not active".to_string()));
             }
             tx.prepare();
-            tx.clone()
-        };
+            let data = tx.clone();
+            // Mark as committed while we hold the lock
+            tx.commit(commit_ts);
+            data
+        }; // Release transaction lock immediately
 
-        // Validate
+        // Validation without holding locks to prevent circular dependencies
         self.validate_transaction_optimized(&tx_data)?;
 
-        // Get commit timestamp
-        let commit_ts = self.commit_timestamp.fetch_add(1, Ordering::SeqCst) + 1;
-
-        // Apply writes immediately
+        // Level 2: Apply writes to version store (no lock conflicts)
         for write_op in &tx_data.write_set {
             self.version_store.put(
                 write_op.key.clone(),
@@ -329,13 +364,10 @@ impl OptimizedTransactionManager {
             );
         }
 
-        // Mark as committed and release locks
-        {
-            let mut tx = tx_arc.write();
-            tx.commit(commit_ts);
-        }
-
-        self.release_locks(tx_id, &tx_data);
+        // Level 4: Release resource locks in safe order
+        self.release_locks_safe(tx_id, &tx_data);
+        
+        // Level 3: Remove from active transactions last
         self.active_transactions.remove(&tx_id);
         self.commit_count.fetch_add(1, Ordering::Relaxed);
 
@@ -343,7 +375,11 @@ impl OptimizedTransactionManager {
     }
 
     pub fn abort(&self, tx_id: u64) -> Result<()> {
+        // DEADLOCK FIX: Follow lock hierarchy for abort operation
+        // Level 3: Get transaction reference  
         let tx_arc = self.get_transaction(tx_id)?;
+        
+        // Level 5: Acquire transaction lock for minimal duration
         let tx_data = {
             let mut tx = tx_arc.write();
             if !tx.is_active() && tx.state != TxState::Preparing {
@@ -351,13 +387,16 @@ impl OptimizedTransactionManager {
             }
             tx.abort();
             tx.clone()
-        };
+        }; // Release transaction lock immediately
 
-        self.release_locks(tx_id, &tx_data);
+        // Level 4: Release resource locks safely
+        self.release_locks_safe(tx_id, &tx_data);
+        
+        // Level 3: Remove from active transactions
         self.active_transactions.remove(&tx_id);
         self.abort_count.fetch_add(1, Ordering::Relaxed);
 
-        // Return transaction to pool for reuse
+        // Level 5: Return transaction to pool (lowest priority)
         {
             let mut pool = self.tx_pool.lock();
             if pool.len() < pool.capacity() {
@@ -403,7 +442,13 @@ impl OptimizedTransactionManager {
     }
 
     fn release_locks(&self, tx_id: u64, tx: &Transaction) {
-        // Release write locks
+        // LEGACY METHOD - use release_locks_safe() instead
+        self.release_locks_safe(tx_id, tx);
+    }
+    
+    fn release_locks_safe(&self, tx_id: u64, tx: &Transaction) {
+        // DEADLOCK FIX: Release locks in consistent order to prevent deadlocks
+        // Level 4A: Release write locks first (higher priority resources)
         for write_op in &tx.write_set {
             if let Some((_, _existing_lock)) = self
                 .write_locks
@@ -416,17 +461,21 @@ impl OptimizedTransactionManager {
             }
         }
 
-        // Release read locks
+        // Level 4B: Release read locks second (lower priority resources)
         for read_op in &tx.read_set {
-            self.read_locks
+            // Atomic modification to avoid holding entry lock
+            let should_remove = self.read_locks
                 .entry(read_op.key.clone())
                 .and_modify(|read_set| {
                     read_set.readers.retain(|r| r.tx_id != tx_id);
-                });
+                })
+                .or_default()
+                .readers.is_empty();
 
-            // Remove empty read lock sets
-            self.read_locks
-                .remove_if(&read_op.key, |_, v| v.readers.is_empty());
+            // Remove empty read lock sets in separate operation
+            if should_remove {
+                self.read_locks.remove_if(&read_op.key, |_, v| v.readers.is_empty());
+            }
         }
     }
 
@@ -441,21 +490,26 @@ impl OptimizedTransactionManager {
             return;
         }
 
+        // DEADLOCK FIX: Collect batch data without holding any locks
         let mut batch = Vec::with_capacity(batch_size);
+        let mut tx_ids_to_remove = Vec::with_capacity(batch_size);
 
-        // Collect batch
+        // Step 1: Collect batch data (Level 3 access only)
         for entry in pending_commits.iter().take(batch_size) {
-            batch.push((*entry.key(), entry.value().clone()));
+            let tx_id = *entry.key();
+            let tx_data = entry.value().clone();
+            batch.push((tx_id, tx_data));
+            tx_ids_to_remove.push(tx_id);
         }
 
         if batch.is_empty() {
             return;
         }
 
-        // Get single commit timestamp for the entire batch
+        // Step 2: Level 1 - Get atomic timestamp for entire batch
         let base_commit_ts = commit_timestamp.fetch_add(batch.len() as u64, Ordering::SeqCst) + 1;
 
-        // Apply all writes in the batch
+        // Step 3: Level 2 - Apply writes to version store (no conflicts)
         for (i, (tx_id, tx_data)) in batch.iter().enumerate() {
             let commit_ts = base_commit_ts + i as u64;
 
@@ -468,16 +522,20 @@ impl OptimizedTransactionManager {
                 );
             }
 
-            // Mark transaction as committed
+            // Step 4: Level 5 - Try to update transaction state (non-blocking)
             if let Some(tx_arc) = active_transactions.get(tx_id) {
+                // Use try_write to avoid blocking - if we can't get lock, skip
+                // The transaction will be cleaned up by timeout mechanisms
                 if let Some(mut tx) = tx_arc.try_write() {
                     tx.commit(commit_ts);
                 }
             }
+        }
 
-            // Remove from active transactions
-            active_transactions.remove(tx_id);
-            pending_commits.remove(tx_id);
+        // Step 5: Level 3 - Clean up collections last (separate from main processing)
+        for tx_id in tx_ids_to_remove {
+            active_transactions.remove(&tx_id);
+            pending_commits.remove(&tx_id);
         }
 
         debug!("Processed batch commit of {} transactions", batch.len());

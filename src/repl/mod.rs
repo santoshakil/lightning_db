@@ -5,26 +5,26 @@
 
 pub mod commands;
 pub mod completion;
-pub mod history;
-pub mod formatter;
-pub mod parser;
 pub mod executor;
+pub mod formatter;
+pub mod history;
+pub mod parser;
 
-use crate::{Database, Result, Error};
+use crate::{Database, Error, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::{stdin, stdout, Write};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime};
-use std::io::{Write, stdin, stdout};
-use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 // Re-export key components
-pub use commands::{Command, CommandResult, CommandContext, CommandRegistry, CommandData};
-pub use completion::{CompletionEngine, CompletionCandidate};
-pub use history::{HistoryManager, HistoryEntry};
-pub use formatter::{OutputFormatter, FormatStyle, ResultFormatter, FormattableData};
-pub use parser::{QueryParser, ParsedCommand, QueryAst};
-pub use executor::{CommandExecutor, ExecutionResult, ExecutionContext};
+pub use commands::{Command, CommandContext, CommandData, CommandRegistry, CommandResult};
+pub use completion::{CompletionCandidate, CompletionEngine};
+pub use executor::{CommandExecutor, ExecutionContext, ExecutionResult};
+pub use formatter::{FormatStyle, FormattableData, OutputFormatter, ResultFormatter};
+pub use history::{HistoryEntry, HistoryManager};
+pub use parser::{ParsedCommand, QueryAst, QueryParser};
 
 /// Interactive REPL for Lightning DB
 pub struct DatabaseRepl {
@@ -152,9 +152,10 @@ impl DatabaseRepl {
     pub fn with_config(database: Arc<Database>, config: ReplConfig) -> Result<Self> {
         let command_registry = Arc::new(CommandRegistry::new());
         let completion_engine = Arc::new(CompletionEngine::new(command_registry.clone()));
-        let history_manager = Arc::new(RwLock::new(
-            HistoryManager::new(config.max_history_entries, config.history_file.clone())?
-        ));
+        let history_manager = Arc::new(RwLock::new(HistoryManager::new(
+            config.max_history_entries,
+            config.history_file.clone(),
+        )?));
         let formatter = Arc::new(OutputFormatter::new(config.default_format.clone()));
         let parser = Arc::new(QueryParser::new());
         let executor = Arc::new(CommandExecutor::new(database.clone()));
@@ -165,7 +166,13 @@ impl DatabaseRepl {
             start_time: SystemTime::now(),
             commands_executed: 0,
             current_transaction: None,
-            session_id: format!("repl_{}", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis()),
+            session_id: format!(
+                "repl_{}",
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+            ),
             last_result: None,
         }));
 
@@ -186,10 +193,10 @@ impl DatabaseRepl {
     /// Start the interactive REPL
     pub fn start(&self) -> Result<()> {
         info!("Starting Lightning DB REPL");
-        
+
         // Print welcome message
         self.print_welcome();
-        
+
         // Load history if enabled
         if self.config.enable_history {
             if let Err(e) = self.history_manager.write().unwrap().load_history() {
@@ -208,7 +215,7 @@ impl DatabaseRepl {
             } else {
                 &self.config.prompt
             };
-            
+
             print!("{}", prompt);
             stdout().flush().unwrap();
 
@@ -222,12 +229,12 @@ impl DatabaseRepl {
                 }
                 Ok(_) => {
                     let line = line.trim();
-                    
+
                     // Handle special commands
                     if line == "exit" || line == "quit" || line == "\\q" {
                         break;
                     }
-                    
+
                     if line == "\\?" || line == "help" {
                         self.show_help();
                         continue;
@@ -250,7 +257,7 @@ impl DatabaseRepl {
 
                     // Check for multiline continuation
                     if line.ends_with('\\') && !line.ends_with("\\\\") {
-                        input_buffer.push_str(&line[..line.len()-1]);
+                        input_buffer.push_str(&line[..line.len() - 1]);
                         input_buffer.push(' ');
                         in_multiline = true;
                         continue;
@@ -296,7 +303,7 @@ impl DatabaseRepl {
     /// Execute a command
     fn execute_command(&self, input: &str) {
         let start_time = Instant::now();
-        
+
         // Add to history
         if self.config.enable_history && !input.trim().is_empty() {
             let mut history = self.history_manager.write().unwrap();
@@ -358,16 +365,22 @@ impl DatabaseRepl {
 
         // Format and display result
         match result {
-            CommandResult::Success { data, message, metadata } => {
+            CommandResult::Success {
+                data,
+                message,
+                metadata,
+            } => {
                 if let Some(msg) = message {
                     println!("{}", msg);
                 }
-                
+
                 if let Some(data) = data {
                     let formattable_data = self.convert_command_data_to_formattable(&data);
                     let formatted = self.formatter.format_data(&formattable_data);
-                    
-                    if self.config.enable_paging && formatted.lines().count() > self.config.page_size {
+
+                    if self.config.enable_paging
+                        && formatted.lines().count() > self.config.page_size
+                    {
                         self.display_paged(&formatted);
                     } else {
                         println!("{}", formatted);
@@ -401,79 +414,132 @@ impl DatabaseRepl {
 
     /// Print welcome message
     fn print_welcome(&self) {
-        println!("╔══════════════════════════════════════════════════════════════════════════════╗");
-        println!("║                          Lightning DB Interactive REPL                       ║");
-        println!("║                          Version {}                            ║", env!("CARGO_PKG_VERSION"));
-        println!("╠══════════════════════════════════════════════════════════════════════════════╣");
+        println!(
+            "╔══════════════════════════════════════════════════════════════════════════════╗"
+        );
+        println!(
+            "║                          Lightning DB Interactive REPL                       ║"
+        );
+        println!(
+            "║                          Version {}                            ║",
+            env!("CARGO_PKG_VERSION")
+        );
+        println!(
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+        );
         println!("║ Welcome to Lightning DB! Type 'help' or '\\?' for available commands.       ║");
         println!("║ Type 'exit', 'quit', or '\\q' to exit the REPL.                             ║");
         println!("║ Use '\\' at the end of a line for multi-line commands.                      ║");
-        println!("╚══════════════════════════════════════════════════════════════════════════════╝");
+        println!(
+            "╚══════════════════════════════════════════════════════════════════════════════╝"
+        );
         println!();
     }
 
     /// Print goodbye message
     fn print_goodbye(&self) {
         let session = self.session.read().unwrap();
-        let duration = SystemTime::now().duration_since(session.start_time).unwrap();
-        
+        let duration = SystemTime::now()
+            .duration_since(session.start_time)
+            .unwrap();
+
         println!();
-        println!("╔══════════════════════════════════════════════════════════════════════════════╗");
-        println!("║                              Session Summary                                 ║");
-        println!("╠══════════════════════════════════════════════════════════════════════════════╣");
-        println!("║ Commands executed: {:<10}                                              ║", session.commands_executed);
-        println!("║ Session duration:  {:<10}                                              ║", format!("{:.2}s", duration.as_secs_f64()));
+        println!(
+            "╔══════════════════════════════════════════════════════════════════════════════╗"
+        );
+        println!(
+            "║                              Session Summary                                 ║"
+        );
+        println!(
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+        );
+        println!(
+            "║ Commands executed: {:<10}                                              ║",
+            session.commands_executed
+        );
+        println!(
+            "║ Session duration:  {:<10}                                              ║",
+            format!("{:.2}s", duration.as_secs_f64())
+        );
         println!("║ Thank you for using Lightning DB!                                           ║");
-        println!("╚══════════════════════════════════════════════════════════════════════════════╝");
+        println!(
+            "╚══════════════════════════════════════════════════════════════════════════════╝"
+        );
     }
 
     /// Show help information
     fn show_help(&self) {
-        println!("╔══════════════════════════════════════════════════════════════════════════════╗");
-        println!("║                              Lightning DB Commands                           ║");
-        println!("╠══════════════════════════════════════════════════════════════════════════════╣");
-        println!("║ Database Operations:                                                         ║");
+        println!(
+            "╔══════════════════════════════════════════════════════════════════════════════╗"
+        );
+        println!(
+            "║                              Lightning DB Commands                           ║"
+        );
+        println!(
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+        );
+        println!(
+            "║ Database Operations:                                                         ║"
+        );
         println!("║   PUT key value                    - Store a key-value pair                 ║");
         println!("║   GET key                          - Retrieve value for key                 ║");
         println!("║   DELETE key                       - Remove key-value pair                  ║");
         println!("║   EXISTS key                       - Check if key exists                    ║");
         println!("║   SCAN [prefix] [limit]            - Scan keys with optional prefix        ║");
-        println!("║                                                                              ║");
-        println!("║ Transaction Operations:                                                      ║");
+        println!(
+            "║                                                                              ║"
+        );
+        println!(
+            "║ Transaction Operations:                                                      ║"
+        );
         println!("║   BEGIN                            - Start a new transaction               ║");
         println!("║   COMMIT                           - Commit current transaction            ║");
         println!("║   ROLLBACK                         - Rollback current transaction         ║");
         println!("║   TXPUT key value                  - Put within transaction               ║");
         println!("║   TXGET key                        - Get within transaction               ║");
         println!("║   TXDELETE key                     - Delete within transaction            ║");
-        println!("║                                                                              ║");
-        println!("║ Database Management:                                                         ║");
+        println!(
+            "║                                                                              ║"
+        );
+        println!(
+            "║ Database Management:                                                         ║"
+        );
         println!("║   INFO                             - Show database information             ║");
         println!("║   STATS                            - Show database statistics             ║");
         println!("║   COMPACT                          - Trigger compaction                    ║");
         println!("║   BACKUP path                      - Create database backup               ║");
         println!("║   HEALTH                           - Show health status                    ║");
-        println!("║                                                                              ║");
-        println!("║ REPL Commands:                                                               ║");
+        println!(
+            "║                                                                              ║"
+        );
+        println!(
+            "║ REPL Commands:                                                               ║"
+        );
         println!("║   \\?  or help                      - Show this help                        ║");
         println!("║   \\h                               - Show command history                  ║");
         println!("║   \\s                               - Show session statistics              ║");
         println!("║   \\c                               - Clear screen                          ║");
         println!("║   \\q  or exit or quit              - Exit REPL                            ║");
-        println!("║                                                                              ║");
-        println!("║ Special Features:                                                            ║");
+        println!(
+            "║                                                                              ║"
+        );
+        println!(
+            "║ Special Features:                                                            ║"
+        );
         println!("║   - Use '\\' at end of line for multi-line commands                         ║");
         println!("║   - Tab completion for commands and keys                                    ║");
         println!("║   - Command history with up/down arrows                                     ║");
         println!("║   - Automatic paging for large results                                      ║");
-        println!("╚══════════════════════════════════════════════════════════════════════════════╝");
+        println!(
+            "╚══════════════════════════════════════════════════════════════════════════════╝"
+        );
     }
 
     /// Show command history
     fn show_history(&self) {
         let history = self.history_manager.read().unwrap();
         let entries = history.get_recent_entries(20);
-        
+
         if entries.is_empty() {
             println!("No command history available.");
             return;
@@ -489,19 +555,44 @@ impl DatabaseRepl {
     /// Show session statistics
     fn show_stats(&self) {
         let session = self.session.read().unwrap();
-        let duration = SystemTime::now().duration_since(session.start_time).unwrap();
-        
-        println!("╔══════════════════════════════════════════════════════════════════════════════╗");
-        println!("║                            Session Statistics                                ║");
-        println!("╠══════════════════════════════════════════════════════════════════════════════╣");
+        let duration = SystemTime::now()
+            .duration_since(session.start_time)
+            .unwrap();
+
+        println!(
+            "╔══════════════════════════════════════════════════════════════════════════════╗"
+        );
+        println!(
+            "║                            Session Statistics                                ║"
+        );
+        println!(
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+        );
         println!("║ Session ID:          {:<50} ║", session.session_id);
-        println!("║ Started:             {:<50} ║", format!("{:?}", session.start_time));
-        println!("║ Duration:            {:<50} ║", format!("{:.2}s", duration.as_secs_f64()));
+        println!(
+            "║ Started:             {:<50} ║",
+            format!("{:?}", session.start_time)
+        );
+        println!(
+            "║ Duration:            {:<50} ║",
+            format!("{:.2}s", duration.as_secs_f64())
+        );
         println!("║ Commands executed:   {:<50} ║", session.commands_executed);
-        println!("║ Current database:    {:<50} ║", session.current_database.as_deref().unwrap_or("default"));
-        println!("║ Active transaction:  {:<50} ║", session.current_transaction.map(|id| id.to_string()).unwrap_or("None".to_string()));
+        println!(
+            "║ Current database:    {:<50} ║",
+            session.current_database.as_deref().unwrap_or("default")
+        );
+        println!(
+            "║ Active transaction:  {:<50} ║",
+            session
+                .current_transaction
+                .map(|id| id.to_string())
+                .unwrap_or("None".to_string())
+        );
         println!("║ Session variables:   {:<50} ║", session.variables.len());
-        println!("╚══════════════════════════════════════════════════════════════════════════════╝");
+        println!(
+            "╚══════════════════════════════════════════════════════════════════════════════╝"
+        );
     }
 
     /// Clear screen
@@ -514,23 +605,23 @@ impl DatabaseRepl {
     fn display_paged(&self, content: &str) {
         let lines: Vec<&str> = content.lines().collect();
         let mut current_line = 0;
-        
+
         while current_line < lines.len() {
             let end_line = (current_line + self.config.page_size).min(lines.len());
-            
+
             for line in &lines[current_line..end_line] {
                 println!("{}", line);
             }
-            
+
             current_line = end_line;
-            
+
             if current_line < lines.len() {
                 print!("-- More -- (Press Enter to continue, 'q' to quit): ");
                 stdout().flush().unwrap();
-                
+
                 let mut input = String::new();
                 stdin().read_line(&mut input).unwrap();
-                
+
                 if input.trim() == "q" {
                     break;
                 }
@@ -551,16 +642,18 @@ impl DatabaseRepl {
     /// Get REPL statistics
     pub fn get_stats(&self) -> ReplStats {
         let session = self.session.read().unwrap();
-        let duration = SystemTime::now().duration_since(session.start_time).unwrap();
-        
+        let duration = SystemTime::now()
+            .duration_since(session.start_time)
+            .unwrap();
+
         ReplStats {
             session_duration: duration,
             total_commands: session.commands_executed,
             successful_commands: session.commands_executed, // Simplified
-            failed_commands: 0, // Simplified
+            failed_commands: 0,                             // Simplified
             average_command_time: Duration::from_millis(100), // Placeholder
             longest_command_time: Duration::from_millis(500), // Placeholder
-            memory_usage: 0, // Would be calculated from actual usage
+            memory_usage: 0,                                // Would be calculated from actual usage
         }
     }
 
@@ -611,14 +704,20 @@ impl DatabaseRepl {
         match data {
             FormattableData::KeyValue { key, value } => CommandData::KeyValue {
                 key,
-                value: value.map(|v| String::from_utf8_lossy(&v).to_string()).unwrap_or_default(),
+                value: value
+                    .map(|v| String::from_utf8_lossy(&v).to_string())
+                    .unwrap_or_default(),
             },
             FormattableData::Keys(items) => CommandData::List(items),
             FormattableData::Single(record) => CommandData::Value(format!("{:?}", record)),
-            FormattableData::Multiple(records) => CommandData::Value(format!("{} records", records.len())),
+            FormattableData::Multiple(records) => {
+                CommandData::Value(format!("{} records", records.len()))
+            }
             FormattableData::Message(msg) => CommandData::Value(msg),
             FormattableData::Error(err) => CommandData::Value(format!("Error: {}", err)),
-            FormattableData::Stats(stats) => CommandData::Value(format!("Stats: {} keys", stats.total_keys)),
+            FormattableData::Stats(stats) => {
+                CommandData::Value(format!("Stats: {} keys", stats.total_keys))
+            }
         }
     }
 
@@ -634,18 +733,16 @@ impl DatabaseRepl {
             CommandData::Table { _headers: _, rows } => {
                 // Convert table to a simple message representation
                 FormattableData::Message(format!("Table with {} rows", rows.len()))
-            },
-            CommandData::Json(json_value) => {
-                FormattableData::Message(json_value.to_string())
-            },
+            }
+            CommandData::Json(json_value) => FormattableData::Message(json_value.to_string()),
             CommandData::Binary(binary_data) => {
                 FormattableData::Message(format!("Binary data ({} bytes)", binary_data.len()))
-            },
+            }
             CommandData::Stats(stats_map) => {
                 // Convert stats to a simple representation
                 let stats_count = stats_map.len();
                 FormattableData::Message(format!("Statistics ({} entries)", stats_count))
-            },
+            }
         }
     }
 }
@@ -665,15 +762,15 @@ pub fn start_repl_with_config(database: Arc<Database>, config: ReplConfig) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use crate::LightningDbConfig;
+    use tempfile::TempDir;
 
     #[test]
     fn test_repl_creation() {
         let test_dir = TempDir::new().unwrap();
         let db_config = LightningDbConfig::default();
         let database = Arc::new(Database::create(test_dir.path(), db_config).unwrap());
-        
+
         let repl = DatabaseRepl::new(database);
         assert!(repl.is_ok());
     }
@@ -692,12 +789,15 @@ mod tests {
         let test_dir = TempDir::new().unwrap();
         let db_config = LightningDbConfig::default();
         let database = Arc::new(Database::create(test_dir.path(), db_config).unwrap());
-        
+
         let repl = DatabaseRepl::new(database).unwrap();
-        
+
         // Test session variable management
         repl.set_variable("test_var".to_string(), "test_value".to_string());
-        assert_eq!(repl.get_variable("test_var"), Some("test_value".to_string()));
+        assert_eq!(
+            repl.get_variable("test_var"),
+            Some("test_value".to_string())
+        );
         assert_eq!(repl.get_variable("nonexistent"), None);
     }
 
@@ -706,20 +806,20 @@ mod tests {
         let test_dir = TempDir::new().unwrap();
         let db_config = LightningDbConfig::default();
         let database = Arc::new(Database::create(test_dir.path(), db_config).unwrap());
-        
+
         let repl = DatabaseRepl::new(database).unwrap();
-        
+
         // Test transaction lifecycle
         let tx_id = repl.begin_transaction().unwrap();
         assert!(tx_id > 0);
-        
+
         let session = repl.session.read().unwrap();
         assert_eq!(session.current_transaction, Some(tx_id));
         drop(session);
-        
+
         // Test commit
         assert!(repl.commit_transaction().is_ok());
-        
+
         let session = repl.session.read().unwrap();
         assert_eq!(session.current_transaction, None);
     }
@@ -729,10 +829,10 @@ mod tests {
         let test_dir = TempDir::new().unwrap();
         let db_config = LightningDbConfig::default();
         let database = Arc::new(Database::create(test_dir.path(), db_config).unwrap());
-        
+
         let repl = DatabaseRepl::new(database).unwrap();
         let stats = repl.get_stats();
-        
+
         assert_eq!(stats.total_commands, 0);
         assert!(stats.session_duration.as_secs() < 1); // Just created
     }

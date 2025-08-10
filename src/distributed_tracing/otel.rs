@@ -5,14 +5,26 @@
 
 use super::{Span, TraceContext, TraceExporter, SpanStatus, SpanKind};
 use crate::Result;
+use base64::{Engine as _, engine::general_purpose};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 /// OpenTelemetry OTLP trace exporter with full specification compliance
+#[cfg(feature = "http-client")]
 pub struct OtlpTraceExporter {
     client: reqwest::blocking::Client,
+    endpoint: String,
+    headers: HashMap<String, String>,
+    resource: OtlpResource,
+    instrumentation_library: InstrumentationLibrary,
+    batch_size: usize,
+    timeout_ms: u64,
+}
+
+#[cfg(not(feature = "http-client"))]
+pub struct OtlpTraceExporter {
     endpoint: String,
     headers: HashMap<String, String>,
     resource: OtlpResource,
@@ -24,19 +36,33 @@ pub struct OtlpTraceExporter {
 impl OtlpTraceExporter {
     /// Create a new OTLP trace exporter
     pub fn new(endpoint: String) -> Self {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .expect("Failed to create HTTP client");
-        
-        Self {
-            client,
-            endpoint,
-            headers: HashMap::new(),
-            resource: OtlpResource::auto_detect(),
-            instrumentation_library: InstrumentationLibrary::default(),
-            batch_size: 100,
-            timeout_ms: 30000,
+        #[cfg(feature = "http-client")]
+        {
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("Failed to create HTTP client");
+            
+            Self {
+                client,
+                endpoint,
+                headers: HashMap::new(),
+                resource: OtlpResource::auto_detect(),
+                instrumentation_library: InstrumentationLibrary::default(),
+                batch_size: 100,
+                timeout_ms: 30000,
+            }
+        }
+        #[cfg(not(feature = "http-client"))]
+        {
+            Self {
+                endpoint,
+                headers: HashMap::new(),
+                resource: OtlpResource::auto_detect(),
+                instrumentation_library: InstrumentationLibrary::default(),
+                batch_size: 100,
+                timeout_ms: 30000,
+            }
         }
     }
     
@@ -183,7 +209,7 @@ impl OtlpTraceExporter {
     /// Convert hex string to base64 bytes for OTLP
     fn hex_to_bytes(&self, hex_str: &str) -> Value {
         if let Ok(bytes) = hex::decode(hex_str) {
-            json!(base64::encode(bytes))
+            json!(general_purpose::STANDARD.encode(bytes))
         } else {
             json!("")
         }

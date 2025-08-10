@@ -1,9 +1,9 @@
-pub mod production_hooks;
-pub mod otel_integration;
-pub mod metrics_collector;
-pub mod health_checker;
 pub mod alert_manager;
+pub mod health_checker;
+pub mod metrics_collector;
+pub mod otel_integration;
 pub mod performance_monitor;
+pub mod production_hooks;
 pub mod resource_tracker;
 
 use crate::error::Result;
@@ -16,12 +16,14 @@ use std::net::TcpStream;
 use std::time::Instant;
 
 // Re-export key monitoring components
+pub use alert_manager::{Alert, AlertCondition, AlertManager, AlertRule, AlertSeverity};
+pub use health_checker::{HealthCheck, HealthChecker, HealthReport, HealthStatus};
+pub use metrics_collector::{
+    DatabaseMetrics as CollectedDatabaseMetrics, MetricsCollector, OperationMetrics,
+};
 pub use otel_integration::{OpenTelemetryProvider, TelemetryConfig};
-pub use metrics_collector::{MetricsCollector, DatabaseMetrics as CollectedDatabaseMetrics, OperationMetrics};
-pub use health_checker::{HealthChecker, HealthStatus, HealthCheck, HealthReport};
-pub use alert_manager::{AlertManager, Alert, AlertSeverity, AlertCondition, AlertRule};
-pub use performance_monitor::{PerformanceMonitor, PerformanceData, PerformanceTrend};
-pub use resource_tracker::{ResourceTracker, ResourceUsage, ResourceThreshold};
+pub use performance_monitor::{PerformanceData, PerformanceMonitor, PerformanceTrend};
+pub use resource_tracker::{ResourceThreshold, ResourceTracker, ResourceUsage};
 
 lazy_static! {
     // Operation counters
@@ -112,7 +114,7 @@ impl MetricsTimer {
     pub fn record_success(self) {
         let duration = self.start.elapsed().as_secs_f64();
         OPERATION_COUNTER
-            .with_label_values(&[&self.operation, "success"])
+            .with_label_values(&[&self.operation, &"success".to_string()])
             .inc();
         OPERATION_HISTOGRAM
             .with_label_values(&[&self.operation])
@@ -122,7 +124,7 @@ impl MetricsTimer {
     pub fn record_error(self) {
         let duration = self.start.elapsed().as_secs_f64();
         OPERATION_COUNTER
-            .with_label_values(&[&self.operation, "error"])
+            .with_label_values(&[&self.operation, &"error".to_string()])
             .inc();
         OPERATION_HISTOGRAM
             .with_label_values(&[&self.operation])

@@ -3,7 +3,7 @@
 //! Advanced prefetching system that predicts memory access patterns and
 //! pre-loads data into CPU cache for optimal performance.
 
-use super::{CACHE_LINE_SIZE, PrefetchHints, CachePerformanceStats};
+use super::{CachePerformanceStats, PrefetchHints, CACHE_LINE_SIZE};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -21,12 +21,12 @@ pub enum PrefetchPriority {
 /// Types of prefetch patterns
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PrefetchPattern {
-    Sequential,     // Linear access pattern
-    Strided,        // Fixed stride access pattern
-    Indirect,       // Pointer chasing
-    Spatial,        // Access nearby memory
-    Temporal,       // Re-access recent memory
-    Random,         // Unpredictable access
+    Sequential, // Linear access pattern
+    Strided,    // Fixed stride access pattern
+    Indirect,   // Pointer chasing
+    Spatial,    // Access nearby memory
+    Temporal,   // Re-access recent memory
+    Random,     // Unpredictable access
 }
 
 /// Prefetch request
@@ -73,7 +73,7 @@ impl PrefetchRequest {
 
         let age_penalty = self.timestamp.elapsed().as_millis() as f64 / 1000.0; // Seconds
         let base_score = priority_weight * self.prediction_confidence;
-        
+
         // Reduce score for old requests
         base_score * (-age_penalty / 10.0).exp()
     }
@@ -120,10 +120,10 @@ impl AccessPatternTracker {
     /// Record a memory access
     pub fn record_access(&mut self, address: usize) {
         let now = Instant::now();
-        
+
         // Add to history
         self.access_history.push_back((address, now));
-        
+
         // Trim history if too large
         while self.access_history.len() > self.max_history_size {
             self.access_history.pop_front();
@@ -145,14 +145,17 @@ impl AccessPatternTracker {
         predictions.extend(self.detect_temporal_pattern(count));
 
         // Sort by urgency and take the best predictions
-        predictions.sort_by(|a, b| b.urgency_score().partial_cmp(&a.urgency_score()).unwrap());
+        predictions.sort_by(|a, b| {
+            b.urgency_score().partial_cmp(&a.urgency_score()).unwrap_or(std::cmp::Ordering::Equal)
+        });
         predictions.truncate(count);
-        
+
         predictions
     }
 
     fn detect_sequential_pattern(&self, count: usize) -> Vec<PrefetchRequest> {
-        let recent_accesses: Vec<_> = self.access_history
+        let recent_accesses: Vec<_> = self
+            .access_history
             .iter()
             .rev()
             .take(4)
@@ -166,12 +169,12 @@ impl AccessPatternTracker {
         // Check if addresses are increasing sequentially
         let mut is_sequential = true;
         let mut stride = 0;
-        
+
         for i in 1..recent_accesses.len() {
-            let current_stride = if recent_accesses[i-1] > recent_accesses[i] {
-                recent_accesses[i-1] - recent_accesses[i]
+            let current_stride = if recent_accesses[i - 1] > recent_accesses[i] {
+                recent_accesses[i - 1] - recent_accesses[i]
             } else {
-                recent_accesses[i] - recent_accesses[i-1]
+                recent_accesses[i] - recent_accesses[i - 1]
             };
 
             if stride == 0 {
@@ -189,7 +192,7 @@ impl AccessPatternTracker {
         // Generate predictions
         let last_addr = recent_accesses[0];
         let accuracy = self.get_pattern_accuracy(PrefetchPattern::Sequential);
-        
+
         (1..=count)
             .map(|i| {
                 let next_addr = last_addr + (stride * i);
@@ -205,7 +208,8 @@ impl AccessPatternTracker {
             return Vec::new();
         }
 
-        let recent: Vec<_> = self.access_history
+        let recent: Vec<_> = self
+            .access_history
             .iter()
             .rev()
             .take(self.stride_detection_window)
@@ -215,28 +219,30 @@ impl AccessPatternTracker {
         // Calculate strides
         let mut strides = Vec::new();
         for i in 1..recent.len() {
-            if recent[i-1] >= recent[i] {
-                strides.push(recent[i-1] - recent[i]);
+            if recent[i - 1] >= recent[i] {
+                strides.push(recent[i - 1] - recent[i]);
             } else {
-                strides.push(recent[i] - recent[i-1]);
+                strides.push(recent[i] - recent[i - 1]);
             }
         }
 
         // Find most common stride
         let mut stride_counts = HashMap::new();
         for &stride in &strides {
-            if stride > 0 && stride <= 4096 { // Reasonable stride limit
+            if stride > 0 && stride <= 4096 {
+                // Reasonable stride limit
                 *stride_counts.entry(stride).or_insert(0) += 1;
             }
         }
 
-        if let Some((&best_stride, &count_val)) = stride_counts.iter()
-            .max_by_key(|&(_, count)| count) 
+        if let Some((&best_stride, &count_val)) =
+            stride_counts.iter().max_by_key(|&(_, count)| count)
         {
-            if count_val >= strides.len() / 2 { // At least 50% consistency
+            if count_val >= strides.len() / 2 {
+                // At least 50% consistency
                 let last_addr = recent[0];
                 let accuracy = self.get_pattern_accuracy(PrefetchPattern::Strided);
-                
+
                 return (1..=count)
                     .map(|i| {
                         let next_addr = last_addr + (best_stride * i);
@@ -256,7 +262,7 @@ impl AccessPatternTracker {
             return Vec::new();
         }
 
-        let (last_addr, _) = self.access_history.back().unwrap();
+        let (last_addr, _) = self.access_history.back().copied().unwrap_or((0, Instant::now()));
         let cache_line_base = last_addr & !(CACHE_LINE_SIZE - 1);
         let accuracy = self.get_pattern_accuracy(PrefetchPattern::Spatial);
 
@@ -278,7 +284,8 @@ impl AccessPatternTracker {
 
         // Look for recently accessed addresses that might be accessed again
         let cutoff_time = Instant::now() - Duration::from_millis(100);
-        let recent_addrs: Vec<_> = self.access_history
+        let recent_addrs: Vec<_> = self
+            .access_history
             .iter()
             .rev()
             .take_while(|(_, time)| *time >= cutoff_time)
@@ -290,7 +297,7 @@ impl AccessPatternTracker {
         }
 
         let accuracy = self.get_pattern_accuracy(PrefetchPattern::Temporal);
-        
+
         recent_addrs
             .into_iter()
             .take(count)
@@ -312,14 +319,18 @@ impl AccessPatternTracker {
 
     /// Update pattern statistics based on prefetch success
     pub fn update_pattern_accuracy(&mut self, pattern: PrefetchPattern, was_successful: bool) {
-        let stats = self.pattern_stats.entry(pattern).or_insert_with(Default::default);
-        
+        let stats = self
+            .pattern_stats
+            .entry(pattern)
+            .or_insert_with(Default::default);
+
         stats.total_predictions += 1;
         if was_successful {
             stats.successful_predictions += 1;
         }
-        
-        stats.average_accuracy = stats.successful_predictions as f64 / stats.total_predictions as f64;
+
+        stats.average_accuracy =
+            stats.successful_predictions as f64 / stats.total_predictions as f64;
         stats.last_update = Instant::now();
     }
 }
@@ -377,11 +388,11 @@ impl PrefetchBuffer {
     pub fn record_access(&self, address: usize) {
         if let Ok(mut tracker) = self.access_tracker.lock() {
             tracker.record_access(address);
-            
+
             if self.config.adaptive_learning_enabled {
                 let predictions = tracker.predict_next_accesses(self.config.prefetch_distance);
                 drop(tracker); // Release lock early
-                
+
                 for prediction in predictions {
                     if prediction.prediction_confidence >= self.config.min_confidence_threshold {
                         self.submit_prefetch_request(prediction);
@@ -400,9 +411,11 @@ impl PrefetchBuffer {
         if let Ok(mut requests) = self.pending_requests.lock() {
             if requests.len() < self.config.max_pending_requests {
                 requests.push(request);
-                
+
                 // Sort by urgency to prioritize important requests
-                requests.sort_by(|a, b| b.urgency_score().partial_cmp(&a.urgency_score()).unwrap());
+                requests.sort_by(|a, b| {
+                    b.urgency_score().partial_cmp(&a.urgency_score()).unwrap_or(std::cmp::Ordering::Equal)
+                });
             }
         }
     }
@@ -410,10 +423,10 @@ impl PrefetchBuffer {
     /// Execute pending prefetch requests
     pub fn execute_prefetches(&self, max_count: usize) -> usize {
         let mut executed = 0;
-        
+
         if let Ok(mut requests) = self.pending_requests.lock() {
             let to_execute = requests.len().min(max_count);
-            
+
             for _ in 0..to_execute {
                 if let Some(request) = requests.pop() {
                     self.execute_single_prefetch(&request);
@@ -421,7 +434,7 @@ impl PrefetchBuffer {
                 }
             }
         }
-        
+
         executed
     }
 
@@ -430,7 +443,7 @@ impl PrefetchBuffer {
             PrefetchPattern::Sequential | PrefetchPattern::Strided => {
                 // Use temporal prefetch hint for sequential patterns
                 PrefetchHints::prefetch_read_t0(request.address as *const u8);
-            },
+            }
             PrefetchPattern::Spatial => {
                 // Prefetch multiple cache lines for spatial locality
                 let cache_lines = (request.size + CACHE_LINE_SIZE - 1) / CACHE_LINE_SIZE;
@@ -438,15 +451,15 @@ impl PrefetchBuffer {
                     let addr = request.address + (i * CACHE_LINE_SIZE);
                     PrefetchHints::prefetch_read_t0(addr as *const u8);
                 }
-            },
+            }
             PrefetchPattern::Temporal => {
                 // Use temporal hint for recently accessed data
                 PrefetchHints::prefetch_read_t0(request.address as *const u8);
-            },
+            }
             PrefetchPattern::Indirect | PrefetchPattern::Random => {
                 // Use non-temporal hint for irregular patterns
                 PrefetchHints::prefetch_read_nt(request.address as *const u8);
-            },
+            }
         }
 
         self.stats.record_prefetch_hit();
@@ -457,9 +470,9 @@ impl PrefetchBuffer {
         let requests = Arc::clone(&self.pending_requests);
         let active = Arc::clone(&self.worker_active);
         let stats = Arc::clone(&self.stats);
-        
+
         active.store(true, std::sync::atomic::Ordering::Relaxed);
-        
+
         std::thread::spawn(move || {
             while active.load(std::sync::atomic::Ordering::Relaxed) {
                 // Execute up to 16 prefetches per cycle
@@ -470,16 +483,16 @@ impl PrefetchBuffer {
                             match request.pattern {
                                 PrefetchPattern::Sequential | PrefetchPattern::Strided => {
                                     PrefetchHints::prefetch_read_t0(request.address as *const u8);
-                                },
+                                }
                                 _ => {
                                     PrefetchHints::prefetch_read_nt(request.address as *const u8);
-                                },
+                                }
                             }
                             stats.record_prefetch_hit();
                         }
                     }
                 }
-                
+
                 // Sleep briefly to avoid consuming too much CPU
                 std::thread::sleep(Duration::from_micros(100));
             }
@@ -488,12 +501,15 @@ impl PrefetchBuffer {
 
     /// Stop background worker
     pub fn stop_background_worker(&self) {
-        self.worker_active.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.worker_active
+            .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Get buffer statistics
     pub fn get_stats(&self) -> PrefetchBufferStats {
-        let pending_count = self.pending_requests.lock()
+        let pending_count = self
+            .pending_requests
+            .lock()
             .map(|reqs| reqs.len())
             .unwrap_or(0);
 
@@ -510,7 +526,7 @@ impl PrefetchBuffer {
         if let Ok(mut tracker) = self.access_tracker.lock() {
             tracker.update_pattern_accuracy(pattern, was_hit);
         }
-        
+
         if was_hit {
             self.stats.record_hit();
         } else {
@@ -527,9 +543,12 @@ impl PrefetchBuffer {
 
     /// Get pattern accuracy statistics
     pub fn get_pattern_accuracy(&self) -> HashMap<PrefetchPattern, f64> {
-        self.access_tracker.lock()
+        self.access_tracker
+            .lock()
             .map(|tracker| {
-                tracker.pattern_stats.iter()
+                tracker
+                    .pattern_stats
+                    .iter()
                     .map(|(&pattern, stats)| (pattern, stats.average_accuracy))
                     .collect()
             })
@@ -604,9 +623,8 @@ mod tests {
 
     #[test]
     fn test_prefetch_request_urgency() {
-        let req = PrefetchRequest::new(0x1000, 64, PrefetchPriority::High)
-            .with_confidence(0.9);
-        
+        let req = PrefetchRequest::new(0x1000, 64, PrefetchPriority::High).with_confidence(0.9);
+
         let urgency = req.urgency_score();
         assert!(urgency > 0.6); // High priority with high confidence
         assert!(urgency <= 1.0);
@@ -615,15 +633,15 @@ mod tests {
     #[test]
     fn test_access_pattern_tracker() {
         let mut tracker = AccessPatternTracker::new(100);
-        
+
         // Record sequential accesses
         for i in 0..10 {
             tracker.record_access(0x1000 + i * 64);
         }
-        
+
         let predictions = tracker.predict_next_accesses(3);
         assert!(!predictions.is_empty());
-        
+
         // Check if predictions follow sequential pattern
         if let Some(first_pred) = predictions.first() {
             assert_eq!(first_pred.pattern, PrefetchPattern::Sequential);
@@ -637,16 +655,16 @@ mod tests {
             ..Default::default()
         };
         let buffer = PrefetchBuffer::new(config);
-        
+
         // Record sequential accesses
         for i in 0..5 {
             buffer.record_access(0x1000 + i * 64);
         }
-        
+
         // Execute prefetches
         let executed = buffer.execute_prefetches(10);
         assert!(executed > 0);
-        
+
         let stats = buffer.get_stats();
         assert_eq!(stats.total_prefetches, executed);
     }
@@ -654,15 +672,15 @@ mod tests {
     #[test]
     fn test_sequential_pattern_detection() {
         let mut tracker = AccessPatternTracker::new(100);
-        
+
         // Record perfect sequential pattern
         for i in 0..8 {
             tracker.record_access(0x2000 + i * 128);
         }
-        
+
         let predictions = tracker.detect_sequential_pattern(4);
         assert_eq!(predictions.len(), 4);
-        
+
         for (i, pred) in predictions.iter().enumerate() {
             let expected_addr = 0x2000 + (8 + i + 1) * 128;
             assert_eq!(pred.address, expected_addr);
@@ -673,15 +691,15 @@ mod tests {
     #[test]
     fn test_strided_pattern_detection() {
         let mut tracker = AccessPatternTracker::new(100);
-        
+
         // Record strided pattern (stride = 256)
         for i in 0..8 {
             tracker.record_access(0x3000 + i * 256);
         }
-        
+
         let predictions = tracker.detect_strided_pattern(3);
         assert!(!predictions.is_empty());
-        
+
         if let Some(first_pred) = predictions.first() {
             assert_eq!(first_pred.pattern, PrefetchPattern::Strided);
         }
@@ -690,15 +708,15 @@ mod tests {
     #[test]
     fn test_specialized_prefetchers() {
         let prefetchers = SpecializedPrefetchers::new();
-        
+
         prefetchers.record_access(0x1000, PrefetchPattern::Sequential);
         prefetchers.record_access(0x2000, PrefetchPattern::Random);
         prefetchers.record_access(0x3000, PrefetchPattern::Spatial);
-        
+
         // Verify different prefetchers are used for different patterns
         let seq_prefetcher = prefetchers.get_prefetcher(PrefetchPattern::Sequential);
         let rand_prefetcher = prefetchers.get_prefetcher(PrefetchPattern::Random);
-        
+
         assert!(!std::ptr::eq(seq_prefetcher, rand_prefetcher));
     }
 
@@ -710,12 +728,12 @@ mod tests {
             ..Default::default()
         };
         let buffer = PrefetchBuffer::new(config);
-        
+
         // Simulate successful prefetch
         buffer.update_learning(0x1000, PrefetchPattern::Sequential, true);
         buffer.update_learning(0x1000, PrefetchPattern::Sequential, true);
         buffer.update_learning(0x1000, PrefetchPattern::Sequential, false);
-        
+
         let accuracy = buffer.get_pattern_accuracy();
         if let Some(&seq_accuracy) = accuracy.get(&PrefetchPattern::Sequential) {
             assert!((seq_accuracy - 0.6667).abs() < 0.01); // 2/3 success rate

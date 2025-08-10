@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub struct BackgroundCompactionScheduler {
     compactor: Arc<Compactor>,
@@ -71,7 +71,13 @@ impl BackgroundCompactionScheduler {
 
         info!("Starting background compaction scheduler");
 
-        let mut threads = self.worker_threads.lock().unwrap();
+        let mut threads = match self.worker_threads.lock() {
+            Ok(t) => t,
+            Err(poisoned) => {
+                warn!("Worker threads mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
 
         // Start scheduler thread
         let scheduler_handle = self.start_scheduler_thread();
@@ -96,13 +102,25 @@ impl BackgroundCompactionScheduler {
         // Signal all threads to wake up and check running status
         {
             let (lock, cvar) = &*self.wake_signal;
-            let mut wake = lock.lock().unwrap();
+            let mut wake = match lock.lock() {
+                Ok(w) => w,
+                Err(poisoned) => {
+                    warn!("Wake condition mutex poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
             *wake = true;
             cvar.notify_all();
         }
 
         // Wait for all threads to finish
-        let mut threads = self.worker_threads.lock().unwrap();
+        let mut threads = match self.worker_threads.lock() {
+            Ok(t) => t,
+            Err(poisoned) => {
+                warn!("Worker threads mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
         while let Some(handle) = threads.pop() {
             if let Err(e) = handle.join() {
                 error!("Error joining compaction thread: {:?}", e);
@@ -130,7 +148,13 @@ impl BackgroundCompactionScheduler {
 
                     // Add tasks to queue
                     {
-                        let mut queue = compaction_queue.write().unwrap();
+                        let mut queue = match compaction_queue.write() {
+                            Ok(q) => q,
+                            Err(poisoned) => {
+                                warn!("Compaction queue RwLock poisoned, recovering");
+                                poisoned.into_inner()
+                            }
+                        };
                         for task in tasks {
                             queue.push(task);
                         }
@@ -140,13 +164,25 @@ impl BackgroundCompactionScheduler {
 
                     // Wake up worker threads
                     let (lock, cvar) = &*wake_signal;
-                    let mut wake = lock.lock().unwrap();
+                    let mut wake = match lock.lock() {
+                Ok(w) => w,
+                Err(poisoned) => {
+                    warn!("Wake condition mutex poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
                     *wake = true;
                     cvar.notify_all();
                 } else {
                     // Reset wake signal when no work is available to prevent spurious wakeups
                     let (lock, _cvar) = &*wake_signal;
-                    let mut wake = lock.lock().unwrap();
+                    let mut wake = match lock.lock() {
+                Ok(w) => w,
+                Err(poisoned) => {
+                    warn!("Wake condition mutex poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
                     *wake = false;
                 }
 
@@ -173,7 +209,13 @@ impl BackgroundCompactionScheduler {
             while running.load(Ordering::SeqCst) {
                 // Try to get a task from the queue
                 let task = {
-                    let mut queue = compaction_queue.write().unwrap();
+                    let mut queue = match compaction_queue.write() {
+                        Ok(q) => q,
+                        Err(poisoned) => {
+                            warn!("Compaction queue RwLock poisoned, recovering");
+                            poisoned.into_inner()
+                        }
+                    };
                     queue.pop()
                 };
 
@@ -216,9 +258,21 @@ impl BackgroundCompactionScheduler {
                 } else {
                     // No tasks available, wait for signal
                     let (lock, cvar) = &*wake_signal;
-                    let mut wake = lock.lock().unwrap();
+                    let mut wake = match lock.lock() {
+                Ok(w) => w,
+                Err(poisoned) => {
+                    warn!("Wake condition mutex poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
                     while !*wake && running.load(Ordering::SeqCst) {
-                        wake = cvar.wait(wake).unwrap();
+                        wake = match cvar.wait(wake) {
+                            Ok(w) => w,
+                            Err(poisoned) => {
+                                warn!("Condition variable wait poisoned, recovering");
+                                poisoned.into_inner()
+                            }
+                        };
                     }
                     // Don't immediately reset wake flag - let scheduler control it
                     // This prevents race conditions between multiple workers
@@ -310,14 +364,26 @@ impl BackgroundCompactionScheduler {
         };
 
         {
-            let mut queue = self.compaction_queue.write().unwrap();
+            let mut queue = match self.compaction_queue.write() {
+                Ok(q) => q,
+                Err(poisoned) => {
+                    warn!("Compaction queue RwLock poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
             queue.push(task);
             queue.sort_by(|a, b| b.priority.cmp(&a.priority));
         }
 
         // Wake up workers
         let (lock, cvar) = &*self.wake_signal;
-        let mut wake = lock.lock().unwrap();
+        let mut wake = match lock.lock() {
+            Ok(w) => w,
+            Err(poisoned) => {
+                warn!("Wake condition mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
         *wake = true;
         cvar.notify_all();
     }
@@ -327,7 +393,7 @@ impl BackgroundCompactionScheduler {
             total_compactions: self.total_compactions.load(Ordering::Relaxed),
             total_compaction_time_ms: self.total_compaction_time.load(Ordering::Relaxed),
             last_compaction_timestamp: self.last_compaction.load(Ordering::Relaxed),
-            pending_tasks: self.compaction_queue.read().unwrap().len(),
+            pending_tasks: self.compaction_queue.read().map_or(0, |q| q.len()),
             average_compaction_time_ms: {
                 let total_time = self.total_compaction_time.load(Ordering::Relaxed);
                 let total_compactions = self.total_compactions.load(Ordering::Relaxed);
@@ -345,7 +411,7 @@ impl BackgroundCompactionScheduler {
     }
 
     pub fn pending_task_count(&self) -> usize {
-        self.compaction_queue.read().unwrap().len()
+        self.compaction_queue.read().map_or(0, |q| q.len())
     }
 }
 

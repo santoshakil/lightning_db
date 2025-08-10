@@ -3,9 +3,9 @@
 //! Parses REPL commands and queries into structured representations
 //! with support for SQL-like syntax, command parameters, and expressions.
 
-use crate::{Result, Error};
+use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
 /// Query parser for REPL commands
 pub struct QueryParser {
@@ -155,17 +155,47 @@ pub enum SortDirection {
 /// Condition for WHERE clauses
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Condition {
-    Equals { column: String, value: ParameterValue },
-    NotEquals { column: String, value: ParameterValue },
-    GreaterThan { column: String, value: ParameterValue },
-    LessThan { column: String, value: ParameterValue },
-    Like { column: String, pattern: String },
-    In { column: String, values: Vec<ParameterValue> },
-    IsNull { column: String },
-    IsNotNull { column: String },
-    And { left: Box<Condition>, right: Box<Condition> },
-    Or { left: Box<Condition>, right: Box<Condition> },
-    Not { condition: Box<Condition> },
+    Equals {
+        column: String,
+        value: ParameterValue,
+    },
+    NotEquals {
+        column: String,
+        value: ParameterValue,
+    },
+    GreaterThan {
+        column: String,
+        value: ParameterValue,
+    },
+    LessThan {
+        column: String,
+        value: ParameterValue,
+    },
+    Like {
+        column: String,
+        pattern: String,
+    },
+    In {
+        column: String,
+        values: Vec<ParameterValue>,
+    },
+    IsNull {
+        column: String,
+    },
+    IsNotNull {
+        column: String,
+    },
+    And {
+        left: Box<Condition>,
+        right: Box<Condition>,
+    },
+    Or {
+        left: Box<Condition>,
+        right: Box<Condition>,
+    },
+    Not {
+        condition: Box<Condition>,
+    },
 }
 
 /// Expression for computed values
@@ -173,9 +203,19 @@ pub enum Condition {
 pub enum Expression {
     Literal(ParameterValue),
     Variable(String),
-    Function { name: String, args: Vec<Expression> },
-    Binary { op: BinaryOperator, left: Box<Expression>, right: Box<Expression> },
-    Unary { op: UnaryOperator, expr: Box<Expression> },
+    Function {
+        name: String,
+        args: Vec<Expression>,
+    },
+    Binary {
+        op: BinaryOperator,
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
+    Unary {
+        op: UnaryOperator,
+        expr: Box<Expression>,
+    },
 }
 
 /// Binary operators
@@ -211,9 +251,19 @@ pub struct QueryAst {
 pub enum AstNode {
     Command(ParsedCommand),
     Block(Vec<AstNode>),
-    If { condition: Condition, then_block: Box<AstNode>, else_block: Option<Box<AstNode>> },
-    Loop { condition: Condition, body: Box<AstNode> },
-    Assignment { variable: String, value: Expression },
+    If {
+        condition: Condition,
+        then_block: Box<AstNode>,
+        else_block: Option<Box<AstNode>>,
+    },
+    Loop {
+        condition: Condition,
+        body: Box<AstNode>,
+    },
+    Assignment {
+        variable: String,
+        value: Expression,
+    },
 }
 
 /// Token for lexical analysis
@@ -267,7 +317,7 @@ impl QueryParser {
 
         let tokens = self.tokenize(query)?;
         let mut parser_state = ParserState::new(tokens);
-        
+
         self.parse_command(&mut parser_state, query)
     }
 
@@ -275,9 +325,9 @@ impl QueryParser {
     pub fn parse_ast(&self, query: &str) -> Result<QueryAst> {
         let tokens = self.tokenize(query)?;
         let mut parser_state = ParserState::new(tokens);
-        
+
         let root = self.parse_statement(&mut parser_state)?;
-        
+
         Ok(QueryAst {
             root,
             symbols: parser_state.symbols,
@@ -288,7 +338,7 @@ impl QueryParser {
     fn tokenize(&self, query: &str) -> Result<Vec<Token>> {
         let mut tokens = Vec::new();
         let mut chars = query.char_indices().peekable();
-        
+
         while let Some((pos, ch)) = chars.next() {
             match ch {
                 // Whitespace
@@ -308,13 +358,13 @@ impl QueryParser {
                         position: pos,
                     });
                 }
-                
+
                 // String literals
                 '"' | '\'' => {
                     let quote_char = ch;
                     let mut value = String::new();
                     let mut escaped = false;
-                    
+
                     while let Some((_, next_ch)) = chars.next() {
                         if escaped {
                             match next_ch {
@@ -338,19 +388,19 @@ impl QueryParser {
                             value.push(next_ch);
                         }
                     }
-                    
+
                     tokens.push(Token {
                         token_type: TokenType::String,
                         value,
                         position: pos,
                     });
                 }
-                
+
                 // Numbers
                 '0'..='9' => {
                     let mut value = String::from(ch);
                     let mut is_float = false;
-                    
+
                     while let Some(&(_, next_ch)) = chars.peek() {
                         if next_ch.is_ascii_digit() {
                             value.push(next_ch);
@@ -363,18 +413,22 @@ impl QueryParser {
                             break;
                         }
                     }
-                    
+
                     tokens.push(Token {
-                        token_type: if is_float { TokenType::Float } else { TokenType::Number },
+                        token_type: if is_float {
+                            TokenType::Float
+                        } else {
+                            TokenType::Number
+                        },
                         value,
                         position: pos,
                     });
                 }
-                
+
                 // Variables (starting with $)
                 '$' => {
                     let mut value = String::new();
-                    
+
                     while let Some(&(_, next_ch)) = chars.peek() {
                         if next_ch.is_alphanumeric() || next_ch == '_' {
                             value.push(next_ch);
@@ -383,56 +437,57 @@ impl QueryParser {
                             break;
                         }
                     }
-                    
+
                     tokens.push(Token {
                         token_type: TokenType::Variable,
                         value,
                         position: pos,
                     });
                 }
-                
+
                 // Comments
                 '#' => {
                     let mut value = String::from(ch);
-                    
+
                     while let Some((_, next_ch)) = chars.next() {
                         if next_ch == '\n' || next_ch == '\r' {
                             break;
                         }
                         value.push(next_ch);
                     }
-                    
+
                     tokens.push(Token {
                         token_type: TokenType::Comment,
                         value,
                         position: pos,
                     });
                 }
-                
+
                 // Multi-character operators
                 '=' | '!' | '<' | '>' => {
                     let mut value = String::from(ch);
-                    
+
                     if let Some(&(_, next_ch)) = chars.peek() {
-                        if (ch == '=' && next_ch == '=') ||
-                           (ch == '!' && next_ch == '=') ||
-                           (ch == '<' && next_ch == '=') ||
-                           (ch == '>' && next_ch == '=') {
+                        if (ch == '=' && next_ch == '=')
+                            || (ch == '!' && next_ch == '=')
+                            || (ch == '<' && next_ch == '=')
+                            || (ch == '>' && next_ch == '=')
+                        {
                             value.push(next_ch);
                             chars.next();
                         }
                     }
-                    
+
                     tokens.push(Token {
                         token_type: TokenType::Operator,
                         value,
                         position: pos,
                     });
                 }
-                
+
                 // Single-character operators and punctuation
-                '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' |
-                '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';' => {
+                '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '(' | ')' | '[' | ']' | '{'
+                | '}' | ',' | ';' => {
                     tokens.push(Token {
                         token_type: if "+-*/%&|^".contains(ch) {
                             TokenType::Operator
@@ -443,11 +498,11 @@ impl QueryParser {
                         position: pos,
                     });
                 }
-                
+
                 // Identifiers and keywords
                 'a'..='z' | 'A'..='Z' | '_' => {
                     let mut value = String::from(ch);
-                    
+
                     while let Some(&(_, next_ch)) = chars.peek() {
                         if next_ch.is_alphanumeric() || next_ch == '_' {
                             value.push(next_ch);
@@ -456,29 +511,27 @@ impl QueryParser {
                             break;
                         }
                     }
-                    
+
                     let token_type = match value.to_uppercase().as_str() {
-                        "GET" | "PUT" | "DELETE" | "EXISTS" | "SCAN" |
-                        "BEGIN" | "COMMIT" | "ROLLBACK" |
-                        "TXGET" | "TXPUT" | "TXDELETE" |
-                        "INFO" | "STATS" | "COMPACT" | "BACKUP" | "RESTORE" | "HEALTH" |
-                        "SET" | "SHOW" | "HELP" | "EXIT" | "QUIT" | "CLEAR" | "HISTORY" |
-                        "SELECT" | "INSERT" | "UPDATE" | "DROP" | "CREATE" |
-                        "WHERE" | "ORDER" | "BY" | "LIMIT" | "ASC" | "DESC" |
-                        "AND" | "OR" | "NOT" | "LIKE" | "IN" | "IS" |
-                        "IF" | "THEN" | "ELSE" | "WHILE" | "FOR" | "DO" => TokenType::Keyword,
+                        "GET" | "PUT" | "DELETE" | "EXISTS" | "SCAN" | "BEGIN" | "COMMIT"
+                        | "ROLLBACK" | "TXGET" | "TXPUT" | "TXDELETE" | "INFO" | "STATS"
+                        | "COMPACT" | "BACKUP" | "RESTORE" | "HEALTH" | "SET" | "SHOW" | "HELP"
+                        | "EXIT" | "QUIT" | "CLEAR" | "HISTORY" | "SELECT" | "INSERT"
+                        | "UPDATE" | "DROP" | "CREATE" | "WHERE" | "ORDER" | "BY" | "LIMIT"
+                        | "ASC" | "DESC" | "AND" | "OR" | "NOT" | "LIKE" | "IN" | "IS" | "IF"
+                        | "THEN" | "ELSE" | "WHILE" | "FOR" | "DO" => TokenType::Keyword,
                         "TRUE" | "FALSE" => TokenType::Boolean,
                         "NULL" => TokenType::Null,
                         _ => TokenType::Identifier,
                     };
-                    
+
                     tokens.push(Token {
                         token_type,
                         value,
                         position: pos,
                     });
                 }
-                
+
                 // Unknown character
                 _ => {
                     return Err(Error::Generic(format!(
@@ -488,25 +541,29 @@ impl QueryParser {
                 }
             }
         }
-        
+
         tokens.push(Token {
             token_type: TokenType::EndOfInput,
             value: String::new(),
             position: query.len(),
         });
-        
+
         Ok(tokens)
     }
 
     /// Parse a command from tokens
-    fn parse_command(&self, state: &mut ParserState, original_query: &str) -> Result<ParsedCommand> {
+    fn parse_command(
+        &self,
+        state: &mut ParserState,
+        original_query: &str,
+    ) -> Result<ParsedCommand> {
         // Skip whitespace and comments
         state.skip_whitespace_and_comments();
-        
+
         if state.is_at_end() {
             return Err(Error::Generic("Empty query".to_string()));
         }
-        
+
         let command_token = state.consume()?;
         if command_token.token_type != TokenType::Keyword {
             return Err(Error::Generic(format!(
@@ -514,14 +571,14 @@ impl QueryParser {
                 command_token.value
             )));
         }
-        
+
         let command = self.parse_command_type(&command_token.value)?;
         let mut parameters = Vec::new();
         let mut where_clause = None;
         let mut order_by = None;
         let mut limit = None;
         let mut variables = Vec::new();
-        
+
         // Parse command-specific parameters
         match command {
             CommandType::Get | CommandType::Delete | CommandType::Exists => {
@@ -534,7 +591,7 @@ impl QueryParser {
                     parameters.push(key_param);
                 }
             }
-            
+
             CommandType::Put => {
                 state.skip_whitespace_and_comments();
                 if !state.is_at_end() && !self.is_clause_keyword(&state.peek()?.value) {
@@ -543,7 +600,7 @@ impl QueryParser {
                         variables.push(var.clone());
                     }
                     parameters.push(key_param);
-                    
+
                     state.skip_whitespace_and_comments();
                     if !state.is_at_end() && !self.is_clause_keyword(&state.peek()?.value) {
                         let value_param = self.parse_parameter(state, ParameterType::Value)?;
@@ -554,7 +611,7 @@ impl QueryParser {
                     }
                 }
             }
-            
+
             CommandType::Scan => {
                 state.skip_whitespace_and_comments();
                 if !state.is_at_end() && !self.is_clause_keyword(&state.peek()?.value) {
@@ -564,7 +621,7 @@ impl QueryParser {
                         variables.push(var.clone());
                     }
                     parameters.push(prefix_param);
-                    
+
                     state.skip_whitespace_and_comments();
                     if !state.is_at_end() && !self.is_clause_keyword(&state.peek()?.value) {
                         // Optional limit parameter
@@ -576,13 +633,13 @@ impl QueryParser {
                     }
                 }
             }
-            
+
             CommandType::Set => {
                 state.skip_whitespace_and_comments();
                 if !state.is_at_end() {
                     let var_param = self.parse_parameter(state, ParameterType::Identifier)?;
                     parameters.push(var_param);
-                    
+
                     state.skip_whitespace_and_comments();
                     if !state.is_at_end() {
                         let value_param = self.parse_parameter(state, ParameterType::Literal)?;
@@ -593,7 +650,7 @@ impl QueryParser {
                     }
                 }
             }
-            
+
             CommandType::Backup | CommandType::Restore => {
                 state.skip_whitespace_and_comments();
                 if !state.is_at_end() && !self.is_clause_keyword(&state.peek()?.value) {
@@ -604,7 +661,7 @@ impl QueryParser {
                     parameters.push(path_param);
                 }
             }
-            
+
             _ => {
                 // Parse any remaining parameters
                 while !state.is_at_end() && !self.is_clause_keyword(&state.peek()?.value) {
@@ -612,7 +669,7 @@ impl QueryParser {
                     if state.is_at_end() {
                         break;
                     }
-                    
+
                     let param = self.parse_parameter(state, ParameterType::Literal)?;
                     if let ParameterValue::Variable(ref var) = param.value {
                         variables.push(var.clone());
@@ -621,14 +678,14 @@ impl QueryParser {
                 }
             }
         }
-        
+
         // Parse optional clauses
         while !state.is_at_end() {
             state.skip_whitespace_and_comments();
             if state.is_at_end() {
                 break;
             }
-            
+
             let clause_token = state.peek()?;
             match clause_token.value.to_uppercase().as_str() {
                 "WHERE" => {
@@ -638,18 +695,18 @@ impl QueryParser {
                 "ORDER" => {
                     state.consume()?; // consume ORDER keyword
                     state.skip_whitespace_and_comments();
-                    
+
                     let by_token = state.consume()?;
                     if by_token.value.to_uppercase() != "BY" {
                         return Err(Error::Generic("Expected BY after ORDER".to_string()));
                     }
-                    
+
                     order_by = Some(self.parse_order_by_clause(state)?);
                 }
                 "LIMIT" => {
                     state.consume()?; // consume LIMIT keyword
                     state.skip_whitespace_and_comments();
-                    
+
                     let limit_param = self.parse_parameter(state, ParameterType::Number)?;
                     match limit_param.value {
                         ParameterValue::Integer(n) => limit = Some(n as u64),
@@ -659,7 +716,7 @@ impl QueryParser {
                 _ => break,
             }
         }
-        
+
         Ok(ParsedCommand {
             command,
             parameters,
@@ -674,11 +731,11 @@ impl QueryParser {
     /// Parse a statement for AST
     fn parse_statement(&self, state: &mut ParserState) -> Result<AstNode> {
         state.skip_whitespace_and_comments();
-        
+
         if state.is_at_end() {
             return Err(Error::Generic("Empty statement".to_string()));
         }
-        
+
         let token_value = state.peek()?.value.clone();
         match token_value.to_uppercase().as_str() {
             "IF" => self.parse_if_statement(state),
@@ -697,7 +754,7 @@ impl QueryParser {
         } else {
             cmd.to_uppercase()
         };
-        
+
         match cmd_upper.as_str() {
             "GET" => Ok(CommandType::Get),
             "PUT" => Ok(CommandType::Put),
@@ -732,19 +789,27 @@ impl QueryParser {
     }
 
     /// Parse a parameter
-    fn parse_parameter(&self, state: &mut ParserState, expected_type: ParameterType) -> Result<CommandParameter> {
+    fn parse_parameter(
+        &self,
+        state: &mut ParserState,
+        expected_type: ParameterType,
+    ) -> Result<CommandParameter> {
         state.skip_whitespace_and_comments();
-        
+
         let token = state.consume()?;
         let (value, quoted) = match token.token_type {
             TokenType::String => (ParameterValue::String(token.value), true),
             TokenType::Number => {
-                let num = token.value.parse::<i64>()
+                let num = token
+                    .value
+                    .parse::<i64>()
                     .map_err(|_| Error::Generic(format!("Invalid number: {}", token.value)))?;
                 (ParameterValue::Integer(num), false)
             }
             TokenType::Float => {
-                let num = token.value.parse::<f64>()
+                let num = token
+                    .value
+                    .parse::<f64>()
                     .map_err(|_| Error::Generic(format!("Invalid float: {}", token.value)))?;
                 (ParameterValue::Float(num), false)
             }
@@ -775,10 +840,10 @@ impl QueryParser {
     /// Parse ORDER BY clause
     fn parse_order_by_clause(&self, state: &mut ParserState) -> Result<OrderByClause> {
         state.skip_whitespace_and_comments();
-        
+
         let column_token = state.consume()?;
         let column = column_token.value;
-        
+
         state.skip_whitespace_and_comments();
         let direction = if !state.is_at_end() {
             let dir_token = state.peek()?;
@@ -796,7 +861,7 @@ impl QueryParser {
         } else {
             SortDirection::Asc
         };
-        
+
         Ok(OrderByClause { column, direction })
     }
 
@@ -808,13 +873,13 @@ impl QueryParser {
     /// Parse OR condition
     fn parse_or_condition(&self, state: &mut ParserState) -> Result<Condition> {
         let mut left = self.parse_and_condition(state)?;
-        
+
         while !state.is_at_end() {
             state.skip_whitespace_and_comments();
             if state.is_at_end() {
                 break;
             }
-            
+
             let token = state.peek()?;
             if token.value.to_uppercase() == "OR" {
                 state.consume()?;
@@ -827,20 +892,20 @@ impl QueryParser {
                 break;
             }
         }
-        
+
         Ok(left)
     }
 
     /// Parse AND condition
     fn parse_and_condition(&self, state: &mut ParserState) -> Result<Condition> {
         let mut left = self.parse_not_condition(state)?;
-        
+
         while !state.is_at_end() {
             state.skip_whitespace_and_comments();
             if state.is_at_end() {
                 break;
             }
-            
+
             let token = state.peek()?;
             if token.value.to_uppercase() == "AND" {
                 state.consume()?;
@@ -853,14 +918,14 @@ impl QueryParser {
                 break;
             }
         }
-        
+
         Ok(left)
     }
 
     /// Parse NOT condition
     fn parse_not_condition(&self, state: &mut ParserState) -> Result<Condition> {
         state.skip_whitespace_and_comments();
-        
+
         let token = state.peek()?;
         if token.value.to_uppercase() == "NOT" {
             state.consume()?;
@@ -876,48 +941,65 @@ impl QueryParser {
     /// Parse primary condition
     fn parse_primary_condition(&self, state: &mut ParserState) -> Result<Condition> {
         state.skip_whitespace_and_comments();
-        
+
         let column_token = state.consume()?;
         let column = column_token.value;
-        
+
         state.skip_whitespace_and_comments();
         let op_token = state.consume()?;
-        
+
         match op_token.value.as_str() {
             "=" | "==" => {
                 let value_param = self.parse_parameter(state, ParameterType::Literal)?;
-                Ok(Condition::Equals { column, value: value_param.value })
+                Ok(Condition::Equals {
+                    column,
+                    value: value_param.value,
+                })
             }
             "!=" | "<>" => {
                 let value_param = self.parse_parameter(state, ParameterType::Literal)?;
-                Ok(Condition::NotEquals { column, value: value_param.value })
+                Ok(Condition::NotEquals {
+                    column,
+                    value: value_param.value,
+                })
             }
             ">" => {
                 let value_param = self.parse_parameter(state, ParameterType::Literal)?;
-                Ok(Condition::GreaterThan { column, value: value_param.value })
+                Ok(Condition::GreaterThan {
+                    column,
+                    value: value_param.value,
+                })
             }
             "<" => {
                 let value_param = self.parse_parameter(state, ParameterType::Literal)?;
-                Ok(Condition::LessThan { column, value: value_param.value })
+                Ok(Condition::LessThan {
+                    column,
+                    value: value_param.value,
+                })
             }
-            _ => Err(Error::Generic(format!("Unsupported operator: {}", op_token.value))),
+            _ => Err(Error::Generic(format!(
+                "Unsupported operator: {}",
+                op_token.value
+            ))),
         }
     }
 
     /// Parse IF statement for AST
     fn parse_if_statement(&self, state: &mut ParserState) -> Result<AstNode> {
         state.consume()?; // consume IF keyword
-        
+
         let condition = self.parse_condition(state)?;
-        
+
         state.skip_whitespace_and_comments();
         let then_token = state.consume()?;
         if then_token.value.to_uppercase() != "THEN" {
-            return Err(Error::Generic("Expected THEN after IF condition".to_string()));
+            return Err(Error::Generic(
+                "Expected THEN after IF condition".to_string(),
+            ));
         }
-        
+
         let then_block = Box::new(self.parse_statement(state)?);
-        
+
         let else_block = if !state.is_at_end() {
             state.skip_whitespace_and_comments();
             let token = state.peek()?;
@@ -930,7 +1012,7 @@ impl QueryParser {
         } else {
             None
         };
-        
+
         Ok(AstNode::If {
             condition,
             then_block,
@@ -941,23 +1023,28 @@ impl QueryParser {
     /// Parse WHILE statement for AST
     fn parse_while_statement(&self, state: &mut ParserState) -> Result<AstNode> {
         state.consume()?; // consume WHILE keyword
-        
+
         let condition = self.parse_condition(state)?;
-        
+
         state.skip_whitespace_and_comments();
         let do_token = state.consume()?;
         if do_token.value.to_uppercase() != "DO" {
-            return Err(Error::Generic("Expected DO after WHILE condition".to_string()));
+            return Err(Error::Generic(
+                "Expected DO after WHILE condition".to_string(),
+            ));
         }
-        
+
         let body = Box::new(self.parse_statement(state)?);
-        
+
         Ok(AstNode::Loop { condition, body })
     }
 
     /// Check if a token is a clause keyword
     fn is_clause_keyword(&self, token_value: &str) -> bool {
-        matches!(token_value.to_uppercase().as_str(), "WHERE" | "ORDER" | "LIMIT")
+        matches!(
+            token_value.to_uppercase().as_str(),
+            "WHERE" | "ORDER" | "LIMIT"
+        )
     }
 }
 
@@ -978,8 +1065,8 @@ impl ParserState {
     }
 
     fn is_at_end(&self) -> bool {
-        self.position >= self.tokens.len() ||
-        self.tokens[self.position].token_type == TokenType::EndOfInput
+        self.position >= self.tokens.len()
+            || self.tokens[self.position].token_type == TokenType::EndOfInput
     }
 
     fn peek(&self) -> Result<&Token> {
@@ -1026,7 +1113,7 @@ mod tests {
     fn test_tokenize_simple_command() {
         let parser = QueryParser::new();
         let tokens = parser.tokenize("GET key1").unwrap();
-        
+
         assert_eq!(tokens.len(), 4); // GET, whitespace, key1, EOF
         assert_eq!(tokens[0].token_type, TokenType::Keyword);
         assert_eq!(tokens[0].value, "GET");
@@ -1037,12 +1124,15 @@ mod tests {
     #[test]
     fn test_tokenize_string_literal() {
         let parser = QueryParser::new();
-        let tokens = parser.tokenize("PUT \"key with spaces\" \"value\"").unwrap();
-        
-        let string_tokens: Vec<_> = tokens.iter()
+        let tokens = parser
+            .tokenize("PUT \"key with spaces\" \"value\"")
+            .unwrap();
+
+        let string_tokens: Vec<_> = tokens
+            .iter()
             .filter(|t| t.token_type == TokenType::String)
             .collect();
-        
+
         assert_eq!(string_tokens.len(), 2);
         assert_eq!(string_tokens[0].value, "key with spaces");
         assert_eq!(string_tokens[1].value, "value");
@@ -1052,11 +1142,12 @@ mod tests {
     fn test_tokenize_numbers() {
         let parser = QueryParser::new();
         let tokens = parser.tokenize("123 45.67").unwrap();
-        
-        let number_tokens: Vec<_> = tokens.iter()
+
+        let number_tokens: Vec<_> = tokens
+            .iter()
             .filter(|t| matches!(t.token_type, TokenType::Number | TokenType::Float))
             .collect();
-        
+
         assert_eq!(number_tokens.len(), 2);
         assert_eq!(number_tokens[0].token_type, TokenType::Number);
         assert_eq!(number_tokens[0].value, "123");
@@ -1068,11 +1159,11 @@ mod tests {
     fn test_parse_simple_get_command() {
         let parser = QueryParser::new();
         let command = parser.parse("GET mykey").unwrap();
-        
+
         assert_eq!(command.command, CommandType::Get);
         assert_eq!(command.parameters.len(), 1);
         assert_eq!(command.parameters[0].param_type, ParameterType::Key);
-        
+
         if let ParameterValue::String(key) = &command.parameters[0].value {
             assert_eq!(key, "mykey");
         } else {
@@ -1084,7 +1175,7 @@ mod tests {
     fn test_parse_put_command() {
         let parser = QueryParser::new();
         let command = parser.parse("PUT mykey myvalue").unwrap();
-        
+
         assert_eq!(command.command, CommandType::Put);
         assert_eq!(command.parameters.len(), 2);
         assert_eq!(command.parameters[0].param_type, ParameterType::Key);
@@ -1095,10 +1186,10 @@ mod tests {
     fn test_parse_command_with_where_clause() {
         let parser = QueryParser::new();
         let command = parser.parse("SCAN WHERE key = \"test\"").unwrap();
-        
+
         assert_eq!(command.command, CommandType::Scan);
         assert!(command.where_clause.is_some());
-        
+
         if let Some(where_clause) = command.where_clause {
             if let Condition::Equals { column, value } = where_clause.condition {
                 assert_eq!(column, "key");
@@ -1117,7 +1208,7 @@ mod tests {
     fn test_parse_command_with_limit() {
         let parser = QueryParser::new();
         let command = parser.parse("SCAN LIMIT 10").unwrap();
-        
+
         assert_eq!(command.command, CommandType::Scan);
         assert_eq!(command.limit, Some(10));
     }
@@ -1126,7 +1217,7 @@ mod tests {
     fn test_parse_variable_reference() {
         let parser = QueryParser::new();
         let command = parser.parse("GET $myvar").unwrap();
-        
+
         assert_eq!(command.variables.len(), 1);
         assert_eq!(command.variables[0], "myvar");
     }
@@ -1134,13 +1225,13 @@ mod tests {
     #[test]
     fn test_parse_error_handling() {
         let parser = QueryParser::new();
-        
+
         // Empty query
         assert!(parser.parse("").is_err());
-        
+
         // Unknown command
         assert!(parser.parse("UNKNOWN_COMMAND").is_err());
-        
+
         // Invalid syntax
         assert!(parser.parse("GET WHERE").is_err());
     }
@@ -1148,11 +1239,11 @@ mod tests {
     #[test]
     fn test_case_insensitive_commands() {
         let parser = QueryParser::new();
-        
+
         let command1 = parser.parse("get mykey").unwrap();
         let command2 = parser.parse("GET mykey").unwrap();
         let command3 = parser.parse("Get mykey").unwrap();
-        
+
         assert_eq!(command1.command, CommandType::Get);
         assert_eq!(command2.command, CommandType::Get);
         assert_eq!(command3.command, CommandType::Get);
@@ -1161,10 +1252,12 @@ mod tests {
     #[test]
     fn test_complex_where_condition() {
         let parser = QueryParser::new();
-        let command = parser.parse("SCAN WHERE key = \"test\" AND value > 100").unwrap();
-        
+        let command = parser
+            .parse("SCAN WHERE key = \"test\" AND value > 100")
+            .unwrap();
+
         assert!(command.where_clause.is_some());
-        
+
         if let Some(where_clause) = command.where_clause {
             if let Condition::And { left, right } = where_clause.condition {
                 assert!(matches!(*left, Condition::Equals { .. }));

@@ -10,14 +10,21 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // Sub-modules for advanced backup features
-pub mod incremental;
 pub mod encryption;
+pub mod incremental;
 pub mod recovery;
 
 // Re-exports for convenience
-pub use incremental::{IncrementalBackupManager, IncrementalConfig, IncrementalBackupResult, DeduplicationStatistics};
-pub use encryption::{EncryptionManager, EncryptionConfig, EncryptionAlgorithm, EncryptionInfo, EncryptionStatistics};
-pub use recovery::{RecoveryManager, RecoveryConfig, RecoveryRequest, RecoveryResult, RecoveryPoint, RecoveryOperationType};
+pub use encryption::{
+    EncryptionAlgorithm, EncryptionConfig, EncryptionInfo, EncryptionManager, EncryptionStatistics,
+};
+pub use incremental::{
+    DeduplicationStatistics, IncrementalBackupManager, IncrementalBackupResult, IncrementalConfig,
+};
+pub use recovery::{
+    RecoveryConfig, RecoveryManager, RecoveryOperationType, RecoveryPoint, RecoveryRequest,
+    RecoveryResult,
+};
 
 #[cfg(feature = "zstd-compression")]
 use zstd;

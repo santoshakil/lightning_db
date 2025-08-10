@@ -3,17 +3,17 @@
 //! Handles secure key generation, storage, and lifecycle management.
 //! Supports hierarchical key derivation and secure key storage.
 
-use crate::{Error, Result};
 use super::{EncryptionConfig, EncryptionKey, KeyDerivationFunction};
-use std::sync::{Arc, RwLock};
+use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::SystemTime;
-use std::path::{Path, PathBuf};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
-use serde::{Serialize, Deserialize};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
+use std::time::SystemTime;
+use tracing::{debug, info};
 use zeroize::Zeroize;
-use tracing::{info, debug};
 
 /// Key types in the hierarchy
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -88,7 +88,8 @@ impl KeyManager {
         Self::new(EncryptionConfig {
             enabled: false,
             ..Default::default()
-        }).unwrap()
+        })
+        .unwrap()
     }
 
     /// Initialize with a master key
@@ -112,7 +113,7 @@ impl KeyManager {
     /// Set the key store path for persistence
     pub fn set_key_store_path(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref().to_path_buf();
-        
+
         // Load existing key store if it exists
         if path.exists() {
             self.load_key_store(&path)?;
@@ -124,15 +125,13 @@ impl KeyManager {
     /// Generate a new key encryption key
     pub fn generate_kek(&self) -> Result<u64> {
         let master_key = self.master_key.read().unwrap();
-        let master_key = master_key.as_ref()
+        let master_key = master_key
+            .as_ref()
             .ok_or_else(|| Error::Encryption("Master key not initialized".to_string()))?;
 
         let key_id = self.get_next_key_id();
-        let key_material = self.derive_key(
-            master_key,
-            &format!("kek_{}", key_id).as_bytes(),
-            32,
-        )?;
+        let key_material =
+            self.derive_key(master_key, &format!("kek_{}", key_id).as_bytes(), 32)?;
 
         let key = EncryptionKey {
             key_id,
@@ -157,20 +156,23 @@ impl KeyManager {
 
     /// Generate a new data encryption key
     pub fn generate_data_key(&self) -> Result<u64> {
-        let current_kek_id = self.current_kek_id.read().unwrap()
+        let current_kek_id = self
+            .current_kek_id
+            .read()
+            .unwrap()
             .ok_or_else(|| Error::Encryption("No current KEK".to_string()))?;
 
-        let kek = self.kek_cache.read().unwrap()
+        let kek = self
+            .kek_cache
+            .read()
+            .unwrap()
             .get(&current_kek_id)
             .ok_or_else(|| Error::Encryption("KEK not found".to_string()))?
             .clone();
 
         let key_id = self.get_next_key_id();
-        let key_material = self.derive_key(
-            &kek.key_material,
-            &format!("dek_{}", key_id).as_bytes(),
-            32,
-        )?;
+        let key_material =
+            self.derive_key(&kek.key_material, &format!("dek_{}", key_id).as_bytes(), 32)?;
 
         let key = EncryptionKey {
             key_id,
@@ -195,10 +197,15 @@ impl KeyManager {
 
     /// Get the current data encryption key
     pub fn get_current_dek(&self) -> Result<EncryptionKey> {
-        let current_dek_id = self.current_dek_id.read().unwrap()
+        let current_dek_id = self
+            .current_dek_id
+            .read()
+            .unwrap()
             .ok_or_else(|| Error::Encryption("No current DEK".to_string()))?;
 
-        self.dek_cache.read().unwrap()
+        self.dek_cache
+            .read()
+            .unwrap()
             .get(&current_dek_id)
             .cloned()
             .ok_or_else(|| Error::Encryption("Current DEK not found".to_string()))
@@ -206,7 +213,9 @@ impl KeyManager {
 
     /// Get a specific data encryption key by ID
     pub fn get_dek(&self, key_id: u64) -> Result<EncryptionKey> {
-        self.dek_cache.read().unwrap()
+        self.dek_cache
+            .read()
+            .unwrap()
             .get(&key_id)
             .cloned()
             .ok_or_else(|| Error::Encryption(format!("DEK {} not found", key_id)))
@@ -230,35 +239,43 @@ impl KeyManager {
     }
 
     /// Derive key using Argon2id
-    fn derive_key_argon2(&self, master_key: &[u8], salt: &[u8], key_length: usize) -> Result<Vec<u8>> {
-        use argon2::{Argon2, Algorithm, Version, Params};
-        
+    fn derive_key_argon2(
+        &self,
+        master_key: &[u8],
+        salt: &[u8],
+        key_length: usize,
+    ) -> Result<Vec<u8>> {
+        use argon2::{Algorithm, Argon2, Params, Version};
+
         // Configure Argon2id parameters
         let params = Params::new(
-            64 * 1024,  // 64 MB memory
-            3,          // 3 iterations
-            4,          // 4 parallel threads
+            64 * 1024, // 64 MB memory
+            3,         // 3 iterations
+            4,         // 4 parallel threads
             Some(key_length),
-        ).map_err(|e| Error::Encryption(format!("Invalid Argon2 params: {}", e)))?;
+        )
+        .map_err(|e| Error::Encryption(format!("Invalid Argon2 params: {}", e)))?;
 
-        let argon2 = Argon2::new(
-            Algorithm::Argon2id,
-            Version::V0x13,
-            params,
-        );
+        let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
 
         let mut output = vec![0u8; key_length];
-        argon2.hash_password_into(master_key, salt, &mut output)
+        argon2
+            .hash_password_into(master_key, salt, &mut output)
             .map_err(|e| Error::Encryption(format!("Argon2 derivation failed: {}", e)))?;
 
         Ok(output)
     }
 
     /// Derive key using PBKDF2-SHA256
-    fn derive_key_pbkdf2(&self, master_key: &[u8], salt: &[u8], key_length: usize) -> Result<Vec<u8>> {
+    fn derive_key_pbkdf2(
+        &self,
+        master_key: &[u8],
+        salt: &[u8],
+        key_length: usize,
+    ) -> Result<Vec<u8>> {
         use pbkdf2::pbkdf2_hmac;
         use sha2::Sha256;
-        
+
         let mut output = vec![0u8; key_length];
         pbkdf2_hmac::<Sha256>(master_key, salt, 100_000, &mut output);
         Ok(output)
@@ -274,9 +291,8 @@ impl KeyManager {
 
     /// Load key store from disk
     fn load_key_store(&self, path: &Path) -> Result<()> {
-        let mut file = File::open(path)
-            .map_err(|e| Error::Io(e.to_string()))?;
-        
+        let mut file = File::open(path).map_err(|e| Error::Io(e.to_string()))?;
+
         let mut contents = Vec::new();
         file.read_to_end(&mut contents)
             .map_err(|e| Error::Io(e.to_string()))?;
@@ -299,7 +315,9 @@ impl KeyManager {
 
     /// Save key store to disk
     fn save_key_store(&self) -> Result<()> {
-        let path = self.key_store_path.as_ref()
+        let path = self
+            .key_store_path
+            .as_ref()
             .ok_or_else(|| Error::Encryption("Key store path not set".to_string()))?;
 
         let store = KeyStore {
@@ -323,8 +341,7 @@ impl KeyManager {
         file.write_all(&contents)
             .map_err(|e| Error::Io(e.to_string()))?;
 
-        file.sync_all()
-            .map_err(|e| Error::Io(e.to_string()))?;
+        file.sync_all().map_err(|e| Error::Io(e.to_string()))?;
 
         Ok(())
     }
@@ -333,11 +350,12 @@ impl KeyManager {
     pub fn rotate_keys(&self) -> Result<()> {
         // Generate new KEK
         let new_kek_id = self.generate_kek()?;
-        
+
         // Generate new DEK encrypted with new KEK
         let new_dek_id = self.generate_data_key()?;
 
-        info!("Rotated keys: KEK {} -> {}, DEK {} -> {}", 
+        info!(
+            "Rotated keys: KEK {} -> {}, DEK {} -> {}",
             self.current_kek_id.read().unwrap().unwrap_or(0),
             new_kek_id,
             self.current_dek_id.read().unwrap().unwrap_or(0),
@@ -391,10 +409,10 @@ mod tests {
             ..Default::default()
         };
         let manager = KeyManager::new(config).unwrap();
-        
+
         let master_key = vec![0u8; 32];
         assert!(manager.initialize_master_key(&master_key).is_ok());
-        
+
         // Wrong size key should fail
         let wrong_key = vec![0u8; 16];
         assert!(manager.initialize_master_key(&wrong_key).is_err());

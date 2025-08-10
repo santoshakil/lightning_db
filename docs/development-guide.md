@@ -378,22 +378,101 @@ Brief description of changes
 
 ## Code Standards
 
-### Rust Style Guidelines
+### Enhanced Error Handling Patterns ✅ (Zero Crash Guarantee)
 
 ```rust
-// Use clear, descriptive names
-fn insert_key_value_pair(key: &[u8], value: &[u8]) -> Result<()> {
-    // Implementation
+// CRITICAL: Never use unwrap() or expect() in production paths
+// BEFORE (Crash-prone):
+fn bad_example(map: &HashMap<String, Value>) -> Value {
+    map.get("key").unwrap()  // CRASHES on missing key - NEVER DO THIS
 }
 
-// Prefer Result<T> over Option<T> for fallible operations
-fn get_page(page_id: u32) -> Result<Page, Error> {
-    // Implementation
+// AFTER (Reliable):
+fn good_example(map: &HashMap<String, Value>) -> Result<Value, DatabaseError> {
+    map.get("key")
+        .cloned()
+        .ok_or_else(|| DatabaseError::KeyNotFound {
+            key: "key".to_string(),
+            available_keys: map.len(),
+            suggested_action: "Check if key exists before accessing".to_string(),
+        })
 }
 
-// Use type aliases for complex types
-type PageId = u32;
-type TransactionId = u64;
+// Comprehensive error context
+fn operation_with_context(id: u64) -> Result<Data, DatabaseError> {
+    let data = fetch_data(id)
+        .with_context(|| format!("Failed to fetch data for ID {}", id))
+        .map_err(|e| DatabaseError::FetchFailed {
+            id,
+            cause: Box::new(e),
+            retry_suggested: true,
+            backoff_ms: 1000,
+        })?;
+    
+    validate_data(&data)
+        .with_context(|| format!("Data validation failed for ID {}", id))?;
+    
+    Ok(data)
+}
+```
+
+### Modern Rust API Patterns ✅
+
+```rust
+// Use clear, descriptive names with proper error handling
+fn insert_key_value_pair(key: &[u8], value: &[u8]) -> Result<(), DatabaseError> {
+    // Always validate inputs
+    if key.is_empty() {
+        return Err(DatabaseError::InvalidInput {
+            field: "key".to_string(),
+            issue: "Key cannot be empty".to_string(),
+            suggestion: "Provide a non-empty key".to_string(),
+        });
+    }
+    
+    // Implementation with proper error propagation
+    self.storage.insert(key, value)
+        .map_err(|e| DatabaseError::StorageError {
+            operation: "insert".to_string(),
+            cause: Box::new(e),
+        })
+}
+
+// Always use Result<T, E> for fallible operations
+fn get_page(page_id: u32) -> Result<Page, DatabaseError> {
+    if page_id == 0 {
+        return Err(DatabaseError::InvalidPageId { page_id, min_valid: 1 });
+    }
+    
+    self.page_manager.read_page(page_id)
+        .ok_or_else(|| DatabaseError::PageNotFound {
+            page_id,
+            total_pages: self.page_manager.page_count(),
+        })
+}
+
+// Enhanced type safety with semantic types
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PageId(u32);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TransactionId(u64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Timestamp(u64);
+
+impl PageId {
+    pub fn new(id: u32) -> Result<Self, DatabaseError> {
+        if id == 0 {
+            return Err(DatabaseError::InvalidPageId { page_id: id, min_valid: 1 });
+        }
+        Ok(PageId(id))
+    }
+    
+    pub fn as_u32(&self) -> u32 {
+        self.0
+    }
+}
 
 // Document public APIs
 /// Inserts a key-value pair into the database.

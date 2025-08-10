@@ -1,29 +1,31 @@
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, BTreeMap};
-use std::sync::Arc;
-use std::hash::{Hash, Hasher};
-use std::fmt;
 use crate::error::{Error, Result};
 use crate::raft::{NodeId, RaftNode};
-use parking_lot::RwLock;
-use bincode::{Encode, Decode};
-use std::time::{SystemTime, Duration};
-use tokio::time::Instant;
-use tokio::sync::mpsc;
-use hex;
 use async_trait;
+use bincode::{Decode, Encode};
+use hex;
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
+use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
+use tokio::sync::mpsc;
+use tokio::time::Instant;
 
-pub mod strategies;
-pub mod rebalancer;
-pub mod router;
 pub mod coordinator;
 pub mod discovery;
+pub mod rebalancer;
+pub mod router;
+pub mod strategies;
 
 /// Unique identifier for a shard
 pub type ShardId = u64;
 
 /// Partition key for routing data
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
+)]
 pub enum PartitionKey {
     /// String-based key
     String(String),
@@ -44,7 +46,9 @@ impl fmt::Display for PartitionKey {
             PartitionKey::Composite(keys) => {
                 write!(f, "comp:[")?;
                 for (i, key) in keys.iter().enumerate() {
-                    if i > 0 { write!(f, ",")?; }
+                    if i > 0 {
+                        write!(f, ",")?;
+                    }
                     write!(f, "{}", key)?;
                 }
                 write!(f, "]")
@@ -71,34 +75,34 @@ pub enum ShardingStrategy {
 pub struct ShardInfo {
     /// Unique shard identifier
     pub id: ShardId,
-    
+
     /// Raft nodes responsible for this shard
     pub nodes: Vec<NodeId>,
-    
+
     /// Current leader node for this shard
     pub leader: Option<NodeId>,
-    
+
     /// Shard state
     pub state: ShardState,
-    
+
     /// Key range for range-based sharding
     pub key_range: Option<KeyRange>,
-    
+
     /// Hash ring position for hash-based sharding
     pub hash_range: Option<HashRange>,
-    
+
     /// Creation timestamp
     pub created_at: u64,
-    
+
     /// Last modified timestamp
     pub modified_at: u64,
-    
+
     /// Shard statistics
     pub stats: ShardStats,
-    
+
     /// Replication factor
     pub replication_factor: u32,
-    
+
     /// Shard-specific configuration
     pub config: ShardConfig,
 }
@@ -187,9 +191,9 @@ pub struct ShardConfig {
 impl Default for ShardConfig {
     fn default() -> Self {
         Self {
-            max_keys: 10_000_000,    // 10M keys
+            max_keys: 10_000_000,              // 10M keys
             max_size: 10 * 1024 * 1024 * 1024, // 10GB
-            rebalance_threshold: 20.0, // 20% load difference
+            rebalance_threshold: 20.0,         // 20% load difference
             auto_split: true,
             auto_merge: true,
             min_nodes: 3,
@@ -204,19 +208,19 @@ impl Default for ShardConfig {
 pub struct ClusterTopology {
     /// All shards in the cluster
     pub shards: Arc<RwLock<HashMap<ShardId, ShardInfo>>>,
-    
+
     /// Sharding strategy
     pub strategy: ShardingStrategy,
-    
+
     /// Partition key to shard mapping
     pub routing_table: Arc<RwLock<RoutingTable>>,
-    
+
     /// Node to shards mapping
     pub node_shards: Arc<RwLock<HashMap<NodeId, Vec<ShardId>>>>,
-    
+
     /// Global configuration
     pub config: ClusterConfig,
-    
+
     /// Topology version (for cache invalidation)
     pub version: Arc<RwLock<u64>>,
 }
@@ -226,16 +230,16 @@ pub struct ClusterTopology {
 pub struct RoutingTable {
     /// Hash-based routing
     pub hash_ring: Option<ConsistentHashRing>,
-    
+
     /// Range-based routing
     pub range_map: Option<BTreeMap<PartitionKey, ShardId>>,
-    
+
     /// Directory-based routing
     pub directory: Option<HashMap<PartitionKey, ShardId>>,
-    
+
     /// Default shard for unknown keys
     pub default_shard: Option<ShardId>,
-    
+
     /// Routing table version
     pub version: u64,
 }
@@ -245,10 +249,10 @@ pub struct RoutingTable {
 pub struct ConsistentHashRing {
     /// Virtual nodes on the ring
     pub virtual_nodes: BTreeMap<u64, ShardId>,
-    
+
     /// Number of virtual nodes per shard
     pub virtual_nodes_per_shard: u32,
-    
+
     /// Total capacity of the ring
     pub total_capacity: u64,
 }
@@ -258,31 +262,31 @@ pub struct ConsistentHashRing {
 pub struct ClusterConfig {
     /// Default replication factor
     pub default_replication_factor: u32,
-    
+
     /// Sharding strategy
     pub sharding_strategy: ShardingStrategy,
-    
+
     /// Enable automatic rebalancing
     pub auto_rebalance: bool,
-    
+
     /// Rebalancing interval in seconds
     pub rebalance_interval: u64,
-    
+
     /// Maximum concurrent rebalance operations
     pub max_concurrent_rebalances: u32,
-    
+
     /// Cross-shard transaction timeout
     pub cross_shard_timeout: Duration,
-    
+
     /// Health check interval
     pub health_check_interval: Duration,
-    
+
     /// Failure detection timeout
     pub failure_detection_timeout: Duration,
-    
+
     /// Enable metrics collection
     pub enable_metrics: bool,
-    
+
     /// Metrics collection interval
     pub metrics_interval: Duration,
 }
@@ -313,33 +317,33 @@ pub enum ShardOperation {
         nodes: Vec<NodeId>,
         config: ShardConfig,
     },
-    
+
     /// Split existing shard
     Split {
         source_shard: ShardId,
         new_shards: Vec<ShardId>,
         split_key: PartitionKey,
     },
-    
+
     /// Merge multiple shards
     Merge {
         source_shards: Vec<ShardId>,
         target_shard: ShardId,
     },
-    
+
     /// Move shard to different nodes
     Move {
         shard_id: ShardId,
         from_nodes: Vec<NodeId>,
         to_nodes: Vec<NodeId>,
     },
-    
+
     /// Rebalance data across shards
     Rebalance {
         affected_shards: Vec<ShardId>,
         data_movement: Vec<DataMovement>,
     },
-    
+
     /// Remove shard
     Remove {
         shard_id: ShardId,
@@ -421,10 +425,10 @@ pub enum TransactionOp {
     /// Delete operation
     Delete { key: Vec<u8> },
     /// Conditional write
-    ConditionalWrite { 
-        key: Vec<u8>, 
-        value: Vec<u8>, 
-        condition: WriteCondition 
+    ConditionalWrite {
+        key: Vec<u8>,
+        value: Vec<u8>,
+        condition: WriteCondition,
     },
 }
 
@@ -445,25 +449,25 @@ pub enum WriteCondition {
 pub struct ShardManager {
     /// Cluster topology
     topology: Arc<ClusterTopology>,
-    
+
     /// Active Raft nodes
     nodes: Arc<RwLock<HashMap<NodeId, Arc<RaftNode>>>>,
-    
+
     /// Shard routing logic
     router: Arc<dyn ShardRouter>,
-    
+
     /// Rebalancer for dynamic load balancing
     rebalancer: Arc<dyn ShardRebalancer>,
-    
+
     /// Cross-shard transaction coordinator
     coordinator: Arc<dyn TransactionCoordinator>,
-    
+
     /// Service discovery
     discovery: Arc<dyn ServiceDiscovery>,
-    
+
     /// Background task handles
     tasks: Vec<tokio::task::JoinHandle<()>>,
-    
+
     /// Metrics collector
     metrics: Arc<ShardingMetrics>,
 }
@@ -472,13 +476,13 @@ pub struct ShardManager {
 pub trait ShardRouter: Send + Sync {
     /// Route a partition key to its shard
     fn route(&self, key: &PartitionKey) -> Result<ShardId>;
-    
+
     /// Get all shards for a key range
     fn route_range(&self, start: &PartitionKey, end: &PartitionKey) -> Result<Vec<ShardId>>;
-    
+
     /// Update routing table
     fn update_routing(&self, topology: &ClusterTopology) -> Result<()>;
-    
+
     /// Get routing statistics
     fn get_stats(&self) -> RoutingStats;
 }
@@ -488,13 +492,13 @@ pub trait ShardRouter: Send + Sync {
 pub trait ShardRebalancer: Send + Sync {
     /// Check if rebalancing is needed
     fn needs_rebalancing(&self, topology: &ClusterTopology) -> Result<bool>;
-    
+
     /// Generate rebalancing plan
     fn generate_plan(&self, topology: &ClusterTopology) -> Result<RebalancePlan>;
-    
+
     /// Execute rebalancing plan
     async fn execute_plan(&self, plan: RebalancePlan) -> Result<()>;
-    
+
     /// Get rebalancing progress
     fn get_progress(&self) -> RebalanceProgress;
 }
@@ -503,14 +507,17 @@ pub trait ShardRebalancer: Send + Sync {
 #[async_trait::async_trait]
 pub trait TransactionCoordinator: Send + Sync {
     /// Start cross-shard transaction
-    async fn begin_transaction(&self, operations: HashMap<ShardId, Vec<TransactionOp>>) -> Result<String>;
-    
+    async fn begin_transaction(
+        &self,
+        operations: HashMap<ShardId, Vec<TransactionOp>>,
+    ) -> Result<String>;
+
     /// Commit transaction
     async fn commit_transaction(&self, tx_id: &str) -> Result<()>;
-    
+
     /// Abort transaction
     async fn abort_transaction(&self, tx_id: &str) -> Result<()>;
-    
+
     /// Get transaction status
     fn get_transaction_status(&self, tx_id: &str) -> Option<TransactionState>;
 }
@@ -520,13 +527,13 @@ pub trait TransactionCoordinator: Send + Sync {
 pub trait ServiceDiscovery: Send + Sync {
     /// Register a node
     async fn register_node(&self, node_id: NodeId, address: String) -> Result<()>;
-    
+
     /// Unregister a node
     async fn unregister_node(&self, node_id: NodeId) -> Result<()>;
-    
+
     /// Discover nodes for a shard
     async fn discover_shard_nodes(&self, shard_id: ShardId) -> Result<Vec<NodeId>>;
-    
+
     /// Health check for a node
     async fn health_check(&self, node_id: NodeId) -> Result<bool>;
 }
@@ -608,7 +615,7 @@ impl ShardManager {
             config,
             version: Arc::new(RwLock::new(0)),
         });
-        
+
         // Create strategy-specific router
         let router: Arc<dyn ShardRouter> = match topology.strategy {
             ShardingStrategy::Hash => Arc::new(strategies::HashBasedRouter::new()),
@@ -616,7 +623,7 @@ impl ShardManager {
             ShardingStrategy::Directory => Arc::new(strategies::DirectoryBasedRouter::new()),
             ShardingStrategy::Hybrid => Arc::new(strategies::HybridRouter::new()),
         };
-        
+
         Self {
             topology,
             nodes: Arc::new(RwLock::new(HashMap::new())),
@@ -628,15 +635,21 @@ impl ShardManager {
             metrics: Arc::new(ShardingMetrics::default()),
         }
     }
-    
+
     /// Initialize cluster with initial shards
     pub async fn initialize_cluster(&mut self, initial_nodes: Vec<NodeId>) -> Result<()> {
         if initial_nodes.len() < 3 {
-            return Err(Error::InvalidInput("Need at least 3 nodes for HA".to_string()));
+            return Err(Error::InvalidInput(
+                "Need at least 3 nodes for HA".to_string(),
+            ));
         }
-        
-        let replication_factor = self.topology.config.default_replication_factor.min(initial_nodes.len() as u32);
-        
+
+        let replication_factor = self
+            .topology
+            .config
+            .default_replication_factor
+            .min(initial_nodes.len() as u32);
+
         // Create initial shard
         let shard_info = ShardInfo {
             id: 1,
@@ -648,42 +661,55 @@ impl ShardManager {
                 start: 0,
                 end: u64::MAX,
             }),
-            created_at: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
-            modified_at: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+            created_at: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            modified_at: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             stats: ShardStats::default(),
             replication_factor,
             config: ShardConfig::default(),
         };
-        
+
         // Add shard to topology
         self.topology.shards.write().insert(1, shard_info);
-        
+
         // Update node mappings
         for node_id in &initial_nodes[..replication_factor as usize] {
-            self.topology.node_shards.write()
+            self.topology
+                .node_shards
+                .write()
                 .entry(*node_id)
                 .or_insert_with(Vec::new)
                 .push(1);
         }
-        
+
         // Initialize routing table
         self.router.update_routing(&self.topology)?;
-        
+
         // Start background tasks
         self.start_background_tasks().await?;
-        
-        println!("Cluster initialized with {} nodes and shard 1", initial_nodes.len());
+
+        println!(
+            "Cluster initialized with {} nodes and shard 1",
+            initial_nodes.len()
+        );
         Ok(())
     }
-    
+
     /// Add new node to cluster
     pub async fn add_node(&mut self, node_id: NodeId, raft_node: Arc<RaftNode>) -> Result<()> {
         // Register node
         self.nodes.write().insert(node_id, raft_node);
-        
+
         // Register with service discovery
-        self.discovery.register_node(node_id, format!("node-{}", node_id)).await?;
-        
+        self.discovery
+            .register_node(node_id, format!("node-{}", node_id))
+            .await?;
+
         // Trigger rebalancing if needed
         if self.rebalancer.needs_rebalancing(&self.topology)? {
             let plan = self.rebalancer.generate_plan(&self.topology)?;
@@ -696,73 +722,85 @@ impl ShardManager {
                 }
             });
         }
-        
+
         Ok(())
     }
-    
+
     /// Remove node from cluster
     pub async fn remove_node(&mut self, node_id: NodeId) -> Result<()> {
         // Get shards affected by this node
-        let affected_shards = self.topology.node_shards.read()
+        let affected_shards = self
+            .topology
+            .node_shards
+            .read()
             .get(&node_id)
             .cloned()
             .unwrap_or_default();
-        
+
         // For each affected shard, find replacement nodes
         for shard_id in affected_shards {
             let mut shards = self.topology.shards.write();
             if let Some(shard) = shards.get_mut(&shard_id) {
                 // Remove failed node
                 shard.nodes.retain(|&id| id != node_id);
-                
+
                 // Update leader if necessary
                 if shard.leader == Some(node_id) {
                     shard.leader = shard.nodes.first().copied();
                 }
-                
+
                 // Mark for rebalancing if below minimum nodes
                 if shard.nodes.len() < shard.config.min_nodes as usize {
                     shard.state = ShardState::Rebalancing;
                 }
             }
         }
-        
+
         // Remove from node mappings
         self.topology.node_shards.write().remove(&node_id);
         self.nodes.write().remove(&node_id);
-        
+
         // Unregister from service discovery
         self.discovery.unregister_node(node_id).await?;
-        
+
         println!("Node {} removed from cluster", node_id);
         Ok(())
     }
-    
+
     /// Route operation to appropriate shard
-    pub async fn route_operation(&self, key: &PartitionKey, operation: TransactionOp) -> Result<Vec<u8>> {
+    pub async fn route_operation(
+        &self,
+        key: &PartitionKey,
+        operation: TransactionOp,
+    ) -> Result<Vec<u8>> {
         let shard_id = self.router.route(key)?;
-        
+
         // Get shard info
-        let shard_info = self.topology.shards.read()
+        let shard_info = self
+            .topology
+            .shards
+            .read()
             .get(&shard_id)
             .cloned()
             .ok_or_else(|| Error::NotFound(format!("Shard {} not found", shard_id)))?;
-        
+
         // Get leader node
-        let leader_id = shard_info.leader
+        let leader_id = shard_info
+            .leader
             .ok_or_else(|| Error::NotFound("No leader for shard".to_string()))?;
-        
-        let leader_node = self.nodes.read()
+
+        let leader_node = self
+            .nodes
+            .read()
             .get(&leader_id)
             .cloned()
             .ok_or_else(|| Error::NotFound(format!("Leader node {} not found", leader_id)))?;
-        
+
         // Execute operation on leader
         match operation {
-            TransactionOp::Read { key } => {
-                leader_node.read_state_machine(&key)
-                    .map(|opt| opt.unwrap_or_default())
-            }
+            TransactionOp::Read { key } => leader_node
+                .read_state_machine(&key)
+                .map(|opt| opt.unwrap_or_default()),
             TransactionOp::Write { key, value } => {
                 let command = crate::raft::Command::Write { key, value };
                 leader_node.execute_command_direct(command).await
@@ -778,11 +816,14 @@ impl ShardManager {
             }
         }
     }
-    
+
     /// Execute cross-shard transaction
-    pub async fn execute_cross_shard_transaction(&self, operations: HashMap<ShardId, Vec<TransactionOp>>) -> Result<()> {
+    pub async fn execute_cross_shard_transaction(
+        &self,
+        operations: HashMap<ShardId, Vec<TransactionOp>>,
+    ) -> Result<()> {
         let tx_id = self.coordinator.begin_transaction(operations).await?;
-        
+
         match self.coordinator.commit_transaction(&tx_id).await {
             Ok(()) => Ok(()),
             Err(e) => {
@@ -792,36 +833,34 @@ impl ShardManager {
             }
         }
     }
-    
+
     /// Get cluster statistics
     pub fn get_cluster_stats(&self) -> ClusterStats {
         let shards = self.topology.shards.read();
-        
+
         let total_shards = shards.len();
-        let active_shards = shards.values()
+        let active_shards = shards
+            .values()
             .filter(|s| s.state == ShardState::Active)
             .count();
-        
-        let total_keys: u64 = shards.values()
-            .map(|s| s.stats.key_count)
-            .sum();
-        
-        let total_data_size: u64 = shards.values()
-            .map(|s| s.stats.data_size)
-            .sum();
-        
+
+        let total_keys: u64 = shards.values().map(|s| s.stats.key_count).sum();
+
+        let total_data_size: u64 = shards.values().map(|s| s.stats.data_size).sum();
+
         ClusterStats {
             total_shards,
             active_shards,
             total_keys,
             total_data_size,
-            rebalancing_shards: shards.values()
+            rebalancing_shards: shards
+                .values()
                 .filter(|s| s.state == ShardState::Rebalancing)
                 .count(),
             cross_shard_transactions: self.metrics.cross_shard_txs,
         }
     }
-    
+
     /// Start background maintenance tasks
     async fn start_background_tasks(&mut self) -> Result<()> {
         // Health checking task
@@ -831,7 +870,7 @@ impl ShardManager {
             let mut interval = tokio::time::interval(topology.config.health_check_interval);
             loop {
                 interval.tick().await;
-                
+
                 // Check health of all nodes
                 let nodes: Vec<NodeId> = topology.node_shards.read().keys().copied().collect();
                 for node_id in nodes {
@@ -842,10 +881,10 @@ impl ShardManager {
                 }
             }
         });
-        
+
         // Metrics collection task
         let topology = self.topology.clone();
-        let metrics = self.metrics.clone();
+        let _metrics = self.metrics.clone();
         let metrics_task = tokio::spawn(async move {
             let mut interval = tokio::time::interval(topology.config.metrics_interval);
             loop {
@@ -853,10 +892,10 @@ impl ShardManager {
                 // TODO: Collect and aggregate metrics
             }
         });
-        
+
         self.tasks.push(health_task);
         self.tasks.push(metrics_task);
-        
+
         Ok(())
     }
 }
@@ -875,22 +914,22 @@ pub struct ClusterStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_partition_key_display() {
         let key = PartitionKey::String("test".to_string());
         assert_eq!(key.to_string(), "str:test");
-        
+
         let key = PartitionKey::Integer(42);
         assert_eq!(key.to_string(), "int:42");
-        
+
         let key = PartitionKey::Composite(vec![
             PartitionKey::String("user".to_string()),
             PartitionKey::Integer(123),
         ]);
         assert_eq!(key.to_string(), "comp:[str:user,int:123]");
     }
-    
+
     #[test]
     fn test_shard_config_defaults() {
         let config = ShardConfig::default();

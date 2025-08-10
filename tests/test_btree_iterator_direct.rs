@@ -26,7 +26,11 @@ fn test_btree_iterator_direct() {
     for i in 0..5 {
         let key = format!("key_{:02}", i);
         let result = btree.get(key.as_bytes()).unwrap();
-        println!("  get({}) = {:?}", key, result.as_ref().map(|v| String::from_utf8_lossy(v)));
+        println!(
+            "  get({}) = {:?}",
+            key,
+            result.as_ref().map(|v| String::from_utf8_lossy(v))
+        );
         assert!(result.is_some(), "Key {} should exist", key);
     }
 
@@ -35,11 +39,15 @@ fn test_btree_iterator_direct() {
     println!("  About to call btree.range(None, None)...");
     let all_entries = btree.range(None, None).unwrap();
     println!("  range() returned {} entries", all_entries.len());
-    
+
     for (key, value) in &all_entries {
-        println!("    {} -> {}", String::from_utf8_lossy(key), String::from_utf8_lossy(value));
+        println!(
+            "    {} -> {}",
+            String::from_utf8_lossy(key),
+            String::from_utf8_lossy(value)
+        );
     }
-    
+
     assert_eq!(all_entries.len(), 5, "Should find all 5 entries");
 
     // Test range with bounds
