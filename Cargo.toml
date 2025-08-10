@@ -57,7 +57,7 @@ uuid = { version = "1.11", features = ["v4"] }
 crossbeam-channel = "0.5"
 encoding_rs = { version = "0.8", optional = true }
 parquet = { version = "53.2", optional = true }
-arrow = { version = "53.2", optional = true }
+arrow = { version = "54.2", optional = true }
 serde_yaml = { version = "0.9", optional = true }
 toml = { version = "0.8", optional = true }
 notify = { version = "6.1", optional = true }
