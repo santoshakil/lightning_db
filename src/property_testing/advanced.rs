@@ -5,11 +5,14 @@
 
 use super::Operation;
 use crate::{Database, Result};
-use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}};
-use std::time::{Duration, Instant};
 use serde::Serialize;
-use tracing::{warn, debug};
+use std::collections::{HashMap, VecDeque};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
+};
+use std::time::{Duration, Instant};
+use tracing::{debug, warn};
 
 /// Model-based property testing framework
 pub struct ModelBasedTester {
@@ -64,7 +67,7 @@ impl ReferenceModel {
             Operation::Transaction { operations } => {
                 let _tx_id = self.next_tx_id;
                 self.next_tx_id += 1;
-                
+
                 let mut tx_state = HashMap::new();
                 for op in operations {
                     match op {
@@ -77,12 +80,12 @@ impl ReferenceModel {
                         _ => {} // Skip nested operations for simplicity
                     }
                 }
-                
+
                 // Commit transaction to main state
                 for (key, value) in tx_state {
                     self.data.insert(key, value);
                 }
-                
+
                 Ok(ModelResult::Success)
             }
             _ => Ok(ModelResult::Success), // Other operations don't affect model state
@@ -217,7 +220,11 @@ impl ModelBasedTester {
     }
 
     /// Run model-based testing
-    pub fn run_model_based_test(&self, db: &Database, operations: Vec<Operation>) -> Result<ModelBasedTestResult> {
+    pub fn run_model_based_test(
+        &self,
+        db: &Database,
+        operations: Vec<Operation>,
+    ) -> Result<ModelBasedTestResult> {
         let start_time = Instant::now();
         let mut divergences = Vec::new();
         let mut operation_results = Vec::new();
@@ -234,7 +241,7 @@ impl ModelBasedTester {
 
             // Apply operation to actual database and check for divergences
             let db_result = self.execute_operation_on_db(db, operation);
-            
+
             // Record results
             operation_results.push(OperationResult {
                 operation: operation.clone(),
@@ -246,7 +253,10 @@ impl ModelBasedTester {
             // Check for divergence
             if let Ok(_) = db_result {
                 let model = self.reference_model.lock().unwrap();
-                if let Some(divergence) = self.divergence_detector.check_divergence(db, &model, operation)? {
+                if let Some(divergence) = self
+                    .divergence_detector
+                    .check_divergence(db, &model, operation)?
+                {
                     divergences.push(divergence);
                 }
             }
@@ -272,14 +282,22 @@ impl ModelBasedTester {
     fn execute_operation_on_db(&self, db: &Database, operation: &Operation) -> Result<()> {
         match operation {
             Operation::Put { key, value } => db.put(key, value),
-            Operation::Get { key } => { db.get(key)?; Ok(()) }
-            Operation::Delete { key } => { db.delete(key)?; Ok(()) }
+            Operation::Get { key } => {
+                db.get(key)?;
+                Ok(())
+            }
+            Operation::Delete { key } => {
+                db.delete(key)?;
+                Ok(())
+            }
             Operation::Transaction { operations } => {
                 let tx_id = db.begin_transaction()?;
                 for op in operations {
                     match op {
                         Operation::Put { key, value } => db.put_tx(tx_id, key, value)?,
-                        Operation::Get { key } => { db.get_tx(tx_id, key)?; }
+                        Operation::Get { key } => {
+                            db.get_tx(tx_id, key)?;
+                        }
                         Operation::Delete { key } => db.delete_tx(tx_id, key)?,
                         _ => {}
                     }
@@ -358,7 +376,7 @@ impl MutationStrategy for BitFlipMutation {
         match operation {
             Operation::Put { key, value } => {
                 let mut mutations = Vec::new();
-                
+
                 // Mutate key
                 if !key.is_empty() {
                     let mut mutated_key = key.clone();
@@ -366,13 +384,13 @@ impl MutationStrategy for BitFlipMutation {
                     let byte_pos = bit_pos / 8;
                     let bit_offset = bit_pos % 8;
                     mutated_key[byte_pos] ^= 1 << bit_offset;
-                    
+
                     mutations.push(Operation::Put {
                         key: mutated_key,
                         value: value.clone(),
                     });
                 }
-                
+
                 // Mutate value
                 if !value.is_empty() {
                     let mut mutated_value = value.clone();
@@ -380,13 +398,13 @@ impl MutationStrategy for BitFlipMutation {
                     let byte_pos = bit_pos / 8;
                     let bit_offset = bit_pos % 8;
                     mutated_value[byte_pos] ^= 1 << bit_offset;
-                    
+
                     mutations.push(Operation::Put {
                         key: key.clone(),
                         value: mutated_value,
                     });
                 }
-                
+
                 mutations
             }
             _ => vec![operation.clone()], // No mutation for other operations
@@ -406,7 +424,7 @@ impl MutationStrategy for SizeMutation {
         match operation {
             Operation::Put { key, value } => {
                 let mut mutations = Vec::new();
-                
+
                 // Extend key
                 let mut extended_key = key.clone();
                 extended_key.extend_from_slice(b"_extended");
@@ -414,7 +432,7 @@ impl MutationStrategy for SizeMutation {
                     key: extended_key,
                     value: value.clone(),
                 });
-                
+
                 // Truncate key (if possible)
                 if key.len() > 1 {
                     let truncated_key = key[..key.len() / 2].to_vec();
@@ -423,7 +441,7 @@ impl MutationStrategy for SizeMutation {
                         value: value.clone(),
                     });
                 }
-                
+
                 // Extend value
                 let mut extended_value = value.clone();
                 extended_value.extend_from_slice(&vec![0xFF; 100]);
@@ -431,7 +449,7 @@ impl MutationStrategy for SizeMutation {
                     key: key.clone(),
                     value: extended_value,
                 });
-                
+
                 // Truncate value (if possible)
                 if value.len() > 1 {
                     let truncated_value = value[..value.len() / 2].to_vec();
@@ -440,7 +458,7 @@ impl MutationStrategy for SizeMutation {
                         value: truncated_value,
                     });
                 }
-                
+
                 mutations
             }
             _ => vec![operation.clone()],
@@ -464,7 +482,11 @@ impl FuzzTester {
     }
 
     /// Run fuzzing test
-    pub fn run_fuzz_test(&self, db: &Database, seed_operations: Vec<Operation>) -> Result<FuzzTestResult> {
+    pub fn run_fuzz_test(
+        &self,
+        db: &Database,
+        seed_operations: Vec<Operation>,
+    ) -> Result<FuzzTestResult> {
         let start_time = Instant::now();
         let mut interesting_cases = Vec::new();
         let mut total_mutations = 0;
@@ -529,7 +551,10 @@ impl FuzzTester {
 
             // Log progress
             if iteration % 1000 == 0 {
-                debug!("Fuzz testing progress: {}/{} iterations", iteration, self.config.iterations);
+                debug!(
+                    "Fuzz testing progress: {}/{} iterations",
+                    iteration, self.config.iterations
+                );
             }
         }
 
@@ -544,17 +569,23 @@ impl FuzzTester {
     }
 
     /// Execute operation safely and analyze result
-    fn execute_operation_safely(&self, db: &Database, operation: &Operation) -> Result<FuzzExecutionResult> {
+    fn execute_operation_safely(
+        &self,
+        db: &Database,
+        operation: &Operation,
+    ) -> Result<FuzzExecutionResult> {
         let start_time = Instant::now();
-        
+
         match operation {
             Operation::Put { key, value } => {
                 db.put(key, value)?;
-                
+
                 // Check if this is an interesting case
-                let is_interesting = key.is_empty() || value.len() > 1024 * 1024 || 
-                                   key.len() > 1024 || contains_special_bytes(key);
-                
+                let is_interesting = key.is_empty()
+                    || value.len() > 1024 * 1024
+                    || key.len() > 1024
+                    || contains_special_bytes(key);
+
                 Ok(FuzzExecutionResult {
                     is_interesting,
                     result_type: FuzzResultType::Success,
@@ -589,7 +620,7 @@ impl FuzzTester {
                 result_type: FuzzResultType::Success,
                 description: "Other operation completed".to_string(),
                 execution_time: start_time.elapsed(),
-            })
+            }),
         }
     }
 }
@@ -641,28 +672,30 @@ fn contains_special_bytes(data: &[u8]) -> bool {
 /// Fast random number generation for fuzzing
 mod fastrand {
     use std::sync::atomic::{AtomicU64, Ordering};
-    
+
     static STATE: AtomicU64 = AtomicU64::new(1);
-    
+
     pub fn f64() -> f64 {
         let mut x = STATE.load(Ordering::Relaxed);
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         STATE.store(x, Ordering::Relaxed);
-        
+
         (x as f64) / (u64::MAX as f64)
     }
-    
+
     pub fn usize(range_start: usize, range_end: usize) -> usize {
         let mut x = STATE.load(Ordering::Relaxed);
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         STATE.store(x, Ordering::Relaxed);
-        
+
         let range_size = range_end - range_start;
-        if range_size == 0 { return range_start; }
+        if range_size == 0 {
+            return range_start;
+        }
         range_start + ((x as usize) % range_size)
     }
 }
@@ -674,19 +707,24 @@ mod tests {
     #[test]
     fn test_reference_model() {
         let mut model = ReferenceModel::new();
-        
+
         // Test put operation
         let put_op = Operation::Put {
             key: b"test_key".to_vec(),
             value: b"test_value".to_vec(),
         };
-        
+
         let result = model.apply_operation(&put_op).unwrap();
         assert!(matches!(result, ModelResult::Success));
-        assert_eq!(model.data.get(b"test_key".as_ref()), Some(&b"test_value".to_vec()));
-        
+        assert_eq!(
+            model.data.get(b"test_key".as_ref()),
+            Some(&b"test_value".to_vec())
+        );
+
         // Test get operation
-        let get_op = Operation::Get { key: b"test_key".to_vec() };
+        let get_op = Operation::Get {
+            key: b"test_key".to_vec(),
+        };
         let result = model.apply_operation(&get_op).unwrap();
         assert!(matches!(result, ModelResult::Value(Some(_))));
     }
@@ -698,10 +736,10 @@ mod tests {
             key: b"test".to_vec(),
             value: b"value".to_vec(),
         };
-        
+
         let mutations = mutation.mutate(&operation);
         assert!(!mutations.is_empty());
-        
+
         // Should have mutations for both key and value
         assert!(mutations.len() >= 1);
     }
@@ -713,10 +751,10 @@ mod tests {
             key: b"test_key".to_vec(),
             value: b"test_value".to_vec(),
         };
-        
+
         let mutations = mutation.mutate(&operation);
         assert!(!mutations.is_empty());
-        
+
         // Should have multiple size variations
         assert!(mutations.len() >= 2);
     }
@@ -725,19 +763,19 @@ mod tests {
     fn test_divergence_detector() {
         let detector = DivergenceDetector::new(0.01, 5);
         assert!(!detector.is_divergence_critical());
-        
+
         // Simulate some divergences
         for _ in 0..3 {
             detector.current_divergences.fetch_add(1, Ordering::Relaxed);
         }
         assert!(!detector.is_divergence_critical());
-        
+
         // Exceed threshold
         for _ in 0..3 {
             detector.current_divergences.fetch_add(1, Ordering::Relaxed);
         }
         assert!(detector.is_divergence_critical());
-        
+
         // Reset
         detector.reset();
         assert!(!detector.is_divergence_critical());

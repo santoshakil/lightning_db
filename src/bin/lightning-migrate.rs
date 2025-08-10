@@ -10,14 +10,13 @@
 
 use clap::{Arg, ArgMatches, Command};
 use lightning_db::{
-    Database, LightningDbConfig,
     schema_migration::{
-        MigrationManager, MigrationConfig,
-        Schema, SchemaVersion, TableDefinition, ColumnDefinition,
-        DataType, IndexDefinition, IndexType, IndexColumn, SortOrder,
-        TableOptions, IndexOptions, MigrationStep,
         migration::{MigrationBuilder, SimpleMigration},
+        ColumnDefinition, DataType, IndexColumn, IndexDefinition, IndexOptions, IndexType,
+        MigrationConfig, MigrationManager, MigrationStep, Schema, SchemaVersion, SortOrder,
+        TableDefinition, TableOptions,
     },
+    Database, LightningDbConfig,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -255,7 +254,7 @@ fn cmd_init(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 
     // Open/create database
     let db = Arc::new(Database::open(database_path, LightningDbConfig::default())?);
-    
+
     // Initialize migration manager
     let config = MigrationConfig::default();
     let manager = MigrationManager::new(db, config)?;
@@ -269,14 +268,20 @@ fn cmd_init(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     if !template_path.exists() {
         let template_content = include_str!("../schema_migration/templates/initial_migration.rs");
         fs::write(&template_path, template_content)?;
-        println!("✓ Created initial migration template: {}", template_path.display());
+        println!(
+            "✓ Created initial migration template: {}",
+            template_path.display()
+        );
     }
 
     println!("\n🎉 Migration system initialized successfully!");
     println!("\nNext steps:");
     println!("1. Edit migration templates in {}", migration_dir);
     println!("2. Run 'lightning-migrate create <name>' to create new migrations");
-    println!("3. Run 'lightning-migrate migrate {}' to apply migrations", database_path);
+    println!(
+        "3. Run 'lightning-migrate migrate {}' to apply migrations",
+        database_path
+    );
 
     Ok(())
 }
@@ -285,10 +290,8 @@ fn cmd_create(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     let name = matches.get_one::<String>("name").unwrap();
     let migration_dir = matches.get_one::<String>("migration-dir").unwrap();
 
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_secs();
-    
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+
     let filename = format!("{:010}_{}.rs", timestamp, sanitize_filename(name));
     let filepath = Path::new(migration_dir).join(&filename);
 
@@ -439,7 +442,7 @@ fn cmd_migrate(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 
     // Load available migrations (in a real implementation, this would load from files)
     let migration_files = scan_migration_files(migration_dir)?;
-    
+
     if migration_files.is_empty() {
         println!("⚠️  No migration files found");
         return Ok(());
@@ -474,8 +477,10 @@ fn cmd_migrate(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     let results = manager.migrate()?;
 
     for result in results {
-        println!("✓ Applied migration {}: {} ({}ms)", 
-                result.version, result.direction, result.duration_ms);
+        println!(
+            "✓ Applied migration {}: {} ({}ms)",
+            result.version, result.direction, result.duration_ms
+        );
     }
 
     println!("\n🎉 Migration completed successfully!");
@@ -523,8 +528,10 @@ fn cmd_rollback(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> 
     let results = manager.rollback_to(&target_version)?;
 
     for result in results {
-        println!("✓ Rolled back migration {}: {} ({}ms)", 
-                result.version, result.direction, result.duration_ms);
+        println!(
+            "✓ Rolled back migration {}: {} ({}ms)",
+            result.version, result.direction, result.duration_ms
+        );
     }
 
     println!("\n🎉 Rollback completed successfully!");
@@ -551,8 +558,13 @@ fn cmd_history(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     for (i, record) in history.iter().enumerate() {
-        println!("{}. Version: {} | Direction: {:?} | Success: {}", 
-                i + 1, record.version, record.direction, record.success);
+        println!(
+            "{}. Version: {} | Direction: {:?} | Success: {}",
+            i + 1,
+            record.version,
+            record.direction,
+            record.success
+        );
         if let Some(error) = &record.error {
             println!("   Error: {}", error);
         }
@@ -578,22 +590,37 @@ fn cmd_validate(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> 
 
     let validation_result = manager.validate_schema()?;
 
-    println!("Validation Status: {}", 
-             if validation_result.is_valid { "✅ VALID" } else { "❌ INVALID" });
-    
+    println!(
+        "Validation Status: {}",
+        if validation_result.is_valid {
+            "✅ VALID"
+        } else {
+            "❌ INVALID"
+        }
+    );
+
     println!("\nStatistics:");
     println!("  Tables: {}", validation_result.statistics.table_count);
     println!("  Columns: {}", validation_result.statistics.column_count);
     println!("  Indexes: {}", validation_result.statistics.index_count);
-    println!("  Constraints: {}", validation_result.statistics.constraint_count);
-    println!("  Estimated Size: {:.2} MB", 
-             validation_result.statistics.estimated_size_bytes as f64 / 1024.0 / 1024.0);
+    println!(
+        "  Constraints: {}",
+        validation_result.statistics.constraint_count
+    );
+    println!(
+        "  Estimated Size: {:.2} MB",
+        validation_result.statistics.estimated_size_bytes as f64 / 1024.0 / 1024.0
+    );
 
     if !validation_result.errors.is_empty() {
         println!("\n❌ Errors:");
         for (i, error) in validation_result.errors.iter().enumerate() {
-            println!("  {}. [{}] {}", i + 1, 
-                     format!("{:?}", error.error_type), error.message);
+            println!(
+                "  {}. [{}] {}",
+                i + 1,
+                format!("{:?}", error.error_type),
+                error.message
+            );
             if let Some(context) = &error.context {
                 println!("     Context: {}", context);
             }
@@ -603,8 +630,12 @@ fn cmd_validate(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> 
     if !validation_result.warnings.is_empty() {
         println!("\n⚠️  Warnings:");
         for (i, warning) in validation_result.warnings.iter().enumerate() {
-            println!("  {}. [{}] {}", i + 1, 
-                     format!("{:?}", warning.warning_type), warning.message);
+            println!(
+                "  {}. [{}] {}",
+                i + 1,
+                format!("{:?}", warning.warning_type),
+                warning.message
+            );
             if let Some(context) = &warning.context {
                 println!("     Context: {}", context);
             }
@@ -647,7 +678,14 @@ fn cmd_diff(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     println!("  Columns Removed: {}", diff.summary.columns_removed);
     println!("  Indexes Added: {}", diff.summary.indexes_added);
     println!("  Indexes Removed: {}", diff.summary.indexes_removed);
-    println!("  Breaking Change: {}", if diff.summary.is_breaking { "Yes" } else { "No" });
+    println!(
+        "  Breaking Change: {}",
+        if diff.summary.is_breaking {
+            "Yes"
+        } else {
+            "No"
+        }
+    );
     println!("  Complexity Score: {}/10", diff.summary.complexity_score);
 
     if !diff.table_changes.is_empty() {
@@ -678,25 +716,28 @@ fn cmd_reset(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     println!("⚠️  RESETTING MIGRATION SYSTEM");
     println!("===============================");
     println!("This will remove all migration history and reset the schema version to 0.0.0");
-    
+
     print!("Are you absolutely sure? Type 'YES' to continue: ");
     io::stdout().flush()?;
-    
+
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
-    
+
     if input.trim() != "YES" {
         println!("Reset cancelled.");
         return Ok(());
     }
 
     let db = Arc::new(Database::open(database_path, LightningDbConfig::default())?);
-    
+
     // Remove schema version and migration history
     db.delete(b"__schema_version__")?;
-    
+
     // Remove migration history (scan and delete all __migration_* keys)
-    let scan_result = db.scan(Some(b"__migration_".to_vec()), Some(b"__migration~".to_vec()))?;
+    let scan_result = db.scan(
+        Some(b"__migration_".to_vec()),
+        Some(b"__migration~".to_vec()),
+    )?;
     for item in scan_result {
         let (key, _) = item?;
         db.delete(&key)?;
@@ -705,7 +746,7 @@ fn cmd_reset(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     println!("✓ Migration system reset successfully");
     println!("  Schema version: 0.0.0");
     println!("  Migration history: cleared");
-    
+
     Ok(())
 }
 
@@ -726,16 +767,29 @@ fn cmd_version(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 
 fn sanitize_filename(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .to_lowercase()
 }
 
 fn sanitize_struct_name(name: &str) -> String {
-    let sanitized = name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+    let sanitized = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>();
-    
+
     // Capitalize first letter
     let mut chars = sanitized.chars();
     match chars.next() {
@@ -749,16 +803,16 @@ fn parse_version(version_str: &str) -> Result<SchemaVersion, Box<dyn std::error:
     if parts.len() != 2 {
         return Err("Version must be in format 'major.minor'".into());
     }
-    
+
     let major: u32 = parts[0].parse()?;
     let minor: u32 = parts[1].parse()?;
-    
+
     Ok(SchemaVersion::new(major, minor))
 }
 
 fn scan_migration_files(dir: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let mut files = Vec::new();
-    
+
     if !Path::new(dir).exists() {
         return Ok(files);
     }
@@ -766,21 +820,21 @@ fn scan_migration_files(dir: &str) -> Result<Vec<String>, Box<dyn std::error::Er
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
-        
+
         if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
             if filename.ends_with(".rs") || filename.ends_with(".rs.template") {
                 files.push(filename.to_string());
             }
         }
     }
-    
+
     files.sort();
     Ok(files)
 }
 
 fn create_sample_migration() -> Result<SimpleMigration, Box<dyn std::error::Error>> {
     let version = SchemaVersion::new(1, 0);
-    
+
     let users_table = TableDefinition {
         name: "users".to_string(),
         columns: vec![

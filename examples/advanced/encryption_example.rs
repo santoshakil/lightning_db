@@ -8,8 +8,8 @@
 //! - Handle key rotation
 
 use lightning_db::{
+    encryption::{EncryptionAlgorithm, EncryptionConfig, KeyDerivationFunction},
     Database, LightningDbConfig,
-    encryption::{EncryptionConfig, EncryptionAlgorithm, KeyDerivationFunction},
 };
 use std::time::Instant;
 use tempfile::TempDir;
@@ -17,14 +17,14 @@ use tempfile::TempDir;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup logging
     env_logger::init();
-    
+
     println!("Lightning DB Encryption Example");
     println!("==============================\n");
-    
+
     // Create a temporary directory for the database
     let temp_dir = TempDir::new()?;
     println!("Database path: {:?}\n", temp_dir.path());
-    
+
     // Configure encryption settings
     let mut config = LightningDbConfig::default();
     config.encryption_config = EncryptionConfig {
@@ -36,17 +36,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         encrypt_wal: true,
         encrypt_pages: true,
     };
-    
+
     println!("Encryption Configuration:");
     println!("  Algorithm: AES-256-GCM");
     println!("  Key Derivation: Argon2id");
     println!("  Hardware Acceleration: Enabled");
     println!("  Encrypt WAL: Yes");
     println!("  Encrypt Pages: Yes\n");
-    
+
     // Create the encrypted database
     let db = Database::create(temp_dir.path(), config)?;
-    
+
     // Initialize encryption with a master key
     // In production, this key should be securely stored (e.g., in a key management service)
     let master_key = b"my_secure_32_byte_master_key_123";
@@ -54,10 +54,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
     db.initialize_encryption(master_key)?;
     println!("Encryption initialized in {:?}\n", start.elapsed());
-    
+
     // Perform some encrypted operations
     println!("Performing encrypted database operations...");
-    
+
     // Insert some sensitive data
     let sensitive_data = vec![
         ("user:1:password", "super_secret_password"),
@@ -66,36 +66,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("api:key:production", "sk_live_abcdef123456"),
         ("config:database:password", "db_password_2024"),
     ];
-    
+
     let start = Instant::now();
     for (key, value) in &sensitive_data {
         db.put(key.as_bytes(), value.as_bytes())?;
     }
-    println!("  Inserted {} sensitive records in {:?}", sensitive_data.len(), start.elapsed());
-    
+    println!(
+        "  Inserted {} sensitive records in {:?}",
+        sensitive_data.len(),
+        start.elapsed()
+    );
+
     // Read back the data to verify encryption/decryption works
     let start = Instant::now();
     for (key, expected_value) in &sensitive_data {
         let value = db.get(key.as_bytes())?;
         assert_eq!(value.as_deref(), Some(expected_value.as_bytes()));
     }
-    println!("  Verified {} records in {:?}\n", sensitive_data.len(), start.elapsed());
-    
+    println!(
+        "  Verified {} records in {:?}\n",
+        sensitive_data.len(),
+        start.elapsed()
+    );
+
     // Demonstrate transactions with encryption
     println!("Testing encrypted transactions...");
     let tx_start = Instant::now();
     let tx_id = db.begin_transaction()?;
-    
+
     // Add some transactional data
     db.put_tx(tx_id, b"tx:user:2:name", b"John Doe")?;
     db.put_tx(tx_id, b"tx:user:2:email", b"john@example.com")?;
     db.put_tx(tx_id, b"tx:user:2:phone", b"+1-555-0123")?;
-    
+
     db.commit_transaction(tx_id)?;
     println!("  Transaction committed in {:?}\n", tx_start.elapsed());
-    
+
     // Get encryption statistics
-    let stats = db.get_encryption_stats()
+    let stats = db
+        .get_encryption_stats()
         .ok_or("Encryption stats not available")?;
     println!("Encryption Statistics:");
     println!("  Enabled: {}", stats.enabled);
@@ -110,7 +119,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Next Key Rotation: {:?}", next_rotation);
     }
     println!();
-    
+
     // Demonstrate key rotation check
     println!("Checking if key rotation is needed...");
     if db.needs_key_rotation()? {
@@ -122,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Key rotation is not needed yet.");
     }
     println!();
-    
+
     // Demonstrate working with different encryption algorithms
     println!("Testing ChaCha20-Poly1305 encryption...");
     let chacha_dir = TempDir::new()?;
@@ -132,26 +141,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         algorithm: EncryptionAlgorithm::ChaCha20Poly1305,
         ..Default::default()
     };
-    
+
     let chacha_db = Database::create(chacha_dir.path(), chacha_config)?;
     chacha_db.initialize_encryption(b"chacha20_master_key_32_bytes_ok!")?;
-    
+
     let start = Instant::now();
     chacha_db.put(b"chacha:test", b"encrypted_with_chacha20")?;
     let value = chacha_db.get(b"chacha:test")?;
     assert_eq!(value.as_deref(), Some(b"encrypted_with_chacha20".as_ref()));
     println!("  ChaCha20-Poly1305 encryption working correctly");
     println!("  Operation completed in {:?}\n", start.elapsed());
-    
+
     // Performance comparison
     println!("Performance Comparison (1000 operations):");
-    
+
     // Test unencrypted performance
     let unencrypted_dir = TempDir::new()?;
     let mut unencrypted_config = LightningDbConfig::default();
     unencrypted_config.encryption_config.enabled = false;
     let unencrypted_db = Database::create(unencrypted_dir.path(), unencrypted_config)?;
-    
+
     let start = Instant::now();
     for i in 0..1000 {
         let key = format!("perf:key:{}", i);
@@ -159,11 +168,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         unencrypted_db.put(key.as_bytes(), value.as_bytes())?;
     }
     let unencrypted_time = start.elapsed();
-    println!("  Unencrypted: {:?} ({:.0} ops/sec)", 
-        unencrypted_time, 
+    println!(
+        "  Unencrypted: {:?} ({:.0} ops/sec)",
+        unencrypted_time,
         1000.0 / unencrypted_time.as_secs_f64()
     );
-    
+
     // Test encrypted performance
     let start = Instant::now();
     for i in 0..1000 {
@@ -172,14 +182,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         db.put(key.as_bytes(), value.as_bytes())?;
     }
     let encrypted_time = start.elapsed();
-    println!("  Encrypted (AES-256-GCM): {:?} ({:.0} ops/sec)", 
+    println!(
+        "  Encrypted (AES-256-GCM): {:?} ({:.0} ops/sec)",
         encrypted_time,
         1000.0 / encrypted_time.as_secs_f64()
     );
-    
+
     let overhead = ((encrypted_time.as_secs_f64() / unencrypted_time.as_secs_f64()) - 1.0) * 100.0;
     println!("  Encryption overhead: {:.1}%\n", overhead);
-    
+
     // Security notes
     println!("Security Best Practices:");
     println!("  ✓ Never hardcode master keys in production");
@@ -189,8 +200,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  ✓ Monitor encryption statistics and performance");
     println!("  ✓ Test disaster recovery with encrypted backups");
     println!("  ✓ Use strong random keys (32 bytes for AES-256)");
-    
+
     println!("\nEncryption example completed successfully!");
-    
+
     Ok(())
 }

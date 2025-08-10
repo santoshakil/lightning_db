@@ -3,23 +3,26 @@
 //! Generates interactive flamegraph visualizations from CPU profiling data
 //! to help identify performance hotspots and call stack patterns.
 
-use std::collections::HashMap;
-use std::path::Path;
-use std::fs::File;
-use std::io::{Write, BufWriter};
 use serde::Deserialize;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::Path;
 
 /// Generate a flamegraph from CPU profile data
-pub fn generate_flamegraph(profile_path: &Path, output_path: &Path) -> Result<(), super::ProfilingError> {
+pub fn generate_flamegraph(
+    profile_path: &Path,
+    output_path: &Path,
+) -> Result<(), super::ProfilingError> {
     // Read and parse the profile data
     let profile_data = read_profile_data(profile_path)?;
-    
+
     // Build call stack tree
     let stack_tree = build_stack_tree(&profile_data)?;
-    
+
     // Generate SVG flamegraph
     generate_svg_flamegraph(&stack_tree, output_path)?;
-    
+
     Ok(())
 }
 
@@ -81,10 +84,10 @@ impl StackNode {
 fn read_profile_data(profile_path: &Path) -> Result<ProfileData, super::ProfilingError> {
     let content = std::fs::read_to_string(profile_path)
         .map_err(|e| super::ProfilingError::IoError(format!("Failed to read profile: {}", e)))?;
-    
+
     let parsed_data: serde_json::Value = serde_json::from_str(&content)
         .map_err(|e| super::ProfilingError::SerializationError(e.to_string()))?;
-    
+
     // Extract samples from the profile data
     let samples: Vec<CpuSample> = parsed_data["samples"]
         .as_array()
@@ -96,13 +99,19 @@ fn read_profile_data(profile_path: &Path) -> Result<ProfileData, super::Profilin
                 .unwrap_or(&vec![])
                 .iter()
                 .map(|frame| StackFrame {
-                    function_name: frame["function_name"].as_str().unwrap_or("unknown").to_string(),
-                    module_name: frame["module_name"].as_str().unwrap_or("unknown").to_string(),
+                    function_name: frame["function_name"]
+                        .as_str()
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    module_name: frame["module_name"]
+                        .as_str()
+                        .unwrap_or("unknown")
+                        .to_string(),
                     file_name: frame["file_name"].as_str().map(|s| s.to_string()),
                     line_number: frame["line_number"].as_u64().map(|n| n as u32),
                 })
                 .collect();
-            
+
             CpuSample {
                 stack_trace,
                 cpu_usage: sample["cpu_usage"].as_f64().unwrap_or(0.0),
@@ -110,7 +119,9 @@ fn read_profile_data(profile_path: &Path) -> Result<ProfileData, super::Profilin
         })
         .collect();
 
-    let total_samples = parsed_data["total_samples"].as_u64().unwrap_or(samples.len() as u64);
+    let total_samples = parsed_data["total_samples"]
+        .as_u64()
+        .unwrap_or(samples.len() as u64);
 
     Ok(ProfileData {
         samples,
@@ -124,7 +135,7 @@ fn build_stack_tree(profile_data: &ProfileData) -> Result<StackNode, super::Prof
 
     for sample in &profile_data.samples {
         let mut current_node = &mut root;
-        
+
         // Walk through the stack trace from root to leaf
         for frame in sample.stack_trace.iter().rev() {
             let frame_name = if frame.module_name == "unknown" {
@@ -135,20 +146,22 @@ fn build_stack_tree(profile_data: &ProfileData) -> Result<StackNode, super::Prof
                 format!("{}::{}", frame.module_name, frame.function_name)
             };
 
-            let full_name = if let (Some(file), Some(line)) = (&frame.file_name, frame.line_number) {
+            let full_name = if let (Some(file), Some(line)) = (&frame.file_name, frame.line_number)
+            {
                 format!("{} ({}:{})", frame_name, file, line)
             } else {
                 frame_name.clone()
             };
 
             // Get or create child node
-            let child = current_node.children
+            let child = current_node
+                .children
                 .entry(frame_name.clone())
                 .or_insert_with(|| StackNode::new(frame_name.clone(), full_name));
-            
+
             current_node = child;
         }
-        
+
         // Add sample to the leaf node
         current_node.add_sample();
     }
@@ -160,9 +173,13 @@ fn build_stack_tree(profile_data: &ProfileData) -> Result<StackNode, super::Prof
 }
 
 /// Generate SVG flamegraph
-fn generate_svg_flamegraph(root: &StackNode, output_path: &Path) -> Result<(), super::ProfilingError> {
-    let file = File::create(output_path)
-        .map_err(|e| super::ProfilingError::IoError(format!("Failed to create flamegraph file: {}", e)))?;
+fn generate_svg_flamegraph(
+    root: &StackNode,
+    output_path: &Path,
+) -> Result<(), super::ProfilingError> {
+    let file = File::create(output_path).map_err(|e| {
+        super::ProfilingError::IoError(format!("Failed to create flamegraph file: {}", e))
+    })?;
     let mut writer = BufWriter::new(file);
 
     // SVG dimensions
@@ -178,8 +195,7 @@ fn generate_svg_flamegraph(root: &StackNode, output_path: &Path) -> Result<(), s
         .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
 
     // Add CSS styles
-    writeln!(writer, r#"<defs>"#)
-        .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    writeln!(writer, r#"<defs>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
     writeln!(writer, r#"<style type="text/css">"#)
         .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
     writeln!(writer, r#"
@@ -190,14 +206,15 @@ fn generate_svg_flamegraph(root: &StackNode, output_path: &Path) -> Result<(), s
         .details {{ font-family: Verdana, sans-serif; font-size: 12px; fill: #666; }}
     "#, font_size)
         .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
-    writeln!(writer, r#"</style>"#)
-        .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
-    writeln!(writer, r#"</defs>"#)
-        .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    writeln!(writer, r#"</style>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    writeln!(writer, r#"</defs>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
 
     // Add title
-    writeln!(writer, r#"<text x="10" y="25" class="title">Lightning DB Performance Flamegraph</text>"#)
-        .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    writeln!(
+        writer,
+        r#"<text x="10" y="25" class="title">Lightning DB Performance Flamegraph</text>"#
+    )
+    .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
     writeln!(writer, r#"<text x="10" y="45" class="details">Total samples: {} | Hover over frames for details | Click to zoom</text>"#, root.sample_count)
         .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
 
@@ -224,10 +241,10 @@ fn generate_svg_flamegraph(root: &StackNode, output_path: &Path) -> Result<(), s
     )?;
 
     // Close SVG
-    writeln!(writer, r#"</svg>"#)
-        .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    writeln!(writer, r#"</svg>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
 
-    writer.flush()
+    writer
+        .flush()
         .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
 
     Ok(())
@@ -238,7 +255,12 @@ fn calculate_max_depth(node: &StackNode) -> usize {
     if node.children.is_empty() {
         1
     } else {
-        1 + node.children.values().map(calculate_max_depth).max().unwrap_or(0)
+        1 + node
+            .children
+            .values()
+            .map(calculate_max_depth)
+            .max()
+            .unwrap_or(0)
     }
 }
 
@@ -271,34 +293,40 @@ fn render_flame_frames(
         r#"<rect class="frame" x="{:.1}" y="{}" width="{:.1}" height="{}" fill="{}" title="{}: {:.2}% ({} samples)">"#,
         x, y, width, frame_height, color, node.full_name, node.percentage, node.sample_count
     ).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
-    writeln!(writer, r#"</rect>"#)
-        .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    writeln!(writer, r#"</rect>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
 
     // Add text if frame is wide enough
     if width > 50.0 {
         let text_x = x + 5.0;
         let text_y = y + frame_height / 2 + 4;
         let display_name = truncate_function_name(&node.name, width as usize);
-        
+
         writeln!(
             writer,
             r#"<text class="frame-text" x="{:.1}" y="{}"{}>{}% {}</text>"#,
-            text_x, text_y,
-            if width < 100.0 { r#" font-size="10""# } else { "" },
+            text_x,
+            text_y,
+            if width < 100.0 {
+                r#" font-size="10""#
+            } else {
+                ""
+            },
             format!("{:.1}", node.percentage),
             display_name
-        ).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+        )
+        .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
     }
 
     // Render children
     if !node.children.is_empty() {
         let mut child_start_percent = start_percent;
         let total_child_samples: u64 = node.children.values().map(|c| c.sample_count).sum();
-        
+
         if total_child_samples > 0 {
             for child in node.children.values() {
-                let child_width_percent = (child.sample_count as f64 / total_child_samples as f64) * width_percent;
-                
+                let child_width_percent =
+                    (child.sample_count as f64 / total_child_samples as f64) * width_percent;
+
                 render_flame_frames(
                     writer,
                     child,
@@ -309,7 +337,7 @@ fn render_flame_frames(
                     svg_width,
                     min_width,
                 )?;
-                
+
                 child_start_percent += child_width_percent;
             }
         }
@@ -350,7 +378,7 @@ fn truncate_function_name(name: &str, width: usize) -> String {
     // Estimate character width (rough approximation)
     let char_width = 7; // pixels per character
     let max_chars = (width / char_width).saturating_sub(3); // Leave room for percentage
-    
+
     if name.len() <= max_chars {
         name.to_string()
     } else if max_chars > 10 {
@@ -367,15 +395,15 @@ fn truncate_function_name(name: &str, width: usize) -> String {
 pub fn generate_text_flamegraph(profile_path: &Path) -> Result<String, super::ProfilingError> {
     let profile_data = read_profile_data(profile_path)?;
     let stack_tree = build_stack_tree(&profile_data)?;
-    
+
     let mut output = String::new();
     output.push_str("Lightning DB Performance Profile (Text Flamegraph)\n");
-    output.push_str("=" .repeat(60).as_str());
+    output.push_str("=".repeat(60).as_str());
     output.push('\n');
     output.push_str(&format!("Total samples: {}\n\n", stack_tree.sample_count));
-    
+
     render_text_node(&stack_tree, &mut output, 0, "")?;
-    
+
     Ok(output)
 }
 
@@ -386,15 +414,12 @@ fn render_text_node(
     depth: usize,
     prefix: &str,
 ) -> Result<(), super::ProfilingError> {
-    if depth > 0 { // Skip root node in output
+    if depth > 0 {
+        // Skip root node in output
         let percentage_bar = create_percentage_bar(node.percentage);
         output.push_str(&format!(
             "{}{} {:.2}% ({} samples) {}\n",
-            prefix,
-            percentage_bar,
-            node.percentage,
-            node.sample_count,
-            node.name
+            prefix, percentage_bar, node.percentage, node.sample_count, node.name
         ));
     }
 
@@ -410,7 +435,7 @@ fn render_text_node(
         } else {
             format!("{}{}  ", prefix, if is_last { "└─" } else { "├─" })
         };
-        
+
         render_text_node(child, output, depth + 1, &child_prefix)?;
     }
 
@@ -422,25 +447,30 @@ fn create_percentage_bar(percentage: f64) -> String {
     let bar_length = 20;
     let filled = ((percentage / 100.0) * bar_length as f64) as usize;
     let empty = bar_length - filled;
-    
+
     format!("[{}{}]", "█".repeat(filled), "░".repeat(empty))
 }
 
 /// Generate flamegraph data in a format suitable for external tools
-pub fn export_flamegraph_data(profile_path: &Path, output_path: &Path) -> Result<(), super::ProfilingError> {
+pub fn export_flamegraph_data(
+    profile_path: &Path,
+    output_path: &Path,
+) -> Result<(), super::ProfilingError> {
     let profile_data = read_profile_data(profile_path)?;
     let stack_tree = build_stack_tree(&profile_data)?;
-    
-    let file = File::create(output_path)
-        .map_err(|e| super::ProfilingError::IoError(format!("Failed to create output file: {}", e)))?;
+
+    let file = File::create(output_path).map_err(|e| {
+        super::ProfilingError::IoError(format!("Failed to create output file: {}", e))
+    })?;
     let mut writer = BufWriter::new(file);
-    
+
     // Export in collapsed stack format (compatible with flamegraph.pl)
     export_collapsed_stacks(&stack_tree, &mut writer, Vec::new())?;
-    
-    writer.flush()
+
+    writer
+        .flush()
         .map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
-    
+
     Ok(())
 }
 
@@ -453,7 +483,7 @@ fn export_collapsed_stacks(
     if !node.name.is_empty() && node.name != "root" {
         stack.push(node.name.clone());
     }
-    
+
     if node.children.is_empty() && !stack.is_empty() {
         // Leaf node - write the complete stack
         let stack_str = stack.join(";");
@@ -465,15 +495,15 @@ fn export_collapsed_stacks(
             export_collapsed_stacks(child, writer, stack.clone())?;
         }
     }
-    
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_frame_color_selection() {
@@ -486,7 +516,10 @@ mod tests {
     #[test]
     fn test_function_name_truncation() {
         assert_eq!(truncate_function_name("short", 100), "short");
-        assert_eq!(truncate_function_name("very_long_function_name_that_should_be_truncated", 50), "very_l...");
+        assert_eq!(
+            truncate_function_name("very_long_function_name_that_should_be_truncated", 50),
+            "very_l..."
+        );
         assert_eq!(truncate_function_name("test", 10), "test");
     }
 
@@ -499,13 +532,16 @@ mod tests {
 
     #[test]
     fn test_stack_node_creation() {
-        let mut node = StackNode::new("test_function".to_string(), "test::test_function".to_string());
+        let mut node = StackNode::new(
+            "test_function".to_string(),
+            "test::test_function".to_string(),
+        );
         assert_eq!(node.sample_count, 0);
         assert_eq!(node.percentage, 0.0);
-        
+
         node.add_sample();
         assert_eq!(node.sample_count, 1);
-        
+
         node.calculate_percentages(10);
         assert_eq!(node.percentage, 10.0);
     }
@@ -514,12 +550,12 @@ mod tests {
     fn test_max_depth_calculation() {
         let mut root = StackNode::new("root".to_string(), "root".to_string());
         assert_eq!(calculate_max_depth(&root), 1);
-        
+
         let mut child1 = StackNode::new("child1".to_string(), "child1".to_string());
         let child2 = StackNode::new("child2".to_string(), "child2".to_string());
         child1.children.insert("child2".to_string(), child2);
         root.children.insert("child1".to_string(), child1);
-        
+
         assert_eq!(calculate_max_depth(&root), 3);
     }
 
@@ -527,7 +563,7 @@ mod tests {
     fn test_text_flamegraph_generation() {
         let temp_dir = TempDir::new().unwrap();
         let profile_path = temp_dir.path().join("test_profile.json");
-        
+
         // Create a simple test profile
         let test_profile = r#"{
             "samples": [
@@ -545,12 +581,12 @@ mod tests {
             ],
             "total_samples": 1
         }"#;
-        
+
         fs::write(&profile_path, test_profile).unwrap();
-        
+
         let result = generate_text_flamegraph(&profile_path);
         assert!(result.is_ok());
-        
+
         let output = result.unwrap();
         assert!(output.contains("Lightning DB Performance Profile"));
         assert!(output.contains("Total samples: 1"));

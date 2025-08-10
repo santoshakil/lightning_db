@@ -157,25 +157,40 @@ impl MVCCTransactionManager {
     }
 
     pub fn get(&self, tx_id: u64, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        // DEADLOCK FIX: Minimize lock holding duration and avoid nested locks
         let tx_arc = self.get_transaction(tx_id)?;
-        let mut tx = tx_arc.write();
-
-        // Check write set first
-        if let Some(write_op) = tx.write_set.iter().find(|w| w.key == key) {
-            return Ok(write_op.value.clone());
+        
+        // First check write set without holding visibility lock
+        let write_set_value = {
+            let tx = tx_arc.read(); // Use read lock first for write set check
+            tx.write_set.iter().find(|w| w.key == key).map(|w| w.value.clone())
+        };
+        
+        if let Some(value) = write_set_value {
+            return Ok(value);
         }
+        
+        // Get snapshot data without holding transaction lock
+        let (snapshot, read_timestamp) = {
+            let tx = tx_arc.read();
+            (tx.snapshot.clone(), tx.read_timestamp)
+        };
+        
+        // Read from version store with visibility check (separate lock)
+        let visible_value = {
+            let visibility = self.visibility_tracker.read();
+            self.version_store.get_visible(key, &snapshot, &*visibility)?
+        };
 
-        // Read from version store with visibility check
-        let visible_value =
-            self.version_store
-                .get_visible(key, &tx.snapshot, &self.visibility_tracker.read())?;
-
-        // Record read in read set
-        let version = self.version_store.get_version_at(key, tx.read_timestamp);
-        tx.read_set.push(ReadOp {
-            key: key.to_vec(),
-            version,
-        });
+        // Record read in read set (minimal transaction lock duration)
+        {
+            let version = self.version_store.get_version_at(key, read_timestamp);
+            let mut tx = tx_arc.write();
+            tx.read_set.push(ReadOp {
+                key: key.to_vec(),
+                version,
+            });
+        }
 
         Ok(visible_value)
     }
@@ -209,9 +224,10 @@ impl MVCCTransactionManager {
     }
 
     pub fn commit(&self, tx_id: u64) -> Result<()> {
+        // DEADLOCK FIX: Follow lock hierarchy and minimize lock duration
         let tx_arc = self.get_transaction(tx_id)?;
 
-        // Phase 1: Prepare
+        // Phase 1: Prepare (Level 5 - Transaction lock)
         let tx_data = {
             let mut tx = tx_arc.write();
             if !tx.is_active() {
@@ -219,15 +235,15 @@ impl MVCCTransactionManager {
             }
             tx.state = TxState::Preparing;
             tx.clone()
-        };
+        }; // Release transaction lock immediately
 
-        // Phase 2: Validate
+        // Phase 2: Validate without holding any locks
         self.validate_snapshot_isolation(&tx_data)?;
 
-        // Phase 3: Commit
+        // Phase 3: Level 1 - Get atomic timestamp
         let commit_timestamp = self.next_timestamp.fetch_add(1, Ordering::SeqCst) + 1;
 
-        // Apply writes to version store
+        // Phase 4: Level 2 - Apply writes to version store (no lock conflicts)
         for write_op in &tx_data.write_set {
             self.version_store.put_version(
                 write_op.key.clone(),
@@ -237,13 +253,13 @@ impl MVCCTransactionManager {
             );
         }
 
-        // Update transaction state
+        // Phase 5: Level 5 - Update transaction state
         {
             let mut tx = tx_arc.write();
             tx.commit(commit_timestamp);
         }
 
-        // Update visibility tracker
+        // Phase 6: Level 2 - Update visibility tracker
         {
             let mut visibility = self.visibility_tracker.write();
             visibility.active_transactions.remove(&tx_id);
@@ -253,7 +269,7 @@ impl MVCCTransactionManager {
             visibility.update_min_active_timestamp();
         }
 
-        // Remove from active transactions
+        // Phase 7: Level 3 - Remove from active transactions last
         self.active_transactions.remove(&tx_id);
 
         Ok(())

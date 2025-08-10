@@ -1,0 +1,95 @@
+version: 2
+updates:
+  # Cargo dependencies
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "security-team"
+    assignees:
+      - "security-team"
+    commit-message:
+      prefix: "security"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "security"
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+    ignore:
+      # Ignore patch version updates for stable dependencies
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
+        # Only ignore patch updates for production dependencies
+        
+  # Cargo dependencies for FFI package
+  - package-ecosystem: "cargo"
+    directory: "/lightning_db_ffi"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:30"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "security-team"
+    commit-message:
+      prefix: "security(ffi)"
+    labels:
+      - "dependencies"
+      - "security"
+      - "ffi"
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "security-team"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "github-actions"
+      - "security"
+      - "ci/cd"
+    
+  # Docker dependencies
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "06:00"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "security-team"
+    commit-message:
+      prefix: "docker"
+    labels:
+      - "docker"
+      - "security"
+      
+  # Docker production dependencies
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "06:30"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "security-team"
+    commit-message:
+      prefix: "docker(prod)"
+    labels:
+      - "docker"
+      - "security"
+      - "production"

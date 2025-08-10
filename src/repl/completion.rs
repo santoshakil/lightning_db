@@ -4,9 +4,9 @@
 //! and context-aware help for the interactive REPL.
 
 use crate::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
-use serde::{Serialize, Deserialize};
 use tracing::debug;
 
 use super::commands::CommandRegistry;
@@ -117,9 +117,13 @@ impl CompletionEngine {
     }
 
     /// Get completion candidates for the given input
-    pub fn get_completions(&self, input: &str, cursor_position: usize) -> Result<Vec<CompletionCandidate>> {
+    pub fn get_completions(
+        &self,
+        input: &str,
+        cursor_position: usize,
+    ) -> Result<Vec<CompletionCandidate>> {
         let context = self.parse_completion_context(input, cursor_position)?;
-        
+
         debug!("Completion context: {:?}", context);
 
         // Check cache first
@@ -138,7 +142,7 @@ impl CompletionEngine {
         } else {
             // Complete command parameters
             candidates.extend(self.get_parameter_completions(&context)?);
-            
+
             // Add key completions for commands that expect keys
             if self.command_expects_key(&context) {
                 candidates.extend(self.get_key_completions(&context)?);
@@ -163,10 +167,17 @@ impl CompletionEngine {
     }
 
     /// Parse the completion context from input
-    fn parse_completion_context(&self, input: &str, cursor_position: usize) -> Result<CompletionContext> {
+    fn parse_completion_context(
+        &self,
+        input: &str,
+        cursor_position: usize,
+    ) -> Result<CompletionContext> {
         let input_up_to_cursor = &input[..cursor_position.min(input.len())];
-        let tokens: Vec<String> = input_up_to_cursor.split_whitespace().map(|s| s.to_string()).collect();
-        
+        let tokens: Vec<String> = input_up_to_cursor
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+
         let current_word = if input_up_to_cursor.ends_with(' ') {
             String::new()
         } else {
@@ -176,7 +187,11 @@ impl CompletionEngine {
         let previous_tokens = if input_up_to_cursor.ends_with(' ') {
             tokens.clone()
         } else {
-            tokens.iter().take(tokens.len().saturating_sub(1)).cloned().collect()
+            tokens
+                .iter()
+                .take(tokens.len().saturating_sub(1))
+                .cloned()
+                .collect()
         };
 
         let current_command = previous_tokens.first().cloned();
@@ -191,16 +206,23 @@ impl CompletionEngine {
     }
 
     /// Get command completions
-    fn get_command_completions(&self, context: &CompletionContext) -> Result<Vec<CompletionCandidate>> {
+    fn get_command_completions(
+        &self,
+        context: &CompletionContext,
+    ) -> Result<Vec<CompletionCandidate>> {
         let mut candidates = Vec::new();
-        
+
         // Add basic database commands
         let commands = vec![
             ("PUT", "Store a key-value pair", "PUT key value"),
             ("GET", "Retrieve value for key", "GET key"),
             ("DELETE", "Remove key-value pair", "DELETE key"),
             ("EXISTS", "Check if key exists", "EXISTS key"),
-            ("SCAN", "Scan keys with optional prefix", "SCAN [prefix] [limit]"),
+            (
+                "SCAN",
+                "Scan keys with optional prefix",
+                "SCAN [prefix] [limit]",
+            ),
             ("BEGIN", "Start a new transaction", "BEGIN"),
             ("COMMIT", "Commit current transaction", "COMMIT"),
             ("ROLLBACK", "Rollback current transaction", "ROLLBACK"),
@@ -265,7 +287,10 @@ impl CompletionEngine {
     }
 
     /// Get parameter completions for the current command
-    fn get_parameter_completions(&self, context: &CompletionContext) -> Result<Vec<CompletionCandidate>> {
+    fn get_parameter_completions(
+        &self,
+        context: &CompletionContext,
+    ) -> Result<Vec<CompletionCandidate>> {
         let mut candidates = Vec::new();
 
         if let Some(command) = &context.current_command {
@@ -282,7 +307,7 @@ impl CompletionEngine {
                             score: 1.0,
                             metadata: HashMap::new(),
                         });
-                        
+
                         // Add common prefixes from key cache
                         let key_cache = self.key_cache.read().unwrap();
                         let prefixes = self.extract_common_prefixes(&key_cache);
@@ -290,10 +315,17 @@ impl CompletionEngine {
                             if self.matches_query(&context.current_word, &prefix) {
                                 candidates.push(CompletionCandidate {
                                     text: format!("\"{}\"", prefix),
-                                    display: format!("\"{}\" - keys starting with {}", prefix, prefix),
+                                    display: format!(
+                                        "\"{}\" - keys starting with {}",
+                                        prefix, prefix
+                                    ),
                                     completion_type: CompletionType::Parameter,
-                                    description: Some(format!("Scan keys with prefix '{}'", prefix)),
-                                    score: self.calculate_match_score(&context.current_word, &prefix),
+                                    description: Some(format!(
+                                        "Scan keys with prefix '{}'",
+                                        prefix
+                                    )),
+                                    score: self
+                                        .calculate_match_score(&context.current_word, &prefix),
                                     metadata: HashMap::new(),
                                 });
                             }
@@ -306,7 +338,10 @@ impl CompletionEngine {
                                     text: limit.to_string(),
                                     display: format!("{} - limit to {} results", limit, limit),
                                     completion_type: CompletionType::Parameter,
-                                    description: Some(format!("Limit scan results to {} entries", limit)),
+                                    description: Some(format!(
+                                        "Limit scan results to {} entries",
+                                        limit
+                                    )),
                                     score: self.calculate_match_score(&context.current_word, limit),
                                     metadata: HashMap::new(),
                                 });
@@ -334,7 +369,7 @@ impl CompletionEngine {
                             ("verbose", "Enable verbose output (true, false)"),
                             ("paging", "Enable result paging (true, false)"),
                         ];
-                        
+
                         for (var, desc) in variables {
                             if self.matches_query(&context.current_word, var) {
                                 candidates.push(CompletionCandidate {
@@ -357,7 +392,10 @@ impl CompletionEngine {
                                         text: format.to_string(),
                                         display: format!("{} format", format),
                                         completion_type: CompletionType::Value,
-                                        description: Some(format!("Set output format to {}", format)),
+                                        description: Some(format!(
+                                            "Set output format to {}",
+                                            format
+                                        )),
                                         score: 1.0,
                                         metadata: HashMap::new(),
                                     });
@@ -389,7 +427,7 @@ impl CompletionEngine {
     /// Get key completions from the key cache
     fn get_key_completions(&self, context: &CompletionContext) -> Result<Vec<CompletionCandidate>> {
         let mut candidates = Vec::new();
-        
+
         let key_cache = self.key_cache.read().unwrap();
         for key in key_cache.iter() {
             if self.matches_query(&context.current_word, key) {
@@ -412,13 +450,16 @@ impl CompletionEngine {
     }
 
     /// Get keyword completions
-    fn get_keyword_completions(&self, context: &CompletionContext) -> Result<Vec<CompletionCandidate>> {
+    fn get_keyword_completions(
+        &self,
+        context: &CompletionContext,
+    ) -> Result<Vec<CompletionCandidate>> {
         let mut candidates = Vec::new();
 
         // Add SQL-like keywords that might be useful
         let keywords = vec![
-            "WHERE", "ORDER", "BY", "LIMIT", "ASC", "DESC", 
-            "AND", "OR", "NOT", "NULL", "TRUE", "FALSE"
+            "WHERE", "ORDER", "BY", "LIMIT", "ASC", "DESC", "AND", "OR", "NOT", "NULL", "TRUE",
+            "FALSE",
         ];
 
         for keyword in keywords {
@@ -444,9 +485,7 @@ impl CompletionEngine {
                 "GET" | "DELETE" | "EXISTS" | "TXGET" | "TXDELETE" => {
                     context.previous_tokens.len() == 1
                 }
-                "PUT" | "TXPUT" => {
-                    context.previous_tokens.len() == 1
-                }
+                "PUT" | "TXPUT" => context.previous_tokens.len() == 1,
                 _ => false,
             }
         } else {
@@ -481,25 +520,25 @@ impl CompletionEngine {
     fn fuzzy_match(&self, query: &str, candidate: &str) -> bool {
         let query = query.to_lowercase();
         let candidate = candidate.to_lowercase();
-        
+
         let mut query_chars = query.chars().peekable();
         let mut candidate_chars = candidate.chars();
-        
+
         while let Some(query_char) = query_chars.next() {
             let mut found = false;
-            
+
             while let Some(candidate_char) = candidate_chars.next() {
                 if query_char == candidate_char {
                     found = true;
                     break;
                 }
             }
-            
+
             if !found {
                 return false;
             }
         }
-        
+
         true
     }
 
@@ -550,7 +589,11 @@ impl CompletionEngine {
 
         for i in 1..=a_len {
             for j in 1..=b_len {
-                let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+                let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                    0
+                } else {
+                    1
+                };
                 matrix[i][j] = (matrix[i - 1][j] + 1)
                     .min(matrix[i][j - 1] + 1)
                     .min(matrix[i - 1][j - 1] + cost);
@@ -568,7 +611,8 @@ impl CompletionEngine {
     ) -> Vec<CompletionCandidate> {
         // Sort by score (descending) and then by text (ascending)
         candidates.sort_by(|a, b| {
-            b.score.partial_cmp(&a.score)
+            b.score
+                .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then(a.text.cmp(&b.text))
         });
@@ -582,7 +626,7 @@ impl CompletionEngine {
     /// Extract common prefixes from keys
     fn extract_common_prefixes(&self, keys: &HashSet<String>) -> Vec<String> {
         let mut prefixes = HashSet::new();
-        
+
         for key in keys.iter() {
             // Extract prefixes by common separators
             for separator in &[":", "_", "-", "/", "."] {
@@ -593,7 +637,7 @@ impl CompletionEngine {
                     }
                 }
             }
-            
+
             // Extract prefixes by length
             if key.len() > 4 {
                 prefixes.insert(key[..key.len().min(4)].to_string());
@@ -613,7 +657,7 @@ impl CompletionEngine {
     fn cache_completions(&self, query: &str, candidates: &[CompletionCandidate]) {
         let mut cache = self.completion_cache.write().unwrap();
         cache.insert(query.to_string(), candidates.to_vec());
-        
+
         // Simple cache size management
         if cache.len() > 1000 {
             cache.clear();
@@ -626,7 +670,7 @@ impl CompletionEngine {
         for key in keys {
             cache.insert(key);
         }
-        
+
         // Limit cache size
         if cache.len() > 10000 {
             let keys_to_remove: Vec<_> = cache.iter().take(cache.len() - 8000).cloned().collect();
@@ -645,7 +689,7 @@ impl CompletionEngine {
     pub fn get_completion_stats(&self) -> CompletionStats {
         let cache = self.completion_cache.read().unwrap();
         let key_cache = self.key_cache.read().unwrap();
-        
+
         CompletionStats {
             cached_queries: cache.len(),
             cached_keys: key_cache.len(),
@@ -670,7 +714,7 @@ mod tests {
     fn test_completion_context_parsing() {
         let registry = Arc::new(CommandRegistry::new());
         let engine = CompletionEngine::new(registry);
-        
+
         let context = engine.parse_completion_context("GET key", 7).unwrap();
         assert_eq!(context.current_word, "key");
         assert_eq!(context.previous_tokens, vec!["GET"]);
@@ -681,7 +725,7 @@ mod tests {
     fn test_fuzzy_matching() {
         let registry = Arc::new(CommandRegistry::new());
         let engine = CompletionEngine::new(registry);
-        
+
         assert!(engine.fuzzy_match("gt", "GET"));
         assert!(engine.fuzzy_match("del", "DELETE"));
         assert!(!engine.fuzzy_match("xyz", "GET"));
@@ -691,13 +735,13 @@ mod tests {
     fn test_match_scoring() {
         let registry = Arc::new(CommandRegistry::new());
         let engine = CompletionEngine::new(registry);
-        
+
         // Exact match should score highest
         assert!(engine.calculate_match_score("GET", "GET") > 0.9);
-        
+
         // Prefix match should score high
         assert!(engine.calculate_match_score("G", "GET") > 0.8);
-        
+
         // Fuzzy match should score lower
         assert!(engine.calculate_match_score("GT", "GET") > 0.3);
         assert!(engine.calculate_match_score("GT", "GET") < 0.8);
@@ -707,7 +751,7 @@ mod tests {
     fn test_command_completions() {
         let registry = Arc::new(CommandRegistry::new());
         let engine = CompletionEngine::new(registry);
-        
+
         let context = CompletionContext {
             full_input: "G".to_string(),
             current_word: "G".to_string(),
@@ -715,7 +759,7 @@ mod tests {
             previous_tokens: vec![],
             current_command: None,
         };
-        
+
         let completions = engine.get_command_completions(&context).unwrap();
         let get_completion = completions.iter().find(|c| c.text == "GET");
         assert!(get_completion.is_some());
@@ -725,20 +769,20 @@ mod tests {
     fn test_levenshtein_distance() {
         let registry = Arc::new(CommandRegistry::new());
         let engine = CompletionEngine::new(registry);
-        
+
         assert_eq!(engine.levenshtein_distance("", ""), 0);
         assert_eq!(engine.levenshtein_distance("GET", "GET"), 0);
         assert_eq!(engine.levenshtein_distance("GET", "PUT"), 2);
         assert_eq!(engine.levenshtein_distance("G", "GET"), 2);
     }
 
-    #[test]  
+    #[test]
     fn test_key_cache_operations() {
         let registry = Arc::new(CommandRegistry::new());
         let engine = CompletionEngine::new(registry);
-        
+
         engine.update_key_cache(vec!["user:1".to_string(), "user:2".to_string()]);
-        
+
         let key_cache = engine.key_cache.read().unwrap();
         assert!(key_cache.contains("user:1"));
         assert!(key_cache.contains("user:2"));
@@ -748,12 +792,12 @@ mod tests {
     fn test_prefix_extraction() {
         let registry = Arc::new(CommandRegistry::new());
         let engine = CompletionEngine::new(registry);
-        
+
         let mut keys = HashSet::new();
         keys.insert("user:1:profile".to_string());
         keys.insert("user:2:profile".to_string());
         keys.insert("config_setting".to_string());
-        
+
         let prefixes = engine.extract_common_prefixes(&keys);
         assert!(prefixes.contains(&"user".to_string()));
         assert!(prefixes.contains(&"config".to_string()));

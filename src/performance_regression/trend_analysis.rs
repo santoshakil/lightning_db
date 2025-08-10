@@ -3,12 +3,12 @@
 //! Provides trend analysis, forecasting, and pattern detection capabilities
 //! for performance metrics over time.
 
-use super::{PerformanceMetric, RegressionDetectorConfig, MetricsStorage};
+use super::{MetricsStorage, PerformanceMetric, RegressionDetectorConfig};
 use crate::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, Duration};
-use serde::{Serialize, Deserialize};
+use std::time::{Duration, SystemTime};
 
 /// Trend analyzer for performance metrics
 pub struct TrendAnalyzer {
@@ -33,7 +33,7 @@ pub struct TrendAnalysisResult {
     pub sample_count: usize,
     pub trend_direction: TrendDirection,
     pub trend_strength: f64, // 0.0 to 1.0
-    pub slope: f64, // Performance change per hour
+    pub slope: f64,          // Performance change per hour
     pub correlation_coefficient: f64,
     pub seasonal_patterns: Vec<SeasonalPattern>,
     pub anomalies: Vec<PerformanceAnomaly>,
@@ -44,11 +44,11 @@ pub struct TrendAnalysisResult {
 /// Trend direction
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TrendDirection {
-    StronglyImproving,  // > 10% improvement
-    Improving,          // 2-10% improvement
-    Stable,             // < 2% change
-    Degrading,          // 2-10% degradation
-    StronglyDegrading,  // > 10% degradation
+    StronglyImproving, // > 10% improvement
+    Improving,         // 2-10% improvement
+    Stable,            // < 2% change
+    Degrading,         // 2-10% degradation
+    StronglyDegrading, // > 10% degradation
 }
 
 /// Seasonal pattern detection
@@ -64,10 +64,10 @@ pub struct SeasonalPattern {
 /// Types of seasonality
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum SeasonalityType {
-    Hourly,    // Within-day patterns
-    Daily,     // Day-of-week patterns
-    Weekly,    // Week-of-month patterns
-    Custom,    // Custom detected periods
+    Hourly, // Within-day patterns
+    Daily,  // Day-of-week patterns
+    Weekly, // Week-of-month patterns
+    Custom, // Custom detected periods
 }
 
 /// Performance anomaly detection
@@ -84,10 +84,10 @@ pub struct PerformanceAnomaly {
 /// Types of anomalies
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum AnomalyType {
-    Spike,        // Sudden performance degradation
-    Drop,         // Sudden performance improvement
-    Drift,        // Gradual long-term change
-    Oscillation,  // Unusual oscillatory behavior
+    Spike,       // Sudden performance degradation
+    Drop,        // Sudden performance improvement
+    Drift,       // Gradual long-term change
+    Oscillation, // Unusual oscillatory behavior
 }
 
 /// Performance forecast
@@ -143,10 +143,10 @@ impl TrendAnalyzer {
     /// Get performance trends for an operation
     pub fn get_trends(&self, operation_type: &str, hours: u64) -> Result<Vec<PerformanceMetric>> {
         let cutoff_time = SystemTime::now() - Duration::from_secs(hours * 3600);
-        
+
         if let Ok(storage) = self.metrics_storage.read() {
             let mut matching_metrics = Vec::new();
-            
+
             for (timestamp, metrics_batch) in &storage.metrics {
                 if *timestamp > cutoff_time {
                     for metric in metrics_batch {
@@ -156,7 +156,7 @@ impl TrendAnalyzer {
                     }
                 }
             }
-            
+
             // Sort by timestamp
             matching_metrics.sort_by_key(|m| m.timestamp);
             Ok(matching_metrics)
@@ -173,16 +173,16 @@ impl TrendAnalyzer {
         }
 
         let metrics = self.get_trends(operation_type, hours)?;
-        
+
         if metrics.is_empty() {
             return Ok(self.create_empty_result(operation_type, hours));
         }
 
         let trend_result = self.compute_trend_analysis(operation_type, hours, &metrics)?;
-        
+
         // Cache the result
         self.cache_trend_result(operation_type, hours, &trend_result)?;
-        
+
         Ok(trend_result)
     }
 
@@ -212,7 +212,8 @@ impl TrendAnalyzer {
         };
 
         // Calculate confidence score
-        let confidence_score = self.calculate_confidence_score(metrics, correlation, &seasonal_patterns);
+        let confidence_score =
+            self.calculate_confidence_score(metrics, correlation, &seasonal_patterns);
 
         Ok(TrendAnalysisResult {
             operation_type: operation_type.to_string(),
@@ -241,11 +242,13 @@ impl TrendAnalyzer {
         let mut y_values = Vec::new();
 
         for metric in metrics {
-            let hours_since_start = metric.timestamp
+            let hours_since_start = metric
+                .timestamp
                 .duration_since(first_time)
                 .unwrap_or_default()
-                .as_secs_f64() / 3600.0;
-            
+                .as_secs_f64()
+                / 3600.0;
+
             x_values.push(hours_since_start);
             y_values.push(metric.duration_micros as f64);
         }
@@ -265,9 +268,10 @@ impl TrendAnalyzer {
         };
 
         // Calculate correlation coefficient
-        let correlation = if n * sum_x2 - sum_x * sum_x != 0.0 && n * sum_y2 - sum_y * sum_y != 0.0 {
-            (n * sum_xy - sum_x * sum_y) / 
-            ((n * sum_x2 - sum_x * sum_x).sqrt() * (n * sum_y2 - sum_y * sum_y).sqrt())
+        let correlation = if n * sum_x2 - sum_x * sum_x != 0.0 && n * sum_y2 - sum_y * sum_y != 0.0
+        {
+            (n * sum_xy - sum_x * sum_y)
+                / ((n * sum_x2 - sum_x * sum_x).sqrt() * (n * sum_y2 - sum_y * sum_y).sqrt())
         } else {
             0.0
         };
@@ -296,10 +300,14 @@ impl TrendAnalyzer {
     }
 
     /// Detect seasonal patterns using simple period detection
-    fn detect_seasonal_patterns(&self, metrics: &[PerformanceMetric]) -> Result<Vec<SeasonalPattern>> {
+    fn detect_seasonal_patterns(
+        &self,
+        metrics: &[PerformanceMetric],
+    ) -> Result<Vec<SeasonalPattern>> {
         let mut patterns = Vec::new();
 
-        if metrics.len() < 24 { // Need at least 24 data points
+        if metrics.len() < 24 {
+            // Need at least 24 data points
             return Ok(patterns);
         }
 
@@ -317,17 +325,22 @@ impl TrendAnalyzer {
     }
 
     /// Detect hourly patterns within days
-    fn detect_hourly_pattern(&self, metrics: &[PerformanceMetric]) -> Result<Option<SeasonalPattern>> {
+    fn detect_hourly_pattern(
+        &self,
+        metrics: &[PerformanceMetric],
+    ) -> Result<Option<SeasonalPattern>> {
         // Group metrics by hour of day
         let mut hourly_averages = vec![0.0; 24];
         let mut hourly_counts = vec![0; 24];
 
         for metric in metrics {
             // Simple hour extraction (this would use proper datetime handling in practice)
-            let hours_since_epoch = metric.timestamp
+            let hours_since_epoch = metric
+                .timestamp
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_secs() / 3600;
+                .as_secs()
+                / 3600;
             let hour_of_day = (hours_since_epoch % 24) as usize;
 
             hourly_averages[hour_of_day] += metric.duration_micros as f64;
@@ -343,17 +356,25 @@ impl TrendAnalyzer {
 
         // Calculate variance to determine if there's a pattern
         let mean: f64 = hourly_averages.iter().sum::<f64>() / 24.0;
-        let variance: f64 = hourly_averages.iter()
+        let variance: f64 = hourly_averages
+            .iter()
             .map(|&x| (x - mean).powi(2))
-            .sum::<f64>() / 24.0;
+            .sum::<f64>()
+            / 24.0;
 
         let std_dev = variance.sqrt();
         let coefficient_of_variation = if mean > 0.0 { std_dev / mean } else { 0.0 };
 
         // If coefficient of variation is significant, we have a pattern
         if coefficient_of_variation > 0.1 {
-            let max_val = hourly_averages.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(&0.0);
-            let min_val = hourly_averages.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(&0.0);
+            let max_val = hourly_averages
+                .iter()
+                .max_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap_or(&0.0);
+            let min_val = hourly_averages
+                .iter()
+                .min_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap_or(&0.0);
             let amplitude = max_val - min_val;
 
             return Ok(Some(SeasonalPattern {
@@ -361,7 +382,10 @@ impl TrendAnalyzer {
                 period_hours: 24.0,
                 amplitude,
                 confidence: coefficient_of_variation.min(1.0),
-                description: format!("Daily hourly pattern with {:.1}% variation", coefficient_of_variation * 100.0),
+                description: format!(
+                    "Daily hourly pattern with {:.1}% variation",
+                    coefficient_of_variation * 100.0
+                ),
             }));
         }
 
@@ -369,17 +393,22 @@ impl TrendAnalyzer {
     }
 
     /// Detect daily patterns within weeks
-    fn detect_daily_pattern(&self, metrics: &[PerformanceMetric]) -> Result<Option<SeasonalPattern>> {
+    fn detect_daily_pattern(
+        &self,
+        metrics: &[PerformanceMetric],
+    ) -> Result<Option<SeasonalPattern>> {
         // Group metrics by day of week
         let mut daily_averages = vec![0.0; 7];
         let mut daily_counts = vec![0; 7];
 
         for metric in metrics {
             // Simple day-of-week calculation
-            let days_since_epoch = metric.timestamp
+            let days_since_epoch = metric
+                .timestamp
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_secs() / (24 * 3600);
+                .as_secs()
+                / (24 * 3600);
             let day_of_week = (days_since_epoch % 7) as usize;
 
             daily_averages[day_of_week] += metric.duration_micros as f64;
@@ -395,16 +424,24 @@ impl TrendAnalyzer {
 
         // Calculate variance
         let mean: f64 = daily_averages.iter().sum::<f64>() / 7.0;
-        let variance: f64 = daily_averages.iter()
+        let variance: f64 = daily_averages
+            .iter()
             .map(|&x| (x - mean).powi(2))
-            .sum::<f64>() / 7.0;
+            .sum::<f64>()
+            / 7.0;
 
         let std_dev = variance.sqrt();
         let coefficient_of_variation = if mean > 0.0 { std_dev / mean } else { 0.0 };
 
         if coefficient_of_variation > 0.1 {
-            let max_val = daily_averages.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(&0.0);
-            let min_val = daily_averages.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(&0.0);
+            let max_val = daily_averages
+                .iter()
+                .max_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap_or(&0.0);
+            let min_val = daily_averages
+                .iter()
+                .min_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap_or(&0.0);
             let amplitude = max_val - min_val;
 
             return Ok(Some(SeasonalPattern {
@@ -412,7 +449,10 @@ impl TrendAnalyzer {
                 period_hours: 24.0 * 7.0,
                 amplitude,
                 confidence: coefficient_of_variation.min(1.0),
-                description: format!("Weekly daily pattern with {:.1}% variation", coefficient_of_variation * 100.0),
+                description: format!(
+                    "Weekly daily pattern with {:.1}% variation",
+                    coefficient_of_variation * 100.0
+                ),
             }));
         }
 
@@ -429,20 +469,23 @@ impl TrendAnalyzer {
 
         // Calculate rolling statistics
         let window_size = 10.min(metrics.len() / 3);
-        
+
         for i in window_size..metrics.len() {
             let window_start = i.saturating_sub(window_size);
             let window_metrics = &metrics[window_start..i];
-            
+
             // Calculate window statistics
-            let window_values: Vec<f64> = window_metrics.iter()
+            let window_values: Vec<f64> = window_metrics
+                .iter()
                 .map(|m| m.duration_micros as f64)
                 .collect();
-            
+
             let mean = window_values.iter().sum::<f64>() / window_values.len() as f64;
-            let variance = window_values.iter()
+            let variance = window_values
+                .iter()
                 .map(|&x| (x - mean).powi(2))
-                .sum::<f64>() / window_values.len() as f64;
+                .sum::<f64>()
+                / window_values.len() as f64;
             let std_dev = variance.sqrt();
 
             let current_value = metrics[i].duration_micros as f64;
@@ -485,10 +528,14 @@ impl TrendAnalyzer {
     }
 
     /// Generate performance forecast
-    fn generate_forecast(&self, metrics: &[PerformanceMetric], forecast_hours: u64) -> Result<PerformanceForecast> {
+    fn generate_forecast(
+        &self,
+        metrics: &[PerformanceMetric],
+        forecast_hours: u64,
+    ) -> Result<PerformanceForecast> {
         // Use linear regression for simple forecasting
         let (slope, correlation) = self.calculate_linear_trend(metrics)?;
-        
+
         let last_metric = metrics.last().unwrap();
         let last_value = last_metric.duration_micros as f64;
         let last_time = last_metric.timestamp;
@@ -500,10 +547,10 @@ impl TrendAnalyzer {
         for hour in 1..=forecast_hours {
             let prediction_time = last_time + Duration::from_secs(hour * 3600);
             let predicted_value = last_value + slope * hour as f64;
-            
+
             // Simple confidence calculation based on correlation
             let confidence = correlation.abs();
-            
+
             predicted_values.push(ForecastPoint {
                 timestamp: prediction_time,
                 predicted_value,
@@ -555,9 +602,8 @@ impl TrendAnalyzer {
 
         // Seasonal pattern factor
         let pattern_factor = if !seasonal_patterns.is_empty() {
-            seasonal_patterns.iter()
-                .map(|p| p.confidence)
-                .sum::<f64>() / seasonal_patterns.len() as f64
+            seasonal_patterns.iter().map(|p| p.confidence).sum::<f64>()
+                / seasonal_patterns.len() as f64
         } else {
             0.5
         };
@@ -567,7 +613,11 @@ impl TrendAnalyzer {
     }
 
     /// Get cached trend result if available and valid
-    fn get_cached_trend(&self, operation_type: &str, hours: u64) -> Result<Option<TrendAnalysisResult>> {
+    fn get_cached_trend(
+        &self,
+        operation_type: &str,
+        hours: u64,
+    ) -> Result<Option<TrendAnalysisResult>> {
         if let Ok(cache) = self.trend_cache.read() {
             let cache_key = format!("{}_{}", operation_type, hours);
             if let Some(cached) = cache.get(&cache_key) {
@@ -580,16 +630,24 @@ impl TrendAnalyzer {
     }
 
     /// Cache trend analysis result
-    fn cache_trend_result(&self, operation_type: &str, hours: u64, result: &TrendAnalysisResult) -> Result<()> {
+    fn cache_trend_result(
+        &self,
+        operation_type: &str,
+        hours: u64,
+        result: &TrendAnalysisResult,
+    ) -> Result<()> {
         if let Ok(mut cache) = self.trend_cache.write() {
             let cache_key = format!("{}_{}", operation_type, hours);
             let cache_duration = Duration::from_secs(self.config.baseline_window_hours * 3600 / 4); // Quarter of baseline window
-            
-            cache.insert(cache_key, CachedTrend {
-                trend: result.clone(),
-                computed_at: SystemTime::now(),
-                valid_until: SystemTime::now() + cache_duration,
-            });
+
+            cache.insert(
+                cache_key,
+                CachedTrend {
+                    trend: result.clone(),
+                    computed_at: SystemTime::now(),
+                    valid_until: SystemTime::now() + cache_duration,
+                },
+            );
 
             // Cleanup old cache entries
             let cutoff = SystemTime::now() - Duration::from_secs(24 * 3600);
@@ -618,7 +676,7 @@ impl TrendAnalyzer {
     /// Get trend summary for multiple operations
     pub fn get_trend_summary(&self, hours: u64) -> Result<HashMap<String, TrendAnalysisResult>> {
         let mut summary = HashMap::new();
-        
+
         if let Ok(storage) = self.metrics_storage.read() {
             // Get all unique operation types
             let mut operation_types = std::collections::HashSet::new();
@@ -645,7 +703,10 @@ impl TrendAnalyzer {
         let mut degrading_operations = Vec::new();
 
         for (operation_type, trend) in trend_summary {
-            if matches!(trend.trend_direction, TrendDirection::Degrading | TrendDirection::StronglyDegrading) {
+            if matches!(
+                trend.trend_direction,
+                TrendDirection::Degrading | TrendDirection::StronglyDegrading
+            ) {
                 if trend.confidence_score > 0.7 && trend.trend_strength > 0.5 {
                     degrading_operations.push(operation_type);
                 }
@@ -672,11 +733,12 @@ mod tests {
         // Add test metrics with trend
         if let Ok(mut s) = storage.write() {
             let base_time = SystemTime::now() - Duration::from_secs(24 * 3600); // 24 hours ago
-            
-            for i in 0..48 { // 48 data points over 24 hours
+
+            for i in 0..48 {
+                // 48 data points over 24 hours
                 let timestamp = base_time + Duration::from_secs(i * 1800); // Every 30 minutes
                 let duration = 1000 + (i * 5); // Increasing trend (degradation)
-                
+
                 let metric = PerformanceMetric {
                     timestamp,
                     operation_type: "test_op".to_string(),
@@ -690,7 +752,10 @@ mod tests {
                     span_id: None,
                 };
 
-                s.metrics.entry(timestamp).or_insert_with(Vec::new).push(metric);
+                s.metrics
+                    .entry(timestamp)
+                    .or_insert_with(Vec::new)
+                    .push(metric);
             }
         }
 
@@ -735,7 +800,10 @@ mod tests {
         let analyzer = TrendAnalyzer::new(storage, config);
 
         let direction = analyzer.determine_trend_direction(10.0, 24); // 10 micros per hour over 24 hours
-        assert!(matches!(direction, TrendDirection::Degrading | TrendDirection::StronglyDegrading));
+        assert!(matches!(
+            direction,
+            TrendDirection::Degrading | TrendDirection::StronglyDegrading
+        ));
 
         let stable_direction = analyzer.determine_trend_direction(0.1, 24); // Very small change
         assert_eq!(stable_direction, TrendDirection::Stable);
@@ -748,10 +816,13 @@ mod tests {
         let analyzer = TrendAnalyzer::new(storage, config);
 
         let analysis = analyzer.analyze_trends("test_op", 24).unwrap();
-        
+
         assert_eq!(analysis.operation_type, "test_op");
         assert!(analysis.sample_count > 0);
-        assert!(matches!(analysis.trend_direction, TrendDirection::Degrading | TrendDirection::StronglyDegrading));
+        assert!(matches!(
+            analysis.trend_direction,
+            TrendDirection::Degrading | TrendDirection::StronglyDegrading
+        ));
         assert!(analysis.confidence_score > 0.0);
     }
 

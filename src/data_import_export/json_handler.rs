@@ -3,22 +3,22 @@
 //! Provides comprehensive JSON processing with support for nested data structures,
 //! array handling, schema validation, and streaming processing.
 
-use crate::{Database, Result};
 use super::{
-    DataFormat, SchemaDefinition, ImportExportConfig, OperationStats, ProcessingError,
     validation::{self, ValidationError},
+    DataFormat, ImportExportConfig, OperationStats, ProcessingError, SchemaDefinition,
 };
-use serde_json::{Value, Map};
+use crate::{Database, Result};
+use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, BufRead, Write};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
 /// JSON-specific configuration
 #[derive(Debug, Clone)]
 pub struct JsonConfig {
     pub pretty_print: bool,
-    pub array_format: bool,  // true: [{},{}], false: {}\n{}\n (JSONL)
+    pub array_format: bool, // true: [{},{}], false: {}\n{}\n (JSONL)
     pub max_nesting_depth: usize,
     pub validate_json: bool,
     pub flatten_arrays: bool,
@@ -60,29 +60,50 @@ pub fn import_json(
     stats: &mut OperationStats,
 ) -> Result<()> {
     println!("📜 Importing JSON from: {:?}", file_path);
-    
+
     // Extract JSON configuration
     let json_config = match format {
-        DataFormat::Json { pretty, array_format } => {
-            JsonConfig {
-                pretty_print: *pretty,
-                array_format: *array_format,
-                ..JsonConfig::default()
-            }
+        DataFormat::Json {
+            pretty,
+            array_format,
+        } => JsonConfig {
+            pretty_print: *pretty,
+            array_format: *array_format,
+            ..JsonConfig::default()
         },
-        _ => return Err(crate::Error::InvalidInput("Expected JSON format".to_string())),
+        _ => {
+            return Err(crate::Error::InvalidInput(
+                "Expected JSON format".to_string(),
+            ))
+        }
     };
-    
+
     // Read and parse JSON file
     let file = File::open(file_path)?;
     let buf_reader = BufReader::new(file);
-    
+
     if json_config.array_format {
         // Parse as JSON array or single object
-        import_json_array(database, buf_reader, &json_config, schema, table_prefix, config, stats)
+        import_json_array(
+            database,
+            buf_reader,
+            &json_config,
+            schema,
+            table_prefix,
+            config,
+            stats,
+        )
     } else {
         // Parse as JSONL (newline-delimited JSON)
-        import_jsonl(database, buf_reader, &json_config, schema, table_prefix, config, stats)
+        import_jsonl(
+            database,
+            buf_reader,
+            &json_config,
+            schema,
+            table_prefix,
+            config,
+            stats,
+        )
     }
 }
 
@@ -99,64 +120,64 @@ fn import_json_array<R: std::io::Read>(
     // Read entire file into memory (for now - could be optimized for streaming)
     let mut contents = String::new();
     reader.read_to_string(&mut contents)?;
-    
+
     let json_value: Value = serde_json::from_str(&contents)
         .map_err(|e| crate::Error::ParseError(format!("Invalid JSON: {}", e)))?;
-    
+
     match json_value {
         Value::Array(array) => {
             println!("📋 Processing JSON array with {} elements", array.len());
-            
+
             let mut batch = Vec::new();
             let mut record_number = 1;
-            
+
             for item in array {
                 stats.records_processed += 1;
-                
+
                 match process_json_record(&item, schema, record_number, json_config) {
                     Ok(processed_records) => {
                         batch.extend(processed_records);
-                        
+
                         // Process batch when full
                         if batch.len() >= config.batch_size {
                             process_json_batch(database, &batch, table_prefix, stats)?;
                             batch.clear();
                         }
-                    },
+                    }
                     Err(validation_errors) => {
                         handle_validation_errors(validation_errors, record_number, config, stats)?;
-                    },
+                    }
                 }
-                
+
                 record_number += 1;
                 report_progress(stats);
             }
-            
+
             // Process remaining batch
             if !batch.is_empty() {
                 process_json_batch(database, &batch, table_prefix, stats)?;
             }
-        },
+        }
         Value::Object(_) => {
             println!("📋 Processing single JSON object");
-            
+
             match process_json_record(&json_value, schema, 1, json_config) {
                 Ok(processed_records) => {
                     stats.records_processed += processed_records.len() as u64;
                     process_json_batch(database, &processed_records, table_prefix, stats)?;
-                },
+                }
                 Err(validation_errors) => {
                     handle_validation_errors(validation_errors, 1, config, stats)?;
-                },
+                }
             }
-        },
+        }
         _ => {
             return Err(crate::Error::InvalidInput(
-                "JSON must be an object or array".to_string()
+                "JSON must be an object or array".to_string(),
             ));
-        },
+        }
     }
-    
+
     println!("✅ JSON import completed: {}", stats);
     Ok(())
 }
@@ -172,37 +193,42 @@ fn import_jsonl<R: std::io::Read>(
     stats: &mut OperationStats,
 ) -> Result<()> {
     println!("📋 Processing JSONL format");
-    
+
     let buf_reader = BufReader::new(reader);
     let mut batch = Vec::new();
     let mut record_number = 1;
-    
+
     for line in buf_reader.lines() {
         match line {
             Ok(line_content) => {
                 if line_content.trim().is_empty() {
                     continue;
                 }
-                
+
                 stats.records_processed += 1;
-                
+
                 match serde_json::from_str::<Value>(&line_content) {
                     Ok(json_value) => {
                         match process_json_record(&json_value, schema, record_number, json_config) {
                             Ok(processed_records) => {
                                 batch.extend(processed_records);
-                                
+
                                 // Process batch when full
                                 if batch.len() >= config.batch_size {
                                     process_json_batch(database, &batch, table_prefix, stats)?;
                                     batch.clear();
                                 }
-                            },
+                            }
                             Err(validation_errors) => {
-                                handle_validation_errors(validation_errors, record_number, config, stats)?;
-                            },
+                                handle_validation_errors(
+                                    validation_errors,
+                                    record_number,
+                                    config,
+                                    stats,
+                                )?;
+                            }
                         }
-                    },
+                    }
                     Err(e) => {
                         let error = ProcessingError {
                             record_number,
@@ -210,15 +236,15 @@ fn import_jsonl<R: std::io::Read>(
                             message: format!("Invalid JSON on line {}: {}", record_number, e),
                             data: Some(line_content),
                         };
-                        
+
                         if config.skip_errors {
                             stats.add_error(error);
                         } else {
                             return Err(crate::Error::ParseError(e.to_string()));
                         }
-                    },
+                    }
                 }
-            },
+            }
             Err(e) => {
                 if config.skip_errors {
                     stats.add_error(ProcessingError {
@@ -230,18 +256,18 @@ fn import_jsonl<R: std::io::Read>(
                 } else {
                     return Err(crate::Error::IoError(e.to_string()));
                 }
-            },
+            }
         }
-        
+
         record_number += 1;
         report_progress(stats);
     }
-    
+
     // Process remaining batch
     if !batch.is_empty() {
         process_json_batch(database, &batch, table_prefix, stats)?;
     }
-    
+
     println!("✅ JSONL import completed: {}", stats);
     Ok(())
 }
@@ -257,33 +283,54 @@ pub fn export_json(
     stats: &mut OperationStats,
 ) -> Result<()> {
     println!("📤 Exporting to JSON: {:?}", file_path);
-    
+
     // Extract JSON configuration
     let json_config = match format {
-        DataFormat::Json { pretty, array_format } => {
-            JsonConfig {
-                pretty_print: *pretty,
-                array_format: *array_format,
-                ..JsonConfig::default()
-            }
+        DataFormat::Json {
+            pretty,
+            array_format,
+        } => JsonConfig {
+            pretty_print: *pretty,
+            array_format: *array_format,
+            ..JsonConfig::default()
         },
-        _ => return Err(crate::Error::InvalidInput("Expected JSON format".to_string())),
+        _ => {
+            return Err(crate::Error::InvalidInput(
+                "Expected JSON format".to_string(),
+            ))
+        }
     };
-    
+
     // Create output file
     let file = File::create(file_path)?;
     let mut buf_writer = BufWriter::new(file);
-    
+
     // Scan database for records
     let scan = database.scan(
         Some(format!("{}_", table_prefix).as_bytes().to_vec()),
         Some(format!("{}~", table_prefix).as_bytes().to_vec()),
     )?;
-    
+
     if json_config.array_format {
-        export_as_json_array(database, scan, &mut buf_writer, &json_config, schema, config, stats)
+        export_as_json_array(
+            database,
+            scan,
+            &mut buf_writer,
+            &json_config,
+            schema,
+            config,
+            stats,
+        )
     } else {
-        export_as_jsonl(database, scan, &mut buf_writer, &json_config, schema, config, stats)
+        export_as_jsonl(
+            database,
+            scan,
+            &mut buf_writer,
+            &json_config,
+            schema,
+            config,
+            stats,
+        )
     }
 }
 
@@ -299,13 +346,13 @@ fn export_as_json_array<W: Write>(
 ) -> Result<()> {
     // Start JSON array
     write!(writer, "[")?;
-    
+
     let mut first_record = true;
-    
+
     for item in scan {
         let (key, value) = item?;
         stats.records_processed += 1;
-        
+
         match serde_json::from_slice::<Value>(&value) {
             Ok(json_value) => {
                 // Apply schema transformations if needed
@@ -314,26 +361,26 @@ fn export_as_json_array<W: Write>(
                 } else {
                     json_value
                 };
-                
+
                 // Write record separator
                 if !first_record {
                     write!(writer, ",")?;
                 }
-                
+
                 if json_config.pretty_print {
                     write!(writer, "\n  ")?;
                 }
-                
+
                 // Write JSON record
                 if json_config.pretty_print {
                     serde_json::to_writer_pretty(&mut *writer, &processed_value)?;
                 } else {
                     serde_json::to_writer(&mut *writer, &processed_value)?;
                 }
-                
+
                 stats.add_success(value.len());
                 first_record = false;
-            },
+            }
             Err(e) => {
                 if config.skip_errors {
                     stats.add_error(ProcessingError {
@@ -345,19 +392,19 @@ fn export_as_json_array<W: Write>(
                 } else {
                     return Err(crate::Error::ParseError(e.to_string()));
                 }
-            },
+            }
         }
-        
+
         report_progress(stats);
     }
-    
+
     // Close JSON array
     if json_config.pretty_print {
         write!(writer, "\n]")?;
     } else {
         write!(writer, "]")?;
     }
-    
+
     writer.flush()?;
     println!("✅ JSON array export completed: {}", stats);
     Ok(())
@@ -376,7 +423,7 @@ fn export_as_jsonl<W: Write>(
     for item in scan {
         let (key, value) = item?;
         stats.records_processed += 1;
-        
+
         match serde_json::from_slice::<Value>(&value) {
             Ok(json_value) => {
                 // Apply schema transformations if needed
@@ -385,18 +432,18 @@ fn export_as_jsonl<W: Write>(
                 } else {
                     json_value
                 };
-                
+
                 // Write JSON record
                 if json_config.pretty_print {
                     serde_json::to_writer_pretty(&mut *writer, &processed_value)?;
                 } else {
                     serde_json::to_writer(&mut *writer, &processed_value)?;
                 }
-                
+
                 writeln!(writer)?; // Add newline for JSONL format
-                
+
                 stats.add_success(value.len());
-            },
+            }
             Err(e) => {
                 if config.skip_errors {
                     stats.add_error(ProcessingError {
@@ -408,12 +455,12 @@ fn export_as_jsonl<W: Write>(
                 } else {
                     return Err(crate::Error::ParseError(e.to_string()));
                 }
-            },
+            }
         }
-        
+
         report_progress(stats);
     }
-    
+
     writer.flush()?;
     println!("✅ JSONL export completed: {}", stats);
     Ok(())
@@ -427,7 +474,7 @@ fn process_json_record(
     json_config: &JsonConfig,
 ) -> std::result::Result<Vec<(u64, Value)>, Vec<ValidationError>> {
     let mut validation_errors = Vec::new();
-    
+
     // Validate against schema if provided
     if let Some(schema_def) = schema {
         match validation::validate_record(json_value, schema_def) {
@@ -435,7 +482,7 @@ fn process_json_record(
                 if !errors.is_empty() {
                     validation_errors.extend(errors);
                 }
-            },
+            }
             Err(e) => {
                 validation_errors.push(ValidationError {
                     field: "_record".to_string(),
@@ -443,33 +490,35 @@ fn process_json_record(
                     message: e.to_string(),
                     value: Some(json_value.clone()),
                 });
-            },
+            }
         }
     }
-    
+
     if !validation_errors.is_empty() {
         return Err(validation_errors);
     }
-    
+
     // Process nested structures and arrays
     let processed_records = if json_config.flatten_arrays {
-        flatten_json_arrays(json_value, record_number).map_err(|e| vec![ValidationError {
-            field: "_flatten".to_string(),
-            rule: "array_processing".to_string(),
-            message: e.to_string(),
-            value: Some(json_value.clone()),
-        }])?
+        flatten_json_arrays(json_value, record_number).map_err(|e| {
+            vec![ValidationError {
+                field: "_flatten".to_string(),
+                rule: "array_processing".to_string(),
+                message: e.to_string(),
+                value: Some(json_value.clone()),
+            }]
+        })?
     } else {
         vec![(record_number, json_value.clone())]
     };
-    
+
     Ok(processed_records)
 }
 
 /// Flatten JSON arrays into separate records
 fn flatten_json_arrays(json_value: &Value, base_record_number: u64) -> Result<Vec<(u64, Value)>> {
     let mut records = Vec::new();
-    
+
     match json_value {
         Value::Array(array) => {
             for (i, item) in array.iter().enumerate() {
@@ -477,11 +526,11 @@ fn flatten_json_arrays(json_value: &Value, base_record_number: u64) -> Result<Ve
                 let flattened = flatten_json_arrays(item, record_id)?;
                 records.extend(flattened);
             }
-        },
+        }
         Value::Object(obj) => {
             let mut flattened_obj = Map::new();
             let mut _has_arrays = false;
-            
+
             for (key, value) in obj {
                 match value {
                     Value::Array(array) => {
@@ -491,32 +540,39 @@ fn flatten_json_arrays(json_value: &Value, base_record_number: u64) -> Result<Ve
                             format!("{}_count", key),
                             Value::Number(serde_json::Number::from(array.len())),
                         );
-                        
+
                         // Create separate records for array elements
                         for (i, item) in array.iter().enumerate() {
                             let array_record_id = base_record_number * 1000 + i as u64;
                             let mut array_record = Map::new();
-                            array_record.insert("_parent_id".to_string(), Value::Number(serde_json::Number::from(base_record_number)));
-                            array_record.insert("_array_field".to_string(), Value::String(key.clone()));
-                            array_record.insert("_array_index".to_string(), Value::Number(serde_json::Number::from(i)));
+                            array_record.insert(
+                                "_parent_id".to_string(),
+                                Value::Number(serde_json::Number::from(base_record_number)),
+                            );
+                            array_record
+                                .insert("_array_field".to_string(), Value::String(key.clone()));
+                            array_record.insert(
+                                "_array_index".to_string(),
+                                Value::Number(serde_json::Number::from(i)),
+                            );
                             array_record.insert("value".to_string(), item.clone());
-                            
+
                             records.push((array_record_id, Value::Object(array_record)));
                         }
-                    },
+                    }
                     _ => {
                         flattened_obj.insert(key.clone(), value.clone());
-                    },
+                    }
                 }
             }
-            
+
             records.push((base_record_number, Value::Object(flattened_obj)));
-        },
+        }
         _ => {
             records.push((base_record_number, json_value.clone()));
-        },
+        }
     }
-    
+
     Ok(records)
 }
 
@@ -528,7 +584,7 @@ fn apply_schema_transformations(json_value: &Value, _schema: &SchemaDefinition) 
     // - Field renaming
     // - Default value application
     // - Computed field generation
-    
+
     Ok(json_value.clone())
 }
 
@@ -542,11 +598,11 @@ fn process_json_batch(
     for (record_number, json_record) in batch {
         let key = format!("{}_record_{:08}", table_prefix, record_number);
         let value = serde_json::to_vec(json_record)?;
-        
+
         database.put(key.as_bytes(), &value)?;
         stats.add_success(value.len());
     }
-    
+
     Ok(())
 }
 
@@ -568,17 +624,20 @@ fn handle_validation_errors(
         }
         Ok(())
     } else {
-        Err(crate::Error::ValidationFailed(
-            format!("Record {} validation failed", record_number)
-        ))
+        Err(crate::Error::ValidationFailed(format!(
+            "Record {} validation failed",
+            record_number
+        )))
     }
 }
 
 /// Report progress periodically
 fn report_progress(stats: &OperationStats) {
     if stats.records_processed % 10000 == 0 && stats.records_processed > 0 {
-        println!("  📊 Processed {} records ({} success, {} errors)", 
-                stats.records_processed, stats.records_success, stats.records_failed);
+        println!(
+            "  📊 Processed {} records ({} success, {} errors)",
+            stats.records_processed, stats.records_success, stats.records_failed
+        );
     }
 }
 
@@ -591,14 +650,14 @@ impl JsonUtils {
         let file = File::open(file_path)?;
         let mut buf_reader = BufReader::new(file);
         let mut first_line = String::new();
-        
+
         buf_reader.read_line(&mut first_line)?;
         let trimmed = first_line.trim();
-        
+
         // Check if it starts with '[' (JSON array) or '{' (JSONL)
         Ok(trimmed.starts_with('['))
     }
-    
+
     /// Validate JSON structure and schema compatibility
     pub fn validate_json_structure<P: AsRef<Path>>(
         file_path: P,
@@ -606,7 +665,7 @@ impl JsonUtils {
     ) -> Result<JsonStructureInfo> {
         let file = File::open(file_path)?;
         let buf_reader = BufReader::new(file);
-        
+
         let mut info = JsonStructureInfo {
             is_array: false,
             total_records: 0,
@@ -615,20 +674,20 @@ impl JsonUtils {
             schema_violations: Vec::new(),
             sample_records: Vec::new(),
         };
-        
+
         // Try to parse as JSON
         let mut contents = String::new();
         use std::io::Read;
         let mut reader = buf_reader;
         reader.read_to_string(&mut contents)?;
-        
+
         match serde_json::from_str::<Value>(&contents) {
             Ok(json_value) => {
                 match &json_value {
                     Value::Array(array) => {
                         info.is_array = true;
                         info.total_records = array.len();
-                        
+
                         // Analyze first few records
                         for (i, item) in array.iter().take(10).enumerate() {
                             analyze_json_value(item, &mut info, 0);
@@ -636,24 +695,24 @@ impl JsonUtils {
                                 info.sample_records.push(item.clone());
                             }
                         }
-                    },
+                    }
                     Value::Object(_) => {
                         info.total_records = 1;
                         analyze_json_value(&json_value, &mut info, 0);
                         info.sample_records.push(json_value);
-                    },
+                    }
                     _ => {
                         return Err(crate::Error::InvalidInput(
-                            "JSON must be object or array".to_string()
+                            "JSON must be object or array".to_string(),
                         ));
-                    },
+                    }
                 }
-            },
+            }
             Err(_) => {
                 // Try parsing as JSONL
                 let lines: Vec<&str> = contents.lines().collect();
                 info.total_records = lines.len();
-                
+
                 for (i, line) in lines.iter().take(10).enumerate() {
                     if let Ok(json_value) = serde_json::from_str::<Value>(line) {
                         analyze_json_value(&json_value, &mut info, 0);
@@ -662,9 +721,9 @@ impl JsonUtils {
                         }
                     }
                 }
-            },
+            }
         }
-        
+
         // Validate against schema if provided
         if let Some(schema_def) = schema {
             for record in &info.sample_records {
@@ -673,26 +732,26 @@ impl JsonUtils {
                 }
             }
         }
-        
+
         Ok(info)
     }
-    
+
     /// Convert JSON to flattened key-value pairs
     pub fn flatten_json(json_value: &Value, prefix: &str) -> BTreeMap<String, Value> {
         let mut flattened = BTreeMap::new();
         flatten_json_recursive(json_value, prefix, &mut flattened);
         flattened
     }
-    
+
     /// Unflatten key-value pairs back to JSON
     pub fn unflatten_json(flattened: &BTreeMap<String, Value>) -> Value {
         let mut result = Map::new();
-        
+
         for (key, value) in flattened {
             let parts: Vec<&str> = key.split('.').collect();
             insert_nested_value(&mut result, &parts, value.clone());
         }
-        
+
         Value::Object(result)
     }
 }
@@ -700,22 +759,26 @@ impl JsonUtils {
 /// Analyze JSON value structure
 fn analyze_json_value(value: &Value, info: &mut JsonStructureInfo, depth: usize) {
     info.max_nesting_depth = info.max_nesting_depth.max(depth);
-    
+
     match value {
         Value::Object(obj) => {
             for (key, val) in obj {
                 let type_name = get_json_type_name(val);
-                *info.field_types.entry(key.clone()).or_insert_with(BTreeMap::new)
-                    .entry(type_name).or_insert(0) += 1;
-                
+                *info
+                    .field_types
+                    .entry(key.clone())
+                    .or_insert_with(BTreeMap::new)
+                    .entry(type_name)
+                    .or_insert(0) += 1;
+
                 analyze_json_value(val, info, depth + 1);
             }
-        },
+        }
         Value::Array(array) => {
             for item in array {
                 analyze_json_value(item, info, depth + 1);
             }
-        },
+        }
         _ => {}
     }
 }
@@ -731,7 +794,7 @@ fn get_json_type_name(value: &Value) -> String {
             } else {
                 "float".to_string()
             }
-        },
+        }
         Value::String(_) => "string".to_string(),
         Value::Array(_) => "array".to_string(),
         Value::Object(_) => "object".to_string(),
@@ -750,16 +813,16 @@ fn flatten_json_recursive(value: &Value, prefix: &str, result: &mut BTreeMap<Str
                 };
                 flatten_json_recursive(val, &new_key, result);
             }
-        },
+        }
         Value::Array(array) => {
             for (i, item) in array.iter().enumerate() {
                 let new_key = format!("{}[{}]", prefix, i);
                 flatten_json_recursive(item, &new_key, result);
             }
-        },
+        }
         _ => {
             result.insert(prefix.to_string(), value.clone());
-        },
+        }
     }
 }
 
@@ -768,18 +831,19 @@ fn insert_nested_value(obj: &mut Map<String, Value>, parts: &[&str], value: Valu
     if parts.is_empty() {
         return;
     }
-    
+
     if parts.len() == 1 {
         obj.insert(parts[0].to_string(), value);
         return;
     }
-    
+
     let key = parts[0];
     let remaining = &parts[1..];
-    
-    let nested = obj.entry(key.to_string())
+
+    let nested = obj
+        .entry(key.to_string())
         .or_insert_with(|| Value::Object(Map::new()));
-    
+
     if let Value::Object(nested_obj) = nested {
         insert_nested_value(nested_obj, remaining, value);
     }
@@ -800,25 +864,26 @@ impl JsonStructureInfo {
     pub fn is_valid(&self) -> bool {
         self.total_records > 0 && self.max_nesting_depth < 50
     }
-    
+
     pub fn complexity_score(&self) -> f64 {
-        let type_diversity = self.field_types.values()
+        let type_diversity = self
+            .field_types
+            .values()
             .map(|types| types.len())
             .sum::<usize>() as f64;
-        
+
         let nesting_penalty = (self.max_nesting_depth as f64).powf(1.5);
         let record_bonus = (self.total_records as f64).log10().max(1.0);
-        
+
         (type_diversity + nesting_penalty) / record_bonus
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_json_config_default() {
@@ -828,27 +893,30 @@ mod tests {
         assert_eq!(config.max_nesting_depth, 32);
         assert!(config.validate_json);
     }
-    
+
     #[test]
     fn test_json_format_detection() -> Result<()> {
         // Test JSON array format
         let mut temp_file = NamedTempFile::new()?;
-        writeln!(temp_file, "[{{\"name\": \"John\"}}, {{\"name\": \"Jane\"}}]")?;
-        
+        writeln!(
+            temp_file,
+            "[{{\"name\": \"John\"}}, {{\"name\": \"Jane\"}}]"
+        )?;
+
         let is_array = JsonUtils::detect_format(temp_file.path())?;
         assert!(is_array);
-        
+
         // Test JSONL format
         let mut temp_file2 = NamedTempFile::new()?;
         writeln!(temp_file2, "{{\"name\": \"John\"}}")?;
         writeln!(temp_file2, "{{\"name\": \"Jane\"}}")?;
-        
+
         let is_array2 = JsonUtils::detect_format(temp_file2.path())?;
         assert!(!is_array2);
-        
+
         Ok(())
     }
-    
+
     #[test]
     fn test_flatten_json() {
         let json = serde_json::json!({
@@ -859,24 +927,39 @@ mod tests {
             },
             "scores": [85, 92, 78]
         });
-        
+
         let flattened = JsonUtils::flatten_json(&json, "");
-        
-        assert_eq!(flattened.get("name"), Some(&Value::String("John".to_string())));
-        assert_eq!(flattened.get("address.street"), Some(&Value::String("123 Main St".to_string())));
-        assert_eq!(flattened.get("scores[0]"), Some(&Value::Number(serde_json::Number::from(85))));
+
+        assert_eq!(
+            flattened.get("name"),
+            Some(&Value::String("John".to_string()))
+        );
+        assert_eq!(
+            flattened.get("address.street"),
+            Some(&Value::String("123 Main St".to_string()))
+        );
+        assert_eq!(
+            flattened.get("scores[0]"),
+            Some(&Value::Number(serde_json::Number::from(85)))
+        );
     }
-    
+
     #[test]
     fn test_get_json_type_name() {
         assert_eq!(get_json_type_name(&Value::Null), "null");
         assert_eq!(get_json_type_name(&Value::Bool(true)), "boolean");
-        assert_eq!(get_json_type_name(&Value::Number(serde_json::Number::from(42))), "integer");
-        assert_eq!(get_json_type_name(&Value::String("test".to_string())), "string");
+        assert_eq!(
+            get_json_type_name(&Value::Number(serde_json::Number::from(42))),
+            "integer"
+        );
+        assert_eq!(
+            get_json_type_name(&Value::String("test".to_string())),
+            "string"
+        );
         assert_eq!(get_json_type_name(&serde_json::json!([])), "array");
         assert_eq!(get_json_type_name(&serde_json::json!({})), "object");
     }
-    
+
     #[test]
     fn test_flatten_json_arrays() -> Result<()> {
         let json = serde_json::json!({
@@ -886,12 +969,12 @@ mod tests {
             ],
             "total": 2
         });
-        
+
         let flattened = flatten_json_arrays(&json, 1)?;
-        
+
         // Should create main record plus array element records
         assert!(flattened.len() >= 3);
-        
+
         Ok(())
     }
 }

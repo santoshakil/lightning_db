@@ -3,13 +3,13 @@
 //! Provides persistent command history with search, filtering,
 //! and management capabilities for the interactive REPL.
 
-use crate::{Result, Error};
+use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, Write, BufWriter};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use serde::{Serialize, Deserialize};
 use tracing::{debug, warn};
 
 /// Command history manager
@@ -114,7 +114,7 @@ impl HistoryManager {
     /// Create a new history manager
     pub fn new(max_entries: usize, history_file: Option<String>) -> Result<Self> {
         let history_file = history_file.map(PathBuf::from);
-        
+
         let mut manager = Self {
             entries: VecDeque::new(),
             max_entries,
@@ -147,7 +147,7 @@ impl HistoryManager {
         config: HistoryConfig,
     ) -> Result<Self> {
         let history_file = history_file.map(PathBuf::from);
-        
+
         let mut manager = Self {
             entries: VecDeque::new(),
             max_entries,
@@ -228,11 +228,7 @@ impl HistoryManager {
 
     /// Get recent entries
     pub fn get_recent_entries(&self, count: usize) -> Vec<&HistoryEntry> {
-        self.entries
-            .iter()
-            .rev()
-            .take(count)
-            .collect()
+        self.entries.iter().rev().take(count).collect()
     }
 
     /// Get all entries
@@ -243,7 +239,7 @@ impl HistoryManager {
     /// Search history entries
     pub fn search(&self, query: &str, limit: Option<usize>) -> HistorySearchResult {
         let start_time = std::time::Instant::now();
-        
+
         if !self.config.enable_search {
             return HistorySearchResult {
                 entries: Vec::new(),
@@ -259,7 +255,7 @@ impl HistoryManager {
         for entry in self.entries.iter().rev() {
             if entry.command.to_lowercase().contains(&query_lower) {
                 matches.push(entry.clone());
-                
+
                 if let Some(limit) = limit {
                     if matches.len() >= limit {
                         break;
@@ -269,7 +265,7 @@ impl HistoryManager {
         }
 
         let total_matches = matches.len();
-        
+
         HistorySearchResult {
             entries: matches,
             total_matches,
@@ -281,14 +277,14 @@ impl HistoryManager {
     /// Search by pattern with more advanced matching
     pub fn search_pattern(&self, pattern: &str, limit: Option<usize>) -> HistorySearchResult {
         let start_time = std::time::Instant::now();
-        
+
         let mut matches = Vec::new();
-        
+
         // Simple pattern matching - could be extended with regex
         for entry in self.entries.iter().rev() {
             if self.matches_pattern(&entry.command, pattern) {
                 matches.push(entry.clone());
-                
+
                 if let Some(limit) = limit {
                     if matches.len() >= limit {
                         break;
@@ -298,7 +294,7 @@ impl HistoryManager {
         }
 
         let total_matches = matches.len();
-        
+
         HistorySearchResult {
             entries: matches,
             total_matches,
@@ -324,7 +320,8 @@ impl HistoryManager {
         self.entries
             .iter()
             .filter(|entry| {
-                entry.session_id
+                entry
+                    .session_id
                     .as_ref()
                     .map(|id| id == session_id)
                     .unwrap_or(false)
@@ -346,12 +343,13 @@ impl HistoryManager {
 
             let mut loaded_count = 0;
             for line in reader.lines() {
-                let line = line.map_err(|e| Error::Io(format!("Failed to read history line: {}", e)))?;
-                
+                let line =
+                    line.map_err(|e| Error::Io(format!("Failed to read history line: {}", e)))?;
+
                 if let Ok(entry) = self.parse_history_line(&line) {
                     self.entries.push_back(entry);
                     loaded_count += 1;
-                    
+
                     // Respect size limit while loading
                     if self.entries.len() > self.max_entries {
                         self.entries.pop_front();
@@ -359,7 +357,10 @@ impl HistoryManager {
                 }
             }
 
-            debug!("Loaded {} history entries from {:?}", loaded_count, history_file);
+            debug!(
+                "Loaded {} history entries from {:?}",
+                loaded_count, history_file
+            );
             self.update_stats();
         }
 
@@ -384,7 +385,9 @@ impl HistoryManager {
                 .write(true)
                 .truncate(true)
                 .open(history_file)
-                .map_err(|e| Error::Io(format!("Failed to open history file for writing: {}", e)))?;
+                .map_err(|e| {
+                    Error::Io(format!("Failed to open history file for writing: {}", e))
+                })?;
 
             let mut writer = BufWriter::new(file);
 
@@ -394,11 +397,16 @@ impl HistoryManager {
                     .map_err(|e| Error::Io(format!("Failed to write history entry: {}", e)))?;
             }
 
-            writer.flush()
+            writer
+                .flush()
                 .map_err(|e| Error::Io(format!("Failed to flush history file: {}", e)))?;
 
             self.stats.last_save_time = Some(SystemTime::now());
-            debug!("Saved {} history entries to {:?}", self.entries.len(), history_file);
+            debug!(
+                "Saved {} history entries to {:?}",
+                self.entries.len(),
+                history_file
+            );
         }
 
         Ok(())
@@ -408,7 +416,7 @@ impl HistoryManager {
     pub fn clear_history(&mut self) -> Result<()> {
         self.entries.clear();
         self.update_stats();
-        
+
         // Clear history file if it exists
         if self.config.enable_persistence {
             if let Some(history_file) = &self.history_file {
@@ -427,13 +435,13 @@ impl HistoryManager {
     pub fn remove_entry(&mut self, entry_id: u64) -> Result<bool> {
         let initial_len = self.entries.len();
         self.entries.retain(|entry| entry.id != entry_id);
-        
+
         let removed = self.entries.len() < initial_len;
         if removed {
             self.update_stats();
             debug!("Removed history entry with ID: {}", entry_id);
         }
-        
+
         Ok(removed)
     }
 
@@ -447,7 +455,7 @@ impl HistoryManager {
         if n >= self.entries.len() {
             return None;
         }
-        
+
         self.entries.iter().rev().nth(n)
     }
 
@@ -459,31 +467,28 @@ impl HistoryManager {
     /// Export history to different formats
     pub fn export_history(&self, format: HistoryExportFormat) -> Result<String> {
         match format {
-            HistoryExportFormat::Json => {
-                serde_json::to_string_pretty(&self.entries)
-                    .map_err(|e| Error::Serialization(format!("Failed to serialize history: {}", e)))
-            }
+            HistoryExportFormat::Json => serde_json::to_string_pretty(&self.entries)
+                .map_err(|e| Error::Serialization(format!("Failed to serialize history: {}", e))),
             HistoryExportFormat::Csv => {
-                let mut output = String::from("id,command,timestamp,duration_ms,success,session_id\n");
-                
+                let mut output =
+                    String::from("id,command,timestamp,duration_ms,success,session_id\n");
+
                 for entry in &self.entries {
-                    let timestamp = entry.timestamp
+                    let timestamp = entry
+                        .timestamp
                         .duration_since(UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_secs();
-                    
-                    let duration_ms = entry.duration
+
+                    let duration_ms = entry
+                        .duration
                         .map(|d| d.as_millis().to_string())
                         .unwrap_or_default();
-                    
-                    let success = entry.success
-                        .map(|s| s.to_string())
-                        .unwrap_or_default();
-                    
-                    let session_id = entry.session_id
-                        .as_deref()
-                        .unwrap_or("");
-                    
+
+                    let success = entry.success.map(|s| s.to_string()).unwrap_or_default();
+
+                    let session_id = entry.session_id.as_deref().unwrap_or("");
+
                     output.push_str(&format!(
                         "{},\"{}\",{},{},{},\"{}\"\n",
                         entry.id,
@@ -494,16 +499,15 @@ impl HistoryManager {
                         session_id
                     ));
                 }
-                
+
                 Ok(output)
             }
-            HistoryExportFormat::Plain => {
-                Ok(self.entries
-                    .iter()
-                    .map(|entry| entry.command.clone())
-                    .collect::<Vec<_>>()
-                    .join("\n"))
-            }
+            HistoryExportFormat::Plain => Ok(self
+                .entries
+                .iter()
+                .map(|entry| entry.command.clone())
+                .collect::<Vec<_>>()
+                .join("\n")),
         }
     }
 
@@ -511,33 +515,33 @@ impl HistoryManager {
     pub fn import_history(&mut self, data: &str, format: HistoryExportFormat) -> Result<usize> {
         let entries = match format {
             HistoryExportFormat::Json => {
-                serde_json::from_str::<Vec<HistoryEntry>>(data)
-                    .map_err(|e| Error::Serialization(format!("Failed to deserialize history: {}", e)))?
+                serde_json::from_str::<Vec<HistoryEntry>>(data).map_err(|e| {
+                    Error::Serialization(format!("Failed to deserialize history: {}", e))
+                })?
             }
-            HistoryExportFormat::Plain => {
-                data.lines()
-                    .enumerate()
-                    .map(|(i, line)| HistoryEntry {
-                        command: line.to_string(),
-                        timestamp: SystemTime::now(),
-                        duration: None,
-                        success: None,
-                        session_id: None,
-                        id: self.stats.total_entries_added + i as u64 + 1,
-                    })
-                    .collect()
-            }
+            HistoryExportFormat::Plain => data
+                .lines()
+                .enumerate()
+                .map(|(i, line)| HistoryEntry {
+                    command: line.to_string(),
+                    timestamp: SystemTime::now(),
+                    duration: None,
+                    success: None,
+                    session_id: None,
+                    id: self.stats.total_entries_added + i as u64 + 1,
+                })
+                .collect(),
             HistoryExportFormat::Csv => {
                 return Err(Error::Generic("CSV import not yet implemented".to_string()));
             }
         };
 
         let imported_count = entries.len();
-        
+
         for entry in entries {
             self.entries.push_back(entry);
             self.stats.total_entries_added += 1;
-            
+
             // Maintain size limit
             if self.entries.len() > self.max_entries {
                 self.entries.pop_front();
@@ -546,7 +550,7 @@ impl HistoryManager {
 
         self.update_stats();
         debug!("Imported {} history entries", imported_count);
-        
+
         Ok(imported_count)
     }
 
@@ -573,7 +577,7 @@ impl HistoryManager {
     /// Update internal statistics
     fn update_stats(&mut self) {
         self.stats.current_entries = self.entries.len();
-        
+
         // Calculate average command length
         if !self.entries.is_empty() {
             let total_length: usize = self.entries.iter().map(|e| e.command.len()).sum();
@@ -583,7 +587,11 @@ impl HistoryManager {
         // Calculate most frequent commands
         let mut command_counts = std::collections::HashMap::new();
         for entry in &self.entries {
-            let command = entry.command.split_whitespace().next().unwrap_or(&entry.command);
+            let command = entry
+                .command
+                .split_whitespace()
+                .next()
+                .unwrap_or(&entry.command);
             *command_counts.entry(command.to_string()).or_insert(0) += 1;
         }
 
@@ -603,20 +611,22 @@ impl HistoryManager {
     fn parse_history_line(&self, line: &str) -> Result<HistoryEntry> {
         // Try JSON format first
         if line.starts_with('{') {
-            return serde_json::from_str(line)
-                .map_err(|e| Error::Serialization(format!("Failed to parse history entry: {}", e)));
+            return serde_json::from_str(line).map_err(|e| {
+                Error::Serialization(format!("Failed to parse history entry: {}", e))
+            });
         }
 
         // Fall back to simple format: timestamp:command
         if let Some(colon_pos) = line.find(':') {
             let timestamp_str = &line[..colon_pos];
             let command = &line[colon_pos + 1..];
-            
-            let timestamp_secs = timestamp_str.parse::<u64>()
+
+            let timestamp_secs = timestamp_str
+                .parse::<u64>()
                 .map_err(|_| Error::Generic("Invalid timestamp in history".to_string()))?;
-            
+
             let timestamp = UNIX_EPOCH + Duration::from_secs(timestamp_secs);
-            
+
             Ok(HistoryEntry {
                 command: command.to_string(),
                 timestamp,
@@ -642,11 +652,13 @@ impl HistoryManager {
     fn format_history_line(&self, entry: &HistoryEntry) -> Result<String> {
         if self.config.enable_timestamps {
             // Use JSON format for full metadata
-            serde_json::to_string(entry)
-                .map_err(|e| Error::Serialization(format!("Failed to serialize history entry: {}", e)))
+            serde_json::to_string(entry).map_err(|e| {
+                Error::Serialization(format!("Failed to serialize history entry: {}", e))
+            })
         } else {
             // Simple format for minimal storage
-            let timestamp_secs = entry.timestamp
+            let timestamp_secs = entry
+                .timestamp
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
@@ -666,7 +678,7 @@ impl HistoryManager {
                 return command.starts_with(prefix) && command.ends_with(suffix);
             }
         }
-        
+
         // Default to substring match
         command.to_lowercase().contains(&pattern.to_lowercase())
     }
@@ -695,39 +707,42 @@ mod tests {
     #[test]
     fn test_add_entry() {
         let mut manager = HistoryManager::new(100, None).unwrap();
-        
+
         manager.add_entry("GET key1".to_string()).unwrap();
         manager.add_entry("PUT key2 value2".to_string()).unwrap();
-        
+
         assert_eq!(manager.entries.len(), 2);
-        assert_eq!(manager.get_last_command().unwrap().command, "PUT key2 value2");
+        assert_eq!(
+            manager.get_last_command().unwrap().command,
+            "PUT key2 value2"
+        );
     }
 
     #[test]
     fn test_deduplication() {
         let mut config = HistoryConfig::default();
         config.enable_deduplication = true;
-        
+
         let mut manager = HistoryManager::with_config(100, None, config).unwrap();
-        
+
         manager.add_entry("GET key1".to_string()).unwrap();
         manager.add_entry("GET key1".to_string()).unwrap(); // Duplicate
         manager.add_entry("PUT key2 value2".to_string()).unwrap();
-        
+
         assert_eq!(manager.entries.len(), 2);
     }
 
     #[test]
     fn test_search() {
         let mut manager = HistoryManager::new(100, None).unwrap();
-        
+
         manager.add_entry("GET user:1".to_string()).unwrap();
         manager.add_entry("PUT user:2 data".to_string()).unwrap();
         manager.add_entry("DELETE config".to_string()).unwrap();
-        
+
         let results = manager.search("user", None);
         assert_eq!(results.entries.len(), 2);
-        
+
         let results = manager.search("DELETE", None);
         assert_eq!(results.entries.len(), 1);
     }
@@ -735,11 +750,11 @@ mod tests {
     #[test]
     fn test_max_entries_limit() {
         let mut manager = HistoryManager::new(2, None).unwrap();
-        
+
         manager.add_entry("command1".to_string()).unwrap();
         manager.add_entry("command2".to_string()).unwrap();
         manager.add_entry("command3".to_string()).unwrap(); // Should evict command1
-        
+
         assert_eq!(manager.entries.len(), 2);
         assert_eq!(manager.entries[0].command, "command2");
         assert_eq!(manager.entries[1].command, "command3");
@@ -748,10 +763,10 @@ mod tests {
     #[test]
     fn test_export_plain_format() {
         let mut manager = HistoryManager::new(100, None).unwrap();
-        
+
         manager.add_entry("GET key1".to_string()).unwrap();
         manager.add_entry("PUT key2 value2".to_string()).unwrap();
-        
+
         let exported = manager.export_history(HistoryExportFormat::Plain).unwrap();
         assert!(exported.contains("GET key1"));
         assert!(exported.contains("PUT key2 value2"));
@@ -760,7 +775,7 @@ mod tests {
     #[test]
     fn test_pattern_matching() {
         let manager = HistoryManager::new(100, None).unwrap();
-        
+
         assert!(manager.matches_pattern("GET user:1", "GET*"));
         assert!(manager.matches_pattern("PUT user:2 data", "*user*"));
         assert!(!manager.matches_pattern("DELETE config", "GET*"));
@@ -769,18 +784,18 @@ mod tests {
     #[test]
     fn test_time_range_search() {
         let mut manager = HistoryManager::new(100, None).unwrap();
-        
+
         let start_time = SystemTime::now();
-        
+
         manager.add_entry("command1".to_string()).unwrap();
         std::thread::sleep(Duration::from_millis(10));
-        
+
         let mid_time = SystemTime::now();
-        
+
         manager.add_entry("command2".to_string()).unwrap();
-        
+
         let _end_time = SystemTime::now();
-        
+
         let results = manager.get_entries_by_time_range(start_time, mid_time);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].command, "command1");
@@ -790,7 +805,7 @@ mod tests {
     fn test_file_persistence() {
         let temp_file = NamedTempFile::new().unwrap();
         let history_file = temp_file.path().to_str().unwrap().to_string();
-        
+
         // Create manager and add entries
         {
             let mut manager = HistoryManager::new(100, Some(history_file.clone())).unwrap();
@@ -798,7 +813,7 @@ mod tests {
             manager.add_entry("PUT key2 value2".to_string()).unwrap();
             manager.save_history().unwrap();
         }
-        
+
         // Load from file in new manager
         {
             let manager = HistoryManager::new(100, Some(history_file)).unwrap();

@@ -1,6 +1,6 @@
+use crate::encryption::EncryptionManager;
 use crate::error::Result;
 use crate::storage::{OptimizedPageManager, Page, PageManager};
-use crate::encryption::EncryptionManager;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -26,7 +26,10 @@ impl PageManagerWrapper {
     }
 
     /// Create a new encrypted page manager wrapper
-    pub fn encrypted(inner: PageManagerWrapper, encryption_manager: Arc<EncryptionManager>) -> Self {
+    pub fn encrypted(
+        inner: PageManagerWrapper,
+        encryption_manager: Arc<EncryptionManager>,
+    ) -> Self {
         PageManagerWrapper::Encrypted {
             inner: Box::new(inner),
             encryption_manager,
@@ -56,9 +59,12 @@ impl PageManagerWrapper {
         match self {
             PageManagerWrapper::Standard(manager) => manager.read().get_page(page_id),
             PageManagerWrapper::Optimized(manager) => manager.get_page(page_id),
-            PageManagerWrapper::Encrypted { inner, encryption_manager } => {
+            PageManagerWrapper::Encrypted {
+                inner,
+                encryption_manager,
+            } => {
                 let page = inner.get_page(page_id)?;
-                
+
                 // Skip encryption for header page (page 0)
                 if page_id == 0 {
                     return Ok(page);
@@ -66,11 +72,11 @@ impl PageManagerWrapper {
 
                 // Decrypt page data
                 let decrypted = encryption_manager.decrypt_page(page_id as u64, page.get_data())?;
-                
+
                 // Create new page with decrypted data
                 let mut decrypted_data = [0u8; crate::storage::PAGE_SIZE];
                 decrypted_data.copy_from_slice(&decrypted);
-                
+
                 Ok(Page::with_data(page_id, decrypted_data))
             }
         }
@@ -81,7 +87,10 @@ impl PageManagerWrapper {
         match self {
             PageManagerWrapper::Standard(manager) => manager.write().write_page(page),
             PageManagerWrapper::Optimized(manager) => manager.write_page(page),
-            PageManagerWrapper::Encrypted { inner, encryption_manager } => {
+            PageManagerWrapper::Encrypted {
+                inner,
+                encryption_manager,
+            } => {
                 // Skip encryption for header page (page 0)
                 if page.id == 0 {
                     return inner.write_page(page);
@@ -89,21 +98,22 @@ impl PageManagerWrapper {
 
                 // Encrypt page data
                 let encrypted = encryption_manager.encrypt_page(page.id as u64, page.get_data())?;
-                
+
                 // Create new page with encrypted data
                 let mut encrypted_data = [0u8; crate::storage::PAGE_SIZE];
-                
+
                 // Ensure encrypted data fits in page size
                 if encrypted.len() > crate::storage::PAGE_SIZE {
-                    return Err(crate::Error::Encryption(
-                        format!("Encrypted data ({} bytes) exceeds page size ({} bytes)", 
-                            encrypted.len(), crate::storage::PAGE_SIZE)
-                    ));
+                    return Err(crate::Error::Encryption(format!(
+                        "Encrypted data ({} bytes) exceeds page size ({} bytes)",
+                        encrypted.len(),
+                        crate::storage::PAGE_SIZE
+                    )));
                 }
-                
+
                 // Copy encrypted data
                 encrypted_data[..encrypted.len()].copy_from_slice(&encrypted);
-                
+
                 let encrypted_page = Page::with_data(page.id, encrypted_data);
                 inner.write_page(&encrypted_page)
             }
@@ -147,12 +157,13 @@ impl Clone for PageManagerWrapper {
             PageManagerWrapper::Optimized(manager) => {
                 PageManagerWrapper::Optimized(Arc::clone(manager))
             }
-            PageManagerWrapper::Encrypted { inner, encryption_manager } => {
-                PageManagerWrapper::Encrypted {
-                    inner: inner.clone(),
-                    encryption_manager: Arc::clone(encryption_manager),
-                }
-            }
+            PageManagerWrapper::Encrypted {
+                inner,
+                encryption_manager,
+            } => PageManagerWrapper::Encrypted {
+                inner: inner.clone(),
+                encryption_manager: Arc::clone(encryption_manager),
+            },
         }
     }
 }

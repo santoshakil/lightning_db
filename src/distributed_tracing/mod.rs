@@ -1,21 +1,21 @@
 //! Distributed Tracing System
-//! 
+//!
 //! Provides comprehensive distributed tracing capabilities for Lightning DB operations
 //! including trace context propagation, OpenTelemetry integration, and performance monitoring.
 
 use crate::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
-use serde::{Serialize, Deserialize};
 
-pub mod context;
-pub mod span;
-pub mod sampler;
-pub mod exporter;
 pub mod baggage;
+pub mod context;
+pub mod exporter;
 pub mod integration;
+pub mod sampler;
+pub mod span;
 pub mod visualization;
 
 /// Trace context that propagates across operations
@@ -41,7 +41,7 @@ impl TraceContext {
             baggage: HashMap::new(),
         }
     }
-    
+
     /// Create a child trace context
     pub fn create_child(&self) -> Self {
         Self {
@@ -53,17 +53,17 @@ impl TraceContext {
             baggage: self.baggage.clone(),
         }
     }
-    
+
     /// Check if trace is sampled
     pub fn is_sampled(&self) -> bool {
         self.trace_flags & 1 != 0
     }
-    
+
     /// Add baggage item
     pub fn set_baggage(&mut self, key: String, value: String) {
         self.baggage.insert(key, value);
     }
-    
+
     /// Get baggage item
     pub fn get_baggage(&self, key: &str) -> Option<&String> {
         self.baggage.get(key)
@@ -140,17 +140,17 @@ impl Span {
             span_kind: SpanKind::Internal,
         }
     }
-    
+
     /// Set span tag
     pub fn set_tag(&mut self, key: String, value: String) {
         self.tags.insert(key, value);
     }
-    
+
     /// Set span kind
     pub fn set_kind(&mut self, kind: SpanKind) {
         self.span_kind = kind;
     }
-    
+
     /// Add log entry
     pub fn log(&mut self, level: LogLevel, message: String, fields: HashMap<String, String>) {
         self.logs.push(SpanLog {
@@ -160,32 +160,32 @@ impl Span {
             fields,
         });
     }
-    
+
     /// Log error
     pub fn log_error(&mut self, error: &str) {
         self.status = SpanStatus::Error(error.to_string());
         self.log(LogLevel::Error, error.to_string(), HashMap::new());
     }
-    
+
     /// Finish the span
     pub fn finish(&mut self) {
         let end_time = SystemTime::now();
         self.end_time = Some(end_time);
-        
+
         if let Ok(duration) = end_time.duration_since(self.start_time) {
             self.duration = Some(duration);
         }
-        
+
         if matches!(self.status, SpanStatus::Unset) {
             self.status = SpanStatus::Ok;
         }
     }
-    
+
     /// Check if span is finished
     pub fn is_finished(&self) -> bool {
         self.end_time.is_some()
     }
-    
+
     /// Get span duration in microseconds
     pub fn duration_micros(&self) -> Option<u64> {
         self.duration.map(|d| d.as_micros() as u64)
@@ -212,39 +212,39 @@ impl Tracer {
             exporters: Vec::new(),
         }
     }
-    
+
     /// Set sampler
     pub fn with_sampler(mut self, sampler: Box<dyn TraceSampler + Send + Sync>) -> Self {
         self.sampler = sampler;
         self
     }
-    
+
     /// Add exporter
     pub fn with_exporter(mut self, exporter: Box<dyn TraceExporter + Send + Sync>) -> Self {
         self.exporters.push(exporter);
         self
     }
-    
+
     /// Start a new span
     pub fn start_span(&self, context: &TraceContext, operation_name: String) -> Result<String> {
         // Check if trace should be sampled
         if !self.sampler.should_sample(context, &operation_name) {
             return Ok(context.span_id.clone());
         }
-        
+
         let mut span = Span::new(context, operation_name);
         span.set_tag("service.name".to_string(), self.service_name.clone());
-        
+
         let span_id = span.span_id.clone();
-        
+
         // Store active span
         if let Ok(mut active_spans) = self.active_spans.lock() {
             active_spans.insert(span_id.clone(), span);
         }
-        
+
         Ok(span_id)
     }
-    
+
     /// Get active span
     pub fn get_span(&self, span_id: &str) -> Option<Span> {
         if let Ok(active_spans) = self.active_spans.lock() {
@@ -253,7 +253,7 @@ impl Tracer {
             None
         }
     }
-    
+
     /// Update span with tags or logs
     pub fn update_span<F>(&self, span_id: &str, updater: F) -> Result<()>
     where
@@ -266,18 +266,18 @@ impl Tracer {
         }
         Ok(())
     }
-    
+
     /// Finish a span
     pub fn finish_span(&self, span_id: &str) -> Result<()> {
         if let Ok(mut active_spans) = self.active_spans.lock() {
             if let Some(mut span) = active_spans.remove(span_id) {
                 span.finish();
-                
+
                 // Add to completed spans
                 if let Ok(mut spans) = self.spans.lock() {
                     spans.push(span.clone());
                 }
-                
+
                 // Export span
                 for exporter in &self.exporters {
                     if let Err(e) = exporter.export_span(&span) {
@@ -288,7 +288,7 @@ impl Tracer {
         }
         Ok(())
     }
-    
+
     /// Get all completed spans
     pub fn get_spans(&self) -> Vec<Span> {
         if let Ok(spans) = self.spans.lock() {
@@ -297,24 +297,24 @@ impl Tracer {
             Vec::new()
         }
     }
-    
+
     /// Clear completed spans
     pub fn clear_spans(&self) {
         if let Ok(mut spans) = self.spans.lock() {
             spans.clear();
         }
     }
-    
+
     /// Flush all spans to exporters
     pub fn flush(&self) -> Result<()> {
         let spans = self.get_spans();
-        
+
         for exporter in &self.exporters {
             for span in &spans {
                 exporter.export_span(span)?;
             }
         }
-        
+
         self.clear_spans();
         Ok(())
     }
@@ -385,8 +385,9 @@ pub struct ConsoleExporter;
 
 impl TraceExporter for ConsoleExporter {
     fn export_span(&self, span: &Span) -> Result<()> {
-        println!("TRACE: {} [{}] {} ({:?})", 
-            span.trace_id, 
+        println!(
+            "TRACE: {} [{}] {} ({:?})",
+            span.trace_id,
             span.span_id,
             span.operation_name,
             span.duration_micros()
@@ -411,10 +412,8 @@ static TRACER_INIT: std::sync::Once = std::sync::Once::new();
 
 /// Initialize global tracer
 pub fn init_tracer(tracer: Tracer) {
-    TRACER_INIT.call_once(|| {
-        unsafe {
-            GLOBAL_TRACER = Some(Arc::new(tracer));
-        }
+    TRACER_INIT.call_once(|| unsafe {
+        GLOBAL_TRACER = Some(Arc::new(tracer));
     });
 }
 
@@ -427,28 +426,30 @@ pub fn global_tracer() -> Option<Arc<Tracer>> {
 #[macro_export]
 macro_rules! trace_span {
     ($operation:expr) => {{
-        use $crate::distributed_tracing::{TraceContext, global_tracer};
-        
+        use $crate::distributed_tracing::{global_tracer, TraceContext};
+
         let context = TraceContext::new_root();
         let span_id = if let Some(tracer) = global_tracer() {
             tracer.start_span(&context, $operation.to_string()).ok()
         } else {
             None
         };
-        
+
         $crate::distributed_tracing::SpanGuard::new(span_id)
     }};
-    
+
     ($context:expr, $operation:expr) => {{
         use $crate::distributed_tracing::global_tracer;
-        
+
         let child_context = $context.create_child();
         let span_id = if let Some(tracer) = global_tracer() {
-            tracer.start_span(&child_context, $operation.to_string()).ok()
+            tracer
+                .start_span(&child_context, $operation.to_string())
+                .ok()
         } else {
             None
         };
-        
+
         $crate::distributed_tracing::SpanGuard::new(span_id)
     }};
 }
@@ -462,7 +463,7 @@ impl SpanGuard {
     pub fn new(span_id: Option<String>) -> Self {
         Self { span_id }
     }
-    
+
     /// Set span tag
     pub fn set_tag(&self, key: String, value: String) {
         if let (Some(span_id), Some(tracer)) = (&self.span_id, global_tracer()) {
@@ -471,7 +472,7 @@ impl SpanGuard {
             });
         }
     }
-    
+
     /// Log error
     pub fn log_error(&self, error: &str) {
         if let (Some(span_id), Some(tracer)) = (&self.span_id, global_tracer()) {
@@ -507,7 +508,7 @@ mod tests {
     fn test_child_context() {
         let parent = TraceContext::new_root();
         let child = parent.create_child();
-        
+
         assert_eq!(parent.trace_id, child.trace_id);
         assert_ne!(parent.span_id, child.span_id);
         assert_eq!(child.parent_span_id, Some(parent.span_id));
@@ -517,13 +518,13 @@ mod tests {
     fn test_span_lifecycle() {
         let context = TraceContext::new_root();
         let mut span = Span::new(&context, "test_operation".to_string());
-        
+
         assert_eq!(span.operation_name, "test_operation");
         assert!(!span.is_finished());
-        
+
         span.set_tag("key".to_string(), "value".to_string());
         span.finish();
-        
+
         assert!(span.is_finished());
         assert!(span.duration.is_some());
         assert_eq!(span.tags.get("key"), Some(&"value".to_string()));
@@ -533,15 +534,17 @@ mod tests {
     fn test_tracer() {
         let tracer = Tracer::new("test_service".to_string());
         let context = TraceContext::new_root();
-        
+
         let span_id = tracer.start_span(&context, "test_op".to_string()).unwrap();
-        
-        tracer.update_span(&span_id, |span| {
-            span.set_tag("test".to_string(), "value".to_string());
-        }).unwrap();
-        
+
+        tracer
+            .update_span(&span_id, |span| {
+                span.set_tag("test".to_string(), "value".to_string());
+            })
+            .unwrap();
+
         tracer.finish_span(&span_id).unwrap();
-        
+
         let spans = tracer.get_spans();
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].operation_name, "test_op");
@@ -551,14 +554,14 @@ mod tests {
     fn test_rate_limiting_sampler() {
         let sampler = RateLimitingSampler::new(0.5);
         let context = TraceContext::new_root();
-        
+
         let mut sampled = 0;
         for _ in 0..100 {
             if sampler.should_sample(&context, "test") {
                 sampled += 1;
             }
         }
-        
+
         // Should be approximately 50% with some variance
         assert!(sampled >= 40 && sampled <= 60);
     }

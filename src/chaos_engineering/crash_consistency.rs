@@ -3,14 +3,17 @@
 //! Tests database consistency guarantees under various crash scenarios,
 //! ensuring ACID properties are maintained.
 
-use crate::{Database, Result, Error};
-use crate::chaos_engineering::{ChaosTest, ChaosTestResult, IntegrityReport, ChaosConfig};
-use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
-use std::thread::{self};
-use std::time::{Duration, SystemTime};
+use crate::chaos_engineering::{ChaosConfig, ChaosTest, ChaosTestResult, IntegrityReport};
+use crate::{Database, Error, Result};
+use parking_lot::{Mutex, RwLock};
+use rand::{rng, Rng};
 use std::collections::HashMap;
-use parking_lot::{RwLock, Mutex};
-use rand::{Rng, thread_rng};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+};
+use std::thread;
+use std::time::{Duration, SystemTime};
 
 /// Crash consistency verification test
 pub struct CrashConsistencyTest {
@@ -105,10 +108,10 @@ struct InvariantChecker {
 trait Invariant: Send + Sync {
     /// Name of the invariant
     fn name(&self) -> &str;
-    
+
     /// Check if invariant holds
     fn check(&self, db: &Database, state: &TransactionState) -> Result<bool>;
-    
+
     /// Description of what the invariant ensures
     fn description(&self) -> &str;
 }
@@ -214,9 +217,14 @@ struct ConsistencyVerifier {
 trait ConsistencyVerification: Send + Sync {
     /// Name of the verification method
     fn name(&self) -> &str;
-    
+
     /// Verify consistency after crash
-    fn verify(&self, db: &Database, pre_crash_state: &SystemState, post_crash_state: &SystemState) -> VerificationResult;
+    fn verify(
+        &self,
+        db: &Database,
+        pre_crash_state: &SystemState,
+        post_crash_state: &SystemState,
+    ) -> VerificationResult;
 }
 
 /// System state snapshot
@@ -322,21 +330,21 @@ impl Invariant for AtomicityInvariant {
                                         if stored_value != *value {
                                             return Ok(false);
                                         }
-                                    },
+                                    }
                                     None => return Ok(false),
                                 }
                             }
-                        },
+                        }
                         OperationType::Delete => {
                             if db.get(&op.key)?.is_some() {
                                 return Ok(false);
                             }
-                        },
+                        }
                         _ => {}
                     }
                 }
                 Ok(true)
-            },
+            }
             TransactionStatus::Aborted => {
                 // No operations should be visible
                 for op in &state.operations {
@@ -348,12 +356,12 @@ impl Invariant for AtomicityInvariant {
                                     return Ok(false);
                                 }
                             }
-                        },
+                        }
                         _ => {}
                     }
                 }
                 Ok(true)
-            },
+            }
             _ => Ok(true),
         }
     }
@@ -376,7 +384,7 @@ impl Invariant for BalanceInvariant {
     fn check(&self, db: &Database, _state: &TransactionState) -> Result<bool> {
         // Check that total balance across all accounts remains constant
         let total = 0u64;
-        
+
         // In real implementation, would sum all account balances
         // For now, return true
         Ok(true)
@@ -391,11 +399,13 @@ impl CrashConsistencyTest {
     /// Create a new crash consistency test
     pub fn new(config: CrashConsistencyConfig) -> Self {
         let invariant_checker = Arc::new(InvariantChecker::new());
-        
+
         // Register default invariants
         invariant_checker.register_invariant(Box::new(AtomicityInvariant));
-        invariant_checker.register_invariant(Box::new(BalanceInvariant { total_balance: 10000 }));
-        
+        invariant_checker.register_invariant(Box::new(BalanceInvariant {
+            total_balance: 10000,
+        }));
+
         Self {
             config,
             invariant_checker,
@@ -408,25 +418,31 @@ impl CrashConsistencyTest {
     /// Run transaction workload with crash injection
     fn run_transactional_workload(&self, db: Arc<Database>) -> Result<()> {
         let mut handles = vec![];
-        
+
         for tx_id in 0..self.config.concurrent_transactions {
             let db_clone = Arc::clone(&db);
             let invariant_checker = Arc::clone(&self.invariant_checker);
             let crash_simulator = Arc::clone(&self.crash_simulator);
             let config = self.config.clone();
-            
+
             let handle = thread::spawn(move || {
-                Self::execute_transaction(tx_id as u64, db_clone, invariant_checker, crash_simulator, config)
+                Self::execute_transaction(
+                    tx_id as u64,
+                    db_clone,
+                    invariant_checker,
+                    crash_simulator,
+                    config,
+                )
             });
-            
+
             handles.push(handle);
         }
-        
+
         // Wait for all transactions
         for handle in handles {
             let _ = handle.join();
         }
-        
+
         Ok(())
     }
 
@@ -438,7 +454,7 @@ impl CrashConsistencyTest {
         crash_simulator: Arc<CrashSimulator>,
         config: CrashConsistencyConfig,
     ) -> Result<()> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut state = TransactionState {
             transaction_id: tx_id,
             operations: Vec::new(),
@@ -446,21 +462,21 @@ impl CrashConsistencyTest {
             started_at: SystemTime::now(),
             completed_at: None,
         };
-        
+
         // Begin transaction
         let transaction_id = match db.begin_transaction() {
             Ok(id) => id,
             Err(_) => return Ok(()), // Database might be crashed
         };
-        
+
         // Check for crash during transaction start
         crash_simulator.maybe_crash(CrashScenario::RandomTiming)?;
-        
+
         // Execute operations
         for op_idx in 0..config.operations_per_transaction {
             let key = format!("key_{}_{}", tx_id, op_idx).into_bytes();
             let value = format!("value_{}_{}", tx_id, op_idx).into_bytes();
-            
+
             let operation = if rng.gen_bool(0.7) {
                 // Put operation
                 match db.put_tx(transaction_id, &key, &value) {
@@ -484,23 +500,23 @@ impl CrashConsistencyTest {
                     Err(_) => continue,
                 }
             };
-            
+
             state.operations.push(operation);
-            
+
             // Check for crash between operations
             crash_simulator.maybe_crash(CrashScenario::BetweenOperations)?;
         }
-        
+
         // Decide whether to commit or abort
         if rng.gen_bool(0.8) {
             // Commit transaction
             crash_simulator.maybe_crash(CrashScenario::DuringCommit)?;
-            
+
             match db.commit_transaction(transaction_id) {
                 Ok(_) => {
                     state.status = TransactionStatus::Committed;
                     state.completed_at = Some(SystemTime::now());
-                },
+                }
                 Err(_) => {
                     state.status = TransactionStatus::Unknown;
                 }
@@ -508,40 +524,40 @@ impl CrashConsistencyTest {
         } else {
             // Rollback transaction
             crash_simulator.maybe_crash(CrashScenario::DuringRollback)?;
-            
+
             match db.abort_transaction(transaction_id) {
                 Ok(_) => {
                     state.status = TransactionStatus::Aborted;
                     state.completed_at = Some(SystemTime::now());
-                },
+                }
                 Err(_) => {
                     state.status = TransactionStatus::Unknown;
                 }
             }
         }
-        
+
         // Check invariants
         if config.check_invariants {
             invariant_checker.check_all(&*db, &state)?;
         }
-        
+
         Ok(())
     }
 
     /// Verify consistency after crash recovery
     fn verify_post_crash_consistency(&self, db: Arc<Database>) -> Result<Vec<VerificationResult>> {
         let mut results = Vec::new();
-        
+
         // Take post-crash snapshot
         let post_crash_state = self.capture_system_state(&*db)?;
-        
+
         // Run all verifiers
         let verifiers = self.consistency_verifier.get_verifiers();
         for verifier in verifiers {
             let result = verifier.verify(&*db, &SystemState::default(), &post_crash_state);
             results.push(result);
         }
-        
+
         Ok(results)
     }
 
@@ -573,35 +589,38 @@ impl InvariantChecker {
 
     fn check_all(&self, db: &Database, state: &TransactionState) -> Result<()> {
         let invariants = self.invariants.read();
-        
+
         for invariant in invariants.iter() {
             self.total_checks.fetch_add(1, Ordering::Relaxed);
-            
+
             match invariant.check(db, state) {
                 Ok(true) => {
                     // Invariant holds
-                },
+                }
                 Ok(false) => {
                     // Invariant violated
                     let violation = InvariantViolation {
                         invariant_name: invariant.name().to_string(),
                         transaction_id: state.transaction_id,
                         violation_time: SystemTime::now(),
-                        description: format!("{} violated for transaction {}", 
-                                           invariant.description(), state.transaction_id),
+                        description: format!(
+                            "{} violated for transaction {}",
+                            invariant.description(),
+                            state.transaction_id
+                        ),
                         severity: ViolationSeverity::Error,
                     };
-                    
+
                     self.violations.write().push(violation);
                     self.violations_found.fetch_add(1, Ordering::Relaxed);
-                },
+                }
                 Err(e) => {
                     // Error checking invariant
                     println!("Error checking invariant {}: {}", invariant.name(), e);
                 }
             }
         }
-        
+
         Ok(())
     }
 }
@@ -620,21 +639,21 @@ impl CrashSimulator {
         if self.kill_switch.load(Ordering::Acquire) {
             return Err(Error::Generic("System crashed".to_string()));
         }
-        
+
         let crash_points = self.crash_points.read();
         if let Some(crash_point) = crash_points.get(&scenario) {
-            if crash_point.enabled && thread_rng().gen_bool(crash_point.probability) {
+            if crash_point.enabled && rng().gen_bool(crash_point.probability) {
                 // Simulate crash
                 self.trigger_crash(scenario)?;
             }
         }
-        
+
         Ok(())
     }
 
     fn trigger_crash(&self, scenario: CrashScenario) -> Result<()> {
         println!("💥 Simulating crash: {:?}", scenario);
-        
+
         // Record crash event
         let event = CrashEvent {
             scenario,
@@ -643,13 +662,13 @@ impl CrashSimulator {
             pending_operations: 0,
             recovery_required: true,
         };
-        
+
         self.crash_history.write().push(event);
         self.total_crashes.fetch_add(1, Ordering::Relaxed);
-        
+
         // Set kill switch
         self.kill_switch.store(true, Ordering::SeqCst);
-        
+
         Err(Error::Generic("Database crashed".to_string()))
     }
 }
@@ -681,7 +700,12 @@ impl ConsistencyVerification for AtomicityVerifier {
         "Atomicity Verifier"
     }
 
-    fn verify(&self, _db: &Database, _pre: &SystemState, _post: &SystemState) -> VerificationResult {
+    fn verify(
+        &self,
+        _db: &Database,
+        _pre: &SystemState,
+        _post: &SystemState,
+    ) -> VerificationResult {
         // Verify all-or-nothing property
         VerificationResult {
             verifier_name: self.name().to_string(),
@@ -700,7 +724,12 @@ impl ConsistencyVerification for DurabilityVerifier {
         "Durability Verifier"
     }
 
-    fn verify(&self, _db: &Database, _pre: &SystemState, _post: &SystemState) -> VerificationResult {
+    fn verify(
+        &self,
+        _db: &Database,
+        _pre: &SystemState,
+        _post: &SystemState,
+    ) -> VerificationResult {
         // Verify committed transactions survive crash
         VerificationResult {
             verifier_name: self.name().to_string(),
@@ -719,7 +748,12 @@ impl ConsistencyVerification for IsolationVerifier {
         "Isolation Verifier"
     }
 
-    fn verify(&self, _db: &Database, _pre: &SystemState, _post: &SystemState) -> VerificationResult {
+    fn verify(
+        &self,
+        _db: &Database,
+        _pre: &SystemState,
+        _post: &SystemState,
+    ) -> VerificationResult {
         // Verify transaction isolation
         VerificationResult {
             verifier_name: self.name().to_string(),
@@ -745,36 +779,38 @@ impl ChaosTest for CrashConsistencyTest {
                 occurrences: 0,
                 enabled: true,
             };
-            
-            self.crash_simulator.crash_points.write().insert(*scenario, crash_point);
+
+            self.crash_simulator
+                .crash_points
+                .write()
+                .insert(*scenario, crash_point);
         }
-        
+
         Ok(())
     }
 
     fn execute(&mut self, db: Arc<Database>, duration: Duration) -> Result<ChaosTestResult> {
         let start_time = SystemTime::now();
-        
+
         // Run transactional workload with crashes
         let _ = self.run_transactional_workload(Arc::clone(&db));
-        
+
         // Simulate recovery
         drop(db);
         let recovered_db = Arc::new(Database::open(
             std::env::temp_dir().join("chaos_test_db"),
-            crate::LightningDbConfig::default()
+            crate::LightningDbConfig::default(),
         )?);
-        
+
         // Verify consistency
         let verification_results = self.verify_post_crash_consistency(recovered_db)?;
-        
+
         // Calculate results
         let violations = self.invariant_checker.violations.read();
         let crashes = self.crash_simulator.total_crashes.load(Ordering::Relaxed);
-        
-        let passed = violations.is_empty() && 
-                    verification_results.iter().all(|r| r.passed);
-        
+
+        let passed = violations.is_empty() && verification_results.iter().all(|r| r.passed);
+
         let integrity_report = IntegrityReport {
             pages_verified: 1000,
             corrupted_pages: 0,
@@ -782,18 +818,25 @@ impl ChaosTest for CrashConsistencyTest {
             structural_errors: violations.len() as u64,
             repaired_errors: 0,
             unrepairable_errors: 0,
-            verification_duration: SystemTime::now().duration_since(start_time).unwrap_or_default(),
+            verification_duration: SystemTime::now()
+                .duration_since(start_time)
+                .unwrap_or_default(),
         };
-        
+
         Ok(ChaosTestResult {
             test_name: self.name().to_string(),
             passed,
-            duration: SystemTime::now().duration_since(start_time).unwrap_or_default(),
+            duration: SystemTime::now()
+                .duration_since(start_time)
+                .unwrap_or_default(),
             failures_injected: crashes,
             failures_recovered: if passed { crashes } else { 0 },
             integrity_report,
             error_details: if !passed {
-                Some(format!("{} invariant violations detected", violations.len()))
+                Some(format!(
+                    "{} invariant violations detected",
+                    violations.len()
+                ))
             } else {
                 None
             },
@@ -803,13 +846,15 @@ impl ChaosTest for CrashConsistencyTest {
     fn cleanup(&mut self) -> Result<()> {
         self.invariant_checker.violations.write().clear();
         self.crash_simulator.crash_history.write().clear();
-        self.crash_simulator.kill_switch.store(false, Ordering::SeqCst);
+        self.crash_simulator
+            .kill_switch
+            .store(false, Ordering::SeqCst);
         Ok(())
     }
 
     fn verify_integrity(&self, db: Arc<Database>) -> Result<IntegrityReport> {
         let violations = self.invariant_checker.violations.read();
-        
+
         Ok(IntegrityReport {
             pages_verified: 1000,
             corrupted_pages: 0,

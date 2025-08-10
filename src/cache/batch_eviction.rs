@@ -198,46 +198,71 @@ impl BatchEvictingArcCache {
 
     /// Select victims for eviction based on ARC algorithm
     fn select_victims(&self, count: usize) -> Vec<u32> {
-        let mut victims = Vec::with_capacity(count);
+        let mut victims: Vec<u32> = Vec::with_capacity(count);
         let p_val = self.p.load(Ordering::Relaxed);
 
-        // Lock all lists to ensure consistency
-        let mut t1 = self.t1.lock();
-        let mut t2 = self.t2.lock();
-        let mut b1 = self.b1.lock();
-        let mut b2 = self.b2.lock();
+        // CRITICAL DEADLOCK FIX: Never lock all 4 mutexes simultaneously!
+        // Use staged victim selection to avoid holding all locks
+        return self.select_victims_staged(count, p_val);
+    }
 
-        // Collect victims based on ARC policy
-        while victims.len() < count {
+    /// Staged victim selection with safe lock ordering
+    fn select_victims_staged(&self, count: usize, p_val: usize) -> Vec<u32> {
+        let mut victims = Vec::with_capacity(count);
+
+        // Stage 1: Decide eviction strategy without holding multiple locks
+        let target_from_t1 = {
+            let t1 = self.t1.lock();
             let t1_len = t1.len();
-            let should_evict_from_t1 = t1_len > 0 && (t1_len > p_val || t2.is_empty());
+            if t1_len > p_val && t1_len > 0 {
+                (count / 2).min(t1_len)
+            } else {
+                0
+            }
+        };
 
-            if should_evict_from_t1 {
-                // Evict from T1 (recent)
-                if let Some(victim) = t1.pop_back() {
-                    victims.push(victim);
-                    b1.push_front(victim);
-
-                    // Trim B1 if needed
-                    if b1.len() + t2.len() > self.capacity {
+        // Stage 2: Collect from T1 if needed
+        for _ in 0..target_from_t1 {
+            let victim = {
+                let mut t1 = self.t1.lock();
+                t1.pop_back()
+            };
+            
+            if let Some(victim_id) = victim {
+                victims.push(victim_id);
+                
+                // Move to B1 ghost list
+                {
+                    let mut b1 = self.b1.lock();
+                    b1.push_front(victim_id);
+                    if b1.len() > self.capacity {
                         b1.pop_back();
                     }
-                } else {
-                    break;
                 }
-            } else {
-                // Evict from T2 (frequent)
-                if let Some(victim) = t2.pop_back() {
-                    victims.push(victim);
-                    b2.push_front(victim);
+            }
+        }
 
-                    // Trim B2 if needed
-                    if b2.len() + t1.len() > self.capacity {
+        // Stage 3: Collect remaining from T2
+        let remaining = count - victims.len();
+        for _ in 0..remaining {
+            let victim = {
+                let mut t2 = self.t2.lock();
+                t2.pop_back()
+            };
+            
+            if let Some(victim_id) = victim {
+                victims.push(victim_id);
+                
+                // Move to B2 ghost list
+                {
+                    let mut b2 = self.b2.lock();
+                    b2.push_front(victim_id);
+                    if b2.len() > self.capacity {
                         b2.pop_back();
                     }
-                } else {
-                    break;
                 }
+            } else {
+                break;
             }
         }
 
@@ -382,11 +407,11 @@ mod tests {
         // Fill cache beyond target
         for i in 0..85 {
             let page = Page::new(i);
-            cache.insert(i, page).unwrap();
+            cache.insert(i, page).expect("Failed to insert page");
         }
 
         // Should trigger batch eviction
-        let evicted = cache.batch_evict().unwrap();
+        let evicted = cache.batch_evict().expect("Failed to batch evict");
         assert!(!evicted.is_empty());
         assert!(evicted.len() <= 10); // Should respect batch size
 
@@ -412,14 +437,14 @@ mod tests {
             let handle = thread::spawn(move || {
                 for i in 0..30 {
                     let page = Page::new(t * 100 + i);
-                    cache_clone.insert(t * 100 + i, page).unwrap();
+                    cache_clone.insert(t * 100 + i, page).expect("Failed to insert page");
                 }
             });
             handles.push(handle);
         }
 
         for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("Failed to join thread");
         }
 
         // Only one batch eviction should happen at a time

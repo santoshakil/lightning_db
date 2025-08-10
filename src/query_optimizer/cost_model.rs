@@ -3,12 +3,11 @@
 //! This module implements a comprehensive cost model that estimates the execution cost
 //! of different query operations. It considers CPU, I/O, memory, and network costs.
 
-use crate::{Result, Error};
 use super::{
-    OptimizerConfig, PhysicalOperator, TableStatistics, ColumnStatistics, IndexStatistics,
-    JoinType
+    ColumnStatistics, IndexStatistics, JoinType, OptimizerConfig, PhysicalOperator, TableStatistics,
 };
-use serde::{Serialize, Deserialize};
+use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Cost model for estimating query execution costs
@@ -138,41 +137,121 @@ impl CostModel {
         index_stats: &HashMap<String, IndexStatistics>,
     ) -> Result<OperationCost> {
         match operator {
-            PhysicalOperator::TableScan { table, predicate, columns } => {
-                self.cost_table_scan(table, predicate.as_ref(), columns, table_stats)
-            }
-            PhysicalOperator::IndexScan { table, index, key_conditions, predicate } => {
-                self.cost_index_scan(table, index, key_conditions, predicate.as_ref(), 
-                                    table_stats, index_stats)
-            }
-            PhysicalOperator::NestedLoopJoin { left, right, condition, join_type } => {
-                self.cost_nested_loop_join(left, right, condition, *join_type, 
-                                         table_stats, column_stats, index_stats)
-            }
-            PhysicalOperator::HashJoin { left, right, condition, join_type, build_side } => {
-                self.cost_hash_join(left, right, condition, *join_type, *build_side,
-                                  table_stats, column_stats, index_stats)
-            }
-            PhysicalOperator::SortMergeJoin { left, right, condition, join_type } => {
-                self.cost_sort_merge_join(left, right, condition, *join_type,
-                                        table_stats, column_stats, index_stats)
-            }
-            PhysicalOperator::Aggregation { input, group_by, aggregates, vectorized } => {
-                self.cost_aggregation(input, group_by, aggregates, *vectorized,
-                                    table_stats, column_stats, index_stats)
-            }
-            PhysicalOperator::Sort { input, sort_keys, limit } => {
-                self.cost_sort(input, sort_keys, *limit, table_stats, column_stats, index_stats)
-            }
+            PhysicalOperator::TableScan {
+                table,
+                predicate,
+                columns,
+            } => self.cost_table_scan(table, predicate.as_ref(), columns, table_stats),
+            PhysicalOperator::IndexScan {
+                table,
+                index,
+                key_conditions,
+                predicate,
+            } => self.cost_index_scan(
+                table,
+                index,
+                key_conditions,
+                predicate.as_ref(),
+                table_stats,
+                index_stats,
+            ),
+            PhysicalOperator::NestedLoopJoin {
+                left,
+                right,
+                condition,
+                join_type,
+            } => self.cost_nested_loop_join(
+                left,
+                right,
+                condition,
+                *join_type,
+                table_stats,
+                column_stats,
+                index_stats,
+            ),
+            PhysicalOperator::HashJoin {
+                left,
+                right,
+                condition,
+                join_type,
+                build_side,
+            } => self.cost_hash_join(
+                left,
+                right,
+                condition,
+                *join_type,
+                *build_side,
+                table_stats,
+                column_stats,
+                index_stats,
+            ),
+            PhysicalOperator::SortMergeJoin {
+                left,
+                right,
+                condition,
+                join_type,
+            } => self.cost_sort_merge_join(
+                left,
+                right,
+                condition,
+                *join_type,
+                table_stats,
+                column_stats,
+                index_stats,
+            ),
+            PhysicalOperator::Aggregation {
+                input,
+                group_by,
+                aggregates,
+                vectorized,
+            } => self.cost_aggregation(
+                input,
+                group_by,
+                aggregates,
+                *vectorized,
+                table_stats,
+                column_stats,
+                index_stats,
+            ),
+            PhysicalOperator::Sort {
+                input,
+                sort_keys,
+                limit,
+            } => self.cost_sort(
+                input,
+                sort_keys,
+                *limit,
+                table_stats,
+                column_stats,
+                index_stats,
+            ),
             PhysicalOperator::Projection { input, columns } => {
                 self.cost_projection(input, columns, table_stats, column_stats, index_stats)
             }
-            PhysicalOperator::Filter { input, predicate, vectorized } => {
-                self.cost_filter(input, predicate, *vectorized, table_stats, column_stats, index_stats)
-            }
-            PhysicalOperator::Limit { input, count, offset } => {
-                self.cost_limit(input, *count, *offset, table_stats, column_stats, index_stats)
-            }
+            PhysicalOperator::Filter {
+                input,
+                predicate,
+                vectorized,
+            } => self.cost_filter(
+                input,
+                predicate,
+                *vectorized,
+                table_stats,
+                column_stats,
+                index_stats,
+            ),
+            PhysicalOperator::Limit {
+                input,
+                count,
+                offset,
+            } => self.cost_limit(
+                input,
+                *count,
+                *offset,
+                table_stats,
+                column_stats,
+                index_stats,
+            ),
         }
     }
 
@@ -184,7 +263,8 @@ impl CostModel {
         columns: &[String],
         table_stats: &HashMap<String, TableStatistics>,
     ) -> Result<OperationCost> {
-        let stats = table_stats.get(table)
+        let stats = table_stats
+            .get(table)
             .ok_or_else(|| Error::Generic(format!("No statistics for table {}", table)))?;
 
         // I/O cost: read all pages
@@ -204,7 +284,7 @@ impl CostModel {
 
         // Adjust costs based on selectivity
         let effective_cpu_cost = cpu_cost * selectivity;
-        
+
         // Memory cost: buffer for processing
         let memory_required = (stats.avg_row_size * rows_to_process as f64) as u64;
         let memory_cost = self.calculate_memory_cost(memory_required);
@@ -213,13 +293,12 @@ impl CostModel {
         let projection_factor = columns.len() as f64 / 10.0; // Assume 10 columns on average
         let adjusted_cpu_cost = effective_cpu_cost * projection_factor.min(1.0);
 
-        let total_cost = adjusted_cpu_cost * self.config.cpu_cost_factor +
-                        io_cost * self.config.io_cost_factor +
-                        memory_cost * self.config.memory_cost_factor;
+        let total_cost = adjusted_cpu_cost * self.config.cpu_cost_factor
+            + io_cost * self.config.io_cost_factor
+            + memory_cost * self.config.memory_cost_factor;
 
-        let execution_time_us = self.estimate_execution_time(
-            adjusted_cpu_cost, io_cost, memory_cost, 0.0
-        );
+        let execution_time_us =
+            self.estimate_execution_time(adjusted_cpu_cost, io_cost, memory_cost, 0.0);
 
         Ok(OperationCost {
             cpu_cost: adjusted_cpu_cost,
@@ -242,15 +321,17 @@ impl CostModel {
         table_stats: &HashMap<String, TableStatistics>,
         index_stats: &HashMap<String, IndexStatistics>,
     ) -> Result<OperationCost> {
-        let table_stat = table_stats.get(table)
+        let table_stat = table_stats
+            .get(table)
             .ok_or_else(|| Error::Generic(format!("No statistics for table {}", table)))?;
-        
-        let index_stat = index_stats.get(index)
+
+        let index_stat = index_stats
+            .get(index)
             .ok_or_else(|| Error::Generic(format!("No statistics for index {}", index)))?;
 
         // Estimate selectivity from key conditions
         let selectivity = self.estimate_key_conditions_selectivity(key_conditions);
-        
+
         // Index I/O cost
         let index_pages = (index_stat.page_count as f64 * selectivity) as u64;
         let index_io_cost = self.calculate_random_read_cost(index_pages);
@@ -267,13 +348,12 @@ impl CostModel {
         let memory_required = rows_fetched * table_stat.avg_row_size as u64;
         let memory_cost = self.calculate_memory_cost(memory_required);
 
-        let total_cost = cpu_cost * self.config.cpu_cost_factor +
-                        (index_io_cost + table_io_cost) * self.config.io_cost_factor +
-                        memory_cost * self.config.memory_cost_factor;
+        let total_cost = cpu_cost * self.config.cpu_cost_factor
+            + (index_io_cost + table_io_cost) * self.config.io_cost_factor
+            + memory_cost * self.config.memory_cost_factor;
 
-        let execution_time_us = self.estimate_execution_time(
-            cpu_cost, index_io_cost + table_io_cost, memory_cost, 0.0
-        );
+        let execution_time_us =
+            self.estimate_execution_time(cpu_cost, index_io_cost + table_io_cost, memory_cost, 0.0);
 
         Ok(OperationCost {
             cpu_cost,
@@ -305,8 +385,8 @@ impl CostModel {
         let right_cardinality = self.estimate_operator_cardinality(right, table_stats);
 
         // Nested loop: for each row in left, scan right
-        let join_cpu_cost = left_cardinality as f64 * right_cardinality as f64 * 
-                           self.calculate_cpu_cost_per_row();
+        let join_cpu_cost =
+            left_cardinality as f64 * right_cardinality as f64 * self.calculate_cpu_cost_per_row();
 
         // I/O cost: left read once, right read for each left row
         let join_io_cost = left_cost.io_cost + (left_cardinality as f64 * right_cost.io_cost);
@@ -325,15 +405,17 @@ impl CostModel {
             JoinType::Anti => 0.8,
         };
 
-        let total_cost = (left_cost.total_cost + join_cpu_cost * self.config.cpu_cost_factor +
-                         join_io_cost * self.config.io_cost_factor +
-                         memory_cost * self.config.memory_cost_factor) * join_factor;
+        let total_cost = (left_cost.total_cost
+            + join_cpu_cost * self.config.cpu_cost_factor
+            + join_io_cost * self.config.io_cost_factor
+            + memory_cost * self.config.memory_cost_factor)
+            * join_factor;
 
         let execution_time_us = self.estimate_execution_time(
             left_cost.cpu_cost + join_cpu_cost,
             join_io_cost,
             memory_cost,
-            0.0
+            0.0,
         );
 
         Ok(OperationCost {
@@ -394,15 +476,15 @@ impl CostModel {
             JoinType::Anti => 0.9,
         };
 
-        let total_cost = (build_cpu_cost + probe_cpu_cost) * self.config.cpu_cost_factor +
-                        io_cost * self.config.io_cost_factor +
-                        memory_cost * self.config.memory_cost_factor * join_factor;
+        let total_cost = (build_cpu_cost + probe_cpu_cost) * self.config.cpu_cost_factor
+            + io_cost * self.config.io_cost_factor
+            + memory_cost * self.config.memory_cost_factor * join_factor;
 
         let execution_time_us = self.estimate_execution_time(
             build_cpu_cost + probe_cpu_cost,
             io_cost,
             memory_cost,
-            0.0
+            0.0,
         );
 
         Ok(OperationCost {
@@ -438,8 +520,8 @@ impl CostModel {
         let right_sort_cost = self.calculate_sort_cost(right_cardinality);
 
         // Merge cost
-        let merge_cpu_cost = (left_cardinality + right_cardinality) as f64 * 
-                            self.calculate_cpu_cost_per_row();
+        let merge_cpu_cost =
+            (left_cardinality + right_cardinality) as f64 * self.calculate_cpu_cost_per_row();
 
         // Memory cost for sorting
         let sort_memory = (left_cardinality + right_cardinality) as u64 * 64;
@@ -454,19 +536,29 @@ impl CostModel {
             JoinType::Anti => 0.9,
         };
 
-        let total_cost = (left_cost.total_cost + right_cost.total_cost +
-                         (left_sort_cost + right_sort_cost + merge_cpu_cost) * self.config.cpu_cost_factor +
-                         memory_cost * self.config.memory_cost_factor) * join_factor;
+        let total_cost = (left_cost.total_cost
+            + right_cost.total_cost
+            + (left_sort_cost + right_sort_cost + merge_cpu_cost) * self.config.cpu_cost_factor
+            + memory_cost * self.config.memory_cost_factor)
+            * join_factor;
 
         let execution_time_us = self.estimate_execution_time(
-            left_cost.cpu_cost + right_cost.cpu_cost + left_sort_cost + right_sort_cost + merge_cpu_cost,
+            left_cost.cpu_cost
+                + right_cost.cpu_cost
+                + left_sort_cost
+                + right_sort_cost
+                + merge_cpu_cost,
             left_cost.io_cost + right_cost.io_cost,
             memory_cost,
-            0.0
+            0.0,
         );
 
         Ok(OperationCost {
-            cpu_cost: left_cost.cpu_cost + right_cost.cpu_cost + left_sort_cost + right_sort_cost + merge_cpu_cost,
+            cpu_cost: left_cost.cpu_cost
+                + right_cost.cpu_cost
+                + left_sort_cost
+                + right_sort_cost
+                + merge_cpu_cost,
             io_cost: left_cost.io_cost + right_cost.io_cost,
             memory_cost,
             network_cost: 0.0,
@@ -492,8 +584,10 @@ impl CostModel {
 
         // Aggregation CPU cost
         let agg_factor = if vectorized { 0.3 } else { 1.0 }; // Vectorization speedup
-        let cpu_cost = input_cardinality as f64 * aggregates.len() as f64 * 
-                      self.calculate_cpu_cost_per_row() * agg_factor;
+        let cpu_cost = input_cardinality as f64
+            * aggregates.len() as f64
+            * self.calculate_cpu_cost_per_row()
+            * agg_factor;
 
         // Hash table for grouping
         let estimated_groups = if group_by.is_empty() {
@@ -505,15 +599,15 @@ impl CostModel {
         let hash_table_size = estimated_groups * 128; // 128 bytes per group
         let memory_cost = self.calculate_memory_cost(hash_table_size);
 
-        let total_cost = input_cost.total_cost +
-                        cpu_cost * self.config.cpu_cost_factor +
-                        memory_cost * self.config.memory_cost_factor;
+        let total_cost = input_cost.total_cost
+            + cpu_cost * self.config.cpu_cost_factor
+            + memory_cost * self.config.memory_cost_factor;
 
         let execution_time_us = self.estimate_execution_time(
             input_cost.cpu_cost + cpu_cost,
             input_cost.io_cost,
             memory_cost,
-            0.0
+            0.0,
         );
 
         Ok(OperationCost {
@@ -549,15 +643,15 @@ impl CostModel {
         let sort_cpu_cost = self.calculate_sort_cost(effective_cardinality);
         let memory_cost = self.calculate_memory_cost(effective_cardinality * 64);
 
-        let total_cost = input_cost.total_cost +
-                        sort_cpu_cost * self.config.cpu_cost_factor +
-                        memory_cost * self.config.memory_cost_factor;
+        let total_cost = input_cost.total_cost
+            + sort_cpu_cost * self.config.cpu_cost_factor
+            + memory_cost * self.config.memory_cost_factor;
 
         let execution_time_us = self.estimate_execution_time(
             input_cost.cpu_cost + sort_cpu_cost,
             input_cost.io_cost,
             memory_cost,
-            0.0
+            0.0,
         );
 
         Ok(OperationCost {
@@ -581,7 +675,7 @@ impl CostModel {
         index_stats: &HashMap<String, IndexStatistics>,
     ) -> Result<OperationCost> {
         let input_cost = self.calculate_cost(input, table_stats, column_stats, index_stats)?;
-        
+
         // Projection is typically very cheap
         let projection_factor = columns.len() as f64 / 10.0; // Assume 10 columns baseline
         let cpu_cost = input_cost.cpu_cost * 0.1 * projection_factor;
@@ -611,7 +705,8 @@ impl CostModel {
         let input_cardinality = self.estimate_operator_cardinality(input, table_stats);
 
         let filter_factor = if vectorized { 0.2 } else { 1.0 }; // Vectorization speedup
-        let cpu_cost = input_cardinality as f64 * self.calculate_cpu_cost_per_row() * 0.5 * filter_factor;
+        let cpu_cost =
+            input_cardinality as f64 * self.calculate_cpu_cost_per_row() * 0.5 * filter_factor;
 
         Ok(OperationCost {
             cpu_cost: input_cost.cpu_cost + cpu_cost,
@@ -635,7 +730,7 @@ impl CostModel {
         index_stats: &HashMap<String, IndexStatistics>,
     ) -> Result<OperationCost> {
         let input_cost = self.calculate_cost(input, table_stats, column_stats, index_stats)?;
-        
+
         // Limit is essentially free - just stops processing early
         Ok(input_cost)
     }
@@ -649,12 +744,8 @@ impl CostModel {
 
     fn calculate_random_read_cost(&self, pages: u64) -> f64 {
         match self.hardware.storage.storage_type {
-            StorageType::HDD => {
-                pages as f64 * self.hardware.storage.avg_seek_time_ms
-            }
-            _ => {
-                pages as f64 / self.hardware.storage.random_read_iops as f64
-            }
+            StorageType::HDD => pages as f64 * self.hardware.storage.avg_seek_time_ms,
+            _ => pages as f64 / self.hardware.storage.random_read_iops as f64,
         }
     }
 
@@ -670,7 +761,7 @@ impl CostModel {
         if cardinality <= 1 {
             return 0.0;
         }
-        
+
         // N log N complexity
         cardinality as f64 * (cardinality as f64).log2() * self.calculate_cpu_cost_per_row()
     }
@@ -681,7 +772,9 @@ impl CostModel {
         table_stats: &HashMap<String, TableStatistics>,
     ) -> u64 {
         match operator {
-            PhysicalOperator::TableScan { table, predicate, .. } => {
+            PhysicalOperator::TableScan {
+                table, predicate, ..
+            } => {
                 if let Some(stats) = table_stats.get(table) {
                     let selectivity = if let Some(_pred) = predicate {
                         0.1 // Default selectivity
@@ -712,7 +805,13 @@ impl CostModel {
         0.01 // Assume 1% selectivity for index lookups
     }
 
-    fn estimate_execution_time(&self, cpu_cost: f64, io_cost: f64, memory_cost: f64, network_cost: f64) -> u64 {
+    fn estimate_execution_time(
+        &self,
+        cpu_cost: f64,
+        io_cost: f64,
+        memory_cost: f64,
+        network_cost: f64,
+    ) -> u64 {
         let total_time = cpu_cost + io_cost * 10.0 + memory_cost * 0.1 + network_cost * 100.0;
         (total_time * 1_000_000.0) as u64 // Convert to microseconds
     }
@@ -766,7 +865,7 @@ mod tests {
     fn test_sequential_read_cost() {
         let config = OptimizerConfig::default();
         let cost_model = CostModel::new(config);
-        
+
         let cost = cost_model.calculate_sequential_read_cost(1000); // 1000 pages = 4MB
         assert!(cost > 0.0);
     }
@@ -775,10 +874,10 @@ mod tests {
     fn test_sort_cost() {
         let config = OptimizerConfig::default();
         let cost_model = CostModel::new(config);
-        
+
         let cost_small = cost_model.calculate_sort_cost(100);
         let cost_large = cost_model.calculate_sort_cost(10000);
-        
+
         assert!(cost_large > cost_small);
     }
 

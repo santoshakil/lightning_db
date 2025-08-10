@@ -4,11 +4,14 @@
 //! and file descriptor usage with threshold-based alerting.
 
 use crate::{Database, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, RwLock, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, RwLock,
+};
 use std::time::{Duration, Instant, SystemTime};
-use serde::{Serialize, Deserialize};
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 /// Resource tracker for Lightning DB
 pub struct ResourceTracker {
@@ -390,7 +393,10 @@ impl ResourceTracker {
         // Add to history
         self.add_to_history(usage, collection_start.elapsed());
 
-        debug!("Resource tracking completed in {:?}", collection_start.elapsed());
+        debug!(
+            "Resource tracking completed in {:?}",
+            collection_start.elapsed()
+        );
         Ok(())
     }
 
@@ -413,7 +419,8 @@ impl ResourceTracker {
         usage.memory_usage_bytes = 1024 * 1024 * 512; // 512MB
         usage.total_memory_bytes = 1024 * 1024 * 1024 * 8; // 8GB
         usage.available_memory_bytes = usage.total_memory_bytes - usage.memory_usage_bytes;
-        usage.memory_usage_percent = (usage.memory_usage_bytes as f64 / usage.total_memory_bytes as f64) * 100.0;
+        usage.memory_usage_percent =
+            (usage.memory_usage_bytes as f64 / usage.total_memory_bytes as f64) * 100.0;
 
         usage.disk_usage_bytes = 1024 * 1024 * 1024 * 2; // 2GB
         usage.total_disk_bytes = 1024 * 1024 * 1024 * 100; // 100GB
@@ -446,7 +453,7 @@ impl ResourceTracker {
     /// Collect network resource information
     fn collect_network_resources(&self, usage: &mut ResourceUsage) -> Result<()> {
         usage.network_bytes_in = 1024 * 1024 * 10; // 10MB
-        usage.network_bytes_out = 1024 * 1024 * 5;  // 5MB
+        usage.network_bytes_out = 1024 * 1024 * 5; // 5MB
         usage.network_packets_in = 10000;
         usage.network_packets_out = 5000;
 
@@ -480,7 +487,7 @@ impl ResourceTracker {
     /// Collect disk I/O resource information
     fn collect_disk_io_resources(&self, usage: &mut ResourceUsage) -> Result<()> {
         usage.disk_io_metrics = DiskIoMetrics {
-            bytes_read: 1024 * 1024 * 50,  // 50MB
+            bytes_read: 1024 * 1024 * 50,    // 50MB
             bytes_written: 1024 * 1024 * 25, // 25MB
             read_ops: 1000,
             write_ops: 500,
@@ -496,7 +503,7 @@ impl ResourceTracker {
     /// Add resource usage to history
     fn add_to_history(&self, usage: ResourceUsage, collection_duration: Duration) {
         let mut history = self.usage_history.write().unwrap();
-        
+
         history.push_back(ResourceSnapshot {
             usage,
             timestamp: SystemTime::now(),
@@ -521,7 +528,7 @@ impl ResourceTracker {
             }
 
             let current_value = self.get_resource_value(&usage, resource_name);
-            
+
             if threshold.higher_is_worse {
                 if current_value >= threshold.critical_threshold {
                     alerts.push(ResourceAlert {
@@ -531,8 +538,11 @@ impl ResourceTracker {
                         severity: AlertSeverity::Critical,
                         message: format!(
                             "{} is critically high: {:.2}{} (threshold: {:.2}{})",
-                            resource_name, current_value, threshold.unit,
-                            threshold.critical_threshold, threshold.unit
+                            resource_name,
+                            current_value,
+                            threshold.unit,
+                            threshold.critical_threshold,
+                            threshold.unit
                         ),
                         timestamp: SystemTime::now(),
                     });
@@ -544,8 +554,11 @@ impl ResourceTracker {
                         severity: AlertSeverity::Warning,
                         message: format!(
                             "{} is high: {:.2}{} (threshold: {:.2}{})",
-                            resource_name, current_value, threshold.unit,
-                            threshold.warning_threshold, threshold.unit
+                            resource_name,
+                            current_value,
+                            threshold.unit,
+                            threshold.warning_threshold,
+                            threshold.unit
                         ),
                         timestamp: SystemTime::now(),
                     });
@@ -560,8 +573,11 @@ impl ResourceTracker {
                         severity: AlertSeverity::Critical,
                         message: format!(
                             "{} is critically low: {:.2}{} (threshold: {:.2}{})",
-                            resource_name, current_value, threshold.unit,
-                            threshold.critical_threshold, threshold.unit
+                            resource_name,
+                            current_value,
+                            threshold.unit,
+                            threshold.critical_threshold,
+                            threshold.unit
                         ),
                         timestamp: SystemTime::now(),
                     });
@@ -573,8 +589,11 @@ impl ResourceTracker {
                         severity: AlertSeverity::Warning,
                         message: format!(
                             "{} is low: {:.2}{} (threshold: {:.2}{})",
-                            resource_name, current_value, threshold.unit,
-                            threshold.warning_threshold, threshold.unit
+                            resource_name,
+                            current_value,
+                            threshold.unit,
+                            threshold.warning_threshold,
+                            threshold.unit
                         ),
                         timestamp: SystemTime::now(),
                     });
@@ -630,14 +649,17 @@ impl ResourceTracker {
     pub fn get_resource_stats(&self) -> ResourceStats {
         let history = self.usage_history.read().unwrap();
         let current = self.current_usage.read().unwrap();
-        
+
         if history.is_empty() {
             return ResourceStats::default();
         }
 
         // Calculate averages over history
         let cpu_values: Vec<f64> = history.iter().map(|s| s.usage.cpu_usage_percent).collect();
-        let memory_values: Vec<f64> = history.iter().map(|s| s.usage.memory_usage_percent).collect();
+        let memory_values: Vec<f64> = history
+            .iter()
+            .map(|s| s.usage.memory_usage_percent)
+            .collect();
         let load_values: Vec<f64> = history.iter().map(|s| s.usage.load_average).collect();
 
         ResourceStats {
@@ -657,10 +679,15 @@ impl ResourceTracker {
     }
 
     /// Calculate resource usage trends
-    pub fn calculate_resource_trends(&self, window: Duration) -> Result<HashMap<String, ResourceTrend>> {
+    pub fn calculate_resource_trends(
+        &self,
+        window: Duration,
+    ) -> Result<HashMap<String, ResourceTrend>> {
         let history = self.usage_history.read().unwrap();
-        let cutoff_time = SystemTime::now().checked_sub(window).unwrap_or(SystemTime::UNIX_EPOCH);
-        
+        let cutoff_time = SystemTime::now()
+            .checked_sub(window)
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+
         let recent_data: Vec<_> = history
             .iter()
             .filter(|snapshot| snapshot.timestamp >= cutoff_time)
@@ -673,13 +700,19 @@ impl ResourceTracker {
         let mut trends = HashMap::new();
 
         // CPU usage trend
-        let cpu_values: Vec<f64> = recent_data.iter().map(|s| s.usage.cpu_usage_percent).collect();
+        let cpu_values: Vec<f64> = recent_data
+            .iter()
+            .map(|s| s.usage.cpu_usage_percent)
+            .collect();
         if let Some(trend) = self.calculate_trend("cpu_usage_percent", &cpu_values) {
             trends.insert("cpu_usage_percent".to_string(), trend);
         }
 
         // Memory usage trend
-        let memory_values: Vec<f64> = recent_data.iter().map(|s| s.usage.memory_usage_percent).collect();
+        let memory_values: Vec<f64> = recent_data
+            .iter()
+            .map(|s| s.usage.memory_usage_percent)
+            .collect();
         if let Some(trend) = self.calculate_trend("memory_usage_percent", &memory_values) {
             trends.insert("memory_usage_percent".to_string(), trend);
         }
@@ -712,7 +745,7 @@ impl ResourceTracker {
         }
 
         let slope = (n * xy_sum - x_sum * y_sum) / denominator;
-        
+
         let trend_direction = if slope > 0.05 {
             ResourceTrendDirection::Increasing
         } else if slope < -0.05 {
@@ -788,14 +821,12 @@ pub enum ResourceTrendDirection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    
 
     #[test]
     fn test_resource_tracker_creation() {
         let tracker = ResourceTracker::new();
         assert!(!tracker.is_tracking.load(Ordering::Relaxed));
-        
+
         // Should have default thresholds
         let thresholds = tracker.thresholds.read().unwrap();
         assert!(!thresholds.is_empty());
@@ -804,10 +835,10 @@ mod tests {
     #[test]
     fn test_resource_tracking_lifecycle() {
         let tracker = ResourceTracker::new();
-        
+
         tracker.start_tracking();
         assert!(tracker.is_tracking.load(Ordering::Relaxed));
-        
+
         tracker.stop_tracking();
         assert!(!tracker.is_tracking.load(Ordering::Relaxed));
     }
@@ -815,7 +846,7 @@ mod tests {
     #[test]
     fn test_threshold_management() {
         let tracker = ResourceTracker::new();
-        
+
         let custom_threshold = ResourceThreshold {
             resource_name: "custom_metric".to_string(),
             warning_threshold: 50.0,
@@ -824,16 +855,16 @@ mod tests {
             higher_is_worse: true,
             enabled: true,
         };
-        
+
         tracker.add_threshold(custom_threshold.clone());
-        
+
         let thresholds = tracker.thresholds.read().unwrap();
         assert!(thresholds.contains_key("custom_metric"));
         assert_eq!(thresholds["custom_metric"].warning_threshold, 50.0);
-        
+
         drop(thresholds);
         tracker.remove_threshold("custom_metric");
-        
+
         let thresholds = tracker.thresholds.read().unwrap();
         assert!(!thresholds.contains_key("custom_metric"));
     }
@@ -845,9 +876,15 @@ mod tests {
         usage.cpu_usage_percent = 75.0;
         usage.memory_usage_percent = 60.0;
         usage.load_average = 2.5;
-        
-        assert_eq!(tracker.get_resource_value(&usage, "cpu_usage_percent"), 75.0);
-        assert_eq!(tracker.get_resource_value(&usage, "memory_usage_percent"), 60.0);
+
+        assert_eq!(
+            tracker.get_resource_value(&usage, "cpu_usage_percent"),
+            75.0
+        );
+        assert_eq!(
+            tracker.get_resource_value(&usage, "memory_usage_percent"),
+            60.0
+        );
         assert_eq!(tracker.get_resource_value(&usage, "load_average"), 2.5);
         assert_eq!(tracker.get_resource_value(&usage, "unknown_metric"), 0.0);
     }
@@ -855,55 +892,65 @@ mod tests {
     #[test]
     fn test_threshold_checking() {
         let tracker = ResourceTracker::new();
-        
+
         // Set up a usage scenario that should trigger alerts
         let mut usage = ResourceUsage::default();
         usage.cpu_usage_percent = 90.0; // Above critical threshold
         usage.memory_usage_percent = 85.0; // At warning threshold
         usage.load_average = 2.0; // Below warning threshold
-        
+
         {
             let mut current = tracker.current_usage.write().unwrap();
             *current = usage;
         }
-        
+
         let alerts = tracker.check_thresholds();
-        
+
         // Should have alerts for CPU (critical) and memory (warning)
         assert!(alerts.len() >= 2);
-        
-        let cpu_alert = alerts.iter().find(|a| a.resource_name == "cpu_usage_percent");
+
+        let cpu_alert = alerts
+            .iter()
+            .find(|a| a.resource_name == "cpu_usage_percent");
         assert!(cpu_alert.is_some());
-        assert!(matches!(cpu_alert.unwrap().severity, AlertSeverity::Critical));
-        
-        let memory_alert = alerts.iter().find(|a| a.resource_name == "memory_usage_percent");
+        assert!(matches!(
+            cpu_alert.unwrap().severity,
+            AlertSeverity::Critical
+        ));
+
+        let memory_alert = alerts
+            .iter()
+            .find(|a| a.resource_name == "memory_usage_percent");
         assert!(memory_alert.is_some());
-        assert!(matches!(memory_alert.unwrap().severity, AlertSeverity::Warning));
+        assert!(matches!(
+            memory_alert.unwrap().severity,
+            AlertSeverity::Warning
+        ));
     }
 
     #[test]
     fn test_resource_stats_calculation() {
         let tracker = ResourceTracker::new();
-        
+
         // Add some history
         for i in 0..5 {
             let usage = ResourceUsage {
                 cpu_usage_percent: 50.0 + i as f64 * 10.0, // 50, 60, 70, 80, 90
                 memory_usage_percent: 40.0 + i as f64 * 5.0, // 40, 45, 50, 55, 60
-                load_average: 1.0 + i as f64 * 0.5, // 1.0, 1.5, 2.0, 2.5, 3.0
+                load_average: 1.0 + i as f64 * 0.5,        // 1.0, 1.5, 2.0, 2.5, 3.0
                 ..ResourceUsage::default()
             };
-            
+
             tracker.add_to_history(usage, Duration::from_millis(100));
         }
-        
+
         let stats = tracker.get_resource_stats();
-        
+
         // Check that averages are calculated correctly
         assert!((stats.average_cpu_percent - 70.0).abs() < 1.0); // Average of 50,60,70,80,90
         assert!((stats.average_memory_percent - 50.0).abs() < 1.0); // Average of 40,45,50,55,60
         assert!((stats.average_load_average - 2.0).abs() < 0.1); // Average of 1.0,1.5,2.0,2.5,3.0
-        
+
         assert_eq!(stats.peak_cpu_percent, 90.0);
         assert_eq!(stats.peak_memory_percent, 60.0);
         assert_eq!(stats.peak_load_average, 3.0);

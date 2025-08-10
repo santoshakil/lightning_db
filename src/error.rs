@@ -1,5 +1,5 @@
-use thiserror::Error;
 use serde::Serialize;
+use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -93,6 +93,24 @@ pub enum Error {
     #[error("WAL corruption at offset {offset}: {reason}")]
     WalCorruption { offset: u64, reason: String },
 
+    #[error("WAL sequence gap: expected {expected}, found {found} at LSN {lsn}")]
+    WalSequenceGap { expected: u64, found: u64, lsn: u64 },
+
+    #[error("WAL entry checksum mismatch at offset {offset}: expected {expected:08x}, found {found:08x}")]
+    WalChecksumMismatch { offset: u64, expected: u32, found: u32 },
+
+    #[error("WAL partial entry at offset {offset}: expected {expected_size} bytes, found {actual_size} bytes")]
+    WalPartialEntry { offset: u64, expected_size: usize, actual_size: usize },
+
+    #[error("WAL timestamp inconsistency at LSN {lsn}: timestamp {timestamp} is invalid (context: {context})")]
+    WalTimestampError { lsn: u64, timestamp: u64, context: String },
+
+    #[error("WAL binary format corruption at offset {offset}: {details}")]
+    WalBinaryCorruption { offset: u64, details: String },
+
+    #[error("WAL transaction consistency violation: {violation_type} for tx_id {tx_id}")]
+    WalTransactionCorruption { tx_id: u64, violation_type: String },
+
     #[error("Index {name} already exists")]
     IndexExists { name: String },
 
@@ -125,93 +143,200 @@ pub enum Error {
 
     #[error("Operation throttled for {0:?}")]
     Throttled(std::time::Duration),
-    
+
     #[error("Not implemented: {0}")]
     NotImplemented(String),
-    
+
     #[error("WAL not available")]
     WalNotAvailable,
-    
+
     #[error("Corruption unrecoverable: {0}")]
     CorruptionUnrecoverable(String),
-    
+
     #[error("Encryption error: {0}")]
     Encryption(String),
-    
+
     #[error("Quota exceeded: {0}")]
     QuotaExceeded(String),
-    
+
     #[error("Parse error: {0}")]
     Parse(String),
-    
+
     #[error("Validation error: {0}")]
     Validation(String),
-    
+
     #[error("Resource locked: {0}")]
     Locked(String),
-    
+
     #[error("Parse error: {0}")]
     ParseError(String),
-    
+
     #[error("Validation failed: {0}")]
     ValidationFailed(String),
-    
+
     #[error("Processing error: {0}")]
     ProcessingError(String),
-    
+
     #[error("Thread panic: {0}")]
     ThreadPanic(String),
-    
+
     #[error("Invalid input: {0}")]
     InvalidInput(String),
-    
+
     #[error("Conversion error: {0}")]
     ConversionError(String),
-    
+
     #[error("Schema validation failed: {0}")]
     SchemaValidationFailed(String),
-    
+
     #[error("IO error: {0}")]
     IoError(String),
-    
+
     // Raft-specific errors
     #[error("Not leader - redirect to node {0:?}")]
     NotLeader(Option<u64>),
-    
+
     #[error("RPC error: {0}")]
     Rpc(String),
-    
+
     #[error("Node not found: {0}")]
     NotFound(String),
-    
+
     #[error("Election timeout")]
     ElectionTimeout,
-    
+
     #[error("Log inconsistent: expected {expected}, got {actual}")]
     LogInconsistent { expected: u64, actual: u64 },
-    
+
     #[error("Snapshot error: {0}")]
     Snapshot(String),
-    
+
     #[error("Cluster membership error: {0}")]
     Membership(String),
-    
+
     #[error("Request timeout")]
     RequestTimeout,
-    
+
     #[error("Invalid data: {0}")]
     InvalidData(String),
-    
+
     #[error("Internal error: {0}")]
     Internal(String),
-    
+
     // Distributed transaction errors
     #[error("Transaction failed: {0}")]
     TransactionFailed(String),
-    
+
     #[error("Deadlock detected: {0}")]
     Deadlock(String),
+
+    // === CRASH RECOVERY ERROR HIERARCHY ===
     
+    /// Critical errors that prevent any recovery
+    #[error("Recovery impossible: {reason}")]
+    RecoveryImpossible {
+        reason: String,
+        suggested_action: String,
+    },
+
+    /// WAL corruption that prevents recovery
+    #[error("WAL corrupted beyond repair: {details}")]
+    WalCorrupted {
+        details: String,
+        suggested_action: String,
+    },
+
+    /// Insufficient resources for recovery
+    #[error("Insufficient resources for recovery: {resource} - required: {required}, available: {available}")]
+    InsufficientResources {
+        resource: String,
+        required: String,
+        available: String,
+    },
+
+    /// Database is locked by another process
+    #[error("Database locked by {lock_holder}: {suggested_action}")]
+    DatabaseLocked {
+        lock_holder: String,
+        suggested_action: String,
+    },
+
+    /// Partial recovery failure with rollback capability
+    #[error("Partial recovery failure in stage '{failed_stage}': completed {completed_stages:?}")]
+    PartialRecoveryFailure {
+        completed_stages: Vec<String>,
+        failed_stage: String,
+        cause: Box<Error>,
+        rollback_available: bool,
+    },
+
+    /// Database state inconsistency detected during recovery
+    #[error("Inconsistent database state detected: {description}")]
+    InconsistentState {
+        description: String,
+        diagnostics: String,
+        recovery_suggestions: Vec<String>,
+    },
+
+    /// Configuration or environment error during recovery
+    #[error("Recovery configuration error: {setting} - {issue}")]
+    RecoveryConfigurationError {
+        setting: String,
+        issue: String,
+        fix: String,
+    },
+
+    /// Permission or access error during recovery
+    #[error("Recovery permission error: {path} requires {required_permissions}")]
+    RecoveryPermissionError {
+        path: String,
+        required_permissions: String,
+    },
+
+    /// Dependency error during recovery
+    #[error("Recovery dependency error: {dependency} - {issue}")]
+    RecoveryDependencyError {
+        dependency: String,
+        issue: String,
+    },
+
+    /// Recovery timeout (taking too long)
+    #[error("Recovery timeout: stage '{stage}' exceeded {timeout_seconds}s")]
+    RecoveryTimeout {
+        stage: String,
+        timeout_seconds: u64,
+        progress: f64, // 0.0 to 1.0
+    },
+
+    /// Recovery progress tracking error
+    #[error("Recovery progress error: {message}")]
+    RecoveryProgress {
+        message: String,
+    },
+
+    /// Recovery rollback failure
+    #[error("Recovery rollback failed for stage '{stage}': {reason}")]
+    RecoveryRollbackFailed {
+        stage: String,
+        reason: String,
+        manual_intervention_needed: bool,
+    },
+
+    /// Recovery stage dependency failure
+    #[error("Recovery stage '{stage}' depends on '{dependency}' which failed")]
+    RecoveryStageDependencyFailed {
+        stage: String,
+        dependency: String,
+        dependency_error: Box<Error>,
+    },
+
+    /// Recovery verification failure
+    #[error("Recovery verification failed: {check_name} - {details}")]
+    RecoveryVerificationFailed {
+        check_name: String,
+        details: String,
+        critical: bool,
+    },
 }
 
 impl From<std::io::Error> for Error {
@@ -265,6 +390,12 @@ impl Error {
             Error::TransactionInvalidState { .. } => -24,
             Error::TransactionLimitReached { .. } => -25,
             Error::WalCorruption { .. } => -26,
+            Error::WalSequenceGap { .. } => -66,
+            Error::WalChecksumMismatch { .. } => -67,
+            Error::WalPartialEntry { .. } => -68,
+            Error::WalTimestampError { .. } => -69,
+            Error::WalBinaryCorruption { .. } => -70,
+            Error::WalTransactionCorruption { .. } => -71,
             Error::IndexExists { .. } => -27,
             Error::IndexNotFound { .. } => -28,
             Error::QueryError { .. } => -29,
@@ -304,6 +435,22 @@ impl Error {
             Error::Internal(_) => -63,
             Error::TransactionFailed(_) => -64,
             Error::Deadlock(_) => -65,
+            
+            // Recovery error codes (70-99 range)
+            Error::RecoveryImpossible { .. } => -70,
+            Error::WalCorrupted { .. } => -71,
+            Error::InsufficientResources { .. } => -72,
+            Error::DatabaseLocked { .. } => -73,
+            Error::PartialRecoveryFailure { .. } => -74,
+            Error::InconsistentState { .. } => -75,
+            Error::RecoveryConfigurationError { .. } => -76,
+            Error::RecoveryPermissionError { .. } => -77,
+            Error::RecoveryDependencyError { .. } => -78,
+            Error::RecoveryTimeout { .. } => -79,
+            Error::RecoveryProgress { .. } => -80,
+            Error::RecoveryRollbackFailed { .. } => -81,
+            Error::RecoveryStageDependencyFailed { .. } => -82,
+            Error::RecoveryVerificationFailed { .. } => -83,
         }
     }
 
@@ -318,6 +465,35 @@ impl Error {
                 | Error::ConcurrentModification
                 | Error::Cancelled
                 | Error::LockFailed { .. }
+                | Error::PartialRecoveryFailure { rollback_available: true, .. }
+                | Error::RecoveryTimeout { .. }
+                | Error::RecoveryProgress { .. }
+        )
+    }
+
+    /// Check if this error is a critical recovery failure
+    pub fn is_critical_recovery_failure(&self) -> bool {
+        matches!(
+            self,
+            Error::RecoveryImpossible { .. }
+                | Error::WalCorrupted { .. }
+                | Error::InsufficientResources { .. }
+                | Error::DatabaseLocked { .. }
+                | Error::InconsistentState { .. }
+                | Error::RecoveryRollbackFailed { .. }
+                | Error::RecoveryVerificationFailed { critical: true, .. }
+        )
+    }
+
+    /// Check if this error allows retry with different parameters
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            Error::InsufficientResources { .. }
+                | Error::DatabaseLocked { .. }
+                | Error::RecoveryTimeout { .. }
+                | Error::RecoveryDependencyError { .. }
+                | Error::RecoveryPermissionError { .. }
         )
     }
 
@@ -329,6 +505,12 @@ impl Error {
                 | Error::CorruptedDatabase(_)
                 | Error::ChecksumMismatch { .. }
                 | Error::WalCorruption { .. }
+                | Error::WalSequenceGap { .. }
+                | Error::WalChecksumMismatch { .. }
+                | Error::WalPartialEntry { .. }
+                | Error::WalTimestampError { .. }
+                | Error::WalBinaryCorruption { .. }
+                | Error::WalTransactionCorruption { .. }
                 | Error::InvalidDatabase
         )
     }
@@ -391,6 +573,7 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+#[cfg(feature = "data-import")]
 impl From<csv::Error> for Error {
     fn from(err: csv::Error) -> Self {
         Error::ParseError(format!("CSV error: {}", err))

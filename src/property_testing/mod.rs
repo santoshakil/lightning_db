@@ -5,16 +5,18 @@
 
 pub mod advanced;
 
-use crate::{Database, LightningDbConfig, Result, Error};
+use crate::{Database, Error, LightningDbConfig, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use serde::{Serialize, Deserialize};
 use tracing::info;
 
 // Re-export from advanced module
-pub use advanced::{ModelBasedTester, FuzzTester, FuzzConfig, ModelBasedTestResult, FuzzTestResult};
+pub use advanced::{
+    FuzzConfig, FuzzTestResult, FuzzTester, ModelBasedTestResult, ModelBasedTester,
+};
 
 /// Property-based testing framework for Lightning DB
 pub struct PropertyTester {
@@ -107,7 +109,11 @@ pub struct PerformanceMetrics {
 /// Trait for defining invariant checks
 pub trait InvariantCheck {
     fn name(&self) -> String;
-    fn check(&self, db: &Database, operations: &[Operation]) -> std::result::Result<(), InvariantViolation>;
+    fn check(
+        &self,
+        db: &Database,
+        operations: &[Operation],
+    ) -> std::result::Result<(), InvariantViolation>;
 }
 
 /// Trait for generating test operations
@@ -150,7 +156,7 @@ impl PropertyTestReport {
         println!("Passed: {} ({:.1}%)", self.passed_tests, self.success_rate);
         println!("Failed: {}", self.failed_tests);
         println!("Execution time: {:?}", self.execution_time);
-        
+
         if !self.violations_by_type.is_empty() {
             println!("\nInvariant Violations:");
             for (violation_type, count) in &self.violations_by_type {
@@ -189,7 +195,7 @@ impl PropertyTester {
         tester.add_operation_generator(Box::new(EdgeCaseGenerator));
         tester.add_operation_generator(Box::new(TransactionGenerator));
         tester.add_operation_generator(Box::new(StressTestGenerator));
-        
+
         if config.enable_crash_testing {
             tester.add_operation_generator(Box::new(CrashTestGenerator));
         }
@@ -203,14 +209,17 @@ impl PropertyTester {
     }
 
     /// Add a custom operation generator
-    pub fn add_operation_generator(&mut self, generator: Box<dyn OperationGenerator + Send + Sync>) {
+    pub fn add_operation_generator(
+        &mut self,
+        generator: Box<dyn OperationGenerator + Send + Sync>,
+    ) {
         self.operation_generators.push(generator);
     }
 
     /// Run all property tests
     pub fn run_tests(&self, db_path: &Path) -> Result<PropertyTestReport> {
         info!("Starting comprehensive property-based testing suite");
-        
+
         let start_time = Instant::now();
         let mut all_results = Vec::new();
 
@@ -220,14 +229,19 @@ impl PropertyTester {
                 let property_name = format!("{}_{}", check.name(), generator.name());
                 info!("Testing property: {}", property_name);
 
-                let results = self.test_property(&property_name, check.as_ref(), generator.as_ref(), db_path)?;
+                let results = self.test_property(
+                    &property_name,
+                    check.as_ref(),
+                    generator.as_ref(),
+                    db_path,
+                )?;
                 all_results.extend(results);
             }
         }
 
         let total_time = start_time.elapsed();
         let report = self.generate_report(all_results, total_time);
-        
+
         info!("Property testing completed in {:?}", total_time);
         Ok(report)
     }
@@ -248,11 +262,11 @@ impl PropertyTester {
 
             // Generate operations for this test
             let operations = generator.generate(&self.config);
-            
+
             // Create a fresh database for this test
             let test_db_path = db_path.join(format!("test_{}", iteration));
             std::fs::create_dir_all(&test_db_path).map_err(|e| Error::Io(e.to_string()))?;
-            
+
             let config = LightningDbConfig::default();
             let db = Database::create(&test_db_path, config)?;
 
@@ -279,7 +293,8 @@ impl PropertyTester {
             }
 
             // Collect performance metrics
-            let performance_metrics = self.collect_performance_metrics(&db, &operations, test_start.elapsed());
+            let performance_metrics =
+                self.collect_performance_metrics(&db, &operations, test_start.elapsed());
 
             let result = TestResult {
                 property_name: property_name.to_string(),
@@ -318,7 +333,9 @@ impl PropertyTester {
                 for op in operations {
                     match op {
                         Operation::Put { key, value } => db.put_tx(tx_id, key, value)?,
-                        Operation::Get { key } => { db.get_tx(tx_id, key)?; }
+                        Operation::Get { key } => {
+                            db.get_tx(tx_id, key)?;
+                        }
                         Operation::Delete { key } => db.delete_tx(tx_id, key)?,
                         _ => {} // Skip nested transactions for simplicity
                     }
@@ -342,7 +359,12 @@ impl PropertyTester {
     }
 
     /// Collect performance metrics for a test
-    fn collect_performance_metrics(&self, _db: &Database, operations: &[Operation], duration: Duration) -> PerformanceMetrics {
+    fn collect_performance_metrics(
+        &self,
+        _db: &Database,
+        operations: &[Operation],
+        duration: Duration,
+    ) -> PerformanceMetrics {
         let throughput = if duration.as_secs_f64() > 0.0 {
             operations.len() as f64 / duration.as_secs_f64()
         } else {
@@ -354,12 +376,16 @@ impl PropertyTester {
             peak_operation_latency: duration, // Simplified
             throughput_ops_per_sec: throughput,
             memory_usage_bytes: 0, // Would be collected from actual metrics
-            cache_hit_rate: 0.95, // Simulated
+            cache_hit_rate: 0.95,  // Simulated
         }
     }
 
     /// Generate a comprehensive test report
-    fn generate_report(&self, results: Vec<TestResult>, total_time: Duration) -> PropertyTestReport {
+    fn generate_report(
+        &self,
+        results: Vec<TestResult>,
+        total_time: Duration,
+    ) -> PropertyTestReport {
         let total_tests = results.len();
         let passed_tests = results.iter().filter(|r| r.passed).count();
         let failed_tests = total_tests - passed_tests;
@@ -367,12 +393,14 @@ impl PropertyTester {
         let mut violations_by_type = HashMap::new();
         for result in &results {
             for violation in &result.invariant_violations {
-                *violations_by_type.entry(format!("{:?}", violation.violation_type)).or_insert(0) += 1;
+                *violations_by_type
+                    .entry(format!("{:?}", violation.violation_type))
+                    .or_insert(0) += 1;
             }
         }
 
         let recommendations = self.generate_recommendations(&results);
-        
+
         PropertyTestReport {
             total_tests,
             passed_tests,
@@ -389,27 +417,37 @@ impl PropertyTester {
     fn generate_recommendations(&self, results: &[TestResult]) -> Vec<String> {
         let mut recommendations = Vec::new();
 
-        let failure_rate = results.iter().filter(|r| !r.passed).count() as f64 / results.len() as f64;
-        
+        let failure_rate =
+            results.iter().filter(|r| !r.passed).count() as f64 / results.len() as f64;
+
         if failure_rate > 0.1 {
             recommendations.push("High failure rate detected - review database implementation for correctness issues".to_string());
         }
 
-        let avg_latency: Duration = results.iter()
+        let avg_latency: Duration = results
+            .iter()
             .map(|r| r.performance_metrics.average_operation_latency)
-            .sum::<Duration>() / results.len() as u32;
+            .sum::<Duration>()
+            / results.len() as u32;
 
         if avg_latency > Duration::from_millis(10) {
-            recommendations.push("High operation latency detected - consider performance optimizations".to_string());
+            recommendations.push(
+                "High operation latency detected - consider performance optimizations".to_string(),
+            );
         }
 
         let violation_count: usize = results.iter().map(|r| r.invariant_violations.len()).sum();
         if violation_count > 0 {
-            recommendations.push(format!("Invariant violations detected ({}) - review ACID compliance", violation_count));
+            recommendations.push(format!(
+                "Invariant violations detected ({}) - review ACID compliance",
+                violation_count
+            ));
         }
 
         if recommendations.is_empty() {
-            recommendations.push("All property tests passed - database maintains correctness invariants".to_string());
+            recommendations.push(
+                "All property tests passed - database maintains correctness invariants".to_string(),
+            );
         }
 
         recommendations
@@ -424,7 +462,11 @@ impl InvariantCheck for DataIntegrityCheck {
         "data_integrity".to_string()
     }
 
-    fn check(&self, db: &Database, operations: &[Operation]) -> std::result::Result<(), InvariantViolation> {
+    fn check(
+        &self,
+        db: &Database,
+        operations: &[Operation],
+    ) -> std::result::Result<(), InvariantViolation> {
         // Verify that all put operations can be retrieved
         for operation in operations {
             if let Operation::Put { key, value } = operation {
@@ -434,8 +476,14 @@ impl InvariantCheck for DataIntegrityCheck {
                             return Err(InvariantViolation {
                                 invariant_name: self.name(),
                                 violation_type: ViolationType::DataIntegrity,
-                                description: format!("Retrieved value doesn't match stored value for key: {:?}", key),
-                                operation_sequence: operations.iter().map(|op| format!("{:?}", op)).collect(),
+                                description: format!(
+                                    "Retrieved value doesn't match stored value for key: {:?}",
+                                    key
+                                ),
+                                operation_sequence: operations
+                                    .iter()
+                                    .map(|op| format!("{:?}", op))
+                                    .collect(),
                                 database_state: "Value mismatch".to_string(),
                             });
                         }
@@ -445,7 +493,10 @@ impl InvariantCheck for DataIntegrityCheck {
                             invariant_name: self.name(),
                             violation_type: ViolationType::DataIntegrity,
                             description: format!("Key not found after put operation: {:?}", key),
-                            operation_sequence: operations.iter().map(|op| format!("{:?}", op)).collect(),
+                            operation_sequence: operations
+                                .iter()
+                                .map(|op| format!("{:?}", op))
+                                .collect(),
                             database_state: "Missing key".to_string(),
                         });
                     }
@@ -454,7 +505,10 @@ impl InvariantCheck for DataIntegrityCheck {
                             invariant_name: self.name(),
                             violation_type: ViolationType::DataIntegrity,
                             description: format!("Error retrieving key {:?}: {}", key, e),
-                            operation_sequence: operations.iter().map(|op| format!("{:?}", op)).collect(),
+                            operation_sequence: operations
+                                .iter()
+                                .map(|op| format!("{:?}", op))
+                                .collect(),
                             database_state: "Read error".to_string(),
                         });
                     }
@@ -473,10 +527,14 @@ impl InvariantCheck for ConsistencyCheck {
         "consistency".to_string()
     }
 
-    fn check(&self, db: &Database, operations: &[Operation]) -> std::result::Result<(), InvariantViolation> {
+    fn check(
+        &self,
+        db: &Database,
+        operations: &[Operation],
+    ) -> std::result::Result<(), InvariantViolation> {
         // Build expected state from operations
         let mut expected_state = HashMap::new();
-        
+
         for operation in operations {
             match operation {
                 Operation::Put { key, value } => {
@@ -506,7 +564,10 @@ impl InvariantCheck for ConsistencyCheck {
                             invariant_name: self.name(),
                             violation_type: ViolationType::Consistency,
                             description: format!("Inconsistent value for key: {:?}", key),
-                            operation_sequence: operations.iter().map(|op| format!("{:?}", op)).collect(),
+                            operation_sequence: operations
+                                .iter()
+                                .map(|op| format!("{:?}", op))
+                                .collect(),
                             database_state: "Value inconsistency".to_string(),
                         });
                     }
@@ -516,7 +577,10 @@ impl InvariantCheck for ConsistencyCheck {
                         invariant_name: self.name(),
                         violation_type: ViolationType::Consistency,
                         description: format!("Key should be deleted but still exists: {:?}", key),
-                        operation_sequence: operations.iter().map(|op| format!("{:?}", op)).collect(),
+                        operation_sequence: operations
+                            .iter()
+                            .map(|op| format!("{:?}", op))
+                            .collect(),
                         database_state: "Unexpected key presence".to_string(),
                     });
                 }
@@ -525,7 +589,10 @@ impl InvariantCheck for ConsistencyCheck {
                         invariant_name: self.name(),
                         violation_type: ViolationType::Consistency,
                         description: format!("Key should exist but was not found: {:?}", key),
-                        operation_sequence: operations.iter().map(|op| format!("{:?}", op)).collect(),
+                        operation_sequence: operations
+                            .iter()
+                            .map(|op| format!("{:?}", op))
+                            .collect(),
                         database_state: "Missing expected key".to_string(),
                     });
                 }
@@ -547,23 +614,36 @@ impl InvariantCheck for DurabilityCheck {
         "durability".to_string()
     }
 
-    fn check(&self, db: &Database, operations: &[Operation]) -> std::result::Result<(), InvariantViolation> {
+    fn check(
+        &self,
+        db: &Database,
+        operations: &[Operation],
+    ) -> std::result::Result<(), InvariantViolation> {
         // For now, assume durability is maintained if operations complete successfully
         // In a real implementation, this would test database recovery after crashes
-        
+
         // Count successful puts
-        let put_count = operations.iter().filter(|op| matches!(op, Operation::Put { .. })).count();
-        
+        let put_count = operations
+            .iter()
+            .filter(|op| matches!(op, Operation::Put { .. }))
+            .count();
+
         if put_count > 0 {
             // Verify at least some put operations persisted (simplified check)
-            let first_put = operations.iter().find(|op| matches!(op, Operation::Put { .. }));
+            let first_put = operations
+                .iter()
+                .find(|op| matches!(op, Operation::Put { .. }));
             if let Some(Operation::Put { key, .. }) = first_put {
                 if db.get(key).unwrap_or(None).is_none() {
                     return Err(InvariantViolation {
                         invariant_name: self.name(),
                         violation_type: ViolationType::Durability,
-                        description: "First put operation not found - possible durability issue".to_string(),
-                        operation_sequence: operations.iter().map(|op| format!("{:?}", op)).collect(),
+                        description: "First put operation not found - possible durability issue"
+                            .to_string(),
+                        operation_sequence: operations
+                            .iter()
+                            .map(|op| format!("{:?}", op))
+                            .collect(),
                         database_state: "Missing persisted data".to_string(),
                     });
                 }
@@ -582,20 +662,27 @@ impl InvariantCheck for AtomicityCheck {
         "atomicity".to_string()
     }
 
-    fn check(&self, _db: &Database, operations: &[Operation]) -> std::result::Result<(), InvariantViolation> {
+    fn check(
+        &self,
+        _db: &Database,
+        operations: &[Operation],
+    ) -> std::result::Result<(), InvariantViolation> {
         // For transaction operations, verify all-or-none semantics
         for operation in operations {
             if let Operation::Transaction { operations: tx_ops } = operation {
                 // In a real implementation, this would verify that either all operations
                 // in the transaction succeeded or none did
-                
+
                 // For now, just verify transaction isn't empty
                 if tx_ops.is_empty() {
                     return Err(InvariantViolation {
                         invariant_name: self.name(),
                         violation_type: ViolationType::Atomicity,
                         description: "Empty transaction detected".to_string(),
-                        operation_sequence: operations.iter().map(|op| format!("{:?}", op)).collect(),
+                        operation_sequence: operations
+                            .iter()
+                            .map(|op| format!("{:?}", op))
+                            .collect(),
                         database_state: "Empty transaction".to_string(),
                     });
                 }
@@ -613,7 +700,11 @@ impl InvariantCheck for IsolationCheck {
         "isolation".to_string()
     }
 
-    fn check(&self, _db: &Database, _operations: &[Operation]) -> std::result::Result<(), InvariantViolation> {
+    fn check(
+        &self,
+        _db: &Database,
+        _operations: &[Operation],
+    ) -> std::result::Result<(), InvariantViolation> {
         // Isolation checks would require concurrent execution testing
         // For now, this is a placeholder that always passes
         Ok(())
@@ -628,27 +719,42 @@ impl InvariantCheck for PerformanceInvariantCheck {
         "performance".to_string()
     }
 
-    fn check(&self, _db: &Database, operations: &[Operation]) -> std::result::Result<(), InvariantViolation> {
+    fn check(
+        &self,
+        _db: &Database,
+        operations: &[Operation],
+    ) -> std::result::Result<(), InvariantViolation> {
         // Check if operations completed in reasonable time
         // This is a simplified check - real implementation would track actual timing
-        
+
         if operations.len() > 1000 {
             // For large operation sequences, check if we have reasonable distribution
-            let put_count = operations.iter().filter(|op| matches!(op, Operation::Put { .. })).count();
-            let get_count = operations.iter().filter(|op| matches!(op, Operation::Get { .. })).count();
-            
+            let put_count = operations
+                .iter()
+                .filter(|op| matches!(op, Operation::Put { .. }))
+                .count();
+            let get_count = operations
+                .iter()
+                .filter(|op| matches!(op, Operation::Get { .. }))
+                .count();
+
             // If we have too many operations without reads, this might indicate inefficiency
             if put_count > 0 && get_count == 0 && operations.len() > 100 {
                 return Err(InvariantViolation {
                     invariant_name: self.name(),
                     violation_type: ViolationType::Performance,
-                    description: "Operation sequence has no reads - potential performance issue".to_string(),
-                    operation_sequence: operations.iter().take(10).map(|op| format!("{:?}", op)).collect(),
+                    description: "Operation sequence has no reads - potential performance issue"
+                        .to_string(),
+                    operation_sequence: operations
+                        .iter()
+                        .take(10)
+                        .map(|op| format!("{:?}", op))
+                        .collect(),
                     database_state: "Write-heavy workload".to_string(),
                 });
             }
         }
-        
+
         Ok(())
     }
 }
@@ -707,7 +813,7 @@ impl OperationGenerator for ConcurrentOperationGenerator {
         // Generate operations that would be executed concurrently
         for i in 0..op_count {
             let key = format!("concurrent_key_{}", i % 10).into_bytes(); // Overlapping keys
-            
+
             match fastrand::usize(0, 2) {
                 0 => {
                     let value = format!("value_{}", i).into_bytes();
@@ -736,21 +842,33 @@ impl OperationGenerator for EdgeCaseGenerator {
         let mut operations = Vec::new();
 
         // Empty key
-        operations.push(Operation::Put { key: vec![], value: b"empty_key".to_vec() });
+        operations.push(Operation::Put {
+            key: vec![],
+            value: b"empty_key".to_vec(),
+        });
         operations.push(Operation::Get { key: vec![] });
 
         // Empty value
-        operations.push(Operation::Put { key: b"empty_value".to_vec(), value: vec![] });
+        operations.push(Operation::Put {
+            key: b"empty_value".to_vec(),
+            value: vec![],
+        });
 
         // Maximum size key and value
         let max_key = vec![0xFF; config.max_key_size];
         let max_value = vec![0xAA; config.max_value_size];
-        operations.push(Operation::Put { key: max_key.clone(), value: max_value });
+        operations.push(Operation::Put {
+            key: max_key.clone(),
+            value: max_value,
+        });
         operations.push(Operation::Get { key: max_key });
 
         // Special characters in keys
         let special_key = b"key\x00\x01special".to_vec();
-        operations.push(Operation::Put { key: special_key.clone(), value: b"special".to_vec() });
+        operations.push(Operation::Put {
+            key: special_key.clone(),
+            value: b"special".to_vec(),
+        });
         operations.push(Operation::Get { key: special_key });
 
         operations
@@ -776,7 +894,7 @@ impl OperationGenerator for TransactionGenerator {
             for i in 0..op_count {
                 let key = format!("tx_key_{}", i).into_bytes();
                 let value = format!("tx_value_{}", i).into_bytes();
-                
+
                 match fastrand::usize(0, 3) {
                     0 => tx_operations.push(Operation::Put { key, value }),
                     1 => tx_operations.push(Operation::Get { key }),
@@ -785,7 +903,9 @@ impl OperationGenerator for TransactionGenerator {
                 }
             }
 
-            operations.push(Operation::Transaction { operations: tx_operations });
+            operations.push(Operation::Transaction {
+                operations: tx_operations,
+            });
         }
 
         operations
@@ -802,13 +922,13 @@ impl OperationGenerator for CrashTestGenerator {
 
     fn generate(&self, _config: &PropertyTestConfig) -> Vec<Operation> {
         let mut operations = Vec::new();
-        
+
         // Generate operations that test crash recovery
         for i in 0..20 {
             let key = format!("crash_key_{}", i).into_bytes();
             let value = format!("crash_value_{}", i).into_bytes();
             operations.push(Operation::Put { key, value });
-            
+
             // Occasionally add flush operations
             if i % 5 == 0 {
                 operations.push(Operation::Flush);
@@ -834,7 +954,7 @@ impl OperationGenerator for StressTestGenerator {
         // Generate high-volume mixed operations
         for i in 0..op_count {
             let key = format!("stress_key_{}", i % 100).into_bytes(); // Some key overlap
-            
+
             match fastrand::usize(0, 4) {
                 0 | 1 => {
                     // Heavy on writes (50% of operations)
@@ -872,31 +992,33 @@ fn generate_value(max_size: usize) -> Vec<u8> {
 /// Fast random number generation for property testing
 mod fastrand {
     use std::sync::atomic::{AtomicU64, Ordering};
-    
+
     static STATE: AtomicU64 = AtomicU64::new(1);
-    
+
     pub fn f64() -> f64 {
         let mut x = STATE.load(Ordering::Relaxed);
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         STATE.store(x, Ordering::Relaxed);
-        
+
         (x as f64) / (u64::MAX as f64)
     }
-    
+
     pub fn usize(range_start: usize, range_end: usize) -> usize {
         let mut x = STATE.load(Ordering::Relaxed);
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         STATE.store(x, Ordering::Relaxed);
-        
+
         let range_size = range_end - range_start;
-        if range_size == 0 { return range_start; }
+        if range_size == 0 {
+            return range_start;
+        }
         range_start + ((x as usize) % range_size)
     }
-    
+
     pub fn u8(range_start: u8, range_end: u8) -> u8 {
         usize(range_start as usize, range_end as usize) as u8
     }
@@ -905,13 +1027,12 @@ mod fastrand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_property_tester_creation() {
         let config = PropertyTestConfig::default();
         let tester = PropertyTester::new(config);
-        
+
         assert!(!tester.invariant_checks.is_empty());
         assert!(!tester.operation_generators.is_empty());
     }
@@ -920,7 +1041,7 @@ mod tests {
     fn test_operation_generation() {
         let config = PropertyTestConfig::default();
         let generator = BasicOperationGenerator;
-        
+
         let operations = generator.generate(&config);
         assert!(!operations.is_empty());
         assert!(operations.len() <= config.max_operations_per_sequence);
@@ -930,19 +1051,21 @@ mod tests {
     fn test_edge_case_generation() {
         let config = PropertyTestConfig::default();
         let generator = EdgeCaseGenerator;
-        
+
         let operations = generator.generate(&config);
         assert!(!operations.is_empty());
-        
+
         // Should contain empty key test
-        assert!(operations.iter().any(|op| matches!(op, Operation::Put { key, .. } if key.is_empty())));
+        assert!(operations
+            .iter()
+            .any(|op| matches!(op, Operation::Put { key, .. } if key.is_empty())));
     }
 
     #[test]
     fn test_data_integrity_check() {
         let check = DataIntegrityCheck;
         assert_eq!(check.name(), "data_integrity");
-        
+
         // Test would require a real database instance
         // This is a placeholder for the test structure
     }
@@ -952,10 +1075,10 @@ mod tests {
         let key = generate_key(100);
         assert!(!key.is_empty());
         assert!(key.len() <= 100);
-        
+
         let value = generate_value(1000);
         assert!(value.len() <= 1000);
-        
+
         // Empty value should be possible
         let empty_value = generate_value(0);
         assert!(empty_value.is_empty());
@@ -965,16 +1088,19 @@ mod tests {
     fn test_concurrent_operation_generation() {
         let config = PropertyTestConfig::default();
         let generator = ConcurrentOperationGenerator;
-        
+
         let operations = generator.generate(&config);
         assert!(!operations.is_empty());
-        
+
         // Should have overlapping keys for concurrency testing
-        let keys: Vec<_> = operations.iter().filter_map(|op| match op {
-            Operation::Put { key, .. } | Operation::Get { key } => Some(key),
-            _ => None,
-        }).collect();
-        
+        let keys: Vec<_> = operations
+            .iter()
+            .filter_map(|op| match op {
+                Operation::Put { key, .. } | Operation::Get { key } => Some(key),
+                _ => None,
+            })
+            .collect();
+
         // With overlapping keys, we should have duplicates
         let unique_keys: std::collections::HashSet<_> = keys.iter().collect();
         if keys.len() > 10 {

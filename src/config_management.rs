@@ -3,15 +3,16 @@
 //! This module provides a comprehensive configuration management system
 //! supporting multiple environments, hot-reloading, validation, and templates.
 
-use crate::{Result, Error, LightningDbConfig, WalSyncMode};
 use crate::compression::CompressionType;
+use crate::{Error, LightningDbConfig, Result, WalSyncMode};
+#[cfg(feature = "file-watching")]
+use notify::{Event, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
-use notify::{Watcher, RecursiveMode, Event};
 use std::sync::mpsc;
+use std::sync::{Arc, RwLock};
 
 /// Configuration source types
 #[derive(Debug, Clone, PartialEq)]
@@ -139,7 +140,10 @@ pub struct ConfigManager {
     /// Configuration sources
     sources: Vec<ConfigSource>,
     /// Hot-reload watcher
+    #[cfg(feature = "file-watching")]
     watcher: Option<notify::RecommendedWatcher>,
+    #[cfg(not(feature = "file-watching"))]
+    watcher: Option<()>,
     /// Configuration change callbacks
     change_callbacks: Arc<RwLock<Vec<Box<dyn Fn(&LightningDbConfig) + Send + Sync>>>>,
 }
@@ -174,30 +178,29 @@ impl ConfigManager {
 
     /// Load configuration from file
     fn load_from_file(&self, path: &Path) -> Result<LightningDbConfig> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| Error::Io(e.to_string()))?;
-        
+        let content = fs::read_to_string(path).map_err(|e| Error::Io(e.to_string()))?;
+
         let format = ConfigFormat::from_extension(path)
             .ok_or_else(|| Error::Config("Unknown configuration format".into()))?;
-        
+
         self.parse_config(&content, format)
     }
 
     /// Parse configuration from string
     fn parse_config(&self, content: &str, format: ConfigFormat) -> Result<LightningDbConfig> {
         match format {
-            ConfigFormat::Json => {
-                serde_json::from_str(content)
-                    .map_err(|e| Error::Config(format!("JSON parse error: {}", e)))
-            }
-            ConfigFormat::Yaml => {
-                serde_yaml::from_str(content)
-                    .map_err(|e| Error::Config(format!("YAML parse error: {}", e)))
-            }
-            ConfigFormat::Toml => {
-                toml::from_str(content)
-                    .map_err(|e| Error::Config(format!("TOML parse error: {}", e)))
-            }
+            ConfigFormat::Json => serde_json::from_str(content)
+                .map_err(|e| Error::Config(format!("JSON parse error: {}", e))),
+            #[cfg(feature = "config-formats")]
+            ConfigFormat::Yaml => serde_yaml::from_str(content)
+                .map_err(|e| Error::Config(format!("YAML parse error: {}", e))),
+            #[cfg(feature = "config-formats")]
+            ConfigFormat::Toml => toml::from_str(content)
+                .map_err(|e| Error::Config(format!("TOML parse error: {}", e))),
+            #[cfg(not(feature = "config-formats"))]
+            ConfigFormat::Yaml => Err(Error::Config("YAML support requires 'config-formats' feature".into())),
+            #[cfg(not(feature = "config-formats"))]
+            ConfigFormat::Toml => Err(Error::Config("TOML support requires 'config-formats' feature".into())),
             ConfigFormat::HCL => {
                 // HCL parsing would go here
                 Err(Error::Config("HCL format not yet implemented".into()))
@@ -208,19 +211,21 @@ impl ConfigManager {
     /// Load configuration from environment variables
     fn load_from_env(&self) -> Result<LightningDbConfig> {
         let mut config = LightningDbConfig::default();
-        
+
         // Cache size
         if let Ok(cache_size) = std::env::var("LIGHTNING_DB_CACHE_SIZE") {
-            config.cache_size = cache_size.parse()
+            config.cache_size = cache_size
+                .parse()
                 .map_err(|_| Error::Config("Invalid cache size".into()))?;
         }
-        
+
         // Compression
         if let Ok(compression) = std::env::var("LIGHTNING_DB_COMPRESSION") {
-            config.compression_enabled = compression.parse()
+            config.compression_enabled = compression
+                .parse()
                 .map_err(|_| Error::Config("Invalid compression setting".into()))?;
         }
-        
+
         // WAL sync mode
         if let Ok(wal_mode) = std::env::var("LIGHTNING_DB_WAL_SYNC_MODE") {
             config.wal_sync_mode = match wal_mode.as_str() {
@@ -229,29 +234,31 @@ impl ConfigManager {
                 _ => return Err(Error::Config("Invalid WAL sync mode".into())),
             };
         }
-        
+
         // Add more environment variable mappings as needed
-        
+
         Ok(config)
     }
 
     /// Load configuration from command line arguments
     fn load_from_args(&self, args: &[String]) -> Result<LightningDbConfig> {
         let mut config = LightningDbConfig::default();
-        
+
         let mut i = 0;
         while i < args.len() {
             match args[i].as_str() {
                 "--cache-size" => {
                     if i + 1 < args.len() {
-                        config.cache_size = args[i + 1].parse()
+                        config.cache_size = args[i + 1]
+                            .parse()
                             .map_err(|_| Error::Config("Invalid cache size".into()))?;
                         i += 1;
                     }
                 }
                 "--compression" => {
                     if i + 1 < args.len() {
-                        config.compression_enabled = args[i + 1].parse()
+                        config.compression_enabled = args[i + 1]
+                            .parse()
                             .map_err(|_| Error::Config("Invalid compression setting".into()))?;
                         i += 1;
                     }
@@ -261,7 +268,7 @@ impl ConfigManager {
             }
             i += 1;
         }
-        
+
         Ok(config)
     }
 
@@ -269,26 +276,28 @@ impl ConfigManager {
     fn load_from_remote(&self, url: &str) -> Result<LightningDbConfig> {
         // This would fetch configuration from a remote source
         // For now, returning an error
-        Err(Error::Config("Remote configuration not yet implemented".into()))
+        Err(Error::Config(
+            "Remote configuration not yet implemented".into(),
+        ))
     }
 
     /// Update current configuration
     fn update_config(&self, config: LightningDbConfig) -> Result<()> {
         // Validate configuration
         self.validate_config(&config)?;
-        
+
         // Update current config
         {
             let mut current = self.current_config.write().unwrap();
             *current = config.clone();
         }
-        
+
         // Notify callbacks
         let callbacks = self.change_callbacks.read().unwrap();
         for callback in callbacks.iter() {
             callback(&config);
         }
-        
+
         Ok(())
     }
 
@@ -298,42 +307,49 @@ impl ConfigManager {
         if config.cache_size == 0 {
             return Err(Error::Config("Cache size must be greater than 0".into()));
         }
-        
-        if config.cache_size > 1024 * 1024 * 1024 * 1024 { // 1TB
+
+        if config.cache_size > 1024 * 1024 * 1024 * 1024 {
+            // 1TB
             return Err(Error::Config("Cache size too large (max 1TB)".into()));
         }
-        
+
         // Page size validation
         if config.page_size < 512 || config.page_size > 65536 {
-            return Err(Error::Config("Page size must be between 512 and 65536".into()));
+            return Err(Error::Config(
+                "Page size must be between 512 and 65536".into(),
+            ));
         }
-        
+
         if !config.page_size.is_power_of_two() {
             return Err(Error::Config("Page size must be a power of 2".into()));
         }
-        
+
         // Transaction validation
         if config.max_active_transactions == 0 {
-            return Err(Error::Config("Must allow at least 1 active transaction".into()));
+            return Err(Error::Config(
+                "Must allow at least 1 active transaction".into(),
+            ));
         }
-        
+
         // Add more validation rules as needed
-        
+
         Ok(())
     }
 
     /// Load configuration for specific environment
     pub fn load_environment(&mut self, env_name: &str) -> Result<()> {
-        let env_config = self.environments.get(env_name)
+        let env_config = self
+            .environments
+            .get(env_name)
             .ok_or_else(|| Error::Config(format!("Unknown environment: {}", env_name)))?
             .clone();
-        
+
         // Apply base configuration
         let config = env_config.base;
-        
+
         // Apply overrides
         // This would merge the overrides into the config
-        
+
         self.update_config(config)?;
         Ok(())
     }
@@ -349,47 +365,57 @@ impl ConfigManager {
 
     /// Enable hot-reloading for file configurations
     pub fn enable_hot_reload(&mut self) -> Result<()> {
-        let (tx, rx) = mpsc::channel();
-        
-        let mut watcher = notify::recommended_watcher(move |res: std::result::Result<Event, notify::Error>| {
-            if let Ok(event) = res {
-                let _ = tx.send(event);
+        #[cfg(feature = "file-watching")]
+        {
+            let (tx, rx) = mpsc::channel();
+
+            let mut watcher =
+                notify::recommended_watcher(move |res: std::result::Result<Event, notify::Error>| {
+                    if let Ok(event) = res {
+                        let _ = tx.send(event);
+                    }
+                })
+                .map_err(|e| Error::Config(format!("Failed to create watcher: {}", e)))?;
+
+            // Watch all file sources
+            for source in &self.sources {
+                if let ConfigSource::File(path) = source {
+                    watcher
+                        .watch(path, RecursiveMode::NonRecursive)
+                        .map_err(|e| Error::Config(format!("Failed to watch file: {}", e)))?;
+                }
             }
-        }).map_err(|e| Error::Config(format!("Failed to create watcher: {}", e)))?;
-        
-        // Watch all file sources
-        for source in &self.sources {
-            if let ConfigSource::File(path) = source {
-                watcher.watch(path, RecursiveMode::NonRecursive)
-                    .map_err(|e| Error::Config(format!("Failed to watch file: {}", e)))?;
-            }
-        }
-        
-        self.watcher = Some(watcher);
-        
-        // Spawn reload thread
-        let sources = self.sources.clone();
-        let config_manager = Arc::new(self);
-        
-        std::thread::spawn(move || {
-            for event in rx {
-                if matches!(event.kind, notify::EventKind::Modify(_)) {
-                    // Reload configuration
-                    for path in event.paths {
-                        for source in &sources {
-                            if let ConfigSource::File(source_path) = source {
-                                if source_path == &path {
-                                    // Reload this configuration
-                                    // This would trigger a reload
+
+            self.watcher = Some(watcher);
+
+            // Spawn reload thread
+            let sources = self.sources.clone();
+            let config_manager = Arc::new(self);
+
+            std::thread::spawn(move || {
+                for event in rx {
+                    if matches!(event.kind, notify::EventKind::Modify(_)) {
+                        // Reload configuration
+                        for path in event.paths {
+                            for source in &sources {
+                                if let ConfigSource::File(source_path) = source {
+                                    if source_path == &path {
+                                        // Reload this configuration
+                                        // This would trigger a reload
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-        });
-        
-        Ok(())
+            });
+
+            Ok(())
+        }
+        #[cfg(not(feature = "file-watching"))]
+        {
+            Err(Error::Config("Hot-reload requires 'file-watching' feature".into()))
+        }
     }
 
     /// Get current configuration
@@ -400,93 +426,113 @@ impl ConfigManager {
     /// Export configuration to file
     pub fn export_config(&self, path: &Path, format: ConfigFormat) -> Result<()> {
         let config = self.get_config();
-        
+
         let content = match format {
             ConfigFormat::Json => serde_json::to_string_pretty(&config)
                 .map_err(|e| Error::Config(format!("JSON serialization error: {}", e)))?,
+            #[cfg(feature = "config-formats")]
             ConfigFormat::Yaml => serde_yaml::to_string(&config)
                 .map_err(|e| Error::Config(format!("YAML serialization error: {}", e)))?,
+            #[cfg(feature = "config-formats")]
             ConfigFormat::Toml => toml::to_string_pretty(&config)
                 .map_err(|e| Error::Config(format!("TOML serialization error: {}", e)))?,
+            #[cfg(not(feature = "config-formats"))]
+            ConfigFormat::Yaml => return Err(Error::Config("YAML export requires 'config-formats' feature".into())),
+            #[cfg(not(feature = "config-formats"))]
+            ConfigFormat::Toml => return Err(Error::Config("TOML export requires 'config-formats' feature".into())),
             ConfigFormat::HCL => {
                 return Err(Error::Config("HCL format not yet implemented".into()));
             }
         };
-        
-        fs::write(path, content)
-            .map_err(|e| Error::Io(e.to_string()))?;
-        
+
+        fs::write(path, content).map_err(|e| Error::Io(e.to_string()))?;
+
         Ok(())
     }
 
     /// Load default templates
     fn load_default_templates() -> HashMap<String, ConfigTemplate> {
         let mut templates = HashMap::new();
-        
+
         // High-performance template
-        templates.insert("high_performance".to_string(), ConfigTemplate {
-            name: "high_performance".to_string(),
-            description: "Optimized for maximum performance".to_string(),
-            config: LightningDbConfig {
-                cache_size: 1024 * 1024 * 1024 * 4, // 4GB
-                compression_enabled: false,
-                wal_sync_mode: WalSyncMode::Async,
-                prefetch_enabled: true,
-                prefetch_distance: 64,
-                write_batch_size: 10000,
-                enable_statistics: false,
-                ..Default::default()
+        templates.insert(
+            "high_performance".to_string(),
+            ConfigTemplate {
+                name: "high_performance".to_string(),
+                description: "Optimized for maximum performance".to_string(),
+                config: LightningDbConfig {
+                    cache_size: 1024 * 1024 * 1024 * 4, // 4GB
+                    compression_enabled: false,
+                    wal_sync_mode: WalSyncMode::Async,
+                    prefetch_enabled: true,
+                    prefetch_distance: 64,
+                    write_batch_size: 10000,
+                    enable_statistics: false,
+                    ..Default::default()
+                },
+                variables: HashMap::new(),
             },
-            variables: HashMap::new(),
-        });
-        
+        );
+
         // Balanced template
-        templates.insert("balanced".to_string(), ConfigTemplate {
-            name: "balanced".to_string(),
-            description: "Balanced performance and resource usage".to_string(),
-            config: LightningDbConfig {
-                cache_size: 1024 * 1024 * 1024, // 1GB
-                compression_enabled: true,
-                compression_type: 2, // Lz4
-                wal_sync_mode: WalSyncMode::Sync,
-                prefetch_enabled: true,
-                enable_statistics: true,
-                ..Default::default()
+        templates.insert(
+            "balanced".to_string(),
+            ConfigTemplate {
+                name: "balanced".to_string(),
+                description: "Balanced performance and resource usage".to_string(),
+                config: LightningDbConfig {
+                    cache_size: 1024 * 1024 * 1024, // 1GB
+                    compression_enabled: true,
+                    compression_type: 2, // Lz4
+                    wal_sync_mode: WalSyncMode::Sync,
+                    prefetch_enabled: true,
+                    enable_statistics: true,
+                    ..Default::default()
+                },
+                variables: HashMap::new(),
             },
-            variables: HashMap::new(),
-        });
-        
+        );
+
         // Low-resource template
-        templates.insert("low_resource".to_string(), ConfigTemplate {
-            name: "low_resource".to_string(),
-            description: "Optimized for minimal resource usage".to_string(),
-            config: LightningDbConfig {
-                cache_size: 1024 * 1024 * 64, // 64MB
-                compression_enabled: true,
-                compression_type: 1, // Zstd
-                compression_level: Some(6),
-                wal_sync_mode: WalSyncMode::Sync,
-                write_batch_size: 100,
-                max_active_transactions: 10,
-                ..Default::default()
+        templates.insert(
+            "low_resource".to_string(),
+            ConfigTemplate {
+                name: "low_resource".to_string(),
+                description: "Optimized for minimal resource usage".to_string(),
+                config: LightningDbConfig {
+                    cache_size: 1024 * 1024 * 64, // 64MB
+                    compression_enabled: true,
+                    compression_type: 1, // Zstd
+                    compression_level: Some(6),
+                    wal_sync_mode: WalSyncMode::Sync,
+                    write_batch_size: 100,
+                    max_active_transactions: 10,
+                    ..Default::default()
+                },
+                variables: HashMap::new(),
             },
-            variables: HashMap::new(),
-        });
-        
+        );
+
         templates
     }
 
     /// Apply template
-    pub fn apply_template(&mut self, template_name: &str, variables: HashMap<String, serde_json::Value>) -> Result<()> {
-        let template = self.templates.get(template_name)
+    pub fn apply_template(
+        &mut self,
+        template_name: &str,
+        variables: HashMap<String, serde_json::Value>,
+    ) -> Result<()> {
+        let template = self
+            .templates
+            .get(template_name)
             .ok_or_else(|| Error::Config(format!("Unknown template: {}", template_name)))?
             .clone();
-        
+
         let config = template.config;
-        
+
         // Apply variables to template
         // This would substitute variables in the configuration
-        
+
         self.update_config(config)?;
         Ok(())
     }
@@ -495,7 +541,7 @@ impl ConfigManager {
     pub fn diff_configs(config1: &LightningDbConfig, config2: &LightningDbConfig) -> ConfigDiff {
         let json1 = serde_json::to_value(config1).unwrap();
         let json2 = serde_json::to_value(config2).unwrap();
-        
+
         ConfigDiff::from_json(&json1, &json2)
     }
 }
@@ -519,20 +565,21 @@ impl ConfigDiff {
             removed: HashMap::new(),
             modified: HashMap::new(),
         };
-        
+
         // Compare JSON objects
         if let (Some(obj1), Some(obj2)) = (val1.as_object(), val2.as_object()) {
             // Check for removed/modified fields
             for (key, value1) in obj1 {
                 if let Some(value2) = obj2.get(key) {
                     if value1 != value2 {
-                        diff.modified.insert(key.clone(), (value1.clone(), value2.clone()));
+                        diff.modified
+                            .insert(key.clone(), (value1.clone(), value2.clone()));
                     }
                 } else {
                     diff.removed.insert(key.clone(), value1.clone());
                 }
             }
-            
+
             // Check for added fields
             for (key, value2) in obj2 {
                 if !obj1.contains_key(key) {
@@ -540,10 +587,10 @@ impl ConfigDiff {
                 }
             }
         }
-        
+
         diff
     }
-    
+
     /// Check if configurations are equal
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty() && self.modified.is_empty()
@@ -634,11 +681,11 @@ mod tests {
     #[test]
     fn test_config_validation() {
         let manager = ConfigManager::new();
-        
+
         // Valid config
         let valid_config = LightningDbConfig::default();
         assert!(manager.validate_config(&valid_config).is_ok());
-        
+
         // Invalid cache size
         let mut invalid_config = LightningDbConfig::default();
         invalid_config.cache_size = 0;
@@ -651,13 +698,13 @@ mod tests {
             .cache_size(1024)
             .compression(true)
             .build();
-            
+
         let config2 = ConfigBuilder::new()
             .cache_size(2048)
             .compression(true)
             .prefetch(true)
             .build();
-            
+
         let diff = ConfigManager::diff_configs(&config1, &config2);
         assert!(!diff.modified.is_empty());
         assert!(!diff.added.is_empty());

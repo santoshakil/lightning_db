@@ -1,5 +1,5 @@
 //! Page types for Lightning DB
-//! 
+//!
 //! Defines the different types of pages used in the database.
 
 use serde::{Deserialize, Serialize};
@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 pub enum PageType {
     /// Metadata page containing database configuration
     Meta = 0,
-    
+
     /// Data page containing B+Tree nodes or key-value pairs
     Data = 1,
-    
+
     /// Overflow page for large values
     Overflow = 2,
-    
+
     /// Free page available for reuse
     Free = 3,
 }
@@ -31,7 +31,7 @@ impl PageType {
             _ => None,
         }
     }
-    
+
     /// Convert PageType to byte value
     pub fn to_byte(&self) -> u8 {
         *self as u8

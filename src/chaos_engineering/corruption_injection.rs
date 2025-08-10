@@ -2,20 +2,23 @@
 //!
 //! Injects various types of corruption to test detection and recovery mechanisms.
 
-use crate::{Database, Result, Error};
 use crate::chaos_engineering::{
-    ChaosTest, ChaosTestResult, IntegrityReport, ChaosConfig,
-    CorruptionType, IntegrityViolation, IntegrityViolationType, ViolationSeverity
+    ChaosConfig, ChaosTest, ChaosTestResult, CorruptionType, IntegrityReport, IntegrityViolation,
+    IntegrityViolationType, ViolationSeverity,
 };
-use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
+use crate::{Database, Error, Result};
+use parking_lot::{Mutex, RwLock};
+use rand::{rngs::StdRng, rng, Rng, SeedableRng};
+use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+};
 use std::thread;
 use std::time::{Duration, SystemTime};
-use std::path::{Path, PathBuf};
-use std::fs::OpenOptions;
-use std::io::{Write, Read, Seek, SeekFrom};
-use parking_lot::{RwLock, Mutex};
-use rand::{Rng, thread_rng, rngs::StdRng, SeedableRng};
-use std::collections::HashMap;
 
 /// Corruption injection test
 pub struct CorruptionInjectionTest {
@@ -133,10 +136,10 @@ struct CorruptionDetectionEngine {
 trait CorruptionDetector: Send + Sync {
     /// Name of the detection method
     fn name(&self) -> &str;
-    
+
     /// Detect corruption in data
     fn detect(&self, data: &[u8], metadata: &DataMetadata) -> Option<IntegrityViolation>;
-    
+
     /// Verify integrity of data
     fn verify_integrity(&self, data: &[u8], expected_checksum: Option<u32>) -> bool;
 }
@@ -199,45 +202,49 @@ impl CorruptionEngine {
         let rng = if let Some(seed) = seed {
             StdRng::seed_from_u64(seed)
         } else {
-            StdRng::seed_from_u64(thread_rng().gen())
+            StdRng::seed_from_u64(rng().gen())
         };
 
         let mut patterns = HashMap::new();
-        
+
         // Define corruption patterns for each type
-        patterns.insert(CorruptionType::BitFlip, vec![
-            CorruptionPattern {
-                name: "Single Bit Flip".to_string(),
-                generator: |rng, data, _| {
-                    let mut corrupted = data.to_vec();
-                    if !corrupted.is_empty() {
-                        let byte_idx = rng.gen_range(0..corrupted.len());
-                        let bit_idx = rng.gen_range(0..8);
-                        corrupted[byte_idx] ^= 1 << bit_idx;
-                    }
-                    corrupted
-                },
-                severity: ViolationSeverity::Low,
-            },
-            CorruptionPattern {
-                name: "Multiple Bit Flips".to_string(),
-                generator: |rng, data, max_bytes| {
-                    let mut corrupted = data.to_vec();
-                    let flip_count = rng.gen_range(1..=5.min(max_bytes));
-                    for _ in 0..flip_count {
+        patterns.insert(
+            CorruptionType::BitFlip,
+            vec![
+                CorruptionPattern {
+                    name: "Single Bit Flip".to_string(),
+                    generator: |rng, data, _| {
+                        let mut corrupted = data.to_vec();
                         if !corrupted.is_empty() {
                             let byte_idx = rng.gen_range(0..corrupted.len());
-                            corrupted[byte_idx] = !corrupted[byte_idx];
+                            let bit_idx = rng.gen_range(0..8);
+                            corrupted[byte_idx] ^= 1 << bit_idx;
                         }
-                    }
-                    corrupted
+                        corrupted
+                    },
+                    severity: ViolationSeverity::Low,
                 },
-                severity: ViolationSeverity::Medium,
-            },
-        ]);
+                CorruptionPattern {
+                    name: "Multiple Bit Flips".to_string(),
+                    generator: |rng, data, max_bytes| {
+                        let mut corrupted = data.to_vec();
+                        let flip_count = rng.gen_range(1..=5.min(max_bytes));
+                        for _ in 0..flip_count {
+                            if !corrupted.is_empty() {
+                                let byte_idx = rng.gen_range(0..corrupted.len());
+                                corrupted[byte_idx] = !corrupted[byte_idx];
+                            }
+                        }
+                        corrupted
+                    },
+                    severity: ViolationSeverity::Medium,
+                },
+            ],
+        );
 
-        patterns.insert(CorruptionType::PageHeaderCorruption, vec![
-            CorruptionPattern {
+        patterns.insert(
+            CorruptionType::PageHeaderCorruption,
+            vec![CorruptionPattern {
                 name: "Page Header Overwrite".to_string(),
                 generator: |rng, data, _| {
                     let mut corrupted = data.to_vec();
@@ -248,11 +255,12 @@ impl CorruptionEngine {
                     corrupted
                 },
                 severity: ViolationSeverity::High,
-            },
-        ]);
+            }],
+        );
 
-        patterns.insert(CorruptionType::ChecksumMismatch, vec![
-            CorruptionPattern {
+        patterns.insert(
+            CorruptionType::ChecksumMismatch,
+            vec![CorruptionPattern {
                 name: "Data Modification Without Checksum Update".to_string(),
                 generator: |rng, data, _| {
                     let mut corrupted = data.to_vec();
@@ -264,24 +272,25 @@ impl CorruptionEngine {
                     corrupted
                 },
                 severity: ViolationSeverity::Medium,
-            },
-        ]);
+            }],
+        );
 
-        patterns.insert(CorruptionType::TornPageWrite, vec![
-            CorruptionPattern {
+        patterns.insert(
+            CorruptionType::TornPageWrite,
+            vec![CorruptionPattern {
                 name: "Partial Page Write".to_string(),
                 generator: |rng, data, _| {
                     let mut corrupted = data.to_vec();
                     // Simulate partial write by zeroing out latter half
-                    let cutoff = rng.gen_range(data.len()/2..data.len());
+                    let cutoff = rng.gen_range(data.len() / 2..data.len());
                     for i in cutoff..corrupted.len() {
                         corrupted[i] = 0;
                     }
                     corrupted
                 },
                 severity: ViolationSeverity::Critical,
-            },
-        ]);
+            }],
+        );
 
         Self {
             corruption_sites: RwLock::new(HashMap::new()),
@@ -300,19 +309,18 @@ impl CorruptionEngine {
         corruption_type: CorruptionType,
     ) -> Result<CorruptionSite> {
         // Read original data
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(file_path)?;
-        
+        let mut file = OpenOptions::new().read(true).write(true).open(file_path)?;
+
         file.seek(SeekFrom::Start(offset))?;
         let mut original_data = vec![0u8; size];
         file.read_exact(&mut original_data)?;
 
         // Generate corrupted data
-        let patterns = self.corruption_patterns.get(&corruption_type)
+        let patterns = self
+            .corruption_patterns
+            .get(&corruption_type)
             .ok_or_else(|| Error::Generic("No patterns for corruption type".to_string()))?;
-        
+
         let mut rng = self.rng.lock();
         let pattern = &patterns[rng.gen_range(0..patterns.len())];
         let corrupted_data = (pattern.generator)(&mut *rng, &original_data, size);
@@ -343,15 +351,20 @@ impl CorruptionEngine {
         self.corruption_sites.write().insert(site_id, site.clone());
         self.total_injected.fetch_add(1, Ordering::Relaxed);
 
-        println!("💥 Injected {:?} corruption at {}:{}", 
-                 corruption_type, file_path.display(), offset);
+        println!(
+            "💥 Injected {:?} corruption at {}:{}",
+            corruption_type,
+            file_path.display(),
+            offset
+        );
 
         Ok(site)
     }
 
     /// Get all active corruption sites
     fn get_active_corruptions(&self) -> Vec<CorruptionSite> {
-        self.corruption_sites.read()
+        self.corruption_sites
+            .read()
             .values()
             .filter(|site| !site.repaired)
             .cloned()
@@ -419,7 +432,7 @@ impl CorruptionDetector for StructuralDetector {
                         recovery_successful: false,
                     });
                 }
-                
+
                 // Check magic bytes
                 let magic = &data[0..4];
                 if magic != b"PAGE" {
@@ -434,7 +447,7 @@ impl CorruptionDetector for StructuralDetector {
                         recovery_successful: false,
                     });
                 }
-            },
+            }
             _ => {}
         }
         None
@@ -448,12 +461,9 @@ impl CorruptionDetector for StructuralDetector {
 impl CorruptionDetectionEngine {
     fn new() -> Self {
         let stop_signal = Arc::new(AtomicBool::new(false));
-        
+
         Self {
-            detection_methods: vec![
-                Box::new(ChecksumDetector),
-                Box::new(StructuralDetector),
-            ],
+            detection_methods: vec![Box::new(ChecksumDetector), Box::new(StructuralDetector)],
             violations: RwLock::new(Vec::new()),
             detections: AtomicU64::new(0),
             false_positives: AtomicU64::new(0),
@@ -488,19 +498,19 @@ impl CorruptionDetectionEngine {
     /// Check data for corruption
     fn check_data(&self, data: &[u8], metadata: &DataMetadata) -> Vec<IntegrityViolation> {
         let mut violations = Vec::new();
-        
+
         for detector in &self.detection_methods {
             if let Some(violation) = detector.detect(data, metadata) {
                 violations.push(violation);
                 self.detections.fetch_add(1, Ordering::Relaxed);
             }
         }
-        
+
         // Record violations
         if !violations.is_empty() {
             self.violations.write().extend(violations.clone());
         }
-        
+
         violations
     }
 }
@@ -517,12 +527,12 @@ impl ChaosTest for CorruptionInjectionTest {
 
     fn execute(&mut self, db: Arc<Database>, duration: Duration) -> Result<ChaosTestResult> {
         let start_time = SystemTime::now();
-        
+
         // Start background detection if enabled
         if self.config.auto_detection_enabled {
             self.detection_engine.start_background_checking(
                 std::env::temp_dir().join("chaos_test_db"),
-                self.config.background_check_interval
+                self.config.background_check_interval,
             );
         }
 
@@ -535,13 +545,13 @@ impl ChaosTest for CorruptionInjectionTest {
                     // In real implementation, would target actual database files
                     let _ = self.corruption_engine.inject_corruption(
                         &std::env::temp_dir().join("test_corruption_file"),
-                        thread_rng().gen_range(0..1024),
-                        thread_rng().gen_range(1..self.config.max_corruption_bytes),
-                        *corruption_type
+                        rng().gen_range(0..1024),
+                        rng().gen_range(1..self.config.max_corruption_bytes),
+                        *corruption_type,
                     );
                 }
             }
-            
+
             thread::sleep(self.config.injection_interval);
         }
 
@@ -551,27 +561,28 @@ impl ChaosTest for CorruptionInjectionTest {
         // Analyze results
         let active_corruptions = self.corruption_engine.get_active_corruptions();
         let violations = self.detection_engine.violations.read();
-        
-        let undetected = active_corruptions.iter()
-            .filter(|c| !c.detected)
-            .count() as u64;
+
+        let undetected = active_corruptions.iter().filter(|c| !c.detected).count() as u64;
 
         let integrity_report = IntegrityReport {
             pages_verified: 1000, // Placeholder
             corrupted_pages: active_corruptions.len() as u64,
-            checksum_failures: violations.iter()
+            checksum_failures: violations
+                .iter()
                 .filter(|v| v.violation_type == IntegrityViolationType::ChecksumMismatch)
                 .count() as u64,
-            structural_errors: violations.iter()
+            structural_errors: violations
+                .iter()
                 .filter(|v| v.violation_type == IntegrityViolationType::StructuralCorruption)
                 .count() as u64,
-            repaired_errors: active_corruptions.iter()
-                .filter(|c| c.repaired)
-                .count() as u64,
-            unrepairable_errors: active_corruptions.iter()
+            repaired_errors: active_corruptions.iter().filter(|c| c.repaired).count() as u64,
+            unrepairable_errors: active_corruptions
+                .iter()
                 .filter(|c| c.detected && !c.repaired)
                 .count() as u64,
-            verification_duration: SystemTime::now().duration_since(start_time).unwrap_or_default(),
+            verification_duration: SystemTime::now()
+                .duration_since(start_time)
+                .unwrap_or_default(),
         };
 
         let test_passed = undetected == 0 && integrity_report.unrepairable_errors == 0;
@@ -579,8 +590,13 @@ impl ChaosTest for CorruptionInjectionTest {
         Ok(ChaosTestResult {
             test_name: self.name().to_string(),
             passed: test_passed,
-            duration: SystemTime::now().duration_since(start_time).unwrap_or_default(),
-            failures_injected: self.corruption_engine.total_injected.load(Ordering::Relaxed),
+            duration: SystemTime::now()
+                .duration_since(start_time)
+                .unwrap_or_default(),
+            failures_injected: self
+                .corruption_engine
+                .total_injected
+                .load(Ordering::Relaxed),
             failures_recovered: integrity_report.repaired_errors,
             integrity_report,
             error_details: if !test_passed {
@@ -600,14 +616,16 @@ impl ChaosTest for CorruptionInjectionTest {
     fn verify_integrity(&self, _db: Arc<Database>) -> Result<IntegrityReport> {
         let active_corruptions = self.corruption_engine.get_active_corruptions();
         let violations = self.detection_engine.violations.read();
-        
+
         Ok(IntegrityReport {
             pages_verified: 1000,
             corrupted_pages: active_corruptions.len() as u64,
-            checksum_failures: violations.iter()
+            checksum_failures: violations
+                .iter()
                 .filter(|v| v.violation_type == IntegrityViolationType::ChecksumMismatch)
                 .count() as u64,
-            structural_errors: violations.iter()
+            structural_errors: violations
+                .iter()
                 .filter(|v| v.violation_type == IntegrityViolationType::StructuralCorruption)
                 .count() as u64,
             repaired_errors: 0,
@@ -652,7 +670,7 @@ mod tests {
     fn test_corruption_pattern() {
         let mut rng = StdRng::seed_from_u64(42);
         let data = vec![0xFF; 32];
-        
+
         // Test bit flip pattern
         let pattern = CorruptionPattern {
             name: "Test".to_string(),
@@ -663,7 +681,7 @@ mod tests {
             },
             severity: ViolationSeverity::Low,
         };
-        
+
         let corrupted = (pattern.generator)(&mut rng, &data, 32);
         assert_eq!(corrupted[0], 0xFE);
         assert_eq!(corrupted[1], 0xFF);
@@ -674,7 +692,7 @@ mod tests {
         let detector = ChecksumDetector;
         let data = b"test data";
         let checksum = crc32fast::hash(data);
-        
+
         let metadata = DataMetadata {
             location: "test".to_string(),
             data_type: DataType::UserData,
@@ -682,10 +700,10 @@ mod tests {
             expected_checksum: Some(checksum),
             last_modified: SystemTime::now(),
         };
-        
+
         // Should not detect violation with correct checksum
         assert!(detector.detect(data, &metadata).is_none());
-        
+
         // Should detect violation with wrong checksum
         let wrong_metadata = DataMetadata {
             expected_checksum: Some(checksum + 1),

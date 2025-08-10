@@ -3,18 +3,20 @@
 //! This module provides production-grade data import and export capabilities
 //! with support for multiple formats, schema validation, and streaming processing.
 
+#[cfg(feature = "data-import")]
 pub mod csv_handler;
 pub mod json_handler;
+#[cfg(feature = "data-export-parquet")]
 pub mod parquet_handler;
 pub mod streaming;
 pub mod transformation;
 pub mod validation;
 
 use crate::{Database, Result};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
-use chrono::{DateTime, Utc};
 // Enable serde feature for chrono
 #[allow(unused_imports)]
 use chrono::serde::ts_milliseconds;
@@ -110,9 +112,17 @@ pub enum ValidationRule {
 /// Schema constraints
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ConstraintDefinition {
-    UniqueKey { fields: Vec<String> },
-    ForeignKey { fields: Vec<String>, reference_table: String, reference_fields: Vec<String> },
-    Check { expression: String },
+    UniqueKey {
+        fields: Vec<String>,
+    },
+    ForeignKey {
+        fields: Vec<String>,
+        reference_table: String,
+        reference_fields: Vec<String>,
+    },
+    Check {
+        expression: String,
+    },
 }
 
 /// Data format for import/export
@@ -172,7 +182,7 @@ impl ImportExportManager {
     pub fn new(database: Database, config: ImportExportConfig) -> Self {
         Self { database, config }
     }
-    
+
     /// Import data from file
     pub fn import_from_file<P: AsRef<Path>>(
         &self,
@@ -190,57 +200,65 @@ impl ImportExportManager {
             end_time: None,
             errors: Vec::new(),
         };
-        
+
         match format {
+            #[cfg(feature = "data-import")]
+            DataFormat::Csv { .. } => csv_handler::import_csv(
+                &self.database,
+                file_path.as_ref(),
+                &format,
+                schema.as_ref(),
+                table_prefix,
+                &self.config,
+                &mut stats,
+            ),
+            DataFormat::Json { .. } => json_handler::import_json(
+                &self.database,
+                file_path.as_ref(),
+                &format,
+                schema.as_ref(),
+                table_prefix,
+                &self.config,
+                &mut stats,
+            ),
+            #[cfg(feature = "data-export-parquet")]
+            DataFormat::Parquet { .. } => parquet_handler::import_parquet(
+                &self.database,
+                file_path.as_ref(),
+                &format,
+                schema.as_ref(),
+                table_prefix,
+                &self.config,
+                &mut stats,
+            ),
+            #[cfg(not(feature = "data-import"))]
             DataFormat::Csv { .. } => {
-                csv_handler::import_csv(
-                    &self.database,
-                    file_path.as_ref(),
-                    &format,
-                    schema.as_ref(),
-                    table_prefix,
-                    &self.config,
-                    &mut stats,
-                )
+                return Err(crate::Error::InvalidInput(
+                    "CSV import requires 'data-import' feature".to_string(),
+                ));
             },
-            DataFormat::Json { .. } => {
-                json_handler::import_json(
-                    &self.database,
-                    file_path.as_ref(),
-                    &format,
-                    schema.as_ref(),
-                    table_prefix,
-                    &self.config,
-                    &mut stats,
-                )
-            },
+            #[cfg(not(feature = "data-export-parquet"))]
             DataFormat::Parquet { .. } => {
-                parquet_handler::import_parquet(
-                    &self.database,
-                    file_path.as_ref(),
-                    &format,
-                    schema.as_ref(),
-                    table_prefix,
-                    &self.config,
-                    &mut stats,
-                )
+                return Err(crate::Error::InvalidInput(
+                    "Parquet import requires 'data-export-parquet' feature".to_string(),
+                ));
             },
             DataFormat::Custom { .. } => {
                 return Err(crate::Error::InvalidInput(
-                    "Custom formats not yet implemented".to_string()
+                    "Custom formats not yet implemented".to_string(),
                 ));
-            },
+            }
         }?;
-        
+
         stats.end_time = Some(Utc::now());
-        
+
         Ok(OperationResult {
             stats,
             output_path: None,
             metadata: BTreeMap::new(),
         })
     }
-    
+
     /// Export data to file
     pub fn export_to_file<P: AsRef<Path>>(
         &self,
@@ -258,57 +276,65 @@ impl ImportExportManager {
             end_time: None,
             errors: Vec::new(),
         };
-        
+
         match format {
+            #[cfg(feature = "data-import")]
+            DataFormat::Csv { .. } => csv_handler::export_csv(
+                &self.database,
+                table_prefix,
+                file_path.as_ref(),
+                &format,
+                schema.as_ref(),
+                &self.config,
+                &mut stats,
+            ),
+            DataFormat::Json { .. } => json_handler::export_json(
+                &self.database,
+                table_prefix,
+                file_path.as_ref(),
+                &format,
+                schema.as_ref(),
+                &self.config,
+                &mut stats,
+            ),
+            #[cfg(feature = "data-export-parquet")]
+            DataFormat::Parquet { .. } => parquet_handler::export_parquet(
+                &self.database,
+                table_prefix,
+                file_path.as_ref(),
+                &format,
+                schema.as_ref(),
+                &self.config,
+                &mut stats,
+            ),
+            #[cfg(not(feature = "data-import"))]
             DataFormat::Csv { .. } => {
-                csv_handler::export_csv(
-                    &self.database,
-                    table_prefix,
-                    file_path.as_ref(),
-                    &format,
-                    schema.as_ref(),
-                    &self.config,
-                    &mut stats,
-                )
+                return Err(crate::Error::InvalidInput(
+                    "CSV export requires 'data-import' feature".to_string(),
+                ));
             },
-            DataFormat::Json { .. } => {
-                json_handler::export_json(
-                    &self.database,
-                    table_prefix,
-                    file_path.as_ref(),
-                    &format,
-                    schema.as_ref(),
-                    &self.config,
-                    &mut stats,
-                )
-            },
+            #[cfg(not(feature = "data-export-parquet"))]
             DataFormat::Parquet { .. } => {
-                parquet_handler::export_parquet(
-                    &self.database,
-                    table_prefix,
-                    file_path.as_ref(),
-                    &format,
-                    schema.as_ref(),
-                    &self.config,
-                    &mut stats,
-                )
+                return Err(crate::Error::InvalidInput(
+                    "Parquet export requires 'data-export-parquet' feature".to_string(),
+                ));
             },
             DataFormat::Custom { .. } => {
                 return Err(crate::Error::InvalidInput(
-                    "Custom formats not yet implemented".to_string()
+                    "Custom formats not yet implemented".to_string(),
                 ));
-            },
+            }
         }?;
-        
+
         stats.end_time = Some(Utc::now());
-        
+
         Ok(OperationResult {
             stats,
             output_path: Some(file_path.as_ref().to_string_lossy().to_string()),
             metadata: BTreeMap::new(),
         })
     }
-    
+
     /// Stream import data with callback
     pub fn stream_import<F>(
         &self,
@@ -329,7 +355,7 @@ impl ImportExportManager {
             data_callback,
         )
     }
-    
+
     /// Stream export data with callback
     pub fn stream_export<F>(
         &self,
@@ -350,7 +376,7 @@ impl ImportExportManager {
             output_callback,
         )
     }
-    
+
     /// Validate data against schema
     pub fn validate_data(
         &self,
@@ -359,7 +385,7 @@ impl ImportExportManager {
     ) -> Result<Vec<ValidationError>> {
         validation::validate_record(data, schema)
     }
-    
+
     /// Get operation statistics
     pub fn get_operation_stats(&self, operation_id: &str) -> Result<Option<OperationStats>> {
         let key = format!("_import_export_stats_{}", operation_id);
@@ -367,7 +393,7 @@ impl ImportExportManager {
             Ok(data) => {
                 let stats: OperationStats = serde_json::from_slice(&data.as_ref().unwrap())?;
                 Ok(Some(stats))
-            },
+            }
             Err(_) => Ok(None),
         }
     }
@@ -394,26 +420,28 @@ impl OperationStats {
             errors: Vec::new(),
         }
     }
-    
+
     pub fn add_error(&mut self, error: ProcessingError) {
         self.errors.push(error);
         self.records_failed += 1;
     }
-    
+
     pub fn add_success(&mut self, bytes: usize) {
         self.records_success += 1;
         self.bytes_processed += bytes as u64;
     }
-    
+
     pub fn finish(&mut self) {
         self.end_time = Some(Utc::now());
     }
-    
+
     pub fn duration_seconds(&self) -> f64 {
         let end = self.end_time.unwrap_or_else(Utc::now);
-        end.signed_duration_since(self.start_time).num_milliseconds() as f64 / 1000.0
+        end.signed_duration_since(self.start_time)
+            .num_milliseconds() as f64
+            / 1000.0
     }
-    
+
     pub fn success_rate(&self) -> f64 {
         if self.records_processed == 0 {
             0.0
@@ -421,7 +449,7 @@ impl OperationStats {
             self.records_success as f64 / self.records_processed as f64
         }
     }
-    
+
     pub fn throughput_records_per_second(&self) -> f64 {
         let duration = self.duration_seconds();
         if duration > 0.0 {
@@ -430,7 +458,7 @@ impl OperationStats {
             0.0
         }
     }
-    
+
     pub fn throughput_mb_per_second(&self) -> f64 {
         let duration = self.duration_seconds();
         if duration > 0.0 {
@@ -443,13 +471,16 @@ impl OperationStats {
 
 impl std::fmt::Display for OperationStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Records: {}/{} ({:.1}%), Duration: {:.2}s, Throughput: {:.0} rec/s, {:.2} MB/s",
-               self.records_success,
-               self.records_processed,
-               self.success_rate() * 100.0,
-               self.duration_seconds(),
-               self.throughput_records_per_second(),
-               self.throughput_mb_per_second())
+        write!(
+            f,
+            "Records: {}/{} ({:.1}%), Duration: {:.2}s, Throughput: {:.0} rec/s, {:.2} MB/s",
+            self.records_success,
+            self.records_processed,
+            self.success_rate() * 100.0,
+            self.duration_seconds(),
+            self.throughput_records_per_second(),
+            self.throughput_mb_per_second()
+        )
     }
 }
 
@@ -460,28 +491,28 @@ mod tests {
     #[test]
     fn test_operation_stats() {
         let mut stats = OperationStats::new();
-        
+
         // Add some operations
         stats.records_processed = 100;
         stats.add_success(1024);
         stats.add_success(2048);
-        
+
         assert_eq!(stats.records_success, 2);
         assert_eq!(stats.bytes_processed, 3072);
         assert_eq!(stats.success_rate(), 0.02); // 2/100
     }
-    
+
     #[test]
     fn test_import_export_config_default() {
         let config = ImportExportConfig::default();
-        
+
         assert_eq!(config.batch_size, 1000);
         assert_eq!(config.max_memory_mb, 512);
         assert_eq!(config.parallel_workers, 4);
         assert!(config.validate_schema);
         assert!(!config.skip_errors);
     }
-    
+
     #[test]
     fn test_data_format_csv() {
         let format = DataFormat::Csv {
@@ -490,13 +521,13 @@ mod tests {
             escape_char: None,
             headers: true,
         };
-        
+
         match format {
             DataFormat::Csv { delimiter, .. } => assert_eq!(delimiter, ','),
             _ => panic!("Expected CSV format"),
         }
     }
-    
+
     #[test]
     fn test_schema_definition() {
         let schema = SchemaDefinition {
@@ -505,22 +536,30 @@ mod tests {
             fields: vec![
                 FieldDefinition {
                     name: "id".to_string(),
-                    field_type: FieldType::Integer { min: Some(0), max: None },
+                    field_type: FieldType::Integer {
+                        min: Some(0),
+                        max: None,
+                    },
                     nullable: false,
                     default_value: None,
                     validation_rules: vec![ValidationRule::Required],
                 },
                 FieldDefinition {
                     name: "name".to_string(),
-                    field_type: FieldType::String { max_length: Some(255) },
+                    field_type: FieldType::String {
+                        max_length: Some(255),
+                    },
                     nullable: false,
                     default_value: None,
-                    validation_rules: vec![ValidationRule::Required, ValidationRule::MaxLength(255)],
+                    validation_rules: vec![
+                        ValidationRule::Required,
+                        ValidationRule::MaxLength(255),
+                    ],
                 },
             ],
             constraints: vec![],
         };
-        
+
         assert_eq!(schema.name, "test_schema");
         assert_eq!(schema.fields.len(), 2);
         assert_eq!(schema.fields[0].name, "id");

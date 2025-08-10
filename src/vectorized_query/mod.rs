@@ -9,25 +9,25 @@
 //! - Adaptive query execution planning
 //! - Hardware-aware optimization
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-pub mod simd_operations;
-pub mod vectorized_executor;
-pub mod column_storage;
-pub mod query_optimizer;
 pub mod aggregation;
+pub mod column_storage;
 pub mod filtering;
-pub mod sorting;
 pub mod join;
+pub mod query_optimizer;
+pub mod simd_operations;
+pub mod sorting;
+pub mod vectorized_executor;
 
-pub use simd_operations::*;
-pub use vectorized_executor::*;
-pub use column_storage::*;
-pub use query_optimizer::*;
 pub use aggregation::*;
+pub use column_storage::*;
 pub use filtering::*;
-pub use sorting::*;
 pub use join::*;
+pub use query_optimizer::*;
+pub use simd_operations::*;
+pub use sorting::*;
+pub use vectorized_executor::*;
 
 /// Vector processing batch size (optimized for L1 cache)
 pub const VECTOR_BATCH_SIZE: usize = 1024;
@@ -65,17 +65,17 @@ impl DataType {
             DataType::Timestamp => 8,
         }
     }
-    
+
     /// Get SIMD vector width for this data type
     pub fn simd_width(&self) -> usize {
         match self {
             DataType::Int32 | DataType::Float32 | DataType::Date => 8,
             DataType::Int64 | DataType::Float64 | DataType::Timestamp => 4,
-            DataType::Bool => 32, // 256-bit / 8-bit = 32 bools per vector
+            DataType::Bool => 32,  // 256-bit / 8-bit = 32 bools per vector
             DataType::String => 1, // Strings processed individually
         }
     }
-    
+
     /// Check if this type supports SIMD operations
     pub fn supports_simd(&self) -> bool {
         !matches!(self, DataType::String)
@@ -110,7 +110,7 @@ impl ExecutionStats {
             0.0
         }
     }
-    
+
     /// Calculate SIMD utilization
     pub fn simd_utilization(&self) -> f64 {
         if self.rows_processed > 0 {
@@ -130,18 +130,14 @@ pub enum QueryOperation {
         filter: Option<FilterExpression>,
     },
     /// Filter rows based on predicate
-    Filter {
-        expression: FilterExpression,
-    },
+    Filter { expression: FilterExpression },
     /// Aggregate data
     Aggregate {
         functions: Vec<AggregateFunction>,
         group_by: Vec<String>,
     },
     /// Sort by columns
-    Sort {
-        columns: Vec<SortColumn>,
-    },
+    Sort { columns: Vec<SortColumn> },
     /// Join two data sources
     Join {
         left: Box<QueryOperation>,
@@ -150,14 +146,9 @@ pub enum QueryOperation {
         condition: JoinCondition,
     },
     /// Project specific columns
-    Project {
-        columns: Vec<String>,
-    },
+    Project { columns: Vec<String> },
     /// Limit results
-    Limit {
-        count: usize,
-        offset: usize,
-    },
+    Limit { count: usize, offset: usize },
 }
 
 /// Filter expressions for vectorized execution
@@ -176,10 +167,7 @@ pub enum FilterExpression {
     /// Logical NOT
     Not(Box<FilterExpression>),
     /// IN predicate
-    In {
-        column: String,
-        values: Vec<Value>,
-    },
+    In { column: String, values: Vec<Value> },
     /// BETWEEN predicate
     Between {
         column: String,
@@ -251,11 +239,11 @@ impl std::hash::Hash for Value {
             }
             Value::Float32(v) => {
                 2u8.hash(state);
-                v.to_bits().hash(state);  // Hash the bit representation
+                v.to_bits().hash(state); // Hash the bit representation
             }
             Value::Float64(v) => {
                 3u8.hash(state);
-                v.to_bits().hash(state);  // Hash the bit representation
+                v.to_bits().hash(state); // Hash the bit representation
             }
             Value::String(v) => {
                 4u8.hash(state);
@@ -356,12 +344,12 @@ impl ExecutionPlan {
             memory_required: 0,
         }
     }
-    
+
     /// Check if plan is vectorizable
     pub fn is_vectorizable(&self) -> bool {
         self.can_vectorize(&self.root)
     }
-    
+
     fn can_vectorize(&self, op: &QueryOperation) -> bool {
         match op {
             QueryOperation::Scan { .. } => true,
@@ -375,7 +363,7 @@ impl ExecutionPlan {
             }
         }
     }
-    
+
     fn expression_vectorizable(&self, expr: &FilterExpression) -> bool {
         match expr {
             FilterExpression::Column { .. } => true,
@@ -430,7 +418,7 @@ impl SIMDSupport {
                 avx512: false, // TODO: Detect AVX-512 when stabilized
             }
         }
-        
+
         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
         {
             // Non-x86 architectures: use scalar fallback
@@ -443,7 +431,7 @@ impl SIMDSupport {
             }
         }
     }
-    
+
     /// Get optimal vector width for integer operations
     pub fn optimal_int_width(&self) -> usize {
         if self.avx2 {
@@ -454,7 +442,7 @@ impl SIMDSupport {
             1 // Scalar fallback
         }
     }
-    
+
     /// Get optimal vector width for float operations
     pub fn optimal_float_width(&self) -> usize {
         if self.avx {
@@ -481,36 +469,39 @@ impl Default for VectorizedContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_data_type_properties() {
         assert_eq!(DataType::Int32.size_bytes(), 4);
         assert_eq!(DataType::Int64.size_bytes(), 8);
         assert_eq!(DataType::Float32.simd_width(), 8);
         assert_eq!(DataType::Float64.simd_width(), 4);
-        
+
         assert!(DataType::Int32.supports_simd());
         assert!(!DataType::String.supports_simd());
     }
-    
+
     #[test]
     fn test_value_data_type() {
         assert_eq!(Value::Int32(42).data_type(), DataType::Int32);
-        assert_eq!(Value::String("test".to_string()).data_type(), DataType::String);
+        assert_eq!(
+            Value::String("test".to_string()).data_type(),
+            DataType::String
+        );
         assert_eq!(Value::Bool(true).data_type(), DataType::Bool);
     }
-    
+
     #[test]
     fn test_execution_plan() {
         let scan = QueryOperation::Scan {
             column: "test".to_string(),
             filter: None,
         };
-        
+
         let plan = ExecutionPlan::new(scan);
         assert!(plan.is_vectorizable());
     }
-    
+
     #[test]
     fn test_simd_support_detection() {
         let support = SIMDSupport::detect();
@@ -518,14 +509,14 @@ mod tests {
         assert!(support.optimal_int_width() >= 1);
         assert!(support.optimal_float_width() >= 1);
     }
-    
+
     #[test]
     fn test_execution_stats() {
         let mut stats = ExecutionStats::default();
         stats.rows_processed = 1000;
         stats.execution_time_us = 100;
         stats.simd_operations = 125;
-        
+
         assert!(stats.efficiency() > 0.0);
         assert!(stats.simd_utilization() >= 0.0);
     }

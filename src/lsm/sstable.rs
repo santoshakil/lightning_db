@@ -433,7 +433,7 @@ impl SSTableBuilder {
             .write_all(&(footer_data.len() as u32).to_le_bytes())?;
 
         self.writer.flush()?;
-        
+
         // CRITICAL: Sync to disk to ensure durability
         // This is essential for crash recovery - without this, data is lost on crash
         self.writer.get_ref().sync_all()?;

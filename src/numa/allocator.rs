@@ -3,13 +3,13 @@
 //! This module provides NUMA-aware memory allocation that can allocate memory
 //! on specific NUMA nodes for optimal locality.
 
-use crate::{Result, Error};
 use crate::numa::topology::NumaTopology;
-use std::sync::Arc;
-use std::collections::HashMap;
-use std::alloc::{GlobalAlloc, Layout};
+use crate::{Error, Result};
 use parking_lot::RwLock;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::alloc::{GlobalAlloc, Layout};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// NUMA memory allocation policy
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,7 +48,7 @@ struct NodeAllocator {
 /// Memory pool for specific allocation sizes
 struct MemoryPool {
     block_size: usize,
-    blocks: Vec<usize>, // Use addresses instead of raw pointers
+    blocks: Vec<usize>,      // Use addresses instead of raw pointers
     free_blocks: Vec<usize>, // Use addresses instead of raw pointers
     total_allocated: usize,
 }
@@ -90,7 +90,7 @@ impl NumaAllocator {
     /// Create a new NUMA-aware allocator
     pub fn new(topology: Arc<NumaTopology>, policy: NumaMemoryPolicy) -> Result<Self> {
         let mut node_allocators = HashMap::new();
-        
+
         // Create allocators for each NUMA node
         for node in topology.get_nodes() {
             let allocator = NodeAllocator::new(node.id)?;
@@ -127,22 +127,21 @@ impl NumaAllocator {
 
         // Fallback based on policy
         match &self.policy {
-            NumaMemoryPolicy::LocalOnly => {
-                Err(Error::Memory)
-            }
+            NumaMemoryPolicy::LocalOnly => Err(Error::Memory),
             _ => {
                 // Try fallback allocation
                 let fallback_node = self.select_fallback_node(node_id)?;
                 if let Some(node_allocator) = self.node_allocators.get(&fallback_node) {
-                    let ptr = self.allocate_on_node_internal(node_allocator, size, fallback_node)?;
+                    let ptr =
+                        self.allocate_on_node_internal(node_allocator, size, fallback_node)?;
                     self.track_allocation(ptr, size, fallback_node);
-                    
+
                     // Update fallback statistics
                     {
                         let mut stats = self.stats.write();
                         stats.cross_node_fallbacks += 1;
                     }
-                    
+
                     Ok(ptr)
                 } else {
                     Err(Error::Memory)
@@ -162,14 +161,17 @@ impl NumaAllocator {
         // Find which node this allocation belongs to
         let node_id = {
             let tracker = self.allocation_tracker.read();
-            tracker.allocations.get(&(ptr as usize)).map(|info| info.node_id)
+            tracker
+                .allocations
+                .get(&(ptr as usize))
+                .map(|info| info.node_id)
         };
 
         if let Some(node_id) = node_id {
             if let Some(node_allocator) = self.node_allocators.get(&node_id) {
                 self.deallocate_on_node_internal(node_allocator, ptr, size)?;
             }
-            
+
             // Remove from tracking
             {
                 let mut tracker = self.allocation_tracker.write();
@@ -182,8 +184,12 @@ impl NumaAllocator {
         } else {
             // Fallback to standard deallocation
             unsafe {
-                let layout = Layout::from_size_align(size, std::mem::align_of::<u8>())
-                    .map_err(|e| Error::InvalidOperation { reason: format!("Invalid layout: {}", e) })?;
+                let layout =
+                    Layout::from_size_align(size, std::mem::align_of::<u8>()).map_err(|e| {
+                        Error::InvalidOperation {
+                            reason: format!("Invalid layout: {}", e),
+                        }
+                    })?;
                 std::alloc::dealloc(ptr, layout);
             }
         }
@@ -194,7 +200,10 @@ impl NumaAllocator {
     /// Get the NUMA node for an allocation
     pub fn get_allocation_node(&self, ptr: *mut u8) -> Option<u32> {
         let tracker = self.allocation_tracker.read();
-        tracker.allocations.get(&(ptr as usize)).map(|info| info.node_id)
+        tracker
+            .allocations
+            .get(&(ptr as usize))
+            .map(|info| info.node_id)
     }
 
     /// Migrate memory pages to a different NUMA node
@@ -208,7 +217,9 @@ impl NumaAllocator {
         {
             // For non-Linux systems, we can't migrate pages in place
             // In a real implementation, we'd allocate new memory and copy
-            Err(Error::UnsupportedFeature { feature: "Page migration".to_string() })
+            Err(Error::UnsupportedFeature {
+                feature: "Page migration".to_string(),
+            })
         }
     }
 
@@ -222,29 +233,25 @@ impl NumaAllocator {
         match &self.policy {
             NumaMemoryPolicy::LocalPreferred => {
                 // Try to get the local node for current thread
-                self.get_local_node().or_else(|| Some(0))
+                self.get_local_node()
+                    .or_else(|| Some(0))
                     .ok_or_else(|| Error::Generic("No NUMA nodes available".to_string()))
             }
-            NumaMemoryPolicy::LocalOnly => {
-                self.get_local_node()
-                    .ok_or_else(|| Error::Memory)
-            }
+            NumaMemoryPolicy::LocalOnly => self.get_local_node().ok_or_else(|| Error::Memory),
             NumaMemoryPolicy::Interleave => {
                 let node_count = self.topology.get_node_count();
                 let node_id = (size / 4096) as u32 % node_count; // Interleave by page
                 Ok(node_id)
             }
-            NumaMemoryPolicy::Bind(node_id) => {
-                Ok(*node_id)
-            }
+            NumaMemoryPolicy::Bind(node_id) => Ok(*node_id),
             NumaMemoryPolicy::RoundRobin => {
                 let node_count = self.topology.get_node_count();
-                let counter = self.round_robin_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let counter = self
+                    .round_robin_counter
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 Ok(counter % node_count)
             }
-            NumaMemoryPolicy::LeastLoaded => {
-                self.find_least_loaded_node()
-            }
+            NumaMemoryPolicy::LeastLoaded => self.find_least_loaded_node(),
         }
     }
 
@@ -293,9 +300,15 @@ impl NumaAllocator {
     }
 
     /// Internal allocation on a specific node
-    fn allocate_on_node_internal(&self, node_allocator: &NodeAllocator, size: usize, node_id: u32) -> Result<*mut u8> {
+    fn allocate_on_node_internal(
+        &self,
+        node_allocator: &NodeAllocator,
+        size: usize,
+        node_id: u32,
+    ) -> Result<*mut u8> {
         // For large allocations, use direct system allocation
-        if size > 2 * 1024 * 1024 { // > 2MB
+        if size > 2 * 1024 * 1024 {
+            // > 2MB
             return self.allocate_large_on_node(size, node_id);
         }
 
@@ -312,7 +325,7 @@ impl NumaAllocator {
     fn allocate_from_pools(&self, node_allocator: &NodeAllocator, size: usize) -> Result<*mut u8> {
         // Find the appropriate pool size (round up to next power of 2)
         let pool_size = size.next_power_of_two().max(64);
-        
+
         // This is a simplified pool allocation - real implementation would
         // maintain actual memory pools with free list management
         self.allocate_large_on_node(size, node_allocator.node_id)
@@ -328,9 +341,13 @@ impl NumaAllocator {
         #[cfg(not(target_os = "linux"))]
         {
             // Fallback to standard allocation
-            let layout = Layout::from_size_align(size, std::mem::align_of::<u8>())
-                .map_err(|e| Error::InvalidOperation { reason: format!("Invalid layout: {}", e) })?;
-            
+            let layout =
+                Layout::from_size_align(size, std::mem::align_of::<u8>()).map_err(|e| {
+                    Error::InvalidOperation {
+                        reason: format!("Invalid layout: {}", e),
+                    }
+                })?;
+
             let ptr = unsafe { std::alloc::alloc(layout) };
             if ptr.is_null() {
                 Err(Error::Memory)
@@ -343,8 +360,8 @@ impl NumaAllocator {
     /// Linux-specific large allocation with NUMA binding
     #[cfg(target_os = "linux")]
     fn allocate_large_linux(&self, size: usize, node_id: u32) -> Result<*mut u8> {
-        use std::os::raw::{c_void, c_int, c_long};
-        
+        use std::os::raw::{c_int, c_long, c_void};
+
         // Use mmap with NUMA policy (simplified)
         let ptr = unsafe {
             libc::mmap(
@@ -374,7 +391,7 @@ impl NumaAllocator {
                     1, // MPOL_BIND
                     &node_mask as *const u64,
                     64, // maxnode
-                    0   // flags
+                    0,  // flags
                 )
             };
 
@@ -396,7 +413,12 @@ impl NumaAllocator {
     }
 
     /// Internal deallocation on a specific node
-    fn deallocate_on_node_internal(&self, node_allocator: &NodeAllocator, ptr: *mut u8, size: usize) -> Result<()> {
+    fn deallocate_on_node_internal(
+        &self,
+        node_allocator: &NodeAllocator,
+        ptr: *mut u8,
+        size: usize,
+    ) -> Result<()> {
         #[cfg(target_os = "linux")]
         {
             // If it was allocated with mmap, use munmap
@@ -410,8 +432,12 @@ impl NumaAllocator {
 
         // For smaller allocations, use standard deallocation
         unsafe {
-            let layout = Layout::from_size_align(size, std::mem::align_of::<u8>())
-                .map_err(|e| Error::InvalidOperation { reason: format!("Invalid layout: {}", e) })?;
+            let layout =
+                Layout::from_size_align(size, std::mem::align_of::<u8>()).map_err(|e| {
+                    Error::InvalidOperation {
+                        reason: format!("Invalid layout: {}", e),
+                    }
+                })?;
             std::alloc::dealloc(ptr, layout);
         }
 
@@ -439,11 +465,13 @@ impl NumaAllocator {
             let mut stats = self.stats.write();
             *stats.allocations_per_node.entry(node_id).or_insert(0) += 1;
             *stats.bytes_per_node.entry(node_id).or_insert(0) += size as u64;
-            
+
             // Update average allocation size
             let allocs = *stats.allocations_per_node.get(&node_id).unwrap();
             let bytes = *stats.bytes_per_node.get(&node_id).unwrap();
-            stats.avg_allocation_size.insert(node_id, bytes as f64 / allocs as f64);
+            stats
+                .avg_allocation_size
+                .insert(node_id, bytes as f64 / allocs as f64);
         }
     }
 
@@ -491,8 +519,10 @@ impl NumaGlobalAllocator {
 
 unsafe impl GlobalAlloc for NumaGlobalAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if layout.size() >= 4096 { // Use NUMA allocation for large allocations
-            self.allocator.allocate(layout.size())
+        if layout.size() >= 4096 {
+            // Use NUMA allocation for large allocations
+            self.allocator
+                .allocate(layout.size())
                 .unwrap_or_else(|_| self.fallback.alloc(layout))
         } else {
             self.fallback.alloc(layout)
@@ -526,10 +556,10 @@ mod tests {
         let topology = Arc::new(NumaTopology::detect().unwrap());
         let policy = NumaMemoryPolicy::LocalPreferred;
         let allocator = NumaAllocator::new(topology, policy).unwrap();
-        
+
         let size = 4096;
         let ptr = allocator.allocate(size);
-        
+
         if let Ok(ptr) = ptr {
             let result = allocator.deallocate(ptr, size);
             assert!(result.is_ok());
@@ -539,14 +569,14 @@ mod tests {
     #[test]
     fn test_node_selection_policies() {
         let topology = Arc::new(NumaTopology::detect().unwrap());
-        
+
         // Test different policies
         let policies = vec![
             NumaMemoryPolicy::LocalPreferred,
             NumaMemoryPolicy::RoundRobin,
             NumaMemoryPolicy::LeastLoaded,
         ];
-        
+
         for policy in policies {
             let allocator = NumaAllocator::new(topology.clone(), policy);
             assert!(allocator.is_ok());

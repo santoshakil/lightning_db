@@ -3,10 +3,13 @@
 //! This example demonstrates how to set up health check endpoints
 //! for Lightning DB in a production environment.
 
-use lightning_db::{Database, LightningDbConfig, health_check::{HealthCheckSystem, HealthCheckConfig}};
+use lightning_db::{
+    health_check::{HealthCheckConfig, HealthCheckSystem},
+    Database, LightningDbConfig,
+};
 use std::sync::Arc;
-use warp::{Filter, Reply};
 use tokio::time::Duration;
+use warp::{Filter, Reply};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -19,9 +22,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         enable_statistics: true,
         ..Default::default()
     };
-    
+
     let db = Arc::new(Database::create_or_open("./health_check_demo.db", config)?);
-    
+
     // Create health check system
     let health_config = HealthCheckConfig {
         detailed: true,
@@ -29,53 +32,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         timeout: Duration::from_secs(5),
         ..Default::default()
     };
-    
+
     let health_system = Arc::new(HealthCheckSystem::new(db.clone(), health_config));
-    
+
     // Start health check background task
     health_system.start().await?;
-    
+
     // Set up HTTP routes
     let health_system_filter = warp::any().map(move || health_system.clone());
-    
+
     // Liveness probe - simple check if service is alive
     let liveness = warp::path!("healthz")
         .and(warp::get())
         .and(health_system_filter.clone())
         .and_then(liveness_handler);
-    
+
     // Readiness probe - check if service is ready to handle requests
     let readiness = warp::path!("ready")
         .and(warp::get())
         .and(health_system_filter.clone())
         .and_then(readiness_handler);
-    
+
     // Detailed health check - full health status with metrics
     let health = warp::path!("health")
         .and(warp::get())
         .and(warp::query::<HealthQuery>())
         .and(health_system_filter.clone())
         .and_then(health_handler);
-    
+
     // Metrics endpoint for Prometheus
     let metrics = warp::path!("metrics")
         .and(warp::get())
         .and(health_system_filter.clone())
         .and_then(metrics_handler);
-    
+
     // Database operations for testing
     let db_filter = warp::any().map(move || db.clone());
-    
+
     let put = warp::path!("api" / "put" / String / String)
         .and(warp::post())
         .and(db_filter.clone())
         .and_then(put_handler);
-    
+
     let get = warp::path!("api" / "get" / String)
         .and(warp::get())
         .and(db_filter.clone())
         .and_then(get_handler);
-    
+
     // Combine all routes
     let routes = liveness
         .or(readiness)
@@ -84,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .or(put)
         .or(get)
         .with(warp::log("health_check_server"));
-    
+
     println!("Lightning DB Health Check Server starting on http://0.0.0.0:8080");
     println!("Endpoints:");
     println!("  - Liveness:  GET http://localhost:8080/healthz");
@@ -93,12 +96,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  - Metrics:   GET http://localhost:8080/metrics");
     println!("  - Put:       POST http://localhost:8080/api/put/{key}/{value}");
     println!("  - Get:       GET http://localhost:8080/api/get/{key}");
-    
+
     // Start server
-    warp::serve(routes)
-        .run(([0, 0, 0, 0], 8080))
-        .await;
-    
+    warp::serve(routes).run(([0, 0, 0, 0], 8080)).await;
+
     Ok(())
 }
 
@@ -133,10 +134,8 @@ async fn health_handler(
     query: HealthQuery,
     health_system: Arc<HealthCheckSystem>,
 ) -> Result<impl Reply, warp::Rejection> {
-    let (status, body) = lightning_db::health_check::http::health_handler(
-        &health_system,
-        query.detailed,
-    ).await;
+    let (status, body) =
+        lightning_db::health_check::http::health_handler(&health_system, query.detailed).await;
     Ok(warp::reply::with_status(
         warp::reply::json(&serde_json::from_str::<serde_json::Value>(&body).unwrap()),
         warp::http::StatusCode::from_u16(status).unwrap(),
@@ -151,14 +150,12 @@ async fn metrics_handler(
         Some(result) => {
             // Format as Prometheus metrics
             let mut output = String::new();
-            
+
             // Health status
             output.push_str(&format!(
                 "# HELP lightning_db_health_status Overall health status (0=healthy, 1=degraded, 2=unhealthy, 3=critical)\n"
             ));
-            output.push_str(&format!(
-                "# TYPE lightning_db_health_status gauge\n"
-            ));
+            output.push_str(&format!("# TYPE lightning_db_health_status gauge\n"));
             output.push_str(&format!(
                 "lightning_db_health_status {}\n",
                 match result.status {
@@ -168,19 +165,17 @@ async fn metrics_handler(
                     lightning_db::health_check::HealthStatus::Critical => 3,
                 }
             ));
-            
+
             // Metrics
             output.push_str(&format!(
                 "# HELP lightning_db_ops_per_second Operations per second\n"
             ));
-            output.push_str(&format!(
-                "# TYPE lightning_db_ops_per_second gauge\n"
-            ));
+            output.push_str(&format!("# TYPE lightning_db_ops_per_second gauge\n"));
             output.push_str(&format!(
                 "lightning_db_ops_per_second {}\n",
                 result.metrics.ops_per_second
             ));
-            
+
             output.push_str(&format!(
                 "# HELP lightning_db_p99_latency_microseconds P99 latency in microseconds\n"
             ));
@@ -191,42 +186,36 @@ async fn metrics_handler(
                 "lightning_db_p99_latency_microseconds {}\n",
                 result.metrics.p99_latency_us
             ));
-            
+
             output.push_str(&format!(
                 "# HELP lightning_db_cache_hit_rate Cache hit rate (0-1)\n"
             ));
-            output.push_str(&format!(
-                "# TYPE lightning_db_cache_hit_rate gauge\n"
-            ));
+            output.push_str(&format!("# TYPE lightning_db_cache_hit_rate gauge\n"));
             output.push_str(&format!(
                 "lightning_db_cache_hit_rate {}\n",
                 result.metrics.cache_hit_rate
             ));
-            
+
             output.push_str(&format!(
                 "# HELP lightning_db_memory_usage_bytes Memory usage in bytes\n"
             ));
-            output.push_str(&format!(
-                "# TYPE lightning_db_memory_usage_bytes gauge\n"
-            ));
+            output.push_str(&format!("# TYPE lightning_db_memory_usage_bytes gauge\n"));
             output.push_str(&format!(
                 "lightning_db_memory_usage_bytes {}\n",
                 result.metrics.memory_usage_bytes
             ));
-            
+
             Ok(warp::reply::with_header(
                 output,
                 "Content-Type",
                 "text/plain; version=0.0.4",
             ))
         }
-        None => {
-            Ok(warp::reply::with_header(
-                "# No metrics available yet\n",
-                "Content-Type",
-                "text/plain; version=0.0.4",
-            ))
-        }
+        None => Ok(warp::reply::with_header(
+            "# No metrics available yet\n",
+            "Content-Type",
+            "text/plain; version=0.0.4",
+        )),
     }
 }
 
@@ -247,10 +236,7 @@ async fn put_handler(
     }
 }
 
-async fn get_handler(
-    key: String,
-    db: Arc<Database>,
-) -> Result<impl Reply, warp::Rejection> {
+async fn get_handler(key: String, db: Arc<Database>) -> Result<impl Reply, warp::Rejection> {
     match db.get(key.as_bytes()) {
         Ok(Some(value)) => Ok(warp::reply::json(&serde_json::json!({
             "status": "success",
@@ -271,7 +257,7 @@ async fn get_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_health_check_server() {
         // This would test the health check endpoints

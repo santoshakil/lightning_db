@@ -297,7 +297,7 @@ mod tests {
     #[test]
     #[ignore = "Test hangs on some systems"]
     fn test_optimized_page_manager() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("Failed to create temp directory for page manager test");
         let path = dir.path().join("test.db");
 
         let config = MmapConfig {
@@ -305,10 +305,12 @@ mod tests {
             ..Default::default()
         };
 
-        let manager = OptimizedPageManager::create(&path, 16 * PAGE_SIZE as u64, config).unwrap();
+        let manager = OptimizedPageManager::create(&path, 16 * PAGE_SIZE as u64, config)
+            .expect("Failed to create optimized page manager");
 
         // Test page allocation
-        let page_id = manager.allocate_page().unwrap();
+        let page_id = manager.allocate_page()
+            .expect("Failed to allocate page");
         assert_eq!(page_id, 1);
 
         // Test page write/read
@@ -317,15 +319,18 @@ mod tests {
         data[0] = 42;
         data[1] = 43;
 
-        manager.write_page(&page).unwrap();
+        manager.write_page(&page)
+            .expect("Failed to write page");
 
-        let read_page = manager.get_page(page_id).unwrap();
+        let read_page = manager.get_page(page_id)
+            .expect("Failed to read page");
         assert_eq!(read_page.get_data()[0], 42);
         assert_eq!(read_page.get_data()[1], 43);
 
         // Test free/realloc
         manager.free_page(page_id);
-        let new_id = manager.allocate_page().unwrap();
+        let new_id = manager.allocate_page()
+            .expect("Failed to allocate page after free");
         assert_eq!(new_id, page_id);
 
         // Test statistics

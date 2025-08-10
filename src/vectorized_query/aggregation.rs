@@ -3,15 +3,15 @@
 //! High-performance aggregation implementations using SIMD instructions
 //! for operations like SUM, COUNT, MIN, MAX, AVG with grouping support.
 
-use crate::{Result, Error};
 use super::{
-    DataType, Value, AggregateFunction, SIMDOperations, ColumnarTable, ColumnBatch,
-    ExecutionStats, VECTOR_BATCH_SIZE
+    AggregateFunction, ColumnBatch, ColumnarTable, DataType, ExecutionStats, SIMDOperations, Value,
+    VECTOR_BATCH_SIZE,
 };
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::hash::{Hash, Hasher};
+use crate::{Error, Result};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 /// Vectorized aggregation executor
 pub struct VectorizedAggregator {
@@ -57,7 +57,11 @@ pub enum AggregateState {
     /// AVG: sum and count
     Avg { sum: f64, count: u64 },
     /// STDDEV: sum, sum_of_squares, count
-    StdDev { sum: f64, sum_of_squares: f64, count: u64 },
+    StdDev {
+        sum: f64,
+        sum_of_squares: f64,
+        count: u64,
+    },
     /// Custom: arbitrary state
     Custom(HashMap<String, Value>),
 }
@@ -105,7 +109,7 @@ impl VectorizedAggregator {
             stats: ExecutionStats::default(),
         }
     }
-    
+
     /// Execute aggregation over table
     pub fn aggregate(
         &mut self,
@@ -119,7 +123,7 @@ impl VectorizedAggregator {
             self.aggregate_grouped(table, &config, row_mask)
         }
     }
-    
+
     /// Simple aggregation without grouping
     fn aggregate_simple(
         &mut self,
@@ -133,28 +137,30 @@ impl VectorizedAggregator {
             aggregates: HashMap::new(),
             row_count: 0,
         };
-        
+
         // Initialize aggregate states
         for func in functions {
             let agg_name = self.function_name(func);
             let initial_state = self.create_initial_state(func)?;
             group_state.aggregates.insert(agg_name, initial_state);
         }
-        
+
         // Process data in batches
         let batch_size = VECTOR_BATCH_SIZE;
         let total_rows = table.row_count;
         let mut processed_rows = 0;
-        
+
         while processed_rows < total_rows {
             let current_batch_size = (total_rows - processed_rows).min(batch_size);
-            
+
             // Process each aggregate function
             for func in functions {
                 let agg_name = self.function_name(func);
-                let aggregate_state = group_state.aggregates.get_mut(&agg_name)
+                let aggregate_state = group_state
+                    .aggregates
+                    .get_mut(&agg_name)
                     .ok_or_else(|| Error::Generic("Aggregate state not found".to_string()))?;
-                
+
                 self.process_batch_simple(
                     func,
                     aggregate_state,
@@ -164,19 +170,19 @@ impl VectorizedAggregator {
                     row_mask,
                 )?;
             }
-            
+
             processed_rows += current_batch_size;
             self.stats.simd_operations += 1;
         }
-        
+
         // Finalize aggregates
         self.finalize_aggregates(&mut group_state)?;
-        
+
         let mut groups = HashMap::new();
         groups.insert(GroupKey { values: vec![] }, group_state);
-        
+
         let memory_usage = self.estimate_memory_usage(&groups);
-        
+
         Ok(AggregationResult {
             groups,
             stats: self.stats.clone(),
@@ -184,7 +190,7 @@ impl VectorizedAggregator {
             group_count: 1,
         })
     }
-    
+
     /// Grouped aggregation
     fn aggregate_grouped(
         &mut self,
@@ -192,16 +198,17 @@ impl VectorizedAggregator {
         config: &AggregationConfig,
         row_mask: Option<&[bool]>,
     ) -> Result<AggregationResult> {
-        let mut groups: HashMap<GroupKey, AggregationState> = HashMap::with_capacity(config.initial_capacity);
-        
+        let mut groups: HashMap<GroupKey, AggregationState> =
+            HashMap::with_capacity(config.initial_capacity);
+
         // Process data in batches
         let batch_size = VECTOR_BATCH_SIZE;
         let total_rows = table.row_count;
         let mut processed_rows = 0;
-        
+
         while processed_rows < total_rows {
             let current_batch_size = (total_rows - processed_rows).min(batch_size);
-            
+
             // Get group key batches
             let group_keys = self.extract_group_keys(
                 table,
@@ -210,18 +217,18 @@ impl VectorizedAggregator {
                 current_batch_size,
                 row_mask,
             )?;
-            
+
             // Process each row in the batch
             for (row_idx, group_key) in group_keys.into_iter().enumerate() {
                 let global_row = processed_rows + row_idx;
-                
+
                 // Skip if row is filtered out
                 if let Some(mask) = row_mask {
                     if global_row >= mask.len() || !mask[global_row] {
                         continue;
                     }
                 }
-                
+
                 // Get or create group state
                 let group_state = groups.entry(group_key.clone()).or_insert_with(|| {
                     let mut state = AggregationState {
@@ -230,14 +237,16 @@ impl VectorizedAggregator {
                         aggregates: HashMap::new(),
                         row_count: 0,
                     };
-                    
+
                     // Initialize group values
                     for (i, col_name) in config.group_by_columns.iter().enumerate() {
                         if i < group_key.values.len() {
-                            state.group_values.insert(col_name.clone(), group_key.values[i].clone());
+                            state
+                                .group_values
+                                .insert(col_name.clone(), group_key.values[i].clone());
                         }
                     }
-                    
+
                     // Initialize aggregate states
                     for func in &config.functions {
                         let agg_name = self.function_name(func);
@@ -245,10 +254,10 @@ impl VectorizedAggregator {
                             state.aggregates.insert(agg_name, initial_state);
                         }
                     }
-                    
+
                     state
                 });
-                
+
                 // Update aggregates for this row
                 for func in &config.functions {
                     let agg_name = self.function_name(func);
@@ -256,25 +265,27 @@ impl VectorizedAggregator {
                         self.update_aggregate_single_row(func, aggregate_state, table, global_row)?;
                     }
                 }
-                
+
                 group_state.row_count += 1;
             }
-            
+
             processed_rows += current_batch_size;
             self.stats.simd_operations += 1;
-            
+
             // Check memory usage and spill if necessary
             if groups.len() > config.max_groups_in_memory {
                 // TODO: Implement spilling to disk
-                return Err(Error::Generic("Too many groups, spilling not implemented yet".to_string()));
+                return Err(Error::Generic(
+                    "Too many groups, spilling not implemented yet".to_string(),
+                ));
             }
         }
-        
+
         // Finalize all group aggregates
         for group_state in groups.values_mut() {
             self.finalize_aggregates(group_state)?;
         }
-        
+
         Ok(AggregationResult {
             memory_usage: self.estimate_memory_usage(&groups),
             group_count: groups.len(),
@@ -282,7 +293,7 @@ impl VectorizedAggregator {
             stats: self.stats.clone(),
         })
     }
-    
+
     /// Process a batch for simple aggregation
     fn process_batch_simple(
         &mut self,
@@ -306,60 +317,74 @@ impl VectorizedAggregator {
                         count += 1;
                     }
                 }
-                
+
                 if let AggregateState::Count(ref mut current_count) = aggregate_state.state {
                     *current_count += count;
                     aggregate_state.value = Value::Int64(*current_count as i64);
                 }
             }
-            
+
             AggregateFunction::Sum(column) => {
-                let sum = self.compute_vectorized_sum(table, column, start_row, batch_size, row_mask)?;
-                
+                let sum =
+                    self.compute_vectorized_sum(table, column, start_row, batch_size, row_mask)?;
+
                 if let AggregateState::Sum(ref mut current_sum) = aggregate_state.state {
                     *current_sum += sum;
                     aggregate_state.value = Value::Float64(*current_sum);
                 }
             }
-            
+
             AggregateFunction::Min(column) => {
-                let min = self.compute_vectorized_min(table, column, start_row, batch_size, row_mask)?;
-                
+                let min =
+                    self.compute_vectorized_min(table, column, start_row, batch_size, row_mask)?;
+
                 if let AggregateState::Min(ref mut current_min) = aggregate_state.state {
                     *current_min = current_min.min(min);
                     aggregate_state.value = Value::Float64(*current_min);
                 }
             }
-            
+
             AggregateFunction::Max(column) => {
-                let max = self.compute_vectorized_max(table, column, start_row, batch_size, row_mask)?;
-                
+                let max =
+                    self.compute_vectorized_max(table, column, start_row, batch_size, row_mask)?;
+
                 if let AggregateState::Max(ref mut current_max) = aggregate_state.state {
                     *current_max = current_max.max(max);
                     aggregate_state.value = Value::Float64(*current_max);
                 }
             }
-            
+
             AggregateFunction::Avg(column) => {
-                let sum = self.compute_vectorized_sum(table, column, start_row, batch_size, row_mask)?;
-                let count = self.count_non_null_rows(table, column, start_row, batch_size, row_mask)?;
-                
-                if let AggregateState::Avg { sum: ref mut current_sum, count: ref mut current_count } = aggregate_state.state {
+                let sum =
+                    self.compute_vectorized_sum(table, column, start_row, batch_size, row_mask)?;
+                let count =
+                    self.count_non_null_rows(table, column, start_row, batch_size, row_mask)?;
+
+                if let AggregateState::Avg {
+                    sum: ref mut current_sum,
+                    count: ref mut current_count,
+                } = aggregate_state.state
+                {
                     *current_sum += sum;
                     *current_count += count;
-                    
+
                     if *current_count > 0 {
-                        aggregate_state.value = Value::Float64(*current_sum / *current_count as f64);
+                        aggregate_state.value =
+                            Value::Float64(*current_sum / *current_count as f64);
                     }
                 }
             }
-            
-            _ => return Err(Error::Generic("Aggregate function not implemented".to_string())),
+
+            _ => {
+                return Err(Error::Generic(
+                    "Aggregate function not implemented".to_string(),
+                ))
+            }
         }
-        
+
         Ok(())
     }
-    
+
     /// Compute vectorized sum using SIMD
     fn compute_vectorized_sum(
         &mut self,
@@ -370,23 +395,23 @@ impl VectorizedAggregator {
         row_mask: Option<&[bool]>,
     ) -> Result<f64> {
         let batch = table.get_column_batch(column, start_row, batch_size)?;
-        
+
         if batch.data.is_empty() {
             return Ok(0.0);
         }
-        
+
         // Filter data based on row mask
         let filtered_data = self.filter_batch_data(&batch, row_mask, start_row)?;
-        
+
         if filtered_data.is_empty() {
             return Ok(0.0);
         }
-        
+
         // Use SIMD sum operation
         let sum = self.simd_ops.sum_vector(&filtered_data, batch.data_type)?;
         Ok(sum)
     }
-    
+
     /// Compute vectorized min using SIMD
     fn compute_vectorized_min(
         &mut self,
@@ -397,21 +422,21 @@ impl VectorizedAggregator {
         row_mask: Option<&[bool]>,
     ) -> Result<f64> {
         let batch = table.get_column_batch(column, start_row, batch_size)?;
-        
+
         if batch.data.is_empty() {
             return Ok(f64::INFINITY);
         }
-        
+
         let filtered_data = self.filter_batch_data(&batch, row_mask, start_row)?;
-        
+
         if filtered_data.is_empty() {
             return Ok(f64::INFINITY);
         }
-        
+
         let min = self.simd_ops.min_vector(&filtered_data, batch.data_type)?;
         Ok(min)
     }
-    
+
     /// Compute vectorized max using SIMD
     fn compute_vectorized_max(
         &mut self,
@@ -422,21 +447,21 @@ impl VectorizedAggregator {
         row_mask: Option<&[bool]>,
     ) -> Result<f64> {
         let batch = table.get_column_batch(column, start_row, batch_size)?;
-        
+
         if batch.data.is_empty() {
             return Ok(f64::NEG_INFINITY);
         }
-        
+
         let filtered_data = self.filter_batch_data(&batch, row_mask, start_row)?;
-        
+
         if filtered_data.is_empty() {
             return Ok(f64::NEG_INFINITY);
         }
-        
+
         let max = self.simd_ops.max_vector(&filtered_data, batch.data_type)?;
         Ok(max)
     }
-    
+
     /// Count non-null rows in batch
     fn count_non_null_rows(
         &self,
@@ -448,7 +473,7 @@ impl VectorizedAggregator {
     ) -> Result<u64> {
         let batch = table.get_column_batch(column, start_row, batch_size)?;
         let mut count = 0u64;
-        
+
         for i in 0..batch.size {
             let global_row = start_row + i;
             let is_null = batch.null_mask.get(i).unwrap_or(&false);
@@ -457,15 +482,15 @@ impl VectorizedAggregator {
             } else {
                 true
             };
-            
+
             if include_row && !is_null {
                 count += 1;
             }
         }
-        
+
         Ok(count)
     }
-    
+
     /// Filter batch data based on row mask
     fn filter_batch_data(
         &self,
@@ -475,7 +500,7 @@ impl VectorizedAggregator {
     ) -> Result<Vec<u8>> {
         let element_size = batch.data_type.size_bytes();
         let mut filtered_data = Vec::new();
-        
+
         for i in 0..batch.size {
             let global_row = start_row + i;
             let is_null = batch.null_mask.get(i).unwrap_or(&false);
@@ -484,7 +509,7 @@ impl VectorizedAggregator {
             } else {
                 true
             };
-            
+
             if include_row && !is_null {
                 let start_byte = i * element_size;
                 let end_byte = start_byte + element_size;
@@ -493,10 +518,10 @@ impl VectorizedAggregator {
                 }
             }
         }
-        
+
         Ok(filtered_data)
     }
-    
+
     /// Extract group keys for a batch
     fn extract_group_keys(
         &self,
@@ -507,18 +532,18 @@ impl VectorizedAggregator {
         row_mask: Option<&[bool]>,
     ) -> Result<Vec<GroupKey>> {
         let mut group_keys = Vec::with_capacity(batch_size);
-        
+
         // Get batches for all group columns
         let mut column_batches = HashMap::new();
         for col_name in group_columns {
             let batch = table.get_column_batch(col_name, start_row, batch_size)?;
             column_batches.insert(col_name.clone(), batch);
         }
-        
+
         // Extract values for each row
         for row_idx in 0..batch_size {
             let global_row = start_row + row_idx;
-            
+
             // Skip if row is filtered out
             if let Some(mask) = row_mask {
                 if global_row >= mask.len() || !mask[global_row] {
@@ -526,13 +551,13 @@ impl VectorizedAggregator {
                     continue;
                 }
             }
-            
+
             let mut group_values = Vec::new();
-            
+
             for col_name in group_columns {
                 if let Some(batch) = column_batches.get(col_name) {
                     let is_null = batch.null_mask.get(row_idx).unwrap_or(&false);
-                    
+
                     if *is_null {
                         group_values.push(Value::Null);
                     } else {
@@ -541,25 +566,27 @@ impl VectorizedAggregator {
                     }
                 }
             }
-            
-            group_keys.push(GroupKey { values: group_values });
+
+            group_keys.push(GroupKey {
+                values: group_values,
+            });
         }
-        
+
         Ok(group_keys)
     }
-    
+
     /// Extract single value from batch at specific index
     fn extract_value_from_batch(&self, batch: &ColumnBatch, index: usize) -> Result<Value> {
         let element_size = batch.data_type.size_bytes();
         let start_byte = index * element_size;
         let end_byte = start_byte + element_size;
-        
+
         if end_byte > batch.data.len() {
             return Err(Error::Generic("Index out of bounds in batch".to_string()));
         }
-        
+
         let bytes = &batch.data[start_byte..end_byte];
-        
+
         match batch.data_type {
             DataType::Int32 => {
                 let value = i32::from_le_bytes(bytes.try_into().unwrap());
@@ -577,9 +604,7 @@ impl VectorizedAggregator {
                 let value = f64::from_le_bytes(bytes.try_into().unwrap());
                 Ok(Value::Float64(value))
             }
-            DataType::Bool => {
-                Ok(Value::Bool(bytes[0] != 0))
-            }
+            DataType::Bool => Ok(Value::Bool(bytes[0] != 0)),
             DataType::String => {
                 // For string columns, we'd need access to the string dictionary
                 // For now, return the ID as an integer
@@ -596,7 +621,7 @@ impl VectorizedAggregator {
             }
         }
     }
-    
+
     /// Update aggregate for a single row
     fn update_aggregate_single_row(
         &self,
@@ -612,7 +637,7 @@ impl VectorizedAggregator {
                     aggregate_state.value = Value::Int64(*count as i64);
                 }
             }
-            
+
             AggregateFunction::Sum(column) => {
                 let value = self.get_row_value_as_float(table, column, row)?;
                 if let AggregateState::Sum(ref mut sum) = aggregate_state.state {
@@ -620,7 +645,7 @@ impl VectorizedAggregator {
                     aggregate_state.value = Value::Float64(*sum);
                 }
             }
-            
+
             AggregateFunction::Min(column) => {
                 let value = self.get_row_value_as_float(table, column, row)?;
                 if let AggregateState::Min(ref mut min) = aggregate_state.state {
@@ -628,7 +653,7 @@ impl VectorizedAggregator {
                     aggregate_state.value = Value::Float64(*min);
                 }
             }
-            
+
             AggregateFunction::Max(column) => {
                 let value = self.get_row_value_as_float(table, column, row)?;
                 if let AggregateState::Max(ref mut max) = aggregate_state.state {
@@ -636,37 +661,52 @@ impl VectorizedAggregator {
                     aggregate_state.value = Value::Float64(*max);
                 }
             }
-            
+
             AggregateFunction::Avg(column) => {
                 let value = self.get_row_value_as_float(table, column, row)?;
-                if let AggregateState::Avg { ref mut sum, ref mut count } = aggregate_state.state {
+                if let AggregateState::Avg {
+                    ref mut sum,
+                    ref mut count,
+                } = aggregate_state.state
+                {
                     *sum += value;
                     *count += 1;
                     aggregate_state.value = Value::Float64(*sum / *count as f64);
                 }
             }
-            
-            _ => return Err(Error::Generic("Aggregate function not implemented".to_string())),
+
+            _ => {
+                return Err(Error::Generic(
+                    "Aggregate function not implemented".to_string(),
+                ))
+            }
         }
-        
+
         Ok(())
     }
-    
+
     /// Get row value as float for numeric operations
-    fn get_row_value_as_float(&self, table: &ColumnarTable, column: &str, row: usize) -> Result<f64> {
+    fn get_row_value_as_float(
+        &self,
+        table: &ColumnarTable,
+        column: &str,
+        row: usize,
+    ) -> Result<f64> {
         if let Some(null_mask) = table.null_masks.get(column) {
             if row < null_mask.len() && null_mask[row] {
                 return Ok(0.0); // NULL values contribute 0 to numeric aggregates
             }
         }
-        
+
         if let Some(col) = table.get_column(column) {
-            let is_null = table.null_masks.get(column)
+            let is_null = table
+                .null_masks
+                .get(column)
                 .and_then(|mask| mask.get(row))
                 .unwrap_or(&false);
-            
+
             let value = col.get_value(row, *is_null)?;
-            
+
             match value {
                 Value::Int32(v) => Ok(v as f64),
                 Value::Int64(v) => Ok(v as f64),
@@ -679,21 +719,34 @@ impl VectorizedAggregator {
             Err(Error::Generic(format!("Column '{}' not found", column)))
         }
     }
-    
+
     /// Create initial state for aggregate function
     fn create_initial_state(&self, function: &AggregateFunction) -> Result<AggregateValue> {
         let (value, state) = match function {
             AggregateFunction::Count => (Value::Int64(0), AggregateState::Count(0)),
             AggregateFunction::Sum(_) => (Value::Float64(0.0), AggregateState::Sum(0.0)),
-            AggregateFunction::Min(_) => (Value::Float64(f64::INFINITY), AggregateState::Min(f64::INFINITY)),
-            AggregateFunction::Max(_) => (Value::Float64(f64::NEG_INFINITY), AggregateState::Max(f64::NEG_INFINITY)),
-            AggregateFunction::Avg(_) => (Value::Float64(0.0), AggregateState::Avg { sum: 0.0, count: 0 }),
-            _ => return Err(Error::Generic("Aggregate function not supported".to_string())),
+            AggregateFunction::Min(_) => (
+                Value::Float64(f64::INFINITY),
+                AggregateState::Min(f64::INFINITY),
+            ),
+            AggregateFunction::Max(_) => (
+                Value::Float64(f64::NEG_INFINITY),
+                AggregateState::Max(f64::NEG_INFINITY),
+            ),
+            AggregateFunction::Avg(_) => (
+                Value::Float64(0.0),
+                AggregateState::Avg { sum: 0.0, count: 0 },
+            ),
+            _ => {
+                return Err(Error::Generic(
+                    "Aggregate function not supported".to_string(),
+                ))
+            }
         };
-        
+
         Ok(AggregateValue { value, state })
     }
-    
+
     /// Get function name for result column
     fn function_name(&self, function: &AggregateFunction) -> String {
         match function {
@@ -705,7 +758,7 @@ impl VectorizedAggregator {
             _ => "unknown".to_string(),
         }
     }
-    
+
     /// Finalize aggregates (compute final values)
     fn finalize_aggregates(&self, group_state: &mut AggregationState) -> Result<()> {
         for (_, aggregate) in group_state.aggregates.iter_mut() {
@@ -722,36 +775,36 @@ impl VectorizedAggregator {
         }
         Ok(())
     }
-    
+
     /// Hash group key for efficient lookup
     fn hash_group_key(&self, group_key: &GroupKey) -> u64 {
         let mut hasher = DefaultHasher::new();
         group_key.hash(&mut hasher);
         hasher.finish()
     }
-    
+
     /// Estimate memory usage of aggregation results
     fn estimate_memory_usage(&self, groups: &HashMap<GroupKey, AggregationState>) -> usize {
         let mut total = 0;
-        
+
         for (key, state) in groups {
             // Estimate group key size
             total += key.values.len() * 16; // Rough estimate per value
-            
+
             // Estimate state size
             total += state.group_values.len() * 16;
             total += state.aggregates.len() * 32;
             total += 64; // Base overhead
         }
-        
+
         total
     }
-    
+
     /// Get execution statistics
     pub fn get_stats(&self) -> &ExecutionStats {
         &self.stats
     }
-    
+
     /// Reset execution statistics
     pub fn reset_stats(&mut self) {
         self.stats = ExecutionStats::default();
@@ -772,110 +825,118 @@ impl Default for AggregationConfig {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{ColumnDefinition, ColumnarTableBuilder, SIMDProcessor};
     use super::*;
-    use super::super::{ColumnarTableBuilder, ColumnDefinition, SIMDProcessor};
     use std::collections::HashMap;
-    
+
     #[test]
     fn test_simple_count() {
         let processor = SIMDProcessor::new();
         let simd_ops = processor.get_implementation();
         let mut aggregator = VectorizedAggregator::new(simd_ops);
-        
+
         // Create test table
         let mut builder = ColumnarTableBuilder::new();
-        builder.add_column(ColumnDefinition {
-            name: "values".to_string(),
-            data_type: DataType::Int32,
-            nullable: false,
-            default_value: None,
-            metadata: HashMap::new(),
-        }).unwrap();
-        
+        builder
+            .add_column(ColumnDefinition {
+                name: "values".to_string(),
+                data_type: DataType::Int32,
+                nullable: false,
+                default_value: None,
+                metadata: HashMap::new(),
+            })
+            .unwrap();
+
         // Add test data
         for i in 0..100 {
             let mut row = HashMap::new();
             row.insert("values".to_string(), (Value::Int32(i), false));
             builder.append_row(row).unwrap();
         }
-        
+
         let table = builder.build().unwrap();
-        
+
         let config = AggregationConfig {
             functions: vec![AggregateFunction::Count],
             group_by_columns: vec![],
             ..Default::default()
         };
-        
+
         let result = aggregator.aggregate(&table, config, None).unwrap();
         assert_eq!(result.group_count, 1);
-        
+
         let group_state = result.groups.values().next().unwrap();
         let count_value = group_state.aggregates.get("count").unwrap();
         assert_eq!(count_value.value, Value::Int64(100));
     }
-    
+
     #[test]
     fn test_simple_sum() {
         let processor = SIMDProcessor::new();
         let simd_ops = processor.get_implementation();
         let mut aggregator = VectorizedAggregator::new(simd_ops);
-        
+
         // Create test table
         let mut builder = ColumnarTableBuilder::new();
-        builder.add_column(ColumnDefinition {
-            name: "values".to_string(),
-            data_type: DataType::Int32,
-            nullable: false,
-            default_value: None,
-            metadata: HashMap::new(),
-        }).unwrap();
-        
+        builder
+            .add_column(ColumnDefinition {
+                name: "values".to_string(),
+                data_type: DataType::Int32,
+                nullable: false,
+                default_value: None,
+                metadata: HashMap::new(),
+            })
+            .unwrap();
+
         // Add test data: 1 + 2 + 3 + 4 + 5 = 15
         for i in 1..=5 {
             let mut row = HashMap::new();
             row.insert("values".to_string(), (Value::Int32(i), false));
             builder.append_row(row).unwrap();
         }
-        
+
         let table = builder.build().unwrap();
-        
+
         let config = AggregationConfig {
             functions: vec![AggregateFunction::Sum("values".to_string())],
             group_by_columns: vec![],
             ..Default::default()
         };
-        
+
         let result = aggregator.aggregate(&table, config, None).unwrap();
         let group_state = result.groups.values().next().unwrap();
         let sum_value = group_state.aggregates.get("sum_values").unwrap();
         assert_eq!(sum_value.value, Value::Float64(15.0));
     }
-    
+
     #[test]
     fn test_grouped_aggregation() {
         let processor = SIMDProcessor::new();
         let simd_ops = processor.get_implementation();
         let mut aggregator = VectorizedAggregator::new(simd_ops);
-        
+
         // Create test table with groups
         let mut builder = ColumnarTableBuilder::new();
-        builder.add_column(ColumnDefinition {
-            name: "group_col".to_string(),
-            data_type: DataType::Int32,
-            nullable: false,
-            default_value: None,
-            metadata: HashMap::new(),
-        }).unwrap();
-        
-        builder.add_column(ColumnDefinition {
-            name: "values".to_string(),
-            data_type: DataType::Int32,
-            nullable: false,
-            default_value: None,
-            metadata: HashMap::new(),
-        }).unwrap();
-        
+        builder
+            .add_column(ColumnDefinition {
+                name: "group_col".to_string(),
+                data_type: DataType::Int32,
+                nullable: false,
+                default_value: None,
+                metadata: HashMap::new(),
+            })
+            .unwrap();
+
+        builder
+            .add_column(ColumnDefinition {
+                name: "values".to_string(),
+                data_type: DataType::Int32,
+                nullable: false,
+                default_value: None,
+                metadata: HashMap::new(),
+            })
+            .unwrap();
+
         // Add test data: group 1 has values [1,2], group 2 has values [3,4]
         let data = vec![(1, 1), (1, 2), (2, 3), (2, 4)];
         for (group, value) in data {
@@ -884,9 +945,9 @@ mod tests {
             row.insert("values".to_string(), (Value::Int32(value), false));
             builder.append_row(row).unwrap();
         }
-        
+
         let table = builder.build().unwrap();
-        
+
         let config = AggregationConfig {
             functions: vec![
                 AggregateFunction::Count,
@@ -895,23 +956,35 @@ mod tests {
             group_by_columns: vec!["group_col".to_string()],
             ..Default::default()
         };
-        
+
         let result = aggregator.aggregate(&table, config, None).unwrap();
         assert_eq!(result.group_count, 2);
-        
+
         // Verify results for each group
         for (group_key, group_state) in &result.groups {
             if !group_key.values.is_empty() {
                 match group_key.values[0] {
                     Value::Int32(1) => {
                         // Group 1: count=2, sum=3
-                        assert_eq!(group_state.aggregates.get("count").unwrap().value, Value::Int64(2));
-                        assert_eq!(group_state.aggregates.get("sum_values").unwrap().value, Value::Float64(3.0));
+                        assert_eq!(
+                            group_state.aggregates.get("count").unwrap().value,
+                            Value::Int64(2)
+                        );
+                        assert_eq!(
+                            group_state.aggregates.get("sum_values").unwrap().value,
+                            Value::Float64(3.0)
+                        );
                     }
                     Value::Int32(2) => {
                         // Group 2: count=2, sum=7
-                        assert_eq!(group_state.aggregates.get("count").unwrap().value, Value::Int64(2));
-                        assert_eq!(group_state.aggregates.get("sum_values").unwrap().value, Value::Float64(7.0));
+                        assert_eq!(
+                            group_state.aggregates.get("count").unwrap().value,
+                            Value::Int64(2)
+                        );
+                        assert_eq!(
+                            group_state.aggregates.get("sum_values").unwrap().value,
+                            Value::Float64(7.0)
+                        );
                     }
                     _ => panic!("Unexpected group value"),
                 }

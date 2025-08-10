@@ -4,11 +4,14 @@
 //! and business metrics with OpenTelemetry integration.
 
 use crate::{Database, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, RwLock, atomic::{AtomicU64, AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, RwLock,
+};
 use std::time::{Duration, Instant, SystemTime};
-use serde::{Serialize, Deserialize};
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 /// Comprehensive metrics collector for Lightning DB
 #[derive(Debug)]
@@ -371,7 +374,10 @@ impl MetricsCollector {
             self.collect_resource_metrics()?;
         }
 
-        debug!("Metrics collection completed in {:?}", collection_start.elapsed());
+        debug!(
+            "Metrics collection completed in {:?}",
+            collection_start.elapsed()
+        );
         Ok(())
     }
 
@@ -382,7 +388,12 @@ impl MetricsCollector {
 
     /// Get metrics history
     pub fn get_metrics_history(&self) -> Vec<MetricsSnapshot> {
-        self.metrics_history.read().unwrap().iter().cloned().collect()
+        self.metrics_history
+            .read()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect()
     }
 
     /// Get operation-specific metrics
@@ -402,22 +413,24 @@ impl MetricsCollector {
         }
 
         let mut operations = self.operation_metrics.write().unwrap();
-        let entry = operations.entry(operation.to_string()).or_insert_with(|| OperationMetrics {
-            operation_name: operation.to_string(),
-            total_count: 0,
-            success_count: 0,
-            error_count: 0,
-            total_duration: Duration::from_millis(0),
-            min_duration: Duration::from_secs(u64::MAX),
-            max_duration: Duration::from_millis(0),
-            average_duration: Duration::from_millis(0),
-            p50_duration: Duration::from_millis(0),
-            p95_duration: Duration::from_millis(0),
-            p99_duration: Duration::from_millis(0),
-            throughput_ops_per_sec: 0.0,
-            error_rate: 0.0,
-            last_updated: SystemTime::now(),
-        });
+        let entry = operations
+            .entry(operation.to_string())
+            .or_insert_with(|| OperationMetrics {
+                operation_name: operation.to_string(),
+                total_count: 0,
+                success_count: 0,
+                error_count: 0,
+                total_duration: Duration::from_millis(0),
+                min_duration: Duration::from_secs(u64::MAX),
+                max_duration: Duration::from_millis(0),
+                average_duration: Duration::from_millis(0),
+                p50_duration: Duration::from_millis(0),
+                p95_duration: Duration::from_millis(0),
+                p99_duration: Duration::from_millis(0),
+                throughput_ops_per_sec: 0.0,
+                error_rate: 0.0,
+                last_updated: SystemTime::now(),
+            });
 
         entry.total_count += 1;
         if success {
@@ -435,10 +448,22 @@ impl MetricsCollector {
 
         // Update performance counters
         match operation {
-            "get" | "scan" => self.performance_counters.read_operations.fetch_add(1, Ordering::Relaxed),
-            "put" | "insert" => self.performance_counters.write_operations.fetch_add(1, Ordering::Relaxed),
-            "delete" => self.performance_counters.delete_operations.fetch_add(1, Ordering::Relaxed),
-            "transaction" => self.performance_counters.transaction_operations.fetch_add(1, Ordering::Relaxed),
+            "get" | "scan" => self
+                .performance_counters
+                .read_operations
+                .fetch_add(1, Ordering::Relaxed),
+            "put" | "insert" => self
+                .performance_counters
+                .write_operations
+                .fetch_add(1, Ordering::Relaxed),
+            "delete" => self
+                .performance_counters
+                .delete_operations
+                .fetch_add(1, Ordering::Relaxed),
+            "transaction" => self
+                .performance_counters
+                .transaction_operations
+                .fetch_add(1, Ordering::Relaxed),
             _ => 0,
         };
     }
@@ -446,48 +471,81 @@ impl MetricsCollector {
     /// Record cache access
     pub fn record_cache_access(&self, hit: bool) {
         if hit {
-            self.performance_counters.cache_hits.fetch_add(1, Ordering::Relaxed);
+            self.performance_counters
+                .cache_hits
+                .fetch_add(1, Ordering::Relaxed);
         } else {
-            self.performance_counters.cache_misses.fetch_add(1, Ordering::Relaxed);
+            self.performance_counters
+                .cache_misses
+                .fetch_add(1, Ordering::Relaxed);
         }
     }
 
     /// Record compaction event
-    pub fn record_compaction(&self, duration: Duration, bytes_processed: u64, space_reclaimed: u64) {
-        self.performance_counters.compactions_completed.fetch_add(1, Ordering::Relaxed);
-        
+    pub fn record_compaction(
+        &self,
+        duration: Duration,
+        bytes_processed: u64,
+        space_reclaimed: u64,
+    ) {
+        self.performance_counters
+            .compactions_completed
+            .fetch_add(1, Ordering::Relaxed);
+
         // Update compaction stats in current metrics
         if let Ok(mut metrics) = self.current_metrics.write() {
             metrics.compaction_stats.total_compactions += 1;
             metrics.compaction_stats.total_compaction_time += duration;
             metrics.compaction_stats.bytes_compacted += bytes_processed;
             metrics.compaction_stats.space_reclaimed_bytes += space_reclaimed;
-            
+
             if metrics.compaction_stats.total_compactions > 0 {
-                metrics.compaction_stats.average_compaction_time = 
-                    metrics.compaction_stats.total_compaction_time / metrics.compaction_stats.total_compactions as u32;
+                metrics.compaction_stats.average_compaction_time =
+                    metrics.compaction_stats.total_compaction_time
+                        / metrics.compaction_stats.total_compactions as u32;
             }
-            
+
             if bytes_processed > 0 {
-                metrics.compaction_stats.compaction_efficiency = 
+                metrics.compaction_stats.compaction_efficiency =
                     space_reclaimed as f64 / bytes_processed as f64;
             }
         }
     }
 
     /// Collect operation metrics from database
-    fn collect_operation_metrics(&self, _database: &Database, metrics: &mut DatabaseMetrics) -> Result<()> {
-        let read_ops = self.performance_counters.read_operations.load(Ordering::Relaxed);
-        let write_ops = self.performance_counters.write_operations.load(Ordering::Relaxed);
-        let delete_ops = self.performance_counters.delete_operations.load(Ordering::Relaxed);
-        let tx_ops = self.performance_counters.transaction_operations.load(Ordering::Relaxed);
+    fn collect_operation_metrics(
+        &self,
+        _database: &Database,
+        metrics: &mut DatabaseMetrics,
+    ) -> Result<()> {
+        let read_ops = self
+            .performance_counters
+            .read_operations
+            .load(Ordering::Relaxed);
+        let write_ops = self
+            .performance_counters
+            .write_operations
+            .load(Ordering::Relaxed);
+        let delete_ops = self
+            .performance_counters
+            .delete_operations
+            .load(Ordering::Relaxed);
+        let tx_ops = self
+            .performance_counters
+            .transaction_operations
+            .load(Ordering::Relaxed);
 
         metrics.total_operations = read_ops + write_ops + delete_ops + tx_ops;
 
         // Calculate operations per second (simplified)
         if let Some(last_snapshot) = self.metrics_history.read().unwrap().back() {
-            let time_diff = metrics.timestamp.duration_since(last_snapshot.timestamp).unwrap_or(Duration::from_secs(1));
-            let ops_diff = metrics.total_operations.saturating_sub(last_snapshot.metrics.total_operations);
+            let time_diff = metrics
+                .timestamp
+                .duration_since(last_snapshot.timestamp)
+                .unwrap_or(Duration::from_secs(1));
+            let ops_diff = metrics
+                .total_operations
+                .saturating_sub(last_snapshot.metrics.total_operations);
             metrics.operations_per_second = ops_diff as f64 / time_diff.as_secs_f64();
         }
 
@@ -495,9 +553,16 @@ impl MetricsCollector {
     }
 
     /// Collect performance metrics
-    fn collect_performance_metrics(&self, _database: &Database, metrics: &mut DatabaseMetrics) -> Result<()> {
+    fn collect_performance_metrics(
+        &self,
+        _database: &Database,
+        metrics: &mut DatabaseMetrics,
+    ) -> Result<()> {
         let cache_hits = self.performance_counters.cache_hits.load(Ordering::Relaxed);
-        let cache_misses = self.performance_counters.cache_misses.load(Ordering::Relaxed);
+        let cache_misses = self
+            .performance_counters
+            .cache_misses
+            .load(Ordering::Relaxed);
         let total_cache_accesses = cache_hits + cache_misses;
 
         if total_cache_accesses > 0 {
@@ -507,21 +572,16 @@ impl MetricsCollector {
         // Calculate average latency from operation metrics
         let operations = self.operation_metrics.read().unwrap();
         if !operations.is_empty() {
-            let total_duration: Duration = operations.values()
-                .map(|op| op.total_duration)
-                .sum();
-            let total_ops: u64 = operations.values()
-                .map(|op| op.total_count)
-                .sum();
+            let total_duration: Duration = operations.values().map(|op| op.total_duration).sum();
+            let total_ops: u64 = operations.values().map(|op| op.total_count).sum();
 
             if total_ops > 0 {
                 metrics.average_latency = total_duration / total_ops as u32;
             }
 
             // Calculate percentiles (simplified - would need proper histogram in production)
-            let mut all_durations: Vec<Duration> = operations.values()
-                .map(|op| op.average_duration)
-                .collect();
+            let mut all_durations: Vec<Duration> =
+                operations.values().map(|op| op.average_duration).collect();
             all_durations.sort();
 
             if !all_durations.is_empty() {
@@ -535,7 +595,11 @@ impl MetricsCollector {
     }
 
     /// Collect storage metrics
-    fn collect_storage_metrics(&self, _database: &Database, metrics: &mut DatabaseMetrics) -> Result<()> {
+    fn collect_storage_metrics(
+        &self,
+        _database: &Database,
+        metrics: &mut DatabaseMetrics,
+    ) -> Result<()> {
         // In a real implementation, this would query the database for actual storage sizes
         // For now, we'll use placeholder values
         metrics.storage_size_bytes = 1024 * 1024 * 100; // 100MB placeholder
@@ -544,27 +608,41 @@ impl MetricsCollector {
     }
 
     /// Collect memory metrics
-    fn collect_memory_metrics(&self, _database: &Database, metrics: &mut DatabaseMetrics) -> Result<()> {
+    fn collect_memory_metrics(
+        &self,
+        _database: &Database,
+        metrics: &mut DatabaseMetrics,
+    ) -> Result<()> {
         // Placeholder implementation - would integrate with actual memory tracking
         metrics.memory_stats = MemoryStats {
-            total_allocated_bytes: 1024 * 1024 * 50, // 50MB
-            cache_memory_bytes: 1024 * 1024 * 20,    // 20MB
-            btree_memory_bytes: 1024 * 1024 * 15,    // 15MB
-            lsm_memory_bytes: 1024 * 1024 * 10,      // 10MB
+            total_allocated_bytes: 1024 * 1024 * 50,   // 50MB
+            cache_memory_bytes: 1024 * 1024 * 20,      // 20MB
+            btree_memory_bytes: 1024 * 1024 * 15,      // 15MB
+            lsm_memory_bytes: 1024 * 1024 * 10,        // 10MB
             transaction_memory_bytes: 1024 * 1024 * 3, // 3MB
-            buffer_memory_bytes: 1024 * 1024 * 2,     // 2MB
-            peak_memory_usage: 1024 * 1024 * 60,      // 60MB
+            buffer_memory_bytes: 1024 * 1024 * 2,      // 2MB
+            peak_memory_usage: 1024 * 1024 * 60,       // 60MB
             memory_efficiency: 0.85,
         };
         Ok(())
     }
 
     /// Collect I/O metrics
-    fn collect_io_metrics(&self, _database: &Database, metrics: &mut DatabaseMetrics) -> Result<()> {
+    fn collect_io_metrics(
+        &self,
+        _database: &Database,
+        metrics: &mut DatabaseMetrics,
+    ) -> Result<()> {
         let bytes_read = self.performance_counters.bytes_read.load(Ordering::Relaxed);
-        let bytes_written = self.performance_counters.bytes_written.load(Ordering::Relaxed);
+        let bytes_written = self
+            .performance_counters
+            .bytes_written
+            .load(Ordering::Relaxed);
         let pages_read = self.performance_counters.pages_read.load(Ordering::Relaxed);
-        let pages_written = self.performance_counters.pages_written.load(Ordering::Relaxed);
+        let pages_written = self
+            .performance_counters
+            .pages_written
+            .load(Ordering::Relaxed);
 
         metrics.io_stats = IoStats {
             total_reads: pages_read,
@@ -576,21 +654,29 @@ impl MetricsCollector {
             read_throughput_bps: 0.0, // Would be calculated from historical data
             write_throughput_bps: 0.0, // Would be calculated from historical data
             pending_io_operations: 0, // Would be queried from I/O subsystem
-            io_queue_depth: 0, // Would be queried from I/O subsystem
+            io_queue_depth: 0,        // Would be queried from I/O subsystem
         };
 
         Ok(())
     }
 
     /// Collect transaction metrics
-    fn collect_transaction_metrics(&self, _database: &Database, metrics: &mut DatabaseMetrics) -> Result<()> {
+    fn collect_transaction_metrics(
+        &self,
+        _database: &Database,
+        metrics: &mut DatabaseMetrics,
+    ) -> Result<()> {
         // Placeholder - would query actual transaction manager
         metrics.active_transactions = 5; // Placeholder value
         Ok(())
     }
 
     /// Collect compaction metrics
-    fn collect_compaction_metrics(&self, _database: &Database, _metrics: &mut DatabaseMetrics) -> Result<()> {
+    fn collect_compaction_metrics(
+        &self,
+        _database: &Database,
+        _metrics: &mut DatabaseMetrics,
+    ) -> Result<()> {
         // Compaction metrics are updated via record_compaction method
         Ok(())
     }
@@ -599,7 +685,7 @@ impl MetricsCollector {
     fn collect_resource_metrics(&self) -> Result<()> {
         // Placeholder implementation - would use system APIs
         let mut resources = self.resource_metrics.write().unwrap();
-        
+
         resources.cpu_usage_percent = 25.5; // Would use sysinfo or similar
         resources.memory_usage_bytes = 1024 * 1024 * 128; // 128MB
         resources.memory_usage_percent = 12.5;
@@ -615,7 +701,7 @@ impl MetricsCollector {
     /// Add metrics to history
     fn add_to_history(&self, metrics: DatabaseMetrics, collection_duration: Duration) {
         let mut history = self.metrics_history.write().unwrap();
-        
+
         history.push_back(MetricsSnapshot {
             metrics,
             timestamp: SystemTime::now(),
@@ -631,8 +717,10 @@ impl MetricsCollector {
     /// Calculate metrics trends
     pub fn calculate_trends(&self, window: Duration) -> Result<MetricsTrends> {
         let history = self.metrics_history.read().unwrap();
-        let cutoff_time = SystemTime::now().checked_sub(window).unwrap_or(SystemTime::UNIX_EPOCH);
-        
+        let cutoff_time = SystemTime::now()
+            .checked_sub(window)
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+
         let recent_metrics: Vec<_> = history
             .iter()
             .filter(|snapshot| snapshot.timestamp >= cutoff_time)
@@ -654,14 +742,8 @@ impl MetricsCollector {
                 first.average_latency,
                 last.average_latency,
             ),
-            cache_hit_rate_trend: calculate_trend(
-                first.cache_hit_rate,
-                last.cache_hit_rate,
-            ),
-            error_rate_trend: calculate_trend(
-                first.error_rate,
-                last.error_rate,
-            ),
+            cache_hit_rate_trend: calculate_trend(first.cache_hit_rate, last.cache_hit_rate),
+            error_rate_trend: calculate_trend(first.error_rate, last.error_rate),
             storage_size_trend: calculate_trend(
                 first.storage_size_bytes as f64,
                 last.storage_size_bytes as f64,
@@ -707,7 +789,7 @@ fn calculate_trend(from: f64, to: f64) -> TrendDirection {
     }
 
     let change_percent = ((to - from) / from) * 100.0;
-    
+
     if change_percent.abs() < 5.0 {
         TrendDirection::Stable
     } else if change_percent > 0.0 {
@@ -725,8 +807,6 @@ fn calculate_duration_trend(from: Duration, to: Duration) -> TrendDirection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    
 
     #[test]
     fn test_metrics_collector_creation() {
@@ -737,10 +817,10 @@ mod tests {
     #[test]
     fn test_metrics_collection_lifecycle() {
         let collector = MetricsCollector::new();
-        
+
         collector.start_collection();
         assert!(collector.is_collecting.load(Ordering::Relaxed));
-        
+
         collector.stop_collection();
         assert!(!collector.is_collecting.load(Ordering::Relaxed));
     }
@@ -748,13 +828,13 @@ mod tests {
     #[test]
     fn test_operation_recording() {
         let collector = MetricsCollector::new();
-        
+
         collector.record_operation("test_op", Duration::from_millis(100), true);
         collector.record_operation("test_op", Duration::from_millis(200), false);
-        
+
         let metrics = collector.get_operation_metrics();
         let test_op = metrics.get("test_op").unwrap();
-        
+
         assert_eq!(test_op.total_count, 2);
         assert_eq!(test_op.success_count, 1);
         assert_eq!(test_op.error_count, 1);
@@ -764,14 +844,20 @@ mod tests {
     #[test]
     fn test_cache_access_recording() {
         let collector = MetricsCollector::new();
-        
+
         collector.record_cache_access(true);
         collector.record_cache_access(false);
         collector.record_cache_access(true);
-        
-        let hits = collector.performance_counters.cache_hits.load(Ordering::Relaxed);
-        let misses = collector.performance_counters.cache_misses.load(Ordering::Relaxed);
-        
+
+        let hits = collector
+            .performance_counters
+            .cache_hits
+            .load(Ordering::Relaxed);
+        let misses = collector
+            .performance_counters
+            .cache_misses
+            .load(Ordering::Relaxed);
+
         assert_eq!(hits, 2);
         assert_eq!(misses, 1);
     }
@@ -781,9 +867,9 @@ mod tests {
         let increasing = calculate_trend(100.0, 110.0);
         let decreasing = calculate_trend(100.0, 90.0);
         let stable = calculate_trend(100.0, 102.0);
-        
+
         matches!(increasing, TrendDirection::Increasing(_));
-        matches!(decreasing, TrendDirection::Decreasing(_)); 
+        matches!(decreasing, TrendDirection::Decreasing(_));
         matches!(stable, TrendDirection::Stable);
     }
 }

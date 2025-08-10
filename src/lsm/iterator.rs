@@ -23,11 +23,11 @@ impl LSMMemTableIterator {
                 // Filter out tombstones (None values)
                 v.is_some() &&
                 // Check start bound
-                (start_key.is_none() || k.as_slice() >= start_key.unwrap()) &&
+                start_key.map_or(true, |start| k.as_slice() >= start) &&
                 // Check end bound
-                (end_key.is_none() || k.as_slice() < end_key.unwrap())
+                end_key.map_or(true, |end| k.as_slice() < end)
             })
-            .map(|(k, v)| (k, v.unwrap()))
+            .filter_map(|(k, v)| v.map(|val| (k, val)))
             .collect();
 
         // Sort entries

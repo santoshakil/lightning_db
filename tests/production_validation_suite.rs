@@ -1,16 +1,19 @@
 //! Production Validation Test Suite
-//! 
+//!
 //! This suite validates that Lightning DB is ready for production deployment
 //! by testing all critical functionality, performance characteristics, and
 //! failure scenarios.
 
-use lightning_db::{Database, LightningDbConfig, Transaction, WriteBatch, Result, Error};
-use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
+use lightning_db::{Database, Error, LightningDbConfig, Result, Transaction, WriteBatch};
+use rand::Rng;
+use std::collections::HashMap;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
 use tempfile::TempDir;
-use rand::{Rng, thread_rng};
 
 /// Production validation configuration
 #[derive(Debug, Clone)]
@@ -148,11 +151,13 @@ impl ProductionValidationSuite {
         // Test put/get/delete
         let key = b"test_key";
         let value = b"test_value";
-        
+
         db.put(key, value)?;
-        let retrieved = db.get(key)?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
+        let retrieved = db
+            .get(key)?
+            .ok_or_else(|| lightning_db::Error::KeyNotFound)?;
         assert_eq!(retrieved, value);
-        
+
         db.delete(key)?;
         assert!(db.get(key)?.is_none());
 
@@ -161,7 +166,7 @@ impl ProductionValidationSuite {
         for i in 0..100 {
             batch.put(
                 format!("key_{}", i).into_bytes(),
-                format!("value_{}", i).into_bytes()
+                format!("value_{}", i).into_bytes(),
             )?;
         }
         db.write_batch(&batch)?;
@@ -170,7 +175,9 @@ impl ProductionValidationSuite {
         for i in 0..100 {
             let key = format!("key_{}", i);
             let expected = format!("value_{}", i);
-            let value = db.get(key.as_bytes())?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
+            let value = db
+                .get(key.as_bytes())?
+                .ok_or_else(|| lightning_db::Error::KeyNotFound)?;
             assert_eq!(value, expected.as_bytes());
         }
 
@@ -187,21 +194,21 @@ impl ProductionValidationSuite {
     fn test_transaction_acid(config: &ValidationConfig, test_dir: &TempDir) -> Result<TestResult> {
         let db_path = test_dir.path().join("acid.db");
         let db = Arc::new(Database::create(&db_path, LightningDbConfig::default())?);
-        
+
         // Initialize accounts
         db.put(b"account_a", b"1000")?;
         db.put(b"account_b", b"1000")?;
 
         let transfer_count = Arc::new(AtomicU64::new(0));
         let error_count = Arc::new(AtomicU64::new(0));
-        
+
         // Concurrent transfers
         let mut handles = vec![];
         for _ in 0..config.thread_count {
             let db_clone = db.clone();
             let transfer_count_clone = transfer_count.clone();
             let error_count_clone = error_count.clone();
-            
+
             let handle = thread::spawn(move || {
                 for _ in 0..100 {
                     let tx_id = match db_clone.begin_transaction() {
@@ -214,15 +221,17 @@ impl ProductionValidationSuite {
 
                     // Read balances
                     let balance_a = if let Ok(Some(v)) = db_clone.get_tx(tx_id, b"account_a") {
-                        std::str::from_utf8(&v).ok()
+                        std::str::from_utf8(&v)
+                            .ok()
                             .and_then(|s| s.parse::<i64>().ok())
                             .unwrap_or(0)
                     } else {
                         0
                     };
-                    
+
                     let balance_b = if let Ok(Some(v)) = db_clone.get_tx(tx_id, b"account_b") {
-                        std::str::from_utf8(&v).ok()
+                        std::str::from_utf8(&v)
+                            .ok()
                             .and_then(|s| s.parse::<i64>().ok())
                             .unwrap_or(0)
                     } else {
@@ -231,9 +240,21 @@ impl ProductionValidationSuite {
 
                     // Transfer 10 units
                     if balance_a >= 10 {
-                        db_clone.put_tx(tx_id, b"account_a", format!("{}", balance_a - 10).as_bytes()).ok();
-                        db_clone.put_tx(tx_id, b"account_b", format!("{}", balance_b + 10).as_bytes()).ok();
-                        
+                        db_clone
+                            .put_tx(
+                                tx_id,
+                                b"account_a",
+                                format!("{}", balance_a - 10).as_bytes(),
+                            )
+                            .ok();
+                        db_clone
+                            .put_tx(
+                                tx_id,
+                                b"account_b",
+                                format!("{}", balance_b + 10).as_bytes(),
+                            )
+                            .ok();
+
                         if db_clone.commit_transaction(tx_id).is_ok() {
                             transfer_count_clone.fetch_add(1, Ordering::Relaxed);
                         } else {
@@ -253,9 +274,13 @@ impl ProductionValidationSuite {
         }
 
         // Verify consistency
-        let final_a = db.get(b"account_a")?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
-        let final_b = db.get(b"account_b")?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
-        
+        let final_a = db
+            .get(b"account_a")?
+            .ok_or_else(|| lightning_db::Error::KeyNotFound)?;
+        let final_b = db
+            .get(b"account_b")?
+            .ok_or_else(|| lightning_db::Error::KeyNotFound)?;
+
         let balance_a: i64 = std::str::from_utf8(&final_a)
             .map_err(|e| lightning_db::Error::Generic(e.to_string()))?
             .parse()
@@ -264,7 +289,7 @@ impl ProductionValidationSuite {
             .map_err(|e| lightning_db::Error::Generic(e.to_string()))?
             .parse()
             .map_err(|e: std::num::ParseIntError| lightning_db::Error::Generic(e.to_string()))?;
-        
+
         let total = balance_a + balance_b;
         assert_eq!(total, 2000, "Money was created or destroyed!");
 
@@ -281,7 +306,10 @@ impl ProductionValidationSuite {
             name: "Transaction ACID".to_string(),
             passed: true,
             duration: Duration::default(),
-            details: format!("ACID properties maintained: {} successful transfers", transfers),
+            details: format!(
+                "ACID properties maintained: {} successful transfers",
+                transfers
+            ),
             metrics,
         })
     }
@@ -290,25 +318,25 @@ impl ProductionValidationSuite {
     fn test_concurrent_access(config: &ValidationConfig, test_dir: &TempDir) -> Result<TestResult> {
         let db_path = test_dir.path().join("concurrent.db");
         let db = Arc::new(Database::create(&db_path, LightningDbConfig::default())?);
-        
+
         let operation_count = Arc::new(AtomicU64::new(0));
         let error_count = Arc::new(AtomicU64::new(0));
         let start = Instant::now();
 
         let mut handles = vec![];
-        
+
         // Writers
         for thread_id in 0..config.thread_count / 2 {
             let db_clone = db.clone();
             let op_count = operation_count.clone();
             let err_count = error_count.clone();
             let ops_per_thread = config.operation_count / (config.thread_count / 2);
-            
+
             let handle = thread::spawn(move || {
                 for i in 0..ops_per_thread {
                     let key = format!("thread_{}_key_{}", thread_id, i);
                     let value = vec![thread_id as u8; 100];
-                    
+
                     if db_clone.put(key.as_bytes(), &value).is_ok() {
                         op_count.fetch_add(1, Ordering::Relaxed);
                     } else {
@@ -325,14 +353,14 @@ impl ProductionValidationSuite {
         for thread_id in thread_count_half..config.thread_count {
             let db_clone = db.clone();
             let op_count = operation_count.clone();
-            
+
             let handle = thread::spawn(move || {
-                let mut rng = thread_rng();
+                let mut rng = rand::rng();
                 for _ in 0..reader_operation_count {
-                    let reader_thread = rng.gen_range(0..thread_count_half);
-                    let key_index = rng.gen_range(0..100);
+                    let reader_thread = rng.random_range(0..thread_count_half);
+                    let key_index = rng.random_range(0..100);
                     let key = format!("thread_{}_key_{}", reader_thread, key_index);
-                    
+
                     if db_clone.get(key.as_bytes()).is_ok() {
                         op_count.fetch_add(1, Ordering::Relaxed);
                     }
@@ -361,7 +389,10 @@ impl ProductionValidationSuite {
             name: "Concurrent Access".to_string(),
             passed: true,
             duration: Duration::default(),
-            details: format!("{:.0} ops/sec with {} threads", ops_per_sec, config.thread_count),
+            details: format!(
+                "{:.0} ops/sec with {} threads",
+                ops_per_sec, config.thread_count
+            ),
             metrics,
         })
     }
@@ -377,19 +408,27 @@ impl ProductionValidationSuite {
         for size in sizes {
             let key = format!("large_{}", size);
             let value: Vec<u8> = (0..size).map(|i| (i % 256) as u8).collect();
-            
+
             let start = Instant::now();
             db.put(key.as_bytes(), &value)?;
             let write_time = start.elapsed();
-            
+
             let start = Instant::now();
-            let retrieved = db.get(key.as_bytes())?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
+            let retrieved = db
+                .get(key.as_bytes())?
+                .ok_or_else(|| lightning_db::Error::KeyNotFound)?;
             let read_time = start.elapsed();
-            
+
             assert_eq!(retrieved.len(), value.len());
-            
-            metrics.insert(format!("write_{}_bytes_ms", size), write_time.as_millis() as f64);
-            metrics.insert(format!("read_{}_bytes_ms", size), read_time.as_millis() as f64);
+
+            metrics.insert(
+                format!("write_{}_bytes_ms", size),
+                write_time.as_millis() as f64,
+            );
+            metrics.insert(
+                format!("read_{}_bytes_ms", size),
+                read_time.as_millis() as f64,
+            );
         }
 
         Ok(TestResult {
@@ -431,7 +470,12 @@ impl ProductionValidationSuite {
 
         // Test range scan
         let start = Instant::now();
-        let count = db.scan(Some(b"key_00001000".to_vec()), Some(b"key_00002000".to_vec()))?.count();
+        let count = db
+            .scan(
+                Some(b"key_00001000".to_vec()),
+                Some(b"key_00002000".to_vec()),
+            )?
+            .count();
         let range_time = start.elapsed();
         assert_eq!(count, 1000);
         metrics.insert("range_scan_ms".to_string(), range_time.as_millis() as f64);
@@ -448,12 +492,15 @@ impl ProductionValidationSuite {
     /// Test crash recovery
     fn test_crash_recovery(config: &ValidationConfig, test_dir: &TempDir) -> Result<TestResult> {
         let db_path = test_dir.path().join("crash_recovery.db");
-        
+
         // Phase 1: Write data
         {
             let db = Database::create(&db_path, LightningDbConfig::default())?;
             for i in 0..1000 {
-                db.put(format!("key_{}", i).as_bytes(), format!("value_{}", i).as_bytes())?;
+                db.put(
+                    format!("key_{}", i).as_bytes(),
+                    format!("value_{}", i).as_bytes(),
+                )?;
             }
             db.sync()?; // Ensure data is on disk
         } // Database closed, simulating crash
@@ -467,12 +514,17 @@ impl ProductionValidationSuite {
         for i in 0..1000 {
             let key = format!("key_{}", i);
             let expected = format!("value_{}", i);
-            let value = db.get(key.as_bytes())?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
+            let value = db
+                .get(key.as_bytes())?
+                .ok_or_else(|| lightning_db::Error::KeyNotFound)?;
             assert_eq!(value, expected.as_bytes());
         }
 
         let mut metrics = HashMap::new();
-        metrics.insert("recovery_time_ms".to_string(), recovery_time.as_millis() as f64);
+        metrics.insert(
+            "recovery_time_ms".to_string(),
+            recovery_time.as_millis() as f64,
+        );
         metrics.insert("recovered_keys".to_string(), 1000.0);
 
         Ok(TestResult {
@@ -504,7 +556,9 @@ impl ProductionValidationSuite {
         {
             let db = Database::open(&db_path, LightningDbConfig::default())?;
             for (key, expected_value) in &test_data {
-                let value = db.get(key.as_bytes())?.ok_or_else(|| lightning_db::Error::KeyNotFound)?;
+                let value = db
+                    .get(key.as_bytes())?
+                    .ok_or_else(|| lightning_db::Error::KeyNotFound)?;
                 assert_eq!(value, expected_value.as_bytes());
             }
         }
@@ -528,14 +582,17 @@ impl ProductionValidationSuite {
         {
             let db = Database::create(&db_path, config.clone())?;
             for i in 0..100 {
-                db.put(format!("wal_key_{}", i).as_bytes(), format!("wal_value_{}", i).as_bytes())?;
+                db.put(
+                    format!("wal_key_{}", i).as_bytes(),
+                    format!("wal_value_{}", i).as_bytes(),
+                )?;
             }
             // No checkpoint - data only in WAL
         }
 
         // Recover from WAL
         let db = Database::open(&db_path, config)?;
-        
+
         // Verify data was recovered from WAL
         let mut recovered_count = 0;
         for i in 0..100 {
@@ -572,12 +629,18 @@ impl ProductionValidationSuite {
 
         let duration = start.elapsed();
         let ops_per_sec = config.operation_count as f64 / duration.as_secs_f64();
-        let mb_per_sec = (config.operation_count * config.value_size) as f64 / 1024.0 / 1024.0 / duration.as_secs_f64();
+        let mb_per_sec = (config.operation_count * config.value_size) as f64
+            / 1024.0
+            / 1024.0
+            / duration.as_secs_f64();
 
         let mut metrics = HashMap::new();
         metrics.insert("write_ops_per_sec".to_string(), ops_per_sec);
         metrics.insert("write_mb_per_sec".to_string(), mb_per_sec);
-        metrics.insert("avg_latency_us".to_string(), duration.as_micros() as f64 / config.operation_count as f64);
+        metrics.insert(
+            "avg_latency_us".to_string(),
+            duration.as_micros() as f64 / config.operation_count as f64,
+        );
 
         Ok(TestResult {
             name: "Write Performance".to_string(),
@@ -601,11 +664,11 @@ impl ProductionValidationSuite {
         }
 
         // Measure reads
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let start = Instant::now();
 
         for _ in 0..config.operation_count {
-            let i = rng.gen_range(0..config.operation_count);
+            let i = rng.random_range(0..config.operation_count);
             let key = format!("read_perf_{}", i);
             db.get(key.as_bytes())?;
         }
@@ -615,7 +678,10 @@ impl ProductionValidationSuite {
 
         let mut metrics = HashMap::new();
         metrics.insert("read_ops_per_sec".to_string(), ops_per_sec);
-        metrics.insert("avg_latency_us".to_string(), duration.as_micros() as f64 / config.operation_count as f64);
+        metrics.insert(
+            "avg_latency_us".to_string(),
+            duration.as_micros() as f64 / config.operation_count as f64,
+        );
 
         Ok(TestResult {
             name: "Read Performance".to_string(),
@@ -645,13 +711,13 @@ impl ProductionValidationSuite {
             let ops_per_thread = config.operation_count / config.thread_count;
 
             let handle = thread::spawn(move || {
-                let mut rng = thread_rng();
+                let mut rng = rand::rng();
                 let value = vec![0u8; 1024];
 
                 for i in 0..ops_per_thread {
-                    if rng.gen_bool(0.8) {
+                    if rng.random_bool_with_probability(0.8) {
                         // 80% reads
-                        let key = format!("mixed_{}", rng.gen_range(0..ops_per_thread));
+                        let key = format!("mixed_{}", rng.random_range(0..ops_per_thread));
                         if db_clone.get(key.as_bytes()).is_ok() {
                             read_ops_clone.fetch_add(1, Ordering::Relaxed);
                         }
@@ -703,7 +769,7 @@ impl ProductionValidationSuite {
         let error_count = Arc::new(AtomicU64::new(0));
 
         let mut handles = vec![];
-        
+
         // Start worker threads
         for thread_id in 0..config.thread_count {
             let db_clone = db.clone();
@@ -712,15 +778,15 @@ impl ProductionValidationSuite {
             let error_count_clone = error_count.clone();
 
             let handle = thread::spawn(move || {
-                let mut rng = thread_rng();
+                let mut rng = rand::rng();
                 let value = vec![thread_id as u8; 1024];
                 let mut i = 0;
 
                 while !stop_flag_clone.load(Ordering::Relaxed) {
                     let key = format!("sustained_{}_{}", thread_id, i);
-                    
+
                     // Mixed operations
-                    match rng.gen_range(0..10) {
+                    match rng.random_range(0..10) {
                         0..=6 => {
                             // 70% reads
                             if db_clone.get(key.as_bytes()).is_ok() {
@@ -742,7 +808,7 @@ impl ProductionValidationSuite {
                             }
                         }
                     }
-                    
+
                     i += 1;
                 }
             });
@@ -766,14 +832,20 @@ impl ProductionValidationSuite {
         metrics.insert("sustained_ops_per_sec".to_string(), ops_per_sec);
         metrics.insert("total_operations".to_string(), total_ops as f64);
         metrics.insert("errors".to_string(), errors as f64);
-        metrics.insert("duration_secs".to_string(), config.sustained_duration.as_secs_f64());
+        metrics.insert(
+            "duration_secs".to_string(),
+            config.sustained_duration.as_secs_f64(),
+        );
 
         Ok(TestResult {
             name: "Sustained Load".to_string(),
             passed: true,
             duration: Duration::default(),
-            details: format!("{:.0} ops/sec sustained for {} seconds", 
-                ops_per_sec, config.sustained_duration.as_secs()),
+            details: format!(
+                "{:.0} ops/sec sustained for {} seconds",
+                ops_per_sec,
+                config.sustained_duration.as_secs()
+            ),
             metrics,
         })
     }
@@ -783,7 +855,7 @@ impl ProductionValidationSuite {
         let db_path = test_dir.path().join("memory_bounds.db");
         let mut db_config = LightningDbConfig::default();
         db_config.cache_size = 10 * 1024 * 1024; // 10MB cache limit
-        
+
         let db = Database::create(&db_path, db_config)?;
 
         // Insert data larger than cache
@@ -803,9 +875,12 @@ impl ProductionValidationSuite {
 
         // Get memory stats if available
         let stats = db.get_stats()?;
-        
+
         let mut metrics = HashMap::new();
-        metrics.insert("memory_usage_mb".to_string(), stats.memory_usage_bytes as f64 / 1024.0 / 1024.0);
+        metrics.insert(
+            "memory_usage_mb".to_string(),
+            stats.memory_usage_bytes as f64 / 1024.0 / 1024.0,
+        );
         if let Some(cache_hit_rate) = stats.cache_hit_rate {
             metrics.insert("cache_hit_rate".to_string(), cache_hit_rate);
         }
@@ -827,7 +902,7 @@ impl ProductionValidationSuite {
         // Create working set
         let working_set_size = 1000;
         let value = vec![0u8; 1024];
-        
+
         for i in 0..working_set_size {
             let key = format!("cache_key_{}", i);
             db.put(key.as_bytes(), &value)?;
@@ -841,7 +916,7 @@ impl ProductionValidationSuite {
 
         // Measure cache hits
         let iterations = 10000;
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let start = Instant::now();
 
         for _ in 0..iterations {
@@ -902,14 +977,20 @@ impl ProductionValidationSuite {
         }
 
         let mut metrics = HashMap::new();
-        metrics.insert("compaction_time_ms".to_string(), compaction_time.as_millis() as f64);
+        metrics.insert(
+            "compaction_time_ms".to_string(),
+            compaction_time.as_millis() as f64,
+        );
         metrics.insert("keys_after_compaction".to_string(), found_count as f64);
 
         Ok(TestResult {
             name: "Compaction".to_string(),
             passed: true,
             duration: Duration::default(),
-            details: format!("Compaction completed in {:.2}s", compaction_time.as_secs_f64()),
+            details: format!(
+                "Compaction completed in {:.2}s",
+                compaction_time.as_secs_f64()
+            ),
             metrics,
         })
     }
@@ -923,7 +1004,7 @@ impl ProductionValidationSuite {
         let tx_id = db.begin_transaction()?;
         db.put_tx(tx_id, b"tx_test", b"value")?;
         db.abort_transaction(tx_id)?;
-        
+
         // Verify rollback worked
         assert!(db.get(b"tx_test")?.is_none());
 
@@ -945,7 +1026,10 @@ impl ProductionValidationSuite {
     }
 
     /// Test transaction conflict handling
-    fn test_transaction_conflicts(config: &ValidationConfig, test_dir: &TempDir) -> Result<TestResult> {
+    fn test_transaction_conflicts(
+        config: &ValidationConfig,
+        test_dir: &TempDir,
+    ) -> Result<TestResult> {
         let db_path = test_dir.path().join("tx_conflicts.db");
         let db = Arc::new(Database::create(&db_path, LightningDbConfig::default())?);
 
@@ -965,16 +1049,18 @@ impl ProductionValidationSuite {
                     let mut retries = 0;
                     loop {
                         let tx_id = db_clone.begin_transaction().unwrap();
-                        
+
                         // Read-modify-write pattern
                         let value = db_clone.get_tx(tx_id, b"conflict_key").unwrap().unwrap();
                         let num: u64 = std::str::from_utf8(&value)
                             .unwrap_or("0")
                             .parse()
                             .unwrap_or(0);
-                        
-                        db_clone.put_tx(tx_id, b"conflict_key", format!("{}", num + 1).as_bytes()).unwrap();
-                        
+
+                        db_clone
+                            .put_tx(tx_id, b"conflict_key", format!("{}", num + 1).as_bytes())
+                            .unwrap();
+
                         match db_clone.commit_transaction(tx_id) {
                             Ok(_) => {
                                 success_count_clone.fetch_add(1, Ordering::Relaxed);
@@ -1004,7 +1090,10 @@ impl ProductionValidationSuite {
         let mut metrics = HashMap::new();
         metrics.insert("transaction_conflicts".to_string(), conflicts as f64);
         metrics.insert("successful_transactions".to_string(), successes as f64);
-        metrics.insert("conflict_rate".to_string(), conflicts as f64 / (conflicts + successes) as f64);
+        metrics.insert(
+            "conflict_rate".to_string(),
+            conflicts as f64 / (conflicts + successes) as f64,
+        );
 
         Ok(TestResult {
             name: "Transaction Conflicts".to_string(),
@@ -1016,17 +1105,20 @@ impl ProductionValidationSuite {
     }
 
     /// Test resource exhaustion handling
-    fn test_resource_exhaustion(config: &ValidationConfig, test_dir: &TempDir) -> Result<TestResult> {
+    fn test_resource_exhaustion(
+        config: &ValidationConfig,
+        test_dir: &TempDir,
+    ) -> Result<TestResult> {
         let db_path = test_dir.path().join("resource_exhaustion.db");
         let mut db_config = LightningDbConfig::default();
         db_config.max_active_transactions = 10;
-        
+
         let db = Arc::new(Database::create(&db_path, db_config)?);
 
         // Try to create more transactions than allowed
         let mut transactions = vec![];
         let mut created_count = 0;
-        
+
         for i in 0..20 {
             match db.begin_transaction() {
                 Ok(tx) => {
@@ -1050,7 +1142,10 @@ impl ProductionValidationSuite {
         let _tx = db.begin_transaction()?;
 
         let mut metrics = HashMap::new();
-        metrics.insert("max_transactions_enforced".to_string(), created_count as f64);
+        metrics.insert(
+            "max_transactions_enforced".to_string(),
+            created_count as f64,
+        );
 
         Ok(TestResult {
             name: "Resource Exhaustion".to_string(),
@@ -1066,10 +1161,8 @@ impl ProductionValidationSuite {
         let total_tests = self.results.len();
         let passed_tests = self.results.iter().filter(|r| r.passed).count();
         let failed_tests = total_tests - passed_tests;
-        
-        let total_duration: Duration = self.results.iter()
-            .map(|r| r.duration)
-            .sum();
+
+        let total_duration: Duration = self.results.iter().map(|r| r.duration).sum();
 
         ValidationReport {
             total_tests,
@@ -1102,7 +1195,7 @@ impl ValidationReport {
         println!("Passed: {} ✅", self.passed_tests);
         println!("Failed: {} ❌", self.failed_tests);
         println!("Total Duration: {:.2}s", self.total_duration.as_secs_f64());
-        
+
         if self.failed_tests > 0 {
             println!("\nFailed Tests:");
             for result in &self.results {
@@ -1136,15 +1229,23 @@ impl ValidationReport {
         writeln!(file, "Total Tests: {}", self.total_tests)?;
         writeln!(file, "Passed: {}", self.passed_tests)?;
         writeln!(file, "Failed: {}", self.failed_tests)?;
-        writeln!(file, "Total Duration: {:.2}s", self.total_duration.as_secs_f64())?;
+        writeln!(
+            file,
+            "Total Duration: {:.2}s",
+            self.total_duration.as_secs_f64()
+        )?;
         writeln!(file)?;
 
         for result in &self.results {
             writeln!(file, "Test: {}", result.name)?;
-            writeln!(file, "  Status: {}", if result.passed { "PASSED" } else { "FAILED" })?;
+            writeln!(
+                file,
+                "  Status: {}",
+                if result.passed { "PASSED" } else { "FAILED" }
+            )?;
             writeln!(file, "  Duration: {:.2}s", result.duration.as_secs_f64())?;
             writeln!(file, "  Details: {}", result.details)?;
-            
+
             if !result.metrics.is_empty() {
                 writeln!(file, "  Metrics:")?;
                 for (metric, value) in &result.metrics {
@@ -1174,9 +1275,9 @@ mod tests {
 
         let mut suite = ProductionValidationSuite::new(config).unwrap();
         let report = suite.run_all().unwrap();
-        
+
         report.print_detailed();
-        
+
         // All tests should pass
         assert_eq!(report.failed_tests, 0);
         assert!(report.passed_tests > 0);

@@ -6,7 +6,7 @@
 //! - Prefetching for range scans
 //! - SIMD-optimized key comparisons
 
-use super::{PrefetchHints, CachePerformanceStats};
+use super::{CachePerformanceStats, PrefetchHints};
 use std::sync::Arc;
 
 /// Node size optimized for cache lines
@@ -140,14 +140,19 @@ impl AlignedBTreeNode {
             new_node.keys[i as usize] = self.keys[(mid + i) as usize];
             if self.is_leaf {
                 new_node.values[i as usize] = self.values[(mid + i) as usize];
-            } else if i > 0 { // Don't move the split key for internal nodes
-                new_node.children[i as usize - 1] = self.children.get_mut((mid + i) as usize).unwrap().take();
+            } else if i > 0 {
+                // Don't move the split key for internal nodes
+                if let Some(child) = self.children.get_mut((mid + i) as usize) {
+                    new_node.children[i as usize - 1] = child.take();
+                }
             }
         }
 
         if !self.is_leaf {
             // Move the rightmost child
-            new_node.children[move_count as usize - 1] = self.children.get_mut(self.key_count as usize).unwrap().take();
+            if let Some(rightmost_child) = self.children.get_mut(self.key_count as usize) {
+                new_node.children[move_count as usize - 1] = rightmost_child.take();
+            }
         }
 
         new_node.key_count = move_count;
@@ -191,7 +196,12 @@ impl AlignedBTree {
         Self::insert_recursive(root, key, value, &self.stats)
     }
 
-    fn insert_recursive(node: &mut Box<AlignedBTreeNode>, key: u32, value: u64, stats: &Arc<CachePerformanceStats>) -> bool {
+    fn insert_recursive(
+        node: &mut Box<AlignedBTreeNode>,
+        key: u32,
+        value: u64,
+        stats: &Arc<CachePerformanceStats>,
+    ) -> bool {
         // Prefetch the node data
         PrefetchHints::prefetch_read_t0(node.as_ref() as *const _ as *const u8);
 
@@ -242,11 +252,11 @@ impl AlignedBTree {
                 Ok(pos) => {
                     self.stats.record_hit();
                     Some(node.values[pos])
-                },
+                }
                 Err(_) => {
                     self.stats.record_miss();
                     None
-                },
+                }
             }
         } else {
             let pos = match node.simd_search(key) {
@@ -268,17 +278,21 @@ impl AlignedBTree {
     /// Range scan with aggressive prefetching
     pub fn range_scan(&self, start_key: u32, end_key: u32) -> Vec<(u32, u64)> {
         let mut results = Vec::new();
-        
+
         if let Some(ref root) = self.root {
             if let Some(leaf) = self.find_first_leaf(root, start_key) {
                 self.scan_leaves(leaf, start_key, end_key, &mut results);
             }
         }
-        
+
         results
     }
 
-    fn find_first_leaf<'a>(&self, node: &'a AlignedBTreeNode, key: u32) -> Option<&'a AlignedBTreeNode> {
+    fn find_first_leaf<'a>(
+        &self,
+        node: &'a AlignedBTreeNode,
+        key: u32,
+    ) -> Option<&'a AlignedBTreeNode> {
         // Prefetch the node
         PrefetchHints::prefetch_read_t0(node as *const _ as *const u8);
 
@@ -296,7 +310,9 @@ impl AlignedBTree {
                     PrefetchHints::prefetch_read_t0(child.as_ref() as *const _ as *const u8);
                     if pos + 1 < node.children.len() {
                         if let Some(ref sibling) = node.children[pos + 1] {
-                            PrefetchHints::prefetch_read_t0(sibling.as_ref() as *const _ as *const u8);
+                            PrefetchHints::prefetch_read_t0(
+                                sibling.as_ref() as *const _ as *const u8
+                            );
                         }
                     }
                     self.find_first_leaf(child, key)
@@ -309,11 +325,17 @@ impl AlignedBTree {
         }
     }
 
-    fn scan_leaves(&self, mut current: &AlignedBTreeNode, start_key: u32, end_key: u32, results: &mut Vec<(u32, u64)>) {
+    fn scan_leaves(
+        &self,
+        mut current: &AlignedBTreeNode,
+        start_key: u32,
+        end_key: u32,
+        results: &mut Vec<(u32, u64)>,
+    ) {
         loop {
             // Prefetch current leaf
             PrefetchHints::prefetch_read_t0(current as *const _ as *const u8);
-            
+
             // Prefetch next leaf if it exists
             if let Some(ref next) = current.next_leaf {
                 PrefetchHints::prefetch_read_t0(next.as_ref() as *const _ as *const u8);
@@ -351,7 +373,7 @@ impl AlignedBTree {
     pub fn bulk_load(&mut self, mut data: Vec<(u32, u64)>) {
         // Sort data for sequential insertion
         data.sort_by_key(|&(k, _)| k);
-        
+
         // Clear existing tree
         self.root = Some(Box::new(AlignedBTreeNode::new_leaf()));
         self.height = 1;
@@ -383,12 +405,12 @@ mod tests {
     #[test]
     fn test_aligned_btree_basic_operations() {
         let mut tree = AlignedBTree::new();
-        
+
         // Test insertion
         assert!(tree.insert(10, 100));
         assert!(tree.insert(20, 200));
         assert!(tree.insert(5, 50));
-        
+
         // Test search
         assert_eq!(tree.search(10), Some(100));
         assert_eq!(tree.search(20), Some(200));
@@ -413,36 +435,36 @@ mod tests {
     #[test]
     fn test_range_scan() {
         let mut tree = AlignedBTree::new();
-        
+
         // Insert test data
         for i in (0..100).step_by(5) {
             tree.insert(i, i as u64 * 10);
         }
-        
+
         // Test range scan
         let results = tree.range_scan(20, 40);
         assert!(!results.is_empty());
-        
+
         // Verify results are in range and sorted
         for &(key, value) in &results {
             assert!(key >= 20 && key <= 40);
             assert_eq!(value, key as u64 * 10);
         }
-        
+
         // Verify results are sorted
         for i in 1..results.len() {
-            assert!(results[i-1].0 <= results[i].0);
+            assert!(results[i - 1].0 <= results[i].0);
         }
     }
 
     #[test]
     fn test_bulk_load() {
         let mut tree = AlignedBTree::new();
-        
+
         // Reduced to MAX_KEYS_PER_NODE to fit in single leaf
         let data: Vec<(u32, u64)> = (0..7).map(|i| (i, i as u64 * 2)).collect();
         tree.bulk_load(data);
-        
+
         // Verify all data was inserted
         for i in 0..7 {
             assert_eq!(tree.search(i), Some(i as u64 * 2));
@@ -452,8 +474,11 @@ mod tests {
     #[test]
     fn test_cache_line_alignment() {
         // Verify node is cache-line aligned
-        assert_eq!(std::mem::align_of::<AlignedBTreeNode>(), crate::cache_optimized::CACHE_LINE_SIZE);
-        
+        assert_eq!(
+            std::mem::align_of::<AlignedBTreeNode>(),
+            crate::cache_optimized::CACHE_LINE_SIZE
+        );
+
         // Verify node size is optimal (fits in 2 cache lines)
         let node_size = std::mem::size_of::<AlignedBTreeNode>();
         assert!(node_size <= NODE_SIZE);
@@ -463,12 +488,12 @@ mod tests {
     #[test]
     fn test_performance_stats() {
         let mut tree = AlignedBTree::new();
-        
+
         // Insert and search to generate stats
         tree.insert(42, 420);
         tree.search(42); // Hit
         tree.search(99); // Miss
-        
+
         let stats = tree.get_stats();
         assert!(stats.hit_rate() > 0.0);
         assert!(stats.hit_rate() < 1.0);

@@ -4,33 +4,35 @@
 //! and continuous performance tuning to achieve optimal Lightning DB performance.
 
 use crate::{Database, LightningDbConfig, Result};
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::path::Path;
-use parking_lot::RwLock;
-use serde::{Serialize, Deserialize};
 
-pub mod hardware_detector;
-pub mod workload_profiler;
-pub mod workload_profiles;
 pub mod auto_tuner;
 pub mod config_optimizer;
-pub mod validation;
+pub mod hardware_detector;
 pub mod ml_autotuner;
 pub mod performance_validation;
+pub mod validation;
+pub mod workload_profiler;
+pub mod workload_profiles;
 
-pub use hardware_detector::{HardwareDetector, HardwareInfo};
-pub use workload_profiler::{WorkloadProfiler, WorkloadProfile, WorkloadType};
-pub use workload_profiles::{WorkloadProfiles, WorkloadConfigProfile, WorkloadProfileGenerator};
 pub use auto_tuner::{AutoTuner, TuningStrategy};
 pub use config_optimizer::{ConfigOptimizer, OptimizationGoal};
-pub use validation::{PerformanceValidator, ValidationResult};
-pub use ml_autotuner::{MLAutoTuner, AutoTuningConfig, TuningRecommendation, PerformanceDataPoint, SafetyLimits};
-pub use performance_validation::{
-    PerformanceValidationFramework, ValidationSession, DetailedPerformanceMetrics,
-    PerformanceImprovement, ImprovementArea, ImprovementImpact, StatisticalAnalysis,
-    ValidationResult as FrameworkValidationResult
+pub use hardware_detector::{HardwareDetector, HardwareInfo};
+pub use ml_autotuner::{
+    AutoTuningConfig, MLAutoTuner, PerformanceDataPoint, SafetyLimits, TuningRecommendation,
 };
+pub use performance_validation::{
+    DetailedPerformanceMetrics, ImprovementArea, ImprovementImpact, PerformanceImprovement,
+    PerformanceValidationFramework, StatisticalAnalysis,
+    ValidationResult as FrameworkValidationResult, ValidationSession,
+};
+pub use validation::{PerformanceValidator, ValidationResult};
+pub use workload_profiler::{WorkloadProfile, WorkloadProfiler, WorkloadType};
+pub use workload_profiles::{WorkloadConfigProfile, WorkloadProfileGenerator, WorkloadProfiles};
 
 /// Performance tuning coordinator
 pub struct PerformanceTuner {
@@ -172,9 +174,7 @@ impl PerformanceTuner {
         let hardware_info = self.hardware_detector.detect()?;
         result.notes.push(format!(
             "Detected hardware: {} CPUs, {}MB RAM, {} storage",
-            hardware_info.cpu_count,
-            hardware_info.total_memory_mb,
-            hardware_info.storage_type
+            hardware_info.cpu_count, hardware_info.total_memory_mb, hardware_info.storage_type
         ));
 
         // Step 2: Profile workload
@@ -194,10 +194,9 @@ impl PerformanceTuner {
         result.new_config = optimized_config;
 
         // Step 4: Validate new configuration
-        let validation_result = self.performance_validator.validate_config(
-            db_path,
-            &result.new_config,
-        )?;
+        let validation_result = self
+            .performance_validator
+            .validate_config(db_path, &result.new_config)?;
 
         if validation_result.is_better {
             result.performance_after = validation_result.metrics;
@@ -211,7 +210,9 @@ impl PerformanceTuner {
             // Update current configuration
             *self.current_config.write() = result.new_config.clone();
         } else {
-            result.notes.push("New configuration did not improve performance".to_string());
+            result
+                .notes
+                .push("New configuration did not improve performance".to_string());
         }
 
         result.tuning_duration = start_time.elapsed();
@@ -224,7 +225,7 @@ impl PerformanceTuner {
     pub fn get_recommended_config(&self, workload_type: WorkloadType) -> Result<LightningDbConfig> {
         let hardware_info = self.hardware_detector.detect()?;
         let workload_profile = WorkloadProfile::for_type(workload_type);
-        
+
         self.config_optimizer.optimize(
             &hardware_info,
             &workload_profile,
@@ -236,7 +237,7 @@ impl PerformanceTuner {
     fn measure_current_performance(&self, db_path: &Path) -> Result<PerformanceMetrics> {
         // Open database with current configuration
         let db = Arc::new(Database::open(db_path, self.current_config.read().clone())?);
-        
+
         // Run performance measurements
         self.performance_validator.measure_performance(&db)
     }
@@ -253,14 +254,18 @@ impl PerformanceTuner {
             generated_at: std::time::SystemTime::now(),
             total_tuning_sessions: history.len(),
             successful_tunings: history.iter().filter(|r| r.success).count(),
-            average_improvement: history.iter()
+            average_improvement: history
+                .iter()
                 .filter(|r| r.success)
                 .map(|r| r.improvement_percentage)
-                .sum::<f64>() / history.len().max(1) as f64,
-            best_configuration: history.iter()
+                .sum::<f64>()
+                / history.len().max(1) as f64,
+            best_configuration: history
+                .iter()
                 .filter(|r| r.success)
                 .max_by(|a, b| {
-                    a.performance_after.mixed_ops_per_sec
+                    a.performance_after
+                        .mixed_ops_per_sec
                         .partial_cmp(&b.performance_after.mixed_ops_per_sec)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })

@@ -3,18 +3,19 @@
 //! Comprehensive testing of data durability guarantees including WAL integrity,
 //! fsync verification, crash recovery, and data persistence validation.
 
-use crate::{Database, Result, Error};
-use crate::chaos_engineering::{
-    ChaosTest, ChaosTestResult, IntegrityReport, ChaosConfig
+use crate::chaos_engineering::{ChaosConfig, ChaosTest, ChaosTestResult, IntegrityReport};
+use crate::{Database, Error, Result};
+use parking_lot::{Mutex, RwLock};
+use rand::{rng, Rng};
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, VecDeque};
+use std::io::{Read, Write};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
 };
-use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use std::thread;
 use std::time::{Duration, SystemTime};
-use std::io::{Write, Read};
-use std::collections::{HashMap, VecDeque};
-use parking_lot::{RwLock, Mutex};
-use rand::{Rng, thread_rng};
-use sha2::{Sha256, Digest};
 
 /// Durability verification test
 pub struct DurabilityVerificationTest {
@@ -171,10 +172,10 @@ struct DataRecord {
 /// Durability level guarantees
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DurabilityLevel {
-    Volatile,      // May be lost on crash
-    Buffered,      // Written but not synced
-    Synced,        // Fsync completed
-    Replicated,    // Written to multiple locations
+    Volatile,   // May be lost on crash
+    Buffered,   // Written but not synced
+    Synced,     // Fsync completed
+    Replicated, // Written to multiple locations
 }
 
 /// Verification task
@@ -295,32 +296,32 @@ impl DurabilityVerificationTest {
     /// Test WAL integrity under various conditions
     fn test_wal_integrity(&self, db: Arc<Database>) -> Result<()> {
         println!("📝 Testing WAL integrity...");
-        
+
         // Test sequential WAL writes
         self.test_sequential_wal_writes(&db)?;
-        
+
         // Test concurrent WAL writes
         self.test_concurrent_wal_writes(&db)?;
-        
+
         // Test WAL recovery after crash
         self.test_wal_crash_recovery(&db)?;
-        
+
         // Test WAL corruption detection
         self.test_wal_corruption_detection(&db)?;
-        
+
         Ok(())
     }
 
     /// Test sequential WAL writes
     fn test_sequential_wal_writes(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Testing sequential WAL writes...");
-        
+
         let mut sequence = 0u64;
-        
+
         for i in 0..1000 {
             let key = format!("wal_seq_{}", i).into_bytes();
             let value = format!("value_{}", i).into_bytes();
-            
+
             // Record WAL entry
             let entry = WALEntry {
                 sequence_number: sequence,
@@ -333,39 +334,39 @@ impl DurabilityVerificationTest {
                 synced: false,
                 recovered: false,
             };
-            
+
             self.wal_verifier.wal_entries.write().push(entry);
             sequence += 1;
-            
+
             // Perform actual write
             db.put(&key, &value)?;
         }
-        
+
         // Verify WAL sequence integrity
         self.verify_wal_sequence()?;
-        
+
         Ok(())
     }
 
     /// Test concurrent WAL writes
     fn test_concurrent_wal_writes(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Testing concurrent WAL writes...");
-        
+
         let mut handles = vec![];
         let sequence_counter = Arc::new(AtomicU64::new(0));
-        
+
         for thread_id in 0..self.config.concurrent_writers {
             let db_clone = Arc::clone(db);
             let wal_verifier = Arc::clone(&self.wal_verifier);
             let seq_counter = Arc::clone(&sequence_counter);
-            
+
             let handle = thread::spawn(move || {
                 for i in 0..100 {
                     let key = format!("wal_concurrent_{}_{}", thread_id, i).into_bytes();
                     let value = format!("value_{}_{}", thread_id, i).into_bytes();
-                    
+
                     let sequence = seq_counter.fetch_add(1, Ordering::SeqCst);
-                    
+
                     let entry = WALEntry {
                         sequence_number: sequence,
                         timestamp: SystemTime::now(),
@@ -377,36 +378,36 @@ impl DurabilityVerificationTest {
                         synced: false,
                         recovered: false,
                     };
-                    
+
                     wal_verifier.wal_entries.write().push(entry);
-                    
+
                     let _ = db_clone.put(&key, &value);
                 }
             });
-            
+
             handles.push(handle);
         }
-        
+
         for handle in handles {
             handle.join().unwrap();
         }
-        
+
         // Check for gaps in sequence numbers
         self.check_wal_sequence_gaps()?;
-        
+
         Ok(())
     }
 
     /// Test WAL recovery after crash
     fn test_wal_crash_recovery(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Testing WAL crash recovery...");
-        
+
         // Write data with WAL tracking
         let test_data = self.generate_test_data(100);
-        
+
         for (key, value) in &test_data {
             db.put(key, value)?;
-            
+
             // Track in WAL
             let entry = WALEntry {
                 sequence_number: 0,
@@ -419,23 +420,23 @@ impl DurabilityVerificationTest {
                 synced: true,
                 recovered: false,
             };
-            
+
             self.wal_verifier.wal_entries.write().push(entry);
         }
-        
+
         // Simulate crash and recovery
         drop(db.clone());
-        
+
         // Reopen database
         let recovered_db = Arc::new(Database::open(
             std::env::temp_dir().join("durability_test"),
-            crate::LightningDbConfig::default()
+            crate::LightningDbConfig::default(),
         )?);
-        
+
         // Verify all WAL entries were recovered
         let mut recovered = 0;
         let mut lost = 0;
-        
+
         for (key, expected_value) in &test_data {
             match recovered_db.get(key)? {
                 Some(value) => {
@@ -444,36 +445,40 @@ impl DurabilityVerificationTest {
                     } else {
                         println!("   ⚠️  Data corruption detected for key: {:?}", key);
                     }
-                },
+                }
                 None => {
                     lost += 1;
                     println!("   ⚠️  Data loss detected for key: {:?}", key);
                 }
             }
         }
-        
+
         println!("   Recovered: {}, Lost: {}", recovered, lost);
-        
+
         if lost > 0 {
-            self.wal_verifier.recovery_failures.fetch_add(lost, Ordering::Relaxed);
+            self.wal_verifier
+                .recovery_failures
+                .fetch_add(lost, Ordering::Relaxed);
         } else {
-            self.wal_verifier.recovery_success.fetch_add(1, Ordering::Relaxed);
+            self.wal_verifier
+                .recovery_success
+                .fetch_add(1, Ordering::Relaxed);
         }
-        
+
         Ok(())
     }
 
     /// Test WAL corruption detection
     fn test_wal_corruption_detection(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Testing WAL corruption detection...");
-        
+
         // Simulate corrupted WAL entries
         let mut corrupted_entries = 0;
-        
+
         for i in 0..100 {
             let key = format!("wal_corrupt_{}", i).into_bytes();
             let value = vec![0u8; 100];
-            
+
             let mut entry = WALEntry {
                 sequence_number: i,
                 timestamp: SystemTime::now(),
@@ -485,56 +490,61 @@ impl DurabilityVerificationTest {
                 synced: true,
                 recovered: false,
             };
-            
+
             // Corrupt some entries
             if i % 10 == 0 {
                 entry.checksum = entry.checksum.wrapping_add(1); // Invalid checksum
                 corrupted_entries += 1;
             }
-            
+
             self.wal_verifier.wal_entries.write().push(entry);
         }
-        
+
         // Verify checksums
         let detected = self.verify_wal_checksums()?;
-        
+
         if detected != corrupted_entries {
-            println!("   ⚠️  Only detected {} of {} corrupted entries", detected, corrupted_entries);
+            println!(
+                "   ⚠️  Only detected {} of {} corrupted entries",
+                detected, corrupted_entries
+            );
         } else {
             println!("   ✔️  All corrupted entries detected");
         }
-        
-        self.wal_verifier.corruption_detected.fetch_add(detected, Ordering::Relaxed);
-        
+
+        self.wal_verifier
+            .corruption_detected
+            .fetch_add(detected, Ordering::Relaxed);
+
         Ok(())
     }
 
     /// Test fsync correctness
     fn test_fsync_correctness(&self, db: Arc<Database>) -> Result<()> {
         println!("💾 Testing fsync correctness...");
-        
+
         // Test single fsync
         self.test_single_fsync(&db)?;
-        
+
         // Test batch fsync
         self.test_batch_fsync(&db)?;
-        
+
         // Test fsync under memory pressure
         self.test_fsync_memory_pressure(&db)?;
-        
+
         // Test fsync timing
         self.test_fsync_timing(&db)?;
-        
+
         Ok(())
     }
 
     /// Test single fsync operation
     fn test_single_fsync(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Testing single fsync...");
-        
+
         let key = b"fsync_single_test";
         let value = b"test_value";
-        
+
         // Track pending write
         self.fsync_verifier.pending_writes.write().insert(
             key.to_vec(),
@@ -544,13 +554,13 @@ impl DurabilityVerificationTest {
                 timestamp: SystemTime::now(),
                 write_completed: false,
                 fsync_pending: true,
-            }
+            },
         );
-        
+
         // Write and sync
         db.put(key, value)?;
         db.sync()?;
-        
+
         // Mark as synced
         self.fsync_verifier.synced_writes.write().insert(
             key.to_vec(),
@@ -560,61 +570,69 @@ impl DurabilityVerificationTest {
                 sync_time: SystemTime::now(),
                 checksum: self.calculate_checksum(key, value),
                 verified: false,
-            }
+            },
         );
-        
-        self.fsync_verifier.fsync_calls.fetch_add(1, Ordering::Relaxed);
-        
+
+        self.fsync_verifier
+            .fsync_calls
+            .fetch_add(1, Ordering::Relaxed);
+
         // Verify persistence
         drop(db.clone());
         let reopened = Arc::new(Database::open(
             std::env::temp_dir().join("fsync_test"),
-            crate::LightningDbConfig::default()
+            crate::LightningDbConfig::default(),
         )?);
-        
+
         match reopened.get(key)? {
             Some(stored_value) => {
                 if stored_value != value {
                     println!("   ⚠️  Value mismatch after fsync");
-                    self.fsync_verifier.data_loss_events.fetch_add(1, Ordering::Relaxed);
+                    self.fsync_verifier
+                        .data_loss_events
+                        .fetch_add(1, Ordering::Relaxed);
                 }
-            },
+            }
             None => {
                 println!("   ⚠️  Data lost despite fsync!");
-                self.fsync_verifier.data_loss_events.fetch_add(1, Ordering::Relaxed);
+                self.fsync_verifier
+                    .data_loss_events
+                    .fetch_add(1, Ordering::Relaxed);
             }
         }
-        
+
         Ok(())
     }
 
     /// Test batch fsync operations
     fn test_batch_fsync(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Testing batch fsync...");
-        
+
         let batch_size = 100;
         let mut keys = Vec::new();
-        
+
         // Write batch without syncing
         for i in 0..batch_size {
             let key = format!("fsync_batch_{}", i).into_bytes();
             let value = format!("value_{}", i).into_bytes();
-            
+
             db.put(&key, &value)?;
             keys.push((key, value));
         }
-        
+
         // Single fsync for entire batch
         db.sync()?;
-        self.fsync_verifier.fsync_calls.fetch_add(1, Ordering::Relaxed);
-        
+        self.fsync_verifier
+            .fsync_calls
+            .fetch_add(1, Ordering::Relaxed);
+
         // Verify all data persisted
         drop(db.clone());
         let reopened = Arc::new(Database::open(
             std::env::temp_dir().join("batch_fsync_test"),
-            crate::LightningDbConfig::default()
+            crate::LightningDbConfig::default(),
         )?);
-        
+
         let mut verified = 0;
         for (key, expected_value) in &keys {
             if let Some(value) = reopened.get(key)? {
@@ -623,134 +641,140 @@ impl DurabilityVerificationTest {
                 }
             }
         }
-        
-        println!("   Batch fsync: {}/{} entries persisted", verified, batch_size);
-        
+
+        println!(
+            "   Batch fsync: {}/{} entries persisted",
+            verified, batch_size
+        );
+
         if verified < batch_size {
-            self.fsync_verifier.data_loss_events.fetch_add((batch_size - verified) as u64, Ordering::Relaxed);
+            self.fsync_verifier
+                .data_loss_events
+                .fetch_add((batch_size - verified) as u64, Ordering::Relaxed);
         }
-        
+
         Ok(())
     }
 
     /// Test fsync under memory pressure
     fn test_fsync_memory_pressure(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Testing fsync under memory pressure...");
-        
+
         // Allocate large buffers to simulate memory pressure
         let _memory_pressure: Vec<Vec<u8>> = (0..100)
             .map(|_| vec![0u8; 10 * 1024 * 1024]) // 10MB each
             .collect();
-        
+
         // Try to write and sync
         let key = b"fsync_memory_pressure";
         let value = vec![0u8; 1024 * 1024]; // 1MB value
-        
+
         match db.put(key, &value) {
-            Ok(_) => {
-                match db.sync() {
-                    Ok(_) => println!("   Fsync succeeded under memory pressure"),
-                    Err(e) => println!("   ⚠️  Fsync failed under memory pressure: {}", e),
-                }
+            Ok(_) => match db.sync() {
+                Ok(_) => println!("   Fsync succeeded under memory pressure"),
+                Err(e) => println!("   ⚠️  Fsync failed under memory pressure: {}", e),
             },
             Err(e) => println!("   ⚠️  Write failed under memory pressure: {}", e),
         }
-        
+
         Ok(())
     }
 
     /// Test fsync timing and performance
     fn test_fsync_timing(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Testing fsync timing...");
-        
+
         let mut timings = Vec::new();
-        
+
         for i in 0..10 {
             let key = format!("fsync_timing_{}", i).into_bytes();
             let value = vec![0u8; 1024 * 1024]; // 1MB
-            
+
             db.put(&key, &value)?;
-            
+
             let start = std::time::Instant::now();
             db.sync()?;
             let duration = start.elapsed();
-            
+
             timings.push(duration);
             println!("   Fsync {} took: {:?}", i, duration);
         }
-        
+
         // Calculate statistics
         let avg_time = timings.iter().map(|d| d.as_millis()).sum::<u128>() / timings.len() as u128;
         let max_time = timings.iter().map(|d| d.as_millis()).max().unwrap_or(0);
-        
+
         println!("   Average fsync time: {}ms, Max: {}ms", avg_time, max_time);
-        
+
         Ok(())
     }
 
     /// Test data persistence guarantees
     fn test_data_persistence(&self, db: Arc<Database>) -> Result<()> {
         println!("📊 Testing data persistence guarantees...");
-        
+
         // Test immediate persistence
         self.test_immediate_persistence(&db)?;
-        
+
         // Test deferred persistence
         self.test_deferred_persistence(&db)?;
-        
+
         // Test persistence across restarts
         self.test_restart_persistence(&db)?;
-        
+
         // Test large data persistence
         self.test_large_data_persistence(&db)?;
-        
+
         Ok(())
     }
 
     /// Test immediate persistence
     fn test_immediate_persistence(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Testing immediate persistence...");
-        
+
         let test_count = 100;
         let mut immediately_persisted = 0;
-        
+
         for i in 0..test_count {
             let key = format!("immediate_{}", i).into_bytes();
             let value = format!("value_{}", i).into_bytes();
-            
+
             // Write with immediate sync
             db.put(&key, &value)?;
             db.sync()?;
-            
+
             // Immediately verify by reopening
             drop(db.clone());
             let reopened = Arc::new(Database::open(
                 std::env::temp_dir().join("immediate_persist"),
-                crate::LightningDbConfig::default()
+                crate::LightningDbConfig::default(),
             )?);
-            
+
             if reopened.get(&key)?.is_some() {
                 immediately_persisted += 1;
             }
         }
-        
+
         let persistence_rate = immediately_persisted as f64 / test_count as f64;
-        println!("   Immediate persistence rate: {:.2}%", persistence_rate * 100.0);
-        
+        println!(
+            "   Immediate persistence rate: {:.2}%",
+            persistence_rate * 100.0
+        );
+
         if persistence_rate < 1.0 {
             self.persistence_validator.persistence_failures.fetch_add(
                 (test_count - immediately_persisted) as u64,
-                Ordering::Relaxed
+                Ordering::Relaxed,
             );
         }
-        
+
         Ok(())
     }
 
     /// Test deferred persistence
     fn test_deferred_persistence(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Testing deferred persistence...");
-        
+
         // Write without immediate sync
         let batch_size = 1000;
         for i in 0..batch_size {
@@ -758,20 +782,20 @@ impl DurabilityVerificationTest {
             let value = format!("value_{}", i).into_bytes();
             db.put(&key, &value)?;
         }
-        
+
         // Wait for background sync (if any)
         thread::sleep(Duration::from_secs(5));
-        
+
         // Force sync
         db.sync()?;
-        
+
         // Verify persistence
         drop(db.clone());
         let reopened = Arc::new(Database::open(
             std::env::temp_dir().join("deferred_persist"),
-            crate::LightningDbConfig::default()
+            crate::LightningDbConfig::default(),
         )?);
-        
+
         let mut persisted = 0;
         for i in 0..batch_size {
             let key = format!("deferred_{}", i).into_bytes();
@@ -779,33 +803,33 @@ impl DurabilityVerificationTest {
                 persisted += 1;
             }
         }
-        
+
         println!("   Deferred persistence: {}/{}", persisted, batch_size);
-        
+
         Ok(())
     }
 
     /// Test persistence across restarts
     fn test_restart_persistence(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Testing persistence across restarts...");
-        
+
         let test_data = self.generate_test_data(100);
-        
+
         // Write and sync data
         for (key, value) in &test_data {
             db.put(key, value)?;
         }
         db.sync()?;
-        
+
         // Simulate multiple restarts
         for restart in 1..=5 {
             drop(db.clone());
-            
+
             let reopened = Arc::new(Database::open(
                 std::env::temp_dir().join("restart_persist"),
-                crate::LightningDbConfig::default()
+                crate::LightningDbConfig::default(),
             )?);
-            
+
             // Verify all data still present
             let mut verified = 0;
             for (key, expected_value) in &test_data {
@@ -815,30 +839,34 @@ impl DurabilityVerificationTest {
                     }
                 }
             }
-            
+
             if verified < test_data.len() {
-                println!("   ⚠️  Data loss after restart {}: {}/{}", 
-                         restart, verified, test_data.len());
+                println!(
+                    "   ⚠️  Data loss after restart {}: {}/{}",
+                    restart,
+                    verified,
+                    test_data.len()
+                );
             }
         }
-        
+
         Ok(())
     }
 
     /// Test large data persistence
     fn test_large_data_persistence(&self, db: &Arc<Database>) -> Result<()> {
         println!("   Testing large data persistence...");
-        
+
         let sizes = vec![1024, 10240, 102400, 1048576]; // 1KB to 1MB
-        
+
         for (i, size) in sizes.iter().enumerate() {
             let key = format!("large_{}", i).into_bytes();
             let value = vec![0xAB; *size];
-            
+
             // Write large value
             db.put(&key, &value)?;
             db.sync()?;
-            
+
             // Verify
             if let Some(stored) = db.get(&key)? {
                 if stored.len() != *size {
@@ -848,52 +876,55 @@ impl DurabilityVerificationTest {
                 println!("   ⚠️  Failed to persist {}KB value", size / 1024);
             }
         }
-        
+
         Ok(())
     }
 
     /// Test crash recovery scenarios
     fn test_crash_recovery(&self, db: Arc<Database>) -> Result<()> {
         println!("🔄 Testing crash recovery scenarios...");
-        
+
         for crash_point in &self.config.crash_points {
             self.test_crash_at_point(&db, *crash_point)?;
         }
-        
+
         Ok(())
     }
 
     /// Test crash at specific point
     fn test_crash_at_point(&self, db: &Arc<Database>, crash_point: CrashPoint) -> Result<()> {
         println!("   Testing crash at {:?}...", crash_point);
-        
+
         // Capture pre-crash state
         let pre_crash_state = self.capture_database_state(db)?;
-        self.recovery_tester.pre_crash_state.write().clone_from(&pre_crash_state);
-        
+        self.recovery_tester
+            .pre_crash_state
+            .write()
+            .clone_from(&pre_crash_state);
+
         // Perform operations that will be interrupted
         let test_data = self.generate_test_data(50);
         let mut written = 0;
-        
+
         for (i, (key, value)) in test_data.iter().enumerate() {
             match crash_point {
                 CrashPoint::BeforeWALWrite => {
                     if i == 25 {
                         break; // Simulate crash
                     }
-                },
+                }
                 CrashPoint::AfterWALWrite => {
                     // Simulate WAL write completed but data not written
                     if i == 25 {
                         break;
                     }
-                },
+                }
                 CrashPoint::BeforeFsync => {
                     db.put(key, value)?;
                     if i == 25 {
                         break; // Crash before sync
                     }
-                },
+                }
                 CrashPoint::AfterFsync => {
                     db.put(key, value)?;
                     if i % 10 == 0 {
@@ -902,54 +933,63 @@ impl DurabilityVerificationTest {
                     if i == 25 {
                         break;
                     }
-                },
+                }
                 _ => {
                     db.put(key, value)?;
                 }
             }
             written += 1;
         }
-        
+
         // Simulate crash and recovery
         drop(db.clone());
-        self.recovery_tester.recovery_attempts.fetch_add(1, Ordering::Relaxed);
-        
+        self.recovery_tester
+            .recovery_attempts
+            .fetch_add(1, Ordering::Relaxed);
+
         let start_recovery = std::time::Instant::now();
         let recovered_db = Arc::new(Database::open(
             std::env::temp_dir().join("crash_recovery"),
-            crate::LightningDbConfig::default()
+            crate::LightningDbConfig::default(),
         )?);
         let recovery_time = start_recovery.elapsed();
-        
+
         // Capture post-crash state
         let post_crash_state = self.capture_database_state(&recovered_db)?;
-        self.recovery_tester.post_crash_state.write().clone_from(&post_crash_state);
-        
+        self.recovery_tester
+            .post_crash_state
+            .write()
+            .clone_from(&post_crash_state);
+
         // Analyze recovery
         let analysis = self.analyze_recovery(&pre_crash_state, &post_crash_state, written)?;
-        
+
         if analysis.data_loss == 0 {
-            self.recovery_tester.successful_recoveries.fetch_add(1, Ordering::Relaxed);
+            self.recovery_tester
+                .successful_recoveries
+                .fetch_add(1, Ordering::Relaxed);
         } else {
-            self.recovery_tester.data_loss_incidents.fetch_add(1, Ordering::Relaxed);
+            self.recovery_tester
+                .data_loss_incidents
+                .fetch_add(1, Ordering::Relaxed);
             println!("   ⚠️  Data loss detected: {} entries", analysis.data_loss);
         }
-        
+
         println!("   Recovery time: {:?}", recovery_time);
-        
+
         Ok(())
     }
 
     /// Capture database state
     fn capture_database_state(&self, db: &Arc<Database>) -> Result<DatabaseState> {
         let mut state = DatabaseState::default();
-        
+
         // In real implementation, would iterate through all keys
         // For now, simplified version
         state.total_keys = 1000; // Placeholder
         state.total_size = 1024 * 1024; // Placeholder
         state.checksum = self.calculate_state_checksum(&state);
-        
+
         Ok(state)
     }
 
@@ -966,33 +1006,33 @@ impl DurabilityVerificationTest {
             recovery_complete: true,
             consistency_maintained: true,
         };
-        
+
         // Compare states
         if post_crash.total_keys < pre_crash.total_keys {
             analysis.data_loss = pre_crash.total_keys - post_crash.total_keys;
             analysis.recovery_complete = false;
         }
-        
+
         // Check consistency
         if post_crash.checksum != pre_crash.checksum && analysis.data_loss == 0 {
             analysis.consistency_maintained = false;
         }
-        
+
         Ok(analysis)
     }
 
     /// Generate test data
     fn generate_test_data(&self, count: usize) -> Vec<(Vec<u8>, Vec<u8>)> {
         let mut data = Vec::new();
-        let mut rng = thread_rng();
-        
+        let mut rng = rng();
+
         for i in 0..count {
             let key = format!("test_key_{}", i).into_bytes();
             let value_size = rng.gen_range(100..10000);
             let value = (0..value_size).map(|_| rng.gen::<u8>()).collect();
             data.push((key, value));
         }
-        
+
         data
     }
 
@@ -1010,7 +1050,7 @@ impl DurabilityVerificationTest {
         hasher.update(state.total_keys.to_le_bytes());
         hasher.update(state.total_size.to_le_bytes());
         hasher.update(state.checkpoint_lsn.to_le_bytes());
-        
+
         let result = hasher.finalize();
         u64::from_le_bytes(result[0..8].try_into().unwrap())
     }
@@ -1019,15 +1059,20 @@ impl DurabilityVerificationTest {
     fn verify_wal_sequence(&self) -> Result<()> {
         let entries = self.wal_verifier.wal_entries.read();
         let mut last_seq = 0;
-        
+
         for entry in entries.iter() {
             if entry.sequence_number <= last_seq {
-                println!("   ⚠️  WAL sequence error: {} <= {}", entry.sequence_number, last_seq);
-                return Err(Error::Generic("WAL sequence integrity violation".to_string()));
+                println!(
+                    "   ⚠️  WAL sequence error: {} <= {}",
+                    entry.sequence_number, last_seq
+                );
+                return Err(Error::Generic(
+                    "WAL sequence integrity violation".to_string(),
+                ));
             }
             last_seq = entry.sequence_number;
         }
-        
+
         Ok(())
     }
 
@@ -1035,21 +1080,24 @@ impl DurabilityVerificationTest {
     fn check_wal_sequence_gaps(&self) -> Result<()> {
         let mut entries = self.wal_verifier.wal_entries.read().clone();
         entries.sort_by_key(|e| e.sequence_number);
-        
+
         let mut gaps = 0;
         for i in 1..entries.len() {
-            let expected = entries[i-1].sequence_number + 1;
+            let expected = entries[i - 1].sequence_number + 1;
             if entries[i].sequence_number != expected {
                 gaps += 1;
-                println!("   ⚠️  WAL gap detected: {} -> {}", 
-                         entries[i-1].sequence_number, entries[i].sequence_number);
+                println!(
+                    "   ⚠️  WAL gap detected: {} -> {}",
+                    entries[i - 1].sequence_number,
+                    entries[i].sequence_number
+                );
             }
         }
-        
+
         if gaps > 0 {
             println!("   Total WAL gaps: {}", gaps);
         }
-        
+
         Ok(())
     }
 
@@ -1057,7 +1105,7 @@ impl DurabilityVerificationTest {
     fn verify_wal_checksums(&self) -> Result<u64> {
         let entries = self.wal_verifier.wal_entries.read();
         let mut corrupted = 0;
-        
+
         for entry in entries.iter() {
             match &entry.operation {
                 WALOperation::Put { key, value } => {
@@ -1065,11 +1113,11 @@ impl DurabilityVerificationTest {
                     if entry.checksum != expected_checksum {
                         corrupted += 1;
                     }
-                },
+                }
                 _ => {}
             }
         }
-        
+
         Ok(corrupted)
     }
 }
@@ -1164,48 +1212,65 @@ impl ChaosTest for DurabilityVerificationTest {
 
     fn execute(&mut self, db: Arc<Database>, duration: Duration) -> Result<ChaosTestResult> {
         let start_time = SystemTime::now();
-        
+
         // Test WAL integrity
         if self.config.test_wal_integrity {
             self.test_wal_integrity(Arc::clone(&db))?;
         }
-        
+
         // Test fsync correctness
         if self.config.test_fsync_correctness {
             self.test_fsync_correctness(Arc::clone(&db))?;
         }
-        
+
         // Test data persistence
         if self.config.test_data_persistence {
             self.test_data_persistence(Arc::clone(&db))?;
         }
-        
+
         // Test crash recovery
         if self.config.test_crash_recovery {
             self.test_crash_recovery(Arc::clone(&db))?;
         }
-        
+
         // Calculate results
         let mut results = self.test_results.lock();
-        
+
         // Update metrics
-        results.wal_corruptions = self.wal_verifier.corruption_detected.load(Ordering::Relaxed);
+        results.wal_corruptions = self
+            .wal_verifier
+            .corruption_detected
+            .load(Ordering::Relaxed);
         results.fsync_failures = self.fsync_verifier.data_loss_events.load(Ordering::Relaxed);
-        results.recovery_attempts = self.recovery_tester.recovery_attempts.load(Ordering::Relaxed);
-        results.successful_recoveries = self.recovery_tester.successful_recoveries.load(Ordering::Relaxed);
-        
+        results.recovery_attempts = self
+            .recovery_tester
+            .recovery_attempts
+            .load(Ordering::Relaxed);
+        results.successful_recoveries = self
+            .recovery_tester
+            .successful_recoveries
+            .load(Ordering::Relaxed);
+
         // Calculate durability score
         let recovery_rate = if results.recovery_attempts > 0 {
             results.successful_recoveries as f64 / results.recovery_attempts as f64
         } else {
             1.0
         };
-        
-        let wal_integrity = if results.wal_corruptions == 0 { 1.0 } else { 0.5 };
-        let fsync_reliability = if results.fsync_failures == 0 { 1.0 } else { 0.7 };
-        
+
+        let wal_integrity = if results.wal_corruptions == 0 {
+            1.0
+        } else {
+            0.5
+        };
+        let fsync_reliability = if results.fsync_failures == 0 {
+            1.0
+        } else {
+            0.7
+        };
+
         results.durability_score = (recovery_rate + wal_integrity + fsync_reliability) / 3.0;
-        
+
         // Generate analysis
         results.analysis = DurabilityAnalysis {
             wal_effectiveness: wal_integrity,
@@ -1221,9 +1286,9 @@ impl ChaosTest for DurabilityVerificationTest {
             },
             recommendations: self.generate_recommendations(&results),
         };
-        
+
         let test_duration = start_time.elapsed().unwrap_or_default();
-        
+
         let integrity_report = IntegrityReport {
             pages_verified: 10000,
             corrupted_pages: results.wal_corruptions,
@@ -1233,7 +1298,7 @@ impl ChaosTest for DurabilityVerificationTest {
             unrepairable_errors: results.fsync_failures,
             verification_duration: test_duration,
         };
-        
+
         Ok(ChaosTestResult {
             test_name: self.name().to_string(),
             passed: results.durability_score >= 0.95,
@@ -1259,7 +1324,7 @@ impl ChaosTest for DurabilityVerificationTest {
 
     fn verify_integrity(&self, _db: Arc<Database>) -> Result<IntegrityReport> {
         let results = self.test_results.lock();
-        
+
         Ok(IntegrityReport {
             pages_verified: 10000,
             corrupted_pages: results.wal_corruptions,
@@ -1276,27 +1341,27 @@ impl DurabilityVerificationTest {
     /// Generate recommendations based on test results
     fn generate_recommendations(&self, results: &DurabilityTestResults) -> Vec<String> {
         let mut recommendations = Vec::new();
-        
+
         if results.wal_corruptions > 0 {
             recommendations.push("Implement WAL checksum verification on every read".to_string());
             recommendations.push("Consider using redundant WAL copies".to_string());
         }
-        
+
         if results.fsync_failures > 0 {
             recommendations.push("Review fsync implementation for completeness".to_string());
             recommendations.push("Consider using O_DIRECT for critical writes".to_string());
         }
-        
+
         if results.lost_writes > 0 {
             recommendations.push("Implement write-ahead logging for all operations".to_string());
             recommendations.push("Add durability level configuration options".to_string());
         }
-        
+
         if results.successful_recoveries < results.recovery_attempts {
             recommendations.push("Improve crash recovery mechanisms".to_string());
             recommendations.push("Add recovery progress monitoring".to_string());
         }
-        
+
         recommendations
     }
 }

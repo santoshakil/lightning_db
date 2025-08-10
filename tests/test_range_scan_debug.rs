@@ -25,10 +25,14 @@ fn test_btree_range_scan_debug() {
     for i in 0..5 {
         let key = format!("key_{:02}", i);
         let result = db.get(key.as_bytes()).unwrap();
-        println!("  get({}) = {:?}", key, result.as_ref().map(|v| String::from_utf8_lossy(v)));
+        println!(
+            "  get({}) = {:?}",
+            key,
+            result.as_ref().map(|v| String::from_utf8_lossy(v))
+        );
         assert!(result.is_some(), "Key {} should exist", key);
     }
-    
+
     println!("\nDirect reads complete. Keys are confirmed to exist.");
 
     // Test range scan with no bounds
@@ -37,7 +41,11 @@ fn test_btree_range_scan_debug() {
     let all_entries = db.range(None, None).unwrap();
     println!("  db.range() returned, found {} entries", all_entries.len());
     for (key, value) in &all_entries {
-        println!("    {} -> {}", String::from_utf8_lossy(key), String::from_utf8_lossy(value));
+        println!(
+            "    {} -> {}",
+            String::from_utf8_lossy(key),
+            String::from_utf8_lossy(value)
+        );
     }
     assert_eq!(all_entries.len(), 5, "Should find all 5 entries");
 
@@ -46,7 +54,11 @@ fn test_btree_range_scan_debug() {
     let range_entries = db.range(Some(b"key_01"), Some(b"key_03")).unwrap();
     println!("  Found {} entries", range_entries.len());
     for (key, value) in &range_entries {
-        println!("    {} -> {}", String::from_utf8_lossy(key), String::from_utf8_lossy(value));
+        println!(
+            "    {} -> {}",
+            String::from_utf8_lossy(key),
+            String::from_utf8_lossy(value)
+        );
     }
     assert_eq!(range_entries.len(), 2, "Should find key_01 and key_02");
 
@@ -57,8 +69,16 @@ fn test_btree_range_scan_debug() {
     println!("  Found {} entries", prefix_entries.len());
     for result in &prefix_entries {
         if let Ok((key, value)) = result {
-            println!("    {} -> {}", String::from_utf8_lossy(key), String::from_utf8_lossy(value));
+            println!(
+                "    {} -> {}",
+                String::from_utf8_lossy(key),
+                String::from_utf8_lossy(value)
+            );
         }
     }
-    assert_eq!(prefix_entries.len(), 5, "Should find all entries with prefix 'key_'");
+    assert_eq!(
+        prefix_entries.len(),
+        5,
+        "Should find all entries with prefix 'key_'"
+    );
 }

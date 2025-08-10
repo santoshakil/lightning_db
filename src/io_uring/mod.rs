@@ -17,12 +17,12 @@ pub mod linux_io_uring;
 #[cfg(not(target_os = "linux"))]
 pub mod fallback;
 
-pub mod zero_copy_buffer;
-pub mod io_scheduler;
 pub mod direct_io;
 pub mod fixed_buffers;
+pub mod io_scheduler;
+pub mod zero_copy_buffer;
 
-use std::io::{Result, Error, ErrorKind};
+use std::io::{Error, ErrorKind, Result};
 use std::os::unix::io::RawFd;
 use std::time::Duration;
 
@@ -104,7 +104,11 @@ pub enum IoBuffer {
     /// Standard buffer (may involve copying)
     Standard(Vec<u8>),
     /// Fixed buffer registered with kernel (true zero-copy)
-    Fixed { index: u32, offset: usize, len: usize },
+    Fixed {
+        index: u32,
+        offset: usize,
+        len: usize,
+    },
     /// Memory-mapped buffer
     Mapped { ptr: *mut u8, len: usize },
     /// Vectored I/O buffer
@@ -136,28 +140,32 @@ pub struct CompletionEntry {
 pub trait ZeroCopyIo: Send + Sync {
     /// Submit a single I/O request
     fn submit(&mut self, request: IoRequest) -> Result<()>;
-    
+
     /// Submit multiple I/O requests in batch
     fn submit_batch(&mut self, requests: Vec<IoRequest>) -> Result<usize>;
-    
+
     /// Wait for completions
-    fn wait_completions(&mut self, min_complete: usize, timeout: Option<Duration>) -> Result<Vec<CompletionEntry>>;
-    
+    fn wait_completions(
+        &mut self,
+        min_complete: usize,
+        timeout: Option<Duration>,
+    ) -> Result<Vec<CompletionEntry>>;
+
     /// Register fixed buffers for zero-copy operations
     fn register_buffers(&mut self, buffers: &[&[u8]]) -> Result<()>;
-    
+
     /// Unregister fixed buffers
     fn unregister_buffers(&mut self) -> Result<()>;
-    
+
     /// Register file descriptors for fixed file operations
     fn register_files(&mut self, fds: &[RawFd]) -> Result<()>;
-    
+
     /// Unregister file descriptors
     fn unregister_files(&mut self) -> Result<()>;
-    
+
     /// Get submission queue depth
     fn sq_space_left(&self) -> usize;
-    
+
     /// Get pending completions count
     fn cq_ready(&self) -> usize;
 }
@@ -166,10 +174,9 @@ pub trait ZeroCopyIo: Send + Sync {
 pub fn create_zero_copy_io(queue_depth: u32) -> Result<Box<dyn ZeroCopyIo>> {
     #[cfg(target_os = "linux")]
     {
-        linux_io_uring::IoUringImpl::new(queue_depth)
-            .map(|io| Box::new(io) as Box<dyn ZeroCopyIo>)
+        linux_io_uring::IoUringImpl::new(queue_depth).map(|io| Box::new(io) as Box<dyn ZeroCopyIo>)
     }
-    
+
     #[cfg(not(target_os = "linux"))]
     {
         Ok(Box::new(fallback::FallbackIo::new(queue_depth)) as Box<dyn ZeroCopyIo>)
@@ -192,19 +199,19 @@ pub async fn read_zero_copy(
         flags: SqeFlags::default(),
         user_data: 1,
     };
-    
+
     io.submit(request)?;
-    
+
     let completions = io.wait_completions(1, None)?;
     if completions.is_empty() {
         return Err(Error::new(ErrorKind::TimedOut, "No completion received"));
     }
-    
+
     let completion = &completions[0];
     if completion.result < 0 {
         return Err(Error::from_raw_os_error(-completion.result));
     }
-    
+
     // Extract buffer from completion
     // In real implementation, this would be more sophisticated
     Ok(vec![0u8; completion.result as usize])
@@ -225,19 +232,19 @@ pub async fn write_zero_copy(
         flags: SqeFlags::default(),
         user_data: 2,
     };
-    
+
     io.submit(request)?;
-    
+
     let completions = io.wait_completions(1, None)?;
     if completions.is_empty() {
         return Err(Error::new(ErrorKind::TimedOut, "No completion received"));
     }
-    
+
     let completion = &completions[0];
     if completion.result < 0 {
         return Err(Error::from_raw_os_error(-completion.result));
     }
-    
+
     Ok(completion.result as usize)
 }
 
@@ -252,7 +259,7 @@ impl LinkedOps {
             requests: Vec::new(),
         }
     }
-    
+
     /// Add a read operation to the chain
     pub fn read(mut self, fd: RawFd, offset: u64, len: usize) -> Self {
         let request = IoRequest {
@@ -266,16 +273,16 @@ impl LinkedOps {
             },
             user_data: self.requests.len() as u64,
         };
-        
+
         // Last operation shouldn't have link flag
         if !self.requests.is_empty() {
             self.requests.last_mut().unwrap().flags.io_link = true;
         }
-        
+
         self.requests.push(request);
         self
     }
-    
+
     /// Add a write operation to the chain
     pub fn write(mut self, fd: RawFd, offset: u64, data: Vec<u8>) -> Self {
         let request = IoRequest {
@@ -289,16 +296,16 @@ impl LinkedOps {
             },
             user_data: self.requests.len() as u64,
         };
-        
+
         // Last operation shouldn't have link flag
         if !self.requests.is_empty() {
             self.requests.last_mut().unwrap().flags.io_link = true;
         }
-        
+
         self.requests.push(request);
         self
     }
-    
+
     /// Add an fsync operation to the chain
     pub fn fsync(mut self, fd: RawFd) -> Self {
         let request = IoRequest {
@@ -309,16 +316,16 @@ impl LinkedOps {
             flags: SqeFlags::default(),
             user_data: self.requests.len() as u64,
         };
-        
+
         // Last operation shouldn't have link flag
         if !self.requests.is_empty() {
             self.requests.last_mut().unwrap().flags.io_link = true;
         }
-        
+
         self.requests.push(request);
         self
     }
-    
+
     /// Submit all linked operations
     pub async fn submit(self, io: &mut dyn ZeroCopyIo) -> Result<Vec<CompletionEntry>> {
         let num_ops = self.requests.len();
@@ -344,23 +351,25 @@ impl IoStats {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     pub fn record_read(&mut self, bytes: usize, latency_ns: u64) {
         self.total_reads += 1;
         self.total_bytes_read += bytes as u64;
-        self.read_latency_ns = (self.read_latency_ns * (self.total_reads - 1) + latency_ns) / self.total_reads;
+        self.read_latency_ns =
+            (self.read_latency_ns * (self.total_reads - 1) + latency_ns) / self.total_reads;
     }
-    
+
     pub fn record_write(&mut self, bytes: usize, latency_ns: u64) {
         self.total_writes += 1;
         self.total_bytes_written += bytes as u64;
-        self.write_latency_ns = (self.write_latency_ns * (self.total_writes - 1) + latency_ns) / self.total_writes;
+        self.write_latency_ns =
+            (self.write_latency_ns * (self.total_writes - 1) + latency_ns) / self.total_writes;
     }
-    
+
     pub fn read_throughput_mbps(&self, duration_secs: f64) -> f64 {
         (self.total_bytes_read as f64 / (1024.0 * 1024.0)) / duration_secs
     }
-    
+
     pub fn write_throughput_mbps(&self, duration_secs: f64) -> f64 {
         (self.total_bytes_written as f64 / (1024.0 * 1024.0)) / duration_secs
     }
@@ -369,28 +378,28 @@ impl IoStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_linked_ops_builder() {
         let ops = LinkedOps::new()
             .read(5, 0, 4096)
             .write(5, 4096, vec![0u8; 1024])
             .fsync(5);
-        
+
         assert_eq!(ops.requests.len(), 3);
         assert_eq!(ops.requests[0].op_type, OpType::Read);
         assert_eq!(ops.requests[1].op_type, OpType::Write);
         assert_eq!(ops.requests[2].op_type, OpType::Fsync);
     }
-    
+
     #[test]
     fn test_io_stats() {
         let mut stats = IoStats::new();
-        
+
         stats.record_read(4096, 1000);
         stats.record_read(8192, 2000);
         stats.record_write(4096, 1500);
-        
+
         assert_eq!(stats.total_reads, 2);
         assert_eq!(stats.total_writes, 1);
         assert_eq!(stats.total_bytes_read, 12288);

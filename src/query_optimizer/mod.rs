@@ -7,24 +7,24 @@
 //! - Supports complex queries with joins, aggregations, and subqueries
 //! - Integrates with the vectorized query execution engine
 
-use crate::{Result, Error};
-use serde::{Serialize, Deserialize};
+use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-pub mod statistics;
-pub mod cost_model;
-pub mod plan_enumerator;
 pub mod cardinality_estimator;
+pub mod cost_model;
 pub mod index_advisor;
 pub mod join_optimizer;
+pub mod plan_enumerator;
+pub mod statistics;
 
-pub use statistics::*;
-pub use cost_model::*;
-pub use plan_enumerator::*;
 pub use cardinality_estimator::*;
+pub use cost_model::*;
 pub use index_advisor::*;
 pub use join_optimizer::*;
+pub use plan_enumerator::*;
+pub use statistics::*;
 
 /// Main cost-based query optimizer
 #[derive(Debug)]
@@ -178,10 +178,7 @@ pub enum Predicate {
     /// Logical NOT
     Not(Box<Predicate>),
     /// IN predicate
-    In {
-        column: String,
-        values: Vec<Value>,
-    },
+    In { column: String, values: Vec<Value> },
     /// BETWEEN predicate
     Between {
         column: String,
@@ -333,9 +330,7 @@ impl CostBasedOptimizer {
     pub fn new(config: OptimizerConfig) -> Self {
         let statistics = Arc::new(StatisticsManager::new(config.clone()));
         let cost_model = Arc::new(CostModel::new(config.clone()));
-        let cardinality_estimator = Arc::new(CardinalityEstimator::new(
-            Arc::clone(&statistics)
-        ));
+        let cardinality_estimator = Arc::new(CardinalityEstimator::new(Arc::clone(&statistics)));
         let plan_enumerator = Arc::new(PlanEnumerator::new(
             Arc::clone(&cost_model),
             Arc::clone(&cardinality_estimator),
@@ -376,7 +371,9 @@ impl CostBasedOptimizer {
         let optimized_logical = self.apply_logical_optimizations(query, &mut metadata)?;
 
         // Generate alternative physical plans
-        let physical_plans = self.plan_enumerator.enumerate_plans(&optimized_logical, &mut metadata)?;
+        let physical_plans = self
+            .plan_enumerator
+            .enumerate_plans(&optimized_logical, &mut metadata)?;
 
         // Select the best plan
         let best_plan = self.select_best_plan(physical_plans, &mut metadata)?;
@@ -410,19 +407,25 @@ impl CostBasedOptimizer {
         // Predicate pushdown
         if self.config.enable_predicate_pushdown {
             optimized = self.push_down_predicates(optimized)?;
-            metadata.optimizations_applied.push("predicate_pushdown".to_string());
+            metadata
+                .optimizations_applied
+                .push("predicate_pushdown".to_string());
         }
 
         // Projection pushdown
         if self.config.enable_projection_pushdown {
             optimized = self.push_down_projections(optimized)?;
-            metadata.optimizations_applied.push("projection_pushdown".to_string());
+            metadata
+                .optimizations_applied
+                .push("projection_pushdown".to_string());
         }
 
         // Join reordering
         if self.config.enable_join_reordering {
             optimized = self.join_optimizer.optimize_join_order(optimized)?;
-            metadata.optimizations_applied.push("join_reordering".to_string());
+            metadata
+                .optimizations_applied
+                .push("join_reordering".to_string());
         }
 
         Ok(optimized)
@@ -459,7 +462,11 @@ impl CostBasedOptimizer {
         // Find plan with minimum cost
         let best_plan = plans
             .into_iter()
-            .min_by(|a, b| a.cost.partial_cmp(&b.cost).unwrap_or(std::cmp::Ordering::Equal))
+            .min_by(|a, b| {
+                a.cost
+                    .partial_cmp(&b.cost)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .unwrap();
 
         Ok(best_plan)
@@ -579,7 +586,7 @@ mod tests {
     fn test_optimizer_creation() {
         let config = OptimizerConfig::default();
         let optimizer = CostBasedOptimizer::new(config);
-        
+
         let stats = optimizer.get_statistics();
         assert_eq!(stats.tables_analyzed, 0);
     }
@@ -608,7 +615,12 @@ mod tests {
             value: Value::Integer(18),
         };
 
-        if let Predicate::Comparison { column, operator, value } = predicate {
+        if let Predicate::Comparison {
+            column,
+            operator,
+            value,
+        } = predicate
+        {
             assert_eq!(column, "age");
             assert!(matches!(operator, ComparisonOp::GreaterThan));
             assert!(matches!(value, Value::Integer(18)));

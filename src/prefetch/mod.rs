@@ -37,10 +37,28 @@ impl std::fmt::Debug for PrefetchManager {
         f.debug_struct("PrefetchManager")
             .field("config", &self.config)
             .field("sequential_threshold", &self.sequential_threshold)
-            .field("running", &self.running.load(std::sync::atomic::Ordering::Relaxed))
-            .field("total_prefetches", &self.total_prefetches.load(std::sync::atomic::Ordering::Relaxed))
-            .field("successful_prefetches", &self.successful_prefetches.load(std::sync::atomic::Ordering::Relaxed))
-            .field("cache_hits_from_prefetch", &self.cache_hits_from_prefetch.load(std::sync::atomic::Ordering::Relaxed))
+            .field(
+                "running",
+                &self.running.load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .field(
+                "total_prefetches",
+                &self
+                    .total_prefetches
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .field(
+                "successful_prefetches",
+                &self
+                    .successful_prefetches
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .field(
+                "cache_hits_from_prefetch",
+                &self
+                    .cache_hits_from_prefetch
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            )
             .field("has_page_cache", &self.page_cache.is_some())
             .finish()
     }

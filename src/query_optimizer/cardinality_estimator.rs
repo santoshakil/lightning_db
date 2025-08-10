@@ -3,11 +3,11 @@
 //! This module provides accurate cardinality (row count) estimation for query operations.
 //! It uses statistics, histograms, and sampling to predict result sizes.
 
-use crate::{Result, Error};
 use super::{
-    StatisticsManager, Histogram,
-    PhysicalOperator, Predicate, ComparisonOp, Value, JoinCondition, JoinType, OptimizerConfig
+    ComparisonOp, Histogram, JoinCondition, JoinType, OptimizerConfig, PhysicalOperator, Predicate,
+    StatisticsManager, Value,
 };
+use crate::{Error, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -93,24 +93,34 @@ impl CardinalityEstimator {
     /// Estimate cardinality for a physical operator
     pub fn estimate_cardinality(&self, operator: &PhysicalOperator) -> Result<CardinalityEstimate> {
         match operator {
-            PhysicalOperator::TableScan { table, predicate, .. } => {
-                self.estimate_table_scan_cardinality(table, predicate.as_ref())
-            }
-            PhysicalOperator::IndexScan { table, predicate, .. } => {
-                self.estimate_index_scan_cardinality(table, predicate.as_ref())
-            }
-            PhysicalOperator::NestedLoopJoin { left, right, condition, join_type } => {
-                self.estimate_join_cardinality(left, right, condition, *join_type)
-            }
-            PhysicalOperator::HashJoin { left, right, condition, join_type, .. } => {
-                self.estimate_join_cardinality(left, right, condition, *join_type)
-            }
-            PhysicalOperator::SortMergeJoin { left, right, condition, join_type } => {
-                self.estimate_join_cardinality(left, right, condition, *join_type)
-            }
-            PhysicalOperator::Aggregation { input, group_by, .. } => {
-                self.estimate_aggregation_cardinality(input, group_by)
-            }
+            PhysicalOperator::TableScan {
+                table, predicate, ..
+            } => self.estimate_table_scan_cardinality(table, predicate.as_ref()),
+            PhysicalOperator::IndexScan {
+                table, predicate, ..
+            } => self.estimate_index_scan_cardinality(table, predicate.as_ref()),
+            PhysicalOperator::NestedLoopJoin {
+                left,
+                right,
+                condition,
+                join_type,
+            } => self.estimate_join_cardinality(left, right, condition, *join_type),
+            PhysicalOperator::HashJoin {
+                left,
+                right,
+                condition,
+                join_type,
+                ..
+            } => self.estimate_join_cardinality(left, right, condition, *join_type),
+            PhysicalOperator::SortMergeJoin {
+                left,
+                right,
+                condition,
+                join_type,
+            } => self.estimate_join_cardinality(left, right, condition, *join_type),
+            PhysicalOperator::Aggregation {
+                input, group_by, ..
+            } => self.estimate_aggregation_cardinality(input, group_by),
             PhysicalOperator::Sort { input, .. } => {
                 // Sort doesn't change cardinality
                 self.estimate_cardinality(input)
@@ -119,9 +129,9 @@ impl CardinalityEstimator {
                 // Projection doesn't change cardinality
                 self.estimate_cardinality(input)
             }
-            PhysicalOperator::Filter { input, predicate, .. } => {
-                self.estimate_filter_cardinality(input, predicate)
-            }
+            PhysicalOperator::Filter {
+                input, predicate, ..
+            } => self.estimate_filter_cardinality(input, predicate),
             PhysicalOperator::Limit { input, count, .. } => {
                 self.estimate_limit_cardinality(input, *count)
             }
@@ -129,16 +139,22 @@ impl CardinalityEstimator {
     }
 
     /// Estimate table scan cardinality
-    fn estimate_table_scan_cardinality(&self, table: &str, predicate: Option<&Predicate>) -> Result<CardinalityEstimate> {
-        let table_stats = self.statistics.get_table_statistics(table)
+    fn estimate_table_scan_cardinality(
+        &self,
+        table: &str,
+        predicate: Option<&Predicate>,
+    ) -> Result<CardinalityEstimate> {
+        let table_stats = self
+            .statistics
+            .get_table_statistics(table)
             .ok_or_else(|| Error::Generic(format!("No statistics for table {}", table)))?;
 
         let base_cardinality = table_stats.row_count;
-        
+
         if let Some(pred) = predicate {
             let selectivity = self.estimate_predicate_selectivity(table, pred)?;
             let estimated_cardinality = (base_cardinality as f64 * selectivity.selectivity) as u64;
-            
+
             Ok(CardinalityEstimate {
                 cardinality: estimated_cardinality,
                 confidence: selectivity.confidence,
@@ -158,15 +174,19 @@ impl CardinalityEstimator {
     }
 
     /// Estimate index scan cardinality
-    fn estimate_index_scan_cardinality(&self, table: &str, predicate: Option<&Predicate>) -> Result<CardinalityEstimate> {
+    fn estimate_index_scan_cardinality(
+        &self,
+        table: &str,
+        predicate: Option<&Predicate>,
+    ) -> Result<CardinalityEstimate> {
         // For index scans, typically more selective than table scans
         let mut estimate = self.estimate_table_scan_cardinality(table, predicate)?;
-        
+
         // Index scans are typically more selective
         estimate.cardinality = (estimate.cardinality as f64 * 0.1) as u64; // 10x more selective
         estimate.upper_bound = (estimate.upper_bound as f64 * 0.2) as u64;
         estimate.method = EstimationMethod::Heuristic;
-        
+
         Ok(estimate)
     }
 
@@ -180,16 +200,20 @@ impl CardinalityEstimator {
     ) -> Result<CardinalityEstimate> {
         let left_estimate = self.estimate_cardinality(left)?;
         let right_estimate = self.estimate_cardinality(right)?;
-        
+
         let strategy = self.choose_join_cardinality_strategy(condition);
-        
+
         let result_cardinality = match strategy {
-            JoinCardinalityStrategy::Independence => {
-                self.estimate_join_independence(left_estimate.cardinality, right_estimate.cardinality, condition)?
-            }
-            JoinCardinalityStrategy::Inclusion => {
-                self.estimate_join_inclusion(left_estimate.cardinality, right_estimate.cardinality, condition)?
-            }
+            JoinCardinalityStrategy::Independence => self.estimate_join_independence(
+                left_estimate.cardinality,
+                right_estimate.cardinality,
+                condition,
+            )?,
+            JoinCardinalityStrategy::Inclusion => self.estimate_join_inclusion(
+                left_estimate.cardinality,
+                right_estimate.cardinality,
+                condition,
+            )?,
             JoinCardinalityStrategy::Histogram => {
                 self.estimate_join_histogram(left, right, condition)?
             }
@@ -200,9 +224,9 @@ impl CardinalityEstimator {
 
         // Apply join type multiplier
         let final_cardinality = self.apply_join_type_factor(result_cardinality, join_type);
-        
+
         let confidence = (left_estimate.confidence + right_estimate.confidence) / 2.0 * 0.8; // Lower confidence for joins
-        
+
         Ok(CardinalityEstimate {
             cardinality: final_cardinality,
             confidence,
@@ -213,9 +237,13 @@ impl CardinalityEstimator {
     }
 
     /// Estimate aggregation cardinality
-    fn estimate_aggregation_cardinality(&self, input: &PhysicalOperator, group_by: &[String]) -> Result<CardinalityEstimate> {
+    fn estimate_aggregation_cardinality(
+        &self,
+        input: &PhysicalOperator,
+        group_by: &[String],
+    ) -> Result<CardinalityEstimate> {
         let input_estimate = self.estimate_cardinality(input)?;
-        
+
         let result_cardinality = if group_by.is_empty() {
             // Single aggregate result
             1
@@ -224,20 +252,32 @@ impl CardinalityEstimator {
             let estimated_groups = self.estimate_group_count(input, group_by)?;
             estimated_groups.min(input_estimate.cardinality) // Can't have more groups than input rows
         };
-        
+
         Ok(CardinalityEstimate {
             cardinality: result_cardinality,
             confidence: input_estimate.confidence * 0.9,
-            lower_bound: if group_by.is_empty() { 1 } else { (result_cardinality as f64 * 0.5) as u64 },
-            upper_bound: if group_by.is_empty() { 1 } else { (result_cardinality as f64 * 1.5) as u64 },
+            lower_bound: if group_by.is_empty() {
+                1
+            } else {
+                (result_cardinality as f64 * 0.5) as u64
+            },
+            upper_bound: if group_by.is_empty() {
+                1
+            } else {
+                (result_cardinality as f64 * 1.5) as u64
+            },
             method: EstimationMethod::Statistics,
         })
     }
 
     /// Estimate filter cardinality
-    fn estimate_filter_cardinality(&self, input: &PhysicalOperator, predicate: &Predicate) -> Result<CardinalityEstimate> {
+    fn estimate_filter_cardinality(
+        &self,
+        input: &PhysicalOperator,
+        predicate: &Predicate,
+    ) -> Result<CardinalityEstimate> {
         let input_estimate = self.estimate_cardinality(input)?;
-        
+
         // For filters, we need to estimate based on the input operator type
         let table_name = self.extract_table_name(input);
         let selectivity = if let Some(table) = table_name {
@@ -251,9 +291,10 @@ impl CardinalityEstimator {
                 metadata: HashMap::new(),
             }
         };
-        
-        let result_cardinality = (input_estimate.cardinality as f64 * selectivity.selectivity) as u64;
-        
+
+        let result_cardinality =
+            (input_estimate.cardinality as f64 * selectivity.selectivity) as u64;
+
         Ok(CardinalityEstimate {
             cardinality: result_cardinality,
             confidence: input_estimate.confidence * selectivity.confidence,
@@ -264,10 +305,14 @@ impl CardinalityEstimator {
     }
 
     /// Estimate limit cardinality
-    fn estimate_limit_cardinality(&self, input: &PhysicalOperator, count: usize) -> Result<CardinalityEstimate> {
+    fn estimate_limit_cardinality(
+        &self,
+        input: &PhysicalOperator,
+        count: usize,
+    ) -> Result<CardinalityEstimate> {
         let input_estimate = self.estimate_cardinality(input)?;
         let result_cardinality = input_estimate.cardinality.min(count as u64);
-        
+
         Ok(CardinalityEstimate {
             cardinality: result_cardinality,
             confidence: input_estimate.confidence,
@@ -278,15 +323,21 @@ impl CardinalityEstimator {
     }
 
     /// Estimate predicate selectivity
-    fn estimate_predicate_selectivity(&self, table: &str, predicate: &Predicate) -> Result<SelectivityEstimate> {
+    fn estimate_predicate_selectivity(
+        &self,
+        table: &str,
+        predicate: &Predicate,
+    ) -> Result<SelectivityEstimate> {
         match predicate {
-            Predicate::Comparison { column, operator, value } => {
-                self.estimate_comparison_selectivity(table, column, operator, value)
-            }
+            Predicate::Comparison {
+                column,
+                operator,
+                value,
+            } => self.estimate_comparison_selectivity(table, column, operator, value),
             Predicate::And(left, right) => {
                 let left_sel = self.estimate_predicate_selectivity(table, left)?;
                 let right_sel = self.estimate_predicate_selectivity(table, right)?;
-                
+
                 // Independence assumption for AND
                 Ok(SelectivityEstimate {
                     selectivity: left_sel.selectivity * right_sel.selectivity,
@@ -298,11 +349,11 @@ impl CardinalityEstimator {
             Predicate::Or(left, right) => {
                 let left_sel = self.estimate_predicate_selectivity(table, left)?;
                 let right_sel = self.estimate_predicate_selectivity(table, right)?;
-                
+
                 // Independence assumption for OR
-                let combined_selectivity = left_sel.selectivity + right_sel.selectivity - 
-                                         (left_sel.selectivity * right_sel.selectivity);
-                
+                let combined_selectivity = left_sel.selectivity + right_sel.selectivity
+                    - (left_sel.selectivity * right_sel.selectivity);
+
                 Ok(SelectivityEstimate {
                     selectivity: combined_selectivity.min(1.0),
                     confidence: (left_sel.confidence + right_sel.confidence) / 2.0 * 0.9,
@@ -312,7 +363,7 @@ impl CardinalityEstimator {
             }
             Predicate::Not(inner) => {
                 let inner_sel = self.estimate_predicate_selectivity(table, inner)?;
-                
+
                 Ok(SelectivityEstimate {
                     selectivity: 1.0 - inner_sel.selectivity,
                     confidence: inner_sel.confidence * 0.9,
@@ -320,18 +371,12 @@ impl CardinalityEstimator {
                     metadata: HashMap::new(),
                 })
             }
-            Predicate::In { column, values } => {
-                self.estimate_in_selectivity(table, column, values)
-            }
+            Predicate::In { column, values } => self.estimate_in_selectivity(table, column, values),
             Predicate::Between { column, min, max } => {
                 self.estimate_range_selectivity(table, column, min, max)
             }
-            Predicate::IsNull(column) => {
-                self.estimate_null_selectivity(table, column, true)
-            }
-            Predicate::IsNotNull(column) => {
-                self.estimate_null_selectivity(table, column, false)
-            }
+            Predicate::IsNull(column) => self.estimate_null_selectivity(table, column, true),
+            Predicate::IsNotNull(column) => self.estimate_null_selectivity(table, column, false),
         }
     }
 
@@ -360,20 +405,22 @@ impl CardinalityEstimator {
                     };
                     1.0 - eq_selectivity
                 }
-                ComparisonOp::LessThan | ComparisonOp::LessThanOrEqual => {
-                    self.estimate_range_selectivity_with_histogram(&column_stats.histogram, operator, value)
-                }
-                ComparisonOp::GreaterThan | ComparisonOp::GreaterThanOrEqual => {
-                    self.estimate_range_selectivity_with_histogram(&column_stats.histogram, operator, value)
-                }
-                ComparisonOp::Like => {
-                    self.estimate_like_selectivity(value)
-                }
-                ComparisonOp::NotLike => {
-                    1.0 - self.estimate_like_selectivity(value)
-                }
+                ComparisonOp::LessThan | ComparisonOp::LessThanOrEqual => self
+                    .estimate_range_selectivity_with_histogram(
+                        &column_stats.histogram,
+                        operator,
+                        value,
+                    ),
+                ComparisonOp::GreaterThan | ComparisonOp::GreaterThanOrEqual => self
+                    .estimate_range_selectivity_with_histogram(
+                        &column_stats.histogram,
+                        operator,
+                        value,
+                    ),
+                ComparisonOp::Like => self.estimate_like_selectivity(value),
+                ComparisonOp::NotLike => 1.0 - self.estimate_like_selectivity(value),
             };
-            
+
             Ok(SelectivityEstimate {
                 selectivity: selectivity.max(0.0).min(1.0),
                 confidence: 0.8,
@@ -390,7 +437,7 @@ impl CardinalityEstimator {
                 ComparisonOp::Like => 0.2,
                 ComparisonOp::NotLike => 0.8,
             };
-            
+
             Ok(SelectivityEstimate {
                 selectivity: default_selectivity,
                 confidence: 0.3,
@@ -401,7 +448,12 @@ impl CardinalityEstimator {
     }
 
     /// Estimate range selectivity using histogram
-    fn estimate_range_selectivity_with_histogram(&self, histogram: &Histogram, operator: &ComparisonOp, value: &Value) -> f64 {
+    fn estimate_range_selectivity_with_histogram(
+        &self,
+        histogram: &Histogram,
+        operator: &ComparisonOp,
+        value: &Value,
+    ) -> f64 {
         // Simplified histogram analysis
         // In a real implementation, this would analyze bucket boundaries and densities
         match operator {
@@ -433,17 +485,22 @@ impl CardinalityEstimator {
     }
 
     /// Estimate IN selectivity
-    fn estimate_in_selectivity(&self, table: &str, column: &str, values: &[Value]) -> Result<SelectivityEstimate> {
+    fn estimate_in_selectivity(
+        &self,
+        table: &str,
+        column: &str,
+        values: &[Value],
+    ) -> Result<SelectivityEstimate> {
         if let Some(column_stats) = self.statistics.get_column_statistics(table, column) {
             let values_count = values.len() as f64;
             let distinct_count = column_stats.distinct_count as f64;
-            
+
             let selectivity = if distinct_count > 0.0 {
                 (values_count / distinct_count).min(1.0)
             } else {
                 0.1 * values_count
             };
-            
+
             Ok(SelectivityEstimate {
                 selectivity: selectivity.min(1.0),
                 confidence: 0.8,
@@ -461,16 +518,23 @@ impl CardinalityEstimator {
     }
 
     /// Estimate range selectivity
-    fn estimate_range_selectivity(&self, table: &str, column: &str, min: &Value, max: &Value) -> Result<SelectivityEstimate> {
+    fn estimate_range_selectivity(
+        &self,
+        table: &str,
+        column: &str,
+        min: &Value,
+        max: &Value,
+    ) -> Result<SelectivityEstimate> {
         if let Some(column_stats) = self.statistics.get_column_statistics(table, column) {
             // Simplified range estimation
             // In a real implementation, this would use histogram analysis
-            let selectivity = if column_stats.min_value.is_some() && column_stats.max_value.is_some() {
-                0.2 // Assume 20% for range queries
-            } else {
-                0.3 // Default
-            };
-            
+            let selectivity =
+                if column_stats.min_value.is_some() && column_stats.max_value.is_some() {
+                    0.2 // Assume 20% for range queries
+                } else {
+                    0.3 // Default
+                };
+
             Ok(SelectivityEstimate {
                 selectivity,
                 confidence: 0.7,
@@ -488,17 +552,22 @@ impl CardinalityEstimator {
     }
 
     /// Estimate null selectivity
-    fn estimate_null_selectivity(&self, table: &str, column: &str, is_null: bool) -> Result<SelectivityEstimate> {
+    fn estimate_null_selectivity(
+        &self,
+        table: &str,
+        column: &str,
+        is_null: bool,
+    ) -> Result<SelectivityEstimate> {
         if let Some(column_stats) = self.statistics.get_column_statistics(table, column) {
             if let Some(table_stats) = self.statistics.get_table_statistics(table) {
                 let null_ratio = column_stats.null_count as f64 / table_stats.row_count as f64;
-                
+
                 let selectivity = if is_null {
                     null_ratio
                 } else {
                     1.0 - null_ratio
                 };
-                
+
                 return Ok(SelectivityEstimate {
                     selectivity,
                     confidence: 0.9,
@@ -507,10 +576,10 @@ impl CardinalityEstimator {
                 });
             }
         }
-        
+
         // Default estimates
         let default_selectivity = if is_null { 0.1 } else { 0.9 };
-        
+
         Ok(SelectivityEstimate {
             selectivity: default_selectivity,
             confidence: 0.3,
@@ -520,7 +589,10 @@ impl CardinalityEstimator {
     }
 
     /// Choose join cardinality estimation strategy
-    fn choose_join_cardinality_strategy(&self, condition: &JoinCondition) -> JoinCardinalityStrategy {
+    fn choose_join_cardinality_strategy(
+        &self,
+        condition: &JoinCondition,
+    ) -> JoinCardinalityStrategy {
         match condition {
             JoinCondition::Equi { .. } => JoinCardinalityStrategy::Histogram,
             JoinCondition::Complex(_) => JoinCardinalityStrategy::Sampling,
@@ -528,7 +600,12 @@ impl CardinalityEstimator {
     }
 
     /// Estimate join cardinality using independence assumption
-    fn estimate_join_independence(&self, left_card: u64, right_card: u64, condition: &JoinCondition) -> Result<u64> {
+    fn estimate_join_independence(
+        &self,
+        left_card: u64,
+        right_card: u64,
+        condition: &JoinCondition,
+    ) -> Result<u64> {
         match condition {
             JoinCondition::Equi { .. } => {
                 // For equi-joins, estimate based on foreign key relationships
@@ -543,18 +620,28 @@ impl CardinalityEstimator {
     }
 
     /// Estimate join cardinality using inclusion principle
-    fn estimate_join_inclusion(&self, left_card: u64, right_card: u64, condition: &JoinCondition) -> Result<u64> {
+    fn estimate_join_inclusion(
+        &self,
+        left_card: u64,
+        right_card: u64,
+        condition: &JoinCondition,
+    ) -> Result<u64> {
         // Conservative estimate assuming good overlap
         Ok((left_card + right_card) / 3)
     }
 
     /// Estimate join cardinality using histograms
-    fn estimate_join_histogram(&self, left: &PhysicalOperator, right: &PhysicalOperator, condition: &JoinCondition) -> Result<u64> {
+    fn estimate_join_histogram(
+        &self,
+        left: &PhysicalOperator,
+        right: &PhysicalOperator,
+        condition: &JoinCondition,
+    ) -> Result<u64> {
         // Simplified histogram-based estimation
         // In a real implementation, this would analyze column histograms
         let left_card = self.estimate_cardinality(left)?.cardinality;
         let right_card = self.estimate_cardinality(right)?.cardinality;
-        
+
         Ok((left_card + right_card) / 2)
     }
 
@@ -569,13 +656,13 @@ impl CardinalityEstimator {
     fn apply_join_type_factor(&self, base_cardinality: u64, join_type: JoinType) -> u64 {
         let factor = match join_type {
             JoinType::Inner => 1.0,
-            JoinType::Left => 1.2,   // May have some unmatched left rows
-            JoinType::Right => 1.2,  // May have some unmatched right rows
-            JoinType::Full => 1.5,   // May have unmatched rows from both sides
-            JoinType::Semi => 0.8,   // Typically fewer results
-            JoinType::Anti => 0.3,   // Usually much fewer results
+            JoinType::Left => 1.2,  // May have some unmatched left rows
+            JoinType::Right => 1.2, // May have some unmatched right rows
+            JoinType::Full => 1.5,  // May have unmatched rows from both sides
+            JoinType::Semi => 0.8,  // Typically fewer results
+            JoinType::Anti => 0.3,  // Usually much fewer results
         };
-        
+
         (base_cardinality as f64 * factor) as u64
     }
 
@@ -584,9 +671,9 @@ impl CardinalityEstimator {
         if group_by.is_empty() {
             return Ok(1);
         }
-        
+
         let input_cardinality = self.estimate_cardinality(input)?.cardinality;
-        
+
         // Estimate based on group by columns
         let estimated_groups = if group_by.len() == 1 {
             // Single column grouping
@@ -595,7 +682,7 @@ impl CardinalityEstimator {
             // Multiple column grouping - typically more groups
             (input_cardinality as f64 * 0.3) as u64
         };
-        
+
         Ok(estimated_groups.min(input_cardinality))
     }
 
@@ -642,7 +729,7 @@ mod tests {
         let config = OptimizerConfig::default();
         let statistics = Arc::new(StatisticsManager::new(config));
         let estimator = CardinalityEstimator::new(statistics);
-        
+
         assert_eq!(estimator.estimation_cache.len(), 0);
     }
 
@@ -659,7 +746,9 @@ mod tests {
             value: Value::Integer(1),
         };
 
-        let selectivity = estimator.estimate_predicate_selectivity("users", &predicate).unwrap();
+        let selectivity = estimator
+            .estimate_predicate_selectivity("users", &predicate)
+            .unwrap();
         assert!(selectivity.selectivity > 0.0 && selectivity.selectivity <= 1.0);
         assert!(selectivity.confidence > 0.0 && selectivity.confidence <= 1.0);
     }

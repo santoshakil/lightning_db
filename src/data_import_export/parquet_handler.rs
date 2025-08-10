@@ -4,28 +4,26 @@
 //! Supports reading from and writing to Apache Parquet files with
 //! schema inference, compression, and optimized columnar storage.
 
-use crate::{Database, Result};
 use super::{
-    DataFormat, SchemaDefinition, ImportExportConfig, OperationStats,
-    ProcessingError, FieldType
+    DataFormat, FieldType, ImportExportConfig, OperationStats, ProcessingError, SchemaDefinition,
 };
-use std::path::Path;
-use std::fs::File;
-use std::sync::Arc;
+use crate::{Database, Result};
 use std::collections::HashMap;
+use std::fs::File;
+use std::path::Path;
+use std::sync::Arc;
 
-use arrow::{
-    array::*,
-    datatypes::*,
-    record_batch::RecordBatch,
-};
+use arrow::{array::*, datatypes::*, record_batch::RecordBatch};
+use base64::prelude::*;
+use chrono::{DateTime, Utc};
 use parquet::{
     arrow::{arrow_reader::ParquetRecordBatchReaderBuilder, ArrowWriter},
-    file::{reader::{SerializedFileReader, FileReader}, properties::WriterProperties},
     basic::Compression,
+    file::{
+        properties::WriterProperties,
+        reader::{FileReader, SerializedFileReader},
+    },
 };
-use chrono::{DateTime, Utc};
-use base64::prelude::*;
 
 /// Import Parquet data with full schema support and optimization
 pub fn import_parquet(
@@ -39,34 +37,36 @@ pub fn import_parquet(
 ) -> Result<()> {
     let file = File::open(file_path)
         .map_err(|e| crate::Error::Io(format!("Failed to open Parquet file: {}", e)))?;
-    
-    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-        .map_err(|e| crate::Error::InvalidInput(format!("Failed to create Parquet reader: {}", e)))?;
-    
+
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file).map_err(|e| {
+        crate::Error::InvalidInput(format!("Failed to create Parquet reader: {}", e))
+    })?;
+
     let mut arrow_reader = builder
         .with_batch_size(config.batch_size)
         .build()
         .map_err(|e| crate::Error::InvalidInput(format!("Failed to build Arrow reader: {}", e)))?;
-    
+
     let parquet_schema = arrow_reader.schema();
     let mut record_number = 0u64;
     let mut total_bytes = 0u64;
-    
+
     // Validate schema if provided
     if let Some(expected_schema) = schema {
         validate_parquet_schema(&parquet_schema, expected_schema, stats)?;
     }
-    
+
     // Process batches
     while let Some(batch_result) = arrow_reader.next() {
         let batch = batch_result
             .map_err(|e| crate::Error::InvalidInput(format!("Failed to read batch: {}", e)))?;
-        
+
         total_bytes += estimate_batch_size(&batch);
-        
+
         // Convert Arrow batch to Lightning DB records
-        let records = convert_arrow_batch_to_records(&batch, table_prefix, &mut record_number, stats)?;
-        
+        let records =
+            convert_arrow_batch_to_records(&batch, table_prefix, &mut record_number, stats)?;
+
         // Insert records in batches
         for record in records {
             match database.put(&record.key, &record.value) {
@@ -85,11 +85,11 @@ pub fn import_parquet(
                 }
             }
         }
-        
+
         stats.records_processed += batch.num_rows() as u64;
         stats.bytes_processed = total_bytes;
     }
-    
+
     stats.end_time = Some(Utc::now());
     Ok(())
 }
@@ -106,10 +106,13 @@ pub fn export_parquet(
 ) -> Result<()> {
     let file = File::create(file_path)
         .map_err(|e| crate::Error::Io(format!("Failed to create Parquet file: {}", e)))?;
-    
+
     // Determine compression and writer properties from format
     let (compression, row_group_size) = match format {
-        DataFormat::Parquet { compression, row_group_size } => {
+        DataFormat::Parquet {
+            compression,
+            row_group_size,
+        } => {
             let comp = match compression.as_deref() {
                 Some("snappy") => Compression::SNAPPY,
                 Some("gzip") => Compression::GZIP(Default::default()),
@@ -122,12 +125,12 @@ pub fn export_parquet(
         }
         _ => (Compression::SNAPPY, config.batch_size),
     };
-    
+
     let properties = WriterProperties::builder()
         .set_compression(compression)
         .set_max_row_group_size(row_group_size)
         .build();
-    
+
     // Create Arrow schema from Lightning DB data or provided schema
     let arrow_schema = if let Some(lightning_schema) = schema {
         create_arrow_schema_from_definition(lightning_schema)?
@@ -135,46 +138,52 @@ pub fn export_parquet(
         // Infer schema by scanning some records
         infer_arrow_schema_from_database(database, table_prefix)?
     };
-    
+
     let arrow_schema_arc = Arc::new(arrow_schema.clone());
     let mut arrow_writer = ArrowWriter::try_new(file, arrow_schema_arc.clone(), Some(properties))
-        .map_err(|e| crate::Error::InvalidInput(format!("Failed to create Arrow writer: {}", e)))?;
-    
+        .map_err(|e| {
+        crate::Error::InvalidInput(format!("Failed to create Arrow writer: {}", e))
+    })?;
+
     // Collect data from Lightning DB
     let mut records = Vec::new();
     let prefix_bytes = table_prefix.as_bytes();
-    
+
     // Use range scan to get all records with the table prefix
-    let iter = database.range(Some(prefix_bytes), None)
+    let iter = database
+        .range(Some(prefix_bytes), None)
         .map_err(|e| crate::Error::Generic(format!("Failed to scan database: {}", e)))?;
-    
+
     for (key, value) in iter {
         if key.starts_with(prefix_bytes) {
             records.push(ParquetRecord { key, value });
             stats.records_processed += 1;
-            
+
             // Process in batches to manage memory
             if records.len() >= config.batch_size {
                 let batch = create_arrow_batch_from_records(&records, &arrow_schema, stats)?;
-                arrow_writer.write(&batch)
-                    .map_err(|e| crate::Error::InvalidInput(format!("Failed to write batch: {}", e)))?;
+                arrow_writer.write(&batch).map_err(|e| {
+                    crate::Error::InvalidInput(format!("Failed to write batch: {}", e))
+                })?;
                 stats.records_success += records.len() as u64;
                 records.clear();
             }
         }
     }
-    
+
     // Write remaining records
     if !records.is_empty() {
         let batch = create_arrow_batch_from_records(&records, &arrow_schema, stats)?;
-        arrow_writer.write(&batch)
-            .map_err(|e| crate::Error::InvalidInput(format!("Failed to write final batch: {}", e)))?;
+        arrow_writer.write(&batch).map_err(|e| {
+            crate::Error::InvalidInput(format!("Failed to write final batch: {}", e))
+        })?;
         stats.records_success += records.len() as u64;
     }
-    
-    arrow_writer.close()
-        .map_err(|e| crate::Error::InvalidInput(format!("Failed to close Parquet writer: {}", e)))?;
-    
+
+    arrow_writer.close().map_err(|e| {
+        crate::Error::InvalidInput(format!("Failed to close Parquet writer: {}", e))
+    })?;
+
     stats.end_time = Some(Utc::now());
     Ok(())
 }
@@ -187,24 +196,25 @@ impl ParquetUtils {
     pub fn analyze_parquet_file<P: AsRef<Path>>(file_path: P) -> Result<ParquetFileInfo> {
         let file = File::open(file_path.as_ref())
             .map_err(|e| crate::Error::Io(format!("Failed to open Parquet file: {}", e)))?;
-        
+
         let file_reader = SerializedFileReader::new(file)
             .map_err(|e| crate::Error::InvalidInput(format!("Invalid Parquet file: {}", e)))?;
-        
+
         let metadata = file_reader.metadata();
         let schema = metadata.file_metadata().schema();
-        
+
         let mut total_rows = 0u64;
         for i in 0..metadata.num_row_groups() {
             total_rows += metadata.row_group(i).num_rows() as u64;
         }
-        
+
         let file_size = std::fs::metadata(file_path.as_ref())
             .map_err(|e| crate::Error::Io(format!("Failed to get file size: {}", e)))?
             .len();
-        
+
         let compression = if metadata.num_row_groups() > 0 {
-            metadata.row_group(0)
+            metadata
+                .row_group(0)
                 .columns()
                 .iter()
                 .map(|col| format!("{:?}", col.compression()))
@@ -213,13 +223,13 @@ impl ParquetUtils {
         } else {
             "Unknown".to_string()
         };
-        
+
         let schema_info = format!(
             "Fields: {}, Root schema: {}",
             schema.get_fields().len(),
             schema.name()
         );
-        
+
         Ok(ParquetFileInfo {
             row_count: total_rows,
             column_count: schema.get_fields().len(),
@@ -228,44 +238,44 @@ impl ParquetUtils {
             schema_info,
         })
     }
-    
+
     /// Get detailed column statistics
     pub fn get_column_statistics<P: AsRef<Path>>(file_path: P) -> Result<Vec<ColumnStatistics>> {
         let file = File::open(file_path.as_ref())
             .map_err(|e| crate::Error::Io(format!("Failed to open Parquet file: {}", e)))?;
-        
+
         let file_reader = SerializedFileReader::new(file)
             .map_err(|e| crate::Error::InvalidInput(format!("Invalid Parquet file: {}", e)))?;
-        
+
         let metadata = file_reader.metadata();
         let mut column_stats = Vec::new();
-        
+
         // Get statistics from row groups instead of schema details
         for rg_idx in 0..metadata.num_row_groups() {
             let row_group = metadata.row_group(rg_idx);
-            
+
             for col_idx in 0..row_group.num_columns() {
                 let column_chunk = row_group.column(col_idx);
-                
+
                 // Only process first row group for schema info
                 if rg_idx == 0 {
                     let column_path = column_chunk.column_path();
                     let column_name = column_path.parts().join(".");
-                    
+
                     let mut total_null_count = 0u64;
                     let mut total_value_count = 0u64;
-                    
+
                     // Aggregate across all row groups for this column
                     for rg in 0..metadata.num_row_groups() {
                         let rg_meta = metadata.row_group(rg);
                         let col_chunk = rg_meta.column(col_idx);
-                        
+
                         if let Some(stats) = col_chunk.statistics() {
                             total_null_count += stats.null_count_opt().unwrap_or(0);
                             total_value_count += col_chunk.num_values() as u64;
                         }
                     }
-                    
+
                     column_stats.push(ColumnStatistics {
                         name: column_name,
                         data_type: format!("{:?}", column_chunk.column_type()),
@@ -277,7 +287,7 @@ impl ParquetUtils {
             }
             break; // Only process first row group for schema
         }
-        
+
         Ok(column_stats)
     }
 }
@@ -329,7 +339,7 @@ fn validate_parquet_schema(
         .iter()
         .map(|f| (f.name().clone(), f.as_ref()))
         .collect();
-    
+
     for field_def in &expected_schema.fields {
         if let Some(parquet_field) = parquet_fields.get(&field_def.name) {
             // Validate field type compatibility
@@ -339,7 +349,9 @@ fn validate_parquet_schema(
                     error_type: "SchemaValidationError".to_string(),
                     message: format!(
                         "Incompatible type for field '{}': expected {:?}, found {:?}",
-                        field_def.name, field_def.field_type, parquet_field.data_type()
+                        field_def.name,
+                        field_def.field_type,
+                        parquet_field.data_type()
                     ),
                     data: None,
                 });
@@ -351,7 +363,7 @@ fn validate_parquet_schema(
             )));
         }
     }
-    
+
     Ok(())
 }
 
@@ -362,7 +374,10 @@ fn is_compatible_type(arrow_type: &DataType, lightning_type: &FieldType) -> bool
         (DataType::Int32 | DataType::Int64, FieldType::Integer { .. }) => true,
         (DataType::Float32 | DataType::Float64, FieldType::Float { .. }) => true,
         (DataType::Boolean, FieldType::Boolean) => true,
-        (DataType::Timestamp(_, _) | DataType::Date32 | DataType::Date64, FieldType::DateTime { .. }) => true,
+        (
+            DataType::Timestamp(_, _) | DataType::Date32 | DataType::Date64,
+            FieldType::DateTime { .. },
+        ) => true,
         (DataType::Binary | DataType::LargeBinary, FieldType::Bytes) => true,
         _ => false,
     }
@@ -386,42 +401,46 @@ fn convert_arrow_batch_to_records(
 ) -> Result<Vec<LightningRecord>> {
     let mut records = Vec::new();
     let num_rows = batch.num_rows();
-    
+
     for row_idx in 0..num_rows {
         *record_number += 1;
-        
+
         // Create a key using table prefix and row number
         let key = format!("{}_{:010}", table_prefix, *record_number).into_bytes();
-        
+
         // Serialize row data as JSON for the value
         let mut row_data = serde_json::Map::new();
-        
+
         for (col_idx, field) in batch.schema().fields().iter().enumerate() {
             let column = batch.column(col_idx);
             let field_name = field.name().clone();
-            
+
             let value = match extract_value_from_array(column, row_idx) {
                 Ok(v) => v,
                 Err(e) => {
                     stats.errors.push(ProcessingError {
                         record_number: *record_number,
                         error_type: "DataExtractionError".to_string(),
-                        message: format!("Failed to extract value for field '{}': {}", field_name, e),
+                        message: format!(
+                            "Failed to extract value for field '{}': {}",
+                            field_name, e
+                        ),
                         data: None,
                     });
                     continue;
                 }
             };
-            
+
             row_data.insert(field_name, value);
         }
-        
-        let value = serde_json::to_vec(&row_data)
-            .map_err(|e| crate::Error::InvalidInput(format!("Failed to serialize row data: {}", e)))?;
-        
+
+        let value = serde_json::to_vec(&row_data).map_err(|e| {
+            crate::Error::InvalidInput(format!("Failed to serialize row data: {}", e))
+        })?;
+
         records.push(LightningRecord { key, value });
     }
-    
+
     Ok(records)
 }
 
@@ -430,40 +449,55 @@ fn extract_value_from_array(array: &dyn Array, index: usize) -> Result<serde_jso
     if array.is_null(index) {
         return Ok(serde_json::Value::Null);
     }
-    
+
     match array.data_type() {
         DataType::Utf8 => {
             let string_array = array.as_any().downcast_ref::<StringArray>().unwrap();
-            Ok(serde_json::Value::String(string_array.value(index).to_string()))
+            Ok(serde_json::Value::String(
+                string_array.value(index).to_string(),
+            ))
         }
         DataType::LargeUtf8 => {
             let string_array = array.as_any().downcast_ref::<LargeStringArray>().unwrap();
-            Ok(serde_json::Value::String(string_array.value(index).to_string()))
+            Ok(serde_json::Value::String(
+                string_array.value(index).to_string(),
+            ))
         }
         DataType::Int32 => {
             let int_array = array.as_any().downcast_ref::<Int32Array>().unwrap();
-            Ok(serde_json::Value::Number(serde_json::Number::from(int_array.value(index))))
+            Ok(serde_json::Value::Number(serde_json::Number::from(
+                int_array.value(index),
+            )))
         }
         DataType::Int64 => {
             let int_array = array.as_any().downcast_ref::<Int64Array>().unwrap();
-            Ok(serde_json::Value::Number(serde_json::Number::from(int_array.value(index))))
+            Ok(serde_json::Value::Number(serde_json::Number::from(
+                int_array.value(index),
+            )))
         }
         DataType::Float32 => {
             let float_array = array.as_any().downcast_ref::<Float32Array>().unwrap();
             let val = float_array.value(index) as f64;
-            Ok(serde_json::Value::Number(serde_json::Number::from_f64(val).unwrap_or_else(|| serde_json::Number::from(0))))
+            Ok(serde_json::Value::Number(
+                serde_json::Number::from_f64(val).unwrap_or_else(|| serde_json::Number::from(0)),
+            ))
         }
         DataType::Float64 => {
             let float_array = array.as_any().downcast_ref::<Float64Array>().unwrap();
             let val = float_array.value(index);
-            Ok(serde_json::Value::Number(serde_json::Number::from_f64(val).unwrap_or_else(|| serde_json::Number::from(0))))
+            Ok(serde_json::Value::Number(
+                serde_json::Number::from_f64(val).unwrap_or_else(|| serde_json::Number::from(0)),
+            ))
         }
         DataType::Boolean => {
             let bool_array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             Ok(serde_json::Value::Bool(bool_array.value(index)))
         }
         DataType::Timestamp(_, _) => {
-            let timestamp_array = array.as_any().downcast_ref::<TimestampNanosecondArray>().unwrap();
+            let timestamp_array = array
+                .as_any()
+                .downcast_ref::<TimestampNanosecondArray>()
+                .unwrap();
             let timestamp = timestamp_array.value(index);
             let dt = DateTime::from_timestamp_nanos(timestamp);
             Ok(serde_json::Value::String(dt.to_rfc3339()))
@@ -471,21 +505,21 @@ fn extract_value_from_array(array: &dyn Array, index: usize) -> Result<serde_jso
         DataType::Binary => {
             let binary_array = array.as_any().downcast_ref::<BinaryArray>().unwrap();
             let bytes = binary_array.value(index);
-            Ok(serde_json::Value::String(base64::prelude::BASE64_STANDARD.encode(bytes)))
+            Ok(serde_json::Value::String(
+                base64::prelude::BASE64_STANDARD.encode(bytes),
+            ))
         }
-        _ => {
-            Err(crate::Error::InvalidInput(format!(
-                "Unsupported Arrow data type: {:?}",
-                array.data_type()
-            )))
-        }
+        _ => Err(crate::Error::InvalidInput(format!(
+            "Unsupported Arrow data type: {:?}",
+            array.data_type()
+        ))),
     }
 }
 
 /// Create Arrow schema from Lightning DB schema definition
 fn create_arrow_schema_from_definition(schema_def: &SchemaDefinition) -> Result<Schema> {
     let mut fields = Vec::new();
-    
+
     for field_def in &schema_def.fields {
         let arrow_type = match &field_def.field_type {
             FieldType::String { .. } => DataType::Utf8,
@@ -496,10 +530,10 @@ fn create_arrow_schema_from_definition(schema_def: &SchemaDefinition) -> Result<
             FieldType::Json => DataType::Utf8, // Store JSON as string
             FieldType::Bytes => DataType::Binary,
         };
-        
+
         fields.push(Field::new(&field_def.name, arrow_type, field_def.nullable));
     }
-    
+
     Ok(Schema::new(fields))
 }
 
@@ -508,10 +542,11 @@ fn infer_arrow_schema_from_database(database: &Database, table_prefix: &str) -> 
     // Sample a few records to infer schema
     let prefix_bytes = table_prefix.as_bytes();
     let mut sample_records: Vec<Vec<u8>> = Vec::new();
-    
-    let iter = database.range(Some(prefix_bytes), None)
+
+    let iter = database
+        .range(Some(prefix_bytes), None)
         .map_err(|e| crate::Error::Generic(format!("Failed to scan database: {}", e)))?;
-    
+
     let mut count = 0;
     for (key, value) in iter {
         if key.starts_with(prefix_bytes) && count < 10 {
@@ -521,19 +556,21 @@ fn infer_arrow_schema_from_database(database: &Database, table_prefix: &str) -> 
             break;
         }
     }
-    
+
     if sample_records.is_empty() {
         return Err(crate::Error::InvalidInput(
-            "No records found to infer schema".to_string()
+            "No records found to infer schema".to_string(),
         ));
     }
-    
+
     // Parse first record to determine field structure
-    let first_record: serde_json::Value = serde_json::from_slice(&sample_records[0])
-        .map_err(|e| crate::Error::InvalidInput(format!("Failed to parse record as JSON: {}", e)))?;
-    
+    let first_record: serde_json::Value =
+        serde_json::from_slice(&sample_records[0]).map_err(|e| {
+            crate::Error::InvalidInput(format!("Failed to parse record as JSON: {}", e))
+        })?;
+
     let mut fields = Vec::new();
-    
+
     if let serde_json::Value::Object(obj) = first_record {
         for (key, value) in obj {
             let arrow_type = match value {
@@ -547,19 +584,19 @@ fn infer_arrow_schema_from_database(database: &Database, table_prefix: &str) -> 
                 }
                 serde_json::Value::Bool(_) => DataType::Boolean,
                 serde_json::Value::Null => DataType::Utf8, // Default to string for null
-                _ => DataType::Utf8, // Complex types as strings
+                _ => DataType::Utf8,                       // Complex types as strings
             };
-            
+
             fields.push(Field::new(&key, arrow_type, true)); // Allow nulls by default
         }
     }
-    
+
     if fields.is_empty() {
         return Err(crate::Error::InvalidInput(
-            "Could not infer any fields from sample records".to_string()
+            "Could not infer any fields from sample records".to_string(),
         ));
     }
-    
+
     Ok(Schema::new(fields))
 }
 
@@ -570,12 +607,12 @@ fn create_arrow_batch_from_records(
     stats: &mut OperationStats,
 ) -> Result<RecordBatch> {
     let mut columns: Vec<ArrayRef> = Vec::new();
-    
+
     for field in schema.fields() {
         let array = create_array_for_field(field, records, stats)?;
         columns.push(array);
     }
-    
+
     RecordBatch::try_new(Arc::new(schema.clone()), columns)
         .map_err(|e| crate::Error::InvalidInput(format!("Failed to create RecordBatch: {}", e)))
 }
@@ -587,7 +624,7 @@ fn create_array_for_field(
     _stats: &mut OperationStats,
 ) -> Result<ArrayRef> {
     let field_name = field.name();
-    
+
     match field.data_type() {
         DataType::Utf8 => {
             let mut builder = StringBuilder::new();
@@ -687,8 +724,8 @@ fn create_array_for_field(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::{NamedTempFile, tempdir};
     use std::io::Write;
+    use tempfile::{tempdir, NamedTempFile};
 
     #[test]
     fn test_parquet_file_info() {
@@ -701,11 +738,11 @@ mod tests {
             compression: "SNAPPY".to_string(),
             schema_info: "Fields: 5, Root schema: test_schema".to_string(),
         };
-        
+
         assert_eq!(info.row_count, 1000);
         assert_eq!(info.column_count, 5);
     }
-    
+
     #[test]
     fn test_column_statistics() {
         let stats = ColumnStatistics {
@@ -715,15 +752,24 @@ mod tests {
             value_count: 1000,
             compression_ratio: 0.75,
         };
-        
+
         assert_eq!(stats.name, "test_column");
         assert_eq!(stats.null_count, 10);
     }
-    
+
     #[test]
     fn test_type_compatibility() {
-        assert!(is_compatible_type(&DataType::Utf8, &FieldType::String { max_length: None }));
-        assert!(is_compatible_type(&DataType::Int64, &FieldType::Integer { min: None, max: None }));
+        assert!(is_compatible_type(
+            &DataType::Utf8,
+            &FieldType::String { max_length: None }
+        ));
+        assert!(is_compatible_type(
+            &DataType::Int64,
+            &FieldType::Integer {
+                min: None,
+                max: None
+            }
+        ));
         assert!(is_compatible_type(&DataType::Boolean, &FieldType::Boolean));
         assert!(!is_compatible_type(&DataType::Utf8, &FieldType::Boolean));
     }

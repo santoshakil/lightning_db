@@ -2,13 +2,24 @@ name: Build Binaries
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
+  security-check:
+    name: Pre-Build Security Check
+    uses: ./.github/workflows/ci-security-integration.yml
+    secrets: inherit
+
   build-binaries:
     name: Build Binaries
+    needs: security-check
     strategy:
       matrix:
         include:

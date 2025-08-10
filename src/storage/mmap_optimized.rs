@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
 use memmap2::{MmapMut, MmapOptions};
 use parking_lot::{Mutex, RwLock};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
@@ -497,7 +497,7 @@ mod tests {
 
     #[test]
     fn test_mmap_manager_basic() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("Failed to create temp directory for mmap test");
         let path = dir.path().join("test.mmap");
 
         let config = MmapConfig {
@@ -506,15 +506,18 @@ mod tests {
             ..Default::default()
         };
 
-        let manager = OptimizedMmapManager::create(&path, 4096, config).unwrap();
+        let manager = OptimizedMmapManager::create(&path, 4096, config)
+            .expect("Failed to create mmap manager");
 
         // Test write
         let data = b"Hello, mmap!";
-        manager.write(0, data).unwrap();
+        manager.write(0, data)
+            .expect("Failed to write data to mmap");
 
         // Test read
         let mut buf = vec![0u8; data.len()];
-        manager.read(0, &mut buf).unwrap();
+        manager.read(0, &mut buf)
+            .expect("Failed to read data from mmap");
         assert_eq!(&buf, data);
 
         // Test statistics
@@ -525,7 +528,7 @@ mod tests {
 
     #[test]
     fn test_region_eviction() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("Failed to create temp directory for eviction test");
         let path = dir.path().join("test_evict.mmap");
 
         let config = MmapConfig {
@@ -534,12 +537,16 @@ mod tests {
             ..Default::default()
         };
 
-        let manager = OptimizedMmapManager::create(&path, 4096, config).unwrap();
+        let manager = OptimizedMmapManager::create(&path, 4096, config)
+            .expect("Failed to create mmap manager for eviction test");
 
         // Create 3 regions to trigger eviction
-        manager.write(0, b"region1").unwrap();
-        manager.write(1024, b"region2").unwrap();
-        manager.write(2048, b"region3").unwrap();
+        manager.write(0, b"region1")
+            .expect("Failed to write region1");
+        manager.write(1024, b"region2")
+            .expect("Failed to write region2");
+        manager.write(2048, b"region3")
+            .expect("Failed to write region3");
 
         let stats = manager.get_statistics();
         assert_eq!(stats.total_regions, 2);

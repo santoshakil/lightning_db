@@ -10,22 +10,22 @@
 //! - Load balancing across NUMA domains
 //! - Memory bandwidth optimization
 
-use crate::{Result, Error};
-use std::sync::Arc;
-use std::collections::HashMap;
-use std::thread;
+use crate::{Error, Result};
 use parking_lot::RwLock;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::thread;
 
 pub mod allocator;
-pub mod topology;
-pub mod thread_pinning;
 pub mod load_balancer;
+pub mod thread_pinning;
+pub mod topology;
 
 pub use allocator::{NumaAllocator, NumaMemoryPolicy};
-pub use topology::{NumaTopology, NumaNode, CpuInfo};
-pub use thread_pinning::{ThreadPinner, CpuSet, ThreadPlacement};
 pub use load_balancer::{NumaLoadBalancer, WorkloadDistribution};
+pub use thread_pinning::{CpuSet, ThreadPinner, ThreadPlacement};
+pub use topology::{CpuInfo, NumaNode, NumaTopology};
 
 /// NUMA-aware memory manager
 pub struct NumaManager {
@@ -106,21 +106,27 @@ pub enum AccessPattern {
 /// Memory lifetime classification
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MemoryLifetime {
-    Ephemeral,  // < 1 second
-    Short,      // 1 second - 1 minute
-    Medium,     // 1 minute - 1 hour
-    Long,       // > 1 hour
-    Permanent,  // Database lifetime
+    Ephemeral, // < 1 second
+    Short,     // 1 second - 1 minute
+    Medium,    // 1 minute - 1 hour
+    Long,      // > 1 hour
+    Permanent, // Database lifetime
 }
 
 impl NumaManager {
     /// Create a new NUMA manager
     pub fn new(config: NumaConfig) -> Result<Self> {
         let topology = Arc::new(NumaTopology::detect()?);
-        let allocator = Arc::new(NumaAllocator::new(topology.clone(), config.memory_policy.clone())?);
+        let allocator = Arc::new(NumaAllocator::new(
+            topology.clone(),
+            config.memory_policy.clone(),
+        )?);
         let thread_pinner = Arc::new(ThreadPinner::new(topology.clone())?);
-        let load_balancer = Arc::new(NumaLoadBalancer::new(topology.clone(), config.load_balancing.clone())?);
-        
+        let load_balancer = Arc::new(NumaLoadBalancer::new(
+            topology.clone(),
+            config.load_balancing.clone(),
+        )?);
+
         Ok(Self {
             topology,
             allocator,
@@ -135,10 +141,9 @@ impl NumaManager {
     pub fn initialize(&self) -> Result<()> {
         // Pin the current thread to an appropriate CPU
         if self.config.enable_thread_pinning {
-            let cpu_set = self.thread_pinner.get_optimal_cpu_set(
-                thread::current().id(),
-                &self.config.thread_placement
-            )?;
+            let cpu_set = self
+                .thread_pinner
+                .get_optimal_cpu_set(thread::current().id(), &self.config.thread_placement)?;
             self.thread_pinner.pin_current_thread(&cpu_set)?;
         }
 
@@ -152,7 +157,7 @@ impl NumaManager {
 
         println!("NUMA Manager initialized successfully");
         self.print_topology_info();
-        
+
         Ok(())
     }
 
@@ -200,7 +205,8 @@ impl NumaManager {
         let cpu_set = if let Some(hint) = hint {
             self.thread_pinner.get_cpu_set_for_hint(&hint)?
         } else {
-            self.thread_pinner.get_optimal_cpu_set(thread_id, &self.config.thread_placement)?
+            self.thread_pinner
+                .get_optimal_cpu_set(thread_id, &self.config.thread_placement)?
         };
 
         self.thread_pinner.pin_thread(thread_id, &cpu_set)?;
@@ -219,8 +225,10 @@ impl NumaManager {
     /// Get memory allocation advice for a specific access pattern
     pub fn get_allocation_advice(&self, size: usize, pattern: AccessPattern) -> NumaHint {
         let current_thread = thread::current().id();
-        let preferred_node = self.load_balancer.get_preferred_node_for_thread(current_thread);
-        
+        let preferred_node = self
+            .load_balancer
+            .get_preferred_node_for_thread(current_thread);
+
         let lifetime = match size {
             0..=4096 => MemoryLifetime::Ephemeral,
             4097..=1048576 => MemoryLifetime::Short,
@@ -239,11 +247,13 @@ impl NumaManager {
     /// Migrate memory to a different NUMA node
     pub fn migrate_memory(&self, ptr: *mut u8, size: usize, target_node: u32) -> Result<()> {
         if !self.config.enable_page_migration {
-            return Err(Error::InvalidOperation { reason: "Page migration is disabled".to_string() });
+            return Err(Error::InvalidOperation {
+                reason: "Page migration is disabled".to_string(),
+            });
         }
 
         self.allocator.migrate_pages(ptr, size, target_node)?;
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write();
@@ -267,10 +277,10 @@ impl NumaManager {
     pub fn optimize_layout(&self) -> Result<()> {
         // Analyze current memory usage patterns
         let stats = self.get_stats();
-        
+
         // Identify memory regions with poor NUMA locality
         let problematic_regions = self.identify_problematic_regions(&stats)?;
-        
+
         // Suggest or perform memory migrations
         for region in problematic_regions {
             if region.migration_benefit > 0.2 {
@@ -288,18 +298,20 @@ impl NumaManager {
     /// Print NUMA topology information
     fn print_topology_info(&self) {
         let topology = &self.topology;
-        
+
         println!("NUMA Topology Information:");
         println!("  Nodes: {}", topology.get_node_count());
-        
+
         for node in topology.get_nodes() {
-            println!("  Node {}: {} CPUs, {} MB memory", 
-                node.id, 
-                node.cpu_count, 
-                node.memory_size_mb
+            println!(
+                "  Node {}: {} CPUs, {} MB memory",
+                node.id, node.cpu_count, node.memory_size_mb
             );
             println!("    CPUs: {:?}", node.cpu_list);
-            println!("    Memory bandwidth: {:.1} GB/s", node.memory_bandwidth_gbps);
+            println!(
+                "    Memory bandwidth: {:.1} GB/s",
+                node.memory_bandwidth_gbps
+            );
         }
     }
 
@@ -314,7 +326,10 @@ impl NumaManager {
 
         // Use load balancer to determine optimal node
         let current_thread = thread::current().id();
-        if let Some(node) = self.load_balancer.get_preferred_node_for_thread(current_thread) {
+        if let Some(node) = self
+            .load_balancer
+            .get_preferred_node_for_thread(current_thread)
+        {
             Ok(node)
         } else {
             // Fallback to the least loaded node
@@ -325,15 +340,18 @@ impl NumaManager {
     /// Standard allocation for small sizes or when NUMA is disabled
     fn allocate_standard(&self, size: usize) -> Result<*mut u8> {
         use std::alloc::{alloc, Layout};
-        
-        let layout = Layout::from_size_align(size, std::mem::align_of::<u8>())
-            .map_err(|e| Error::InvalidOperation { reason: format!("Invalid memory layout: {}", e) })?;
-        
+
+        let layout = Layout::from_size_align(size, std::mem::align_of::<u8>()).map_err(|e| {
+            Error::InvalidOperation {
+                reason: format!("Invalid memory layout: {}", e),
+            }
+        })?;
+
         let ptr = unsafe { alloc(layout) };
         if ptr.is_null() {
             return Err(Error::Memory);
         }
-        
+
         Ok(ptr)
     }
 
@@ -345,12 +363,13 @@ impl NumaManager {
 
         // Look for nodes with high cross-NUMA access rates
         for (node_id, cache_miss_rate) in &stats.cache_miss_rates {
-            if *cache_miss_rate > 0.15 { // 15% cache miss rate threshold
+            if *cache_miss_rate > 0.15 {
+                // 15% cache miss rate threshold
                 // This is a placeholder - real implementation would track
                 // specific memory regions and their access patterns
                 candidates.push(MigrationCandidate {
                     ptr: std::ptr::null_mut(), // Would be actual pointer
-                    size: 0, // Would be actual size
+                    size: 0,                   // Would be actual size
                     current_node: *node_id,
                     target_node: self.find_better_node(*node_id),
                     migration_benefit: cache_miss_rate - 0.10,
@@ -365,7 +384,8 @@ impl NumaManager {
     fn find_better_node(&self, current_node: u32) -> u32 {
         // Find the node with the lowest memory usage
         let stats = self.stats.read();
-        stats.memory_usage_per_node
+        stats
+            .memory_usage_per_node
             .iter()
             .filter(|(node_id, _)| **node_id != current_node)
             .min_by_key(|(_, usage)| *usage)
@@ -449,7 +469,7 @@ mod tests {
     fn test_numa_manager_creation() {
         let config = NumaConfig::default();
         let result = NumaManager::new(config);
-        
+
         // May fail on systems without NUMA, which is fine for testing
         assert!(result.is_ok() || result.is_err());
     }
@@ -472,7 +492,7 @@ mod tests {
             lifetime: MemoryLifetime::Medium,
             primary_thread: Some(thread::current().id()),
         };
-        
+
         assert_eq!(hint.preferred_node, Some(0));
         assert!(matches!(hint.access_pattern, AccessPattern::Random));
     }

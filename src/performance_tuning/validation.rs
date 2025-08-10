@@ -3,12 +3,12 @@
 //! Validates configuration changes by measuring actual performance impact
 //! and ensuring improvements are real and sustainable.
 
+use super::{LatencyMetrics, PerformanceMetrics};
 use crate::{Database, LightningDbConfig, Result};
-use super::{PerformanceMetrics, LatencyMetrics};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use std::thread;
 use rand::Rng;
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 /// Performance validator
 pub struct PerformanceValidator {
@@ -32,10 +32,10 @@ pub struct ValidationResult {
 /// Validation recommendation
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValidationRecommendation {
-    Accept,           // Configuration is better
-    Reject,           // Configuration is worse
-    NeedMoreTesting,  // Results inconclusive
-    Unstable,         // Performance too variable
+    Accept,          // Configuration is better
+    Reject,          // Configuration is worse
+    NeedMoreTesting, // Results inconclusive
+    Unstable,        // Performance too variable
 }
 
 /// Test workload for validation
@@ -66,13 +66,13 @@ impl PerformanceValidator {
     ) -> Result<ValidationResult> {
         // Open database with new configuration
         let db = Arc::new(Database::open(db_path, config.clone())?);
-        
+
         // Measure performance
         let metrics = self.measure_performance(&db)?;
-        
+
         // For now, assume improvement (in production, would compare with baseline)
         let improvement_percentage = 10.0; // Placeholder
-        
+
         Ok(ValidationResult {
             metrics,
             is_better: improvement_percentage > 0.0,
@@ -100,7 +100,7 @@ impl PerformanceValidator {
         // Measurement phase
         let mut measurements = Vec::new();
         let start_time = Instant::now();
-        
+
         while start_time.elapsed() < self.test_duration {
             let measurement = self.run_measurement_cycle(db, &test_workload)?;
             measurements.push(measurement);
@@ -113,7 +113,7 @@ impl PerformanceValidator {
     /// Run warmup operations
     fn run_warmup(&self, db: &Arc<Database>, workload: &TestWorkload) -> Result<()> {
         let mut rng = rand::rng();
-        
+
         // Insert initial data
         for i in 0..self.warmup_operations {
             let key = format!("warmup_key_{:08}", i).into_bytes();
@@ -137,41 +137,41 @@ impl PerformanceValidator {
         let mut read_latencies = Vec::new();
         let mut write_latencies = Vec::new();
         let mut operations = 0u64;
-        
+
         let cycle_start = Instant::now();
         let cycle_duration = Duration::from_secs(1);
 
         while cycle_start.elapsed() < cycle_duration {
             let is_read = rng.gen::<f64>() < workload.read_ratio;
-            
+
             if is_read {
                 // Read operation
                 let key_id = rng.gen_range(0..workload.key_range);
                 let key = format!("key_{:08}", key_id).into_bytes();
-                
+
                 let op_start = Instant::now();
                 let _ = db.get(&key)?;
                 let latency = op_start.elapsed();
-                
+
                 read_latencies.push(latency.as_micros() as f64);
             } else {
                 // Write operation
                 let key_id = rng.gen_range(0..workload.key_range);
                 let key = format!("key_{:08}", key_id).into_bytes();
                 let value = vec![rng.gen::<u8>(); workload.value_size];
-                
+
                 let op_start = Instant::now();
                 db.put(&key, &value)?;
                 let latency = op_start.elapsed();
-                
+
                 write_latencies.push(latency.as_micros() as f64);
             }
-            
+
             operations += 1;
         }
 
         let duration = cycle_start.elapsed();
-        
+
         Ok(MeasurementCycle {
             operations,
             duration,
@@ -183,7 +183,10 @@ impl PerformanceValidator {
     }
 
     /// Aggregate measurements into performance metrics
-    fn aggregate_measurements(&self, measurements: &[MeasurementCycle]) -> Result<PerformanceMetrics> {
+    fn aggregate_measurements(
+        &self,
+        measurements: &[MeasurementCycle],
+    ) -> Result<PerformanceMetrics> {
         if measurements.is_empty() {
             return Ok(PerformanceMetrics::default());
         }
@@ -192,13 +195,13 @@ impl PerformanceValidator {
         let total_ops: u64 = measurements.iter().map(|m| m.operations).sum();
         let total_duration: Duration = measurements.iter().map(|m| m.duration).sum();
         let total_secs = total_duration.as_secs_f64();
-        
+
         let throughput = total_ops as f64 / total_secs;
 
         // Collect all latencies
         let mut all_read_latencies: Vec<f64> = Vec::new();
         let mut all_write_latencies: Vec<f64> = Vec::new();
-        
+
         for measurement in measurements {
             all_read_latencies.extend(&measurement.read_latencies);
             all_write_latencies.extend(&measurement.write_latencies);
@@ -212,18 +215,16 @@ impl PerformanceValidator {
         let total_reads = all_read_latencies.len() as f64;
         let total_writes = all_write_latencies.len() as f64;
         let read_ratio = total_reads / (total_reads + total_writes);
-        
+
         let read_ops_per_sec = throughput * read_ratio;
         let write_ops_per_sec = throughput * (1.0 - read_ratio);
 
         // Average resource usage
-        let avg_cpu = measurements.iter()
-            .map(|m| m.cpu_usage)
-            .sum::<f64>() / measurements.len() as f64;
-        
-        let avg_memory = measurements.iter()
-            .map(|m| m.memory_usage_mb)
-            .sum::<u64>() / measurements.len() as u64;
+        let avg_cpu =
+            measurements.iter().map(|m| m.cpu_usage).sum::<f64>() / measurements.len() as f64;
+
+        let avg_memory =
+            measurements.iter().map(|m| m.memory_usage_mb).sum::<u64>() / measurements.len() as u64;
 
         Ok(PerformanceMetrics {
             read_ops_per_sec,
@@ -243,9 +244,9 @@ impl PerformanceValidator {
         }
 
         latencies.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        
+
         let len = latencies.len();
-        
+
         LatencyMetrics {
             p50: latencies[len * 50 / 100],
             p95: latencies[len * 95 / 100],
@@ -276,22 +277,28 @@ impl PerformanceValidator {
     ) -> Result<ComparisonResult> {
         // Test first configuration
         let result1 = self.validate_config(db_path, config1)?;
-        
+
         // Clean up and test second configuration
         std::fs::remove_dir_all(db_path)?;
         std::fs::create_dir_all(db_path)?;
-        
+
         let result2 = self.validate_config(db_path, config2)?;
 
         // Calculate improvement
-        let read_improvement = (result2.metrics.read_ops_per_sec - result1.metrics.read_ops_per_sec) 
-            / result1.metrics.read_ops_per_sec * 100.0;
-        
-        let write_improvement = (result2.metrics.write_ops_per_sec - result1.metrics.write_ops_per_sec) 
-            / result1.metrics.write_ops_per_sec * 100.0;
-        
-        let latency_improvement = (result1.metrics.read_latency_us.p50 - result2.metrics.read_latency_us.p50) 
-            / result1.metrics.read_latency_us.p50 * 100.0;
+        let read_improvement = (result2.metrics.read_ops_per_sec
+            - result1.metrics.read_ops_per_sec)
+            / result1.metrics.read_ops_per_sec
+            * 100.0;
+
+        let write_improvement = (result2.metrics.write_ops_per_sec
+            - result1.metrics.write_ops_per_sec)
+            / result1.metrics.write_ops_per_sec
+            * 100.0;
+
+        let latency_improvement = (result1.metrics.read_latency_us.p50
+            - result2.metrics.read_latency_us.p50)
+            / result1.metrics.read_latency_us.p50
+            * 100.0;
 
         Ok(ComparisonResult {
             config1_metrics: result1.metrics,
@@ -299,7 +306,10 @@ impl PerformanceValidator {
             read_improvement_percent: read_improvement,
             write_improvement_percent: write_improvement,
             latency_improvement_percent: latency_improvement,
-            overall_improvement_percent: (read_improvement + write_improvement + latency_improvement) / 3.0,
+            overall_improvement_percent: (read_improvement
+                + write_improvement
+                + latency_improvement)
+                / 3.0,
             recommendation: if read_improvement > 5.0 || write_improvement > 5.0 {
                 ValidationRecommendation::Accept
             } else {
@@ -316,7 +326,7 @@ impl PerformanceValidator {
     ) -> Result<StabilityResult> {
         let mut measurements = Vec::new();
         let start_time = Instant::now();
-        
+
         while start_time.elapsed() < duration {
             let metrics = self.measure_performance(db)?;
             measurements.push(metrics);
@@ -324,15 +334,12 @@ impl PerformanceValidator {
         }
 
         // Calculate stability metrics
-        let throughputs: Vec<f64> = measurements.iter()
-            .map(|m| m.mixed_ops_per_sec)
-            .collect();
-        
+        let throughputs: Vec<f64> = measurements.iter().map(|m| m.mixed_ops_per_sec).collect();
+
         let mean = throughputs.iter().sum::<f64>() / throughputs.len() as f64;
-        let variance = throughputs.iter()
-            .map(|t| (t - mean).powi(2))
-            .sum::<f64>() / throughputs.len() as f64;
-        
+        let variance =
+            throughputs.iter().map(|t| (t - mean).powi(2)).sum::<f64>() / throughputs.len() as f64;
+
         let std_dev = variance.sqrt();
         let cv = std_dev / mean; // Coefficient of variation
 
@@ -391,9 +398,9 @@ mod tests {
     fn test_latency_calculation() {
         let validator = PerformanceValidator::new(1000);
         let mut latencies = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-        
+
         let metrics = validator.calculate_latency_metrics(&mut latencies);
-        
+
         assert_eq!(metrics.p50, 5.0); // Median
         assert_eq!(metrics.max, 10.0);
     }

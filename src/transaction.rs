@@ -488,12 +488,16 @@ impl VersionStore {
             None
         })
     }
-    
+
     /// Get the latest version including reserved entries (for conflict detection)
     pub fn get_latest_version_including_reserved(&self, key: &[u8]) -> Option<u64> {
         self.versions.get(key).and_then(|key_versions| {
             // Get the absolute latest version, including reserved entries
-            key_versions.value().iter().next_back().map(|entry| *entry.key())
+            key_versions
+                .value()
+                .iter()
+                .next_back()
+                .map(|entry| *entry.key())
         })
     }
 

@@ -46,7 +46,7 @@ impl<'a> SplitHandler<'a> {
     ) -> Result<Option<(Vec<u8>, u32)>> {
         // Note: The node already has the new entry and child inserted by insert_into_internal
         // We just need to split it
-        
+
         // Split is needed
         let mid = node.entries.len() / 2;
         let split_key = node.entries[mid].key.clone();
@@ -57,7 +57,7 @@ impl<'a> SplitHandler<'a> {
 
         // Split entries: left gets [0..mid], promoted is [mid], right gets [mid+1..]
         right_node.entries = node.entries.split_off(mid + 1);
-        
+
         // For children: left gets [0..mid+1], right gets [mid+1..]
         // This maintains the invariant that internal nodes have entries.len() + 1 children
         right_node.children = node.children.split_off(mid + 1);
@@ -105,7 +105,6 @@ impl<'a> SplitHandler<'a> {
     ) -> Result<Option<(Vec<u8>, u32)>> {
         let parent_page = self.page_manager.get_page(parent_page_id)?;
         let mut parent_node = BTreeNode::deserialize_from_page(&parent_page)?;
-        
 
         // Find position to insert new key
         let insert_pos = parent_node

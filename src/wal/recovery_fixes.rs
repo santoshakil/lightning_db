@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Edge cases for WAL recovery:
 /// 1. Torn writes - partial entry written when system crashes
@@ -248,19 +248,53 @@ impl WALRecoveryContext {
             Ok((mut entry, _)) => {
                 // Verify checksum
                 if !entry.verify_checksum() {
-                    warn!("Checksum mismatch for entry at offset {}", offset);
+                    // CRITICAL: Checksum mismatch detected - never auto-repair without validation
+                    error!(
+                        "WAL checksum mismatch at offset {}: entry LSN {} has corrupted data",
+                        offset, entry.lsn
+                    );
+                    
                     if self.repair_checksums {
-                        // Recalculate checksum
-                        entry.calculate_checksum();
+                        // Only allow repair for non-critical entries and with extreme caution
+                        warn!("DANGEROUS: Attempting checksum repair at offset {} - data integrity may be compromised", offset);
+                        
+                        // Calculate what checksum should be
+                        let mut test_entry = entry.clone();
+                        test_entry.checksum = 0;
+                        test_entry.calculate_checksum();
+                        let expected_checksum = test_entry.checksum;
+                        
+                        return Err(crate::error::Error::WalChecksumMismatch {
+                            offset,
+                            expected: expected_checksum,
+                            found: entry.checksum,
+                        });
                     } else {
-                        return Ok(None);
+                        // Fail-fast approach: never skip corrupted data
+                        let mut test_entry = entry.clone();
+                        test_entry.checksum = 0;
+                        test_entry.calculate_checksum();
+                        
+                        return Err(crate::error::Error::WalChecksumMismatch {
+                            offset,
+                            expected: test_entry.checksum,
+                            found: entry.checksum,
+                        });
                     }
                 }
                 Ok(Some(entry))
             }
-            Err(e) => {
-                warn!("Failed to deserialize entry at offset {}: {}", offset, e);
-                Ok(None)
+            Err(deserialization_error) => {
+                // CRITICAL: Deserialization failure indicates binary corruption
+                error!(
+                    "WAL binary corruption at offset {}: deserialization failed: {}",
+                    offset, deserialization_error
+                );
+                
+                Err(crate::error::Error::WalBinaryCorruption {
+                    offset,
+                    details: format!("Entry deserialization failed: {}", deserialization_error),
+                })
             }
         }
     }

@@ -3,13 +3,13 @@
 //! This module provides thread pinning capabilities to bind threads to specific
 //! CPU cores for optimal NUMA locality and performance.
 
-use crate::{Result, Error};
 use crate::numa::topology::NumaTopology;
-use std::sync::Arc;
-use std::collections::{HashMap, BTreeSet};
-use std::thread;
+use crate::{Error, Result};
 use parking_lot::RwLock;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeSet, HashMap};
+use std::sync::Arc;
+use std::thread;
 
 /// Thread pinner for managing CPU affinity
 pub struct ThreadPinner {
@@ -106,7 +106,10 @@ impl ThreadPinner {
         // Update usage statistics
         self.update_usage_stats(cpu_set, 1);
 
-        println!("Pinned thread {:?} to CPUs: {:?}", thread_id, cpu_set.cpu_ids);
+        println!(
+            "Pinned thread {:?} to CPUs: {:?}",
+            thread_id, cpu_set.cpu_ids
+        );
         Ok(())
     }
 
@@ -130,30 +133,22 @@ impl ThreadPinner {
     }
 
     /// Get optimal CPU set for a thread based on placement strategy
-    pub fn get_optimal_cpu_set(&self, thread_id: thread::ThreadId, placement: &ThreadPlacement) -> Result<CpuSet> {
+    pub fn get_optimal_cpu_set(
+        &self,
+        thread_id: thread::ThreadId,
+        placement: &ThreadPlacement,
+    ) -> Result<CpuSet> {
         match placement {
-            ThreadPlacement::LoadBalanced => {
-                self.get_load_balanced_cpu_set()
-            }
-            ThreadPlacement::NumaPreferred(node_id) => {
-                self.get_numa_preferred_cpu_set(*node_id)
-            }
-            ThreadPlacement::CpuBound(cpu_ids) => {
-                Ok(CpuSet {
-                    cpu_ids: cpu_ids.iter().cloned().collect(),
-                    numa_node: self.get_numa_node_for_cpus(cpu_ids),
-                    exclusive: true,
-                })
-            }
-            ThreadPlacement::Distributed => {
-                self.get_distributed_cpu_set()
-            }
-            ThreadPlacement::Compact => {
-                self.get_compact_cpu_set()
-            }
-            ThreadPlacement::Spread => {
-                self.get_spread_cpu_set()
-            }
+            ThreadPlacement::LoadBalanced => self.get_load_balanced_cpu_set(),
+            ThreadPlacement::NumaPreferred(node_id) => self.get_numa_preferred_cpu_set(*node_id),
+            ThreadPlacement::CpuBound(cpu_ids) => Ok(CpuSet {
+                cpu_ids: cpu_ids.iter().cloned().collect(),
+                numa_node: self.get_numa_node_for_cpus(cpu_ids),
+                exclusive: true,
+            }),
+            ThreadPlacement::Distributed => self.get_distributed_cpu_set(),
+            ThreadPlacement::Compact => self.get_compact_cpu_set(),
+            ThreadPlacement::Spread => self.get_spread_cpu_set(),
         }
     }
 
@@ -173,7 +168,10 @@ impl ThreadPinner {
             }
             crate::numa::ThreadType::Compute => {
                 // Compute threads need multiple cores
-                self.get_dedicated_cpu_set(&base_set, hint.cpu_requirements.preferred_cores as usize)
+                self.get_dedicated_cpu_set(
+                    &base_set,
+                    hint.cpu_requirements.preferred_cores as usize,
+                )
             }
             crate::numa::ThreadType::Network => {
                 // Network threads prefer specific cores close to network hardware
@@ -201,7 +199,9 @@ impl ThreadPinner {
         }
 
         // Find the least loaded CPU in that node
-        let node = self.topology.get_nodes()
+        let node = self
+            .topology
+            .get_nodes()
             .iter()
             .find(|n| n.id == best_node)
             .ok_or_else(|| Error::Generic("NUMA node not found".to_string()))?;
@@ -226,7 +226,9 @@ impl ThreadPinner {
 
     /// Get CPU set for specific NUMA node
     fn get_numa_preferred_cpu_set(&self, node_id: u32) -> Result<CpuSet> {
-        let node = self.topology.get_nodes()
+        let node = self
+            .topology
+            .get_nodes()
             .iter()
             .find(|n| n.id == node_id)
             .ok_or_else(|| Error::Generic(format!("NUMA node {} not found", node_id)))?;
@@ -255,7 +257,7 @@ impl ThreadPinner {
     /// Get distributed CPU set across all nodes
     fn get_distributed_cpu_set(&self) -> Result<CpuSet> {
         let mut cpu_ids = BTreeSet::new();
-        
+
         // Take one CPU from each NUMA node
         for node in self.topology.get_nodes() {
             if let Some(&cpu_id) = node.cpu_list.first() {
@@ -279,10 +281,12 @@ impl ThreadPinner {
         let cpu_usage = self.cpu_usage.read();
 
         for node in self.topology.get_nodes() {
-            let available = node.cpu_list.iter()
+            let available = node
+                .cpu_list
+                .iter()
                 .filter(|&&cpu_id| cpu_usage.get(&cpu_id).copied().unwrap_or(0) == 0)
                 .count();
-            
+
             if available > max_available {
                 max_available = available;
                 best_node = Some(node);
@@ -314,7 +318,7 @@ impl ThreadPinner {
     /// Get spread CPU set (spread across all cores)
     fn get_spread_cpu_set(&self) -> Result<CpuSet> {
         let mut cpu_ids = BTreeSet::new();
-        
+
         // Take all available CPUs
         for node in self.topology.get_nodes() {
             cpu_ids.extend(node.cpu_list.iter());
@@ -330,13 +334,17 @@ impl ThreadPinner {
     /// Get dedicated CPU set with specific number of cores
     fn get_dedicated_cpu_set(&self, base_set: &CpuSet, num_cores: usize) -> Result<CpuSet> {
         if let Some(numa_node) = base_set.numa_node {
-            let node = self.topology.get_nodes()
+            let node = self
+                .topology
+                .get_nodes()
                 .iter()
                 .find(|n| n.id == numa_node)
                 .ok_or_else(|| Error::Generic("NUMA node not found".to_string()))?;
 
             let cpu_usage = self.cpu_usage.read();
-            let mut available_cpus: Vec<_> = node.cpu_list.iter()
+            let mut available_cpus: Vec<_> = node
+                .cpu_list
+                .iter()
                 .filter(|&&cpu_id| cpu_usage.get(&cpu_id).copied().unwrap_or(0) == 0)
                 .cloned()
                 .collect();
@@ -373,7 +381,7 @@ impl ThreadPinner {
     /// Get CPU set containing all CPUs
     fn get_all_cpu_set(&self) -> CpuSet {
         let mut cpu_ids = BTreeSet::new();
-        
+
         for node in self.topology.get_nodes() {
             cpu_ids.extend(node.cpu_list.iter());
         }
@@ -419,23 +427,26 @@ impl ThreadPinner {
         use std::mem;
 
         let mut mask: libc::cpu_set_t = unsafe { mem::zeroed() };
-        
+
         unsafe {
             libc::CPU_ZERO(&mut mask);
-            
+
             for &cpu_id in &cpu_set.cpu_ids {
                 libc::CPU_SET(cpu_id as usize, &mut mask);
             }
-            
+
             let result = libc::sched_setaffinity(
                 0, // Current thread
                 mem::size_of::<libc::cpu_set_t>(),
                 &mask,
             );
-            
+
             if result != 0 {
                 let errno = *libc::__errno_location();
-                return Err(Error::Generic(format!("Failed to set CPU affinity: errno {}", errno)));
+                return Err(Error::Generic(format!(
+                    "Failed to set CPU affinity: errno {}",
+                    errno
+                )));
             }
         }
 
@@ -447,7 +458,7 @@ impl ThreadPinner {
     fn apply_affinity_macos(&self, cpu_set: &CpuSet) -> Result<()> {
         // macOS doesn't support hard CPU affinity like Linux
         // We can only provide hints via thread_policy_set
-        
+
         if let Some(&cpu_id) = cpu_set.cpu_ids.iter().next() {
             // This is a simplified approach - real implementation would use
             // thread_policy_set with THREAD_AFFINITY_POLICY
@@ -538,8 +549,9 @@ impl CpuSet {
 
     /// Intersect with another CPU set
     pub fn intersect(&self, other: &CpuSet) -> CpuSet {
-        let intersection: BTreeSet<u32> = self.cpu_ids.intersection(&other.cpu_ids).cloned().collect();
-        
+        let intersection: BTreeSet<u32> =
+            self.cpu_ids.intersection(&other.cpu_ids).cloned().collect();
+
         CpuSet {
             cpu_ids: intersection,
             numa_node: if self.numa_node == other.numa_node {
@@ -554,7 +566,7 @@ impl CpuSet {
     /// Union with another CPU set
     pub fn union(&self, other: &CpuSet) -> CpuSet {
         let union: BTreeSet<u32> = self.cpu_ids.union(&other.cpu_ids).cloned().collect();
-        
+
         CpuSet {
             cpu_ids: union,
             numa_node: if self.numa_node == other.numa_node {
@@ -583,16 +595,16 @@ mod tests {
     fn test_cpu_set_operations() {
         let set1 = CpuSet::new(vec![0, 1, 2]);
         let set2 = CpuSet::new(vec![1, 2, 3]);
-        
+
         assert_eq!(set1.size(), 3);
         assert!(set1.contains(1));
         assert!(!set1.contains(3));
-        
+
         let intersection = set1.intersect(&set2);
         assert_eq!(intersection.size(), 2);
         assert!(intersection.contains(1));
         assert!(intersection.contains(2));
-        
+
         let union = set1.union(&set2);
         assert_eq!(union.size(), 4);
     }
@@ -601,14 +613,14 @@ mod tests {
     fn test_placement_strategies() {
         let topology = Arc::new(NumaTopology::detect().unwrap());
         let pinner = ThreadPinner::new(topology).unwrap();
-        
+
         let strategies = vec![
             ThreadPlacement::LoadBalanced,
             ThreadPlacement::Distributed,
             ThreadPlacement::Compact,
             ThreadPlacement::Spread,
         ];
-        
+
         for strategy in strategies {
             let result = pinner.get_optimal_cpu_set(thread::current().id(), &strategy);
             assert!(result.is_ok());
@@ -619,13 +631,13 @@ mod tests {
     fn test_numa_preferred_placement() {
         let topology = Arc::new(NumaTopology::detect().unwrap());
         let pinner = ThreadPinner::new(topology).unwrap();
-        
+
         if !pinner.topology.get_nodes().is_empty() {
             let node_id = pinner.topology.get_nodes()[0].id;
             let placement = ThreadPlacement::NumaPreferred(node_id);
             let result = pinner.get_optimal_cpu_set(thread::current().id(), &placement);
             assert!(result.is_ok());
-            
+
             if let Ok(cpu_set) = result {
                 assert_eq!(cpu_set.numa_node, Some(node_id));
             }

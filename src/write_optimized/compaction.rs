@@ -3,16 +3,16 @@
 //! Implements various compaction strategies including Leveled Compaction Strategy (LCS)
 //! and Size-Tiered Compaction Strategy (STCS) for optimizing storage and read performance.
 
-use crate::{Result, Error};
-use crate::write_optimized::{SSTableReader, SSTableBuilder, SSTableMetadata};
+use crate::write_optimized::{SSTableBuilder, SSTableMetadata, SSTableReader};
+use crate::{Error, Result};
+use crossbeam_channel::{unbounded, Receiver, Sender};
+use parking_lot::{Mutex, RwLock};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
-use parking_lot::{RwLock, Mutex};
-use serde::{Serialize, Deserialize};
-use std::collections::{BTreeMap, VecDeque};
-use std::time::{SystemTime, UNIX_EPOCH, Instant};
 use std::thread;
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// Compaction strategy types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,8 +63,9 @@ impl CompactionJob {
             .iter()
             .map(|sst| sst.metadata().file_size)
             .sum::<u64>()
-            .saturating_mul(80) / 100; // Estimate 20% reduction from compaction
-        
+            .saturating_mul(80)
+            / 100; // Estimate 20% reduction from compaction
+
         Self {
             id,
             priority,
@@ -101,7 +102,7 @@ impl CompactionJob {
         let mut output_sstables = Vec::new();
         let mut current_builder: Option<SSTableBuilder> = None;
         let mut output_file_count = 0;
-        
+
         let target_file_size = self.calculate_target_file_size();
 
         while let Some((key, value)) = merger.next()? {
@@ -109,11 +110,13 @@ impl CompactionJob {
             if current_builder.is_none() {
                 let output_path = self.output_dir.join(format!(
                     "level_{}_file_{:06}_{}.sst",
-                    self.target_level,
-                    output_file_count,
-                    self.id
+                    self.target_level, output_file_count, self.id
                 ));
-                current_builder = Some(SSTableBuilder::new(&output_path, self.target_level, self.compression_type)?);
+                current_builder = Some(SSTableBuilder::new(
+                    &output_path,
+                    self.target_level,
+                    self.compression_type,
+                )?);
             }
 
             let should_finalize = {
@@ -144,10 +147,13 @@ impl CompactionJob {
     fn execute_size_tiered_compaction(&self) -> Result<Vec<SSTableMetadata>> {
         // Group SSTables by size tier
         let mut size_groups: BTreeMap<u64, Vec<Arc<SSTableReader>>> = BTreeMap::new();
-        
+
         for sstable in &self.input_sstables {
             let size_tier = (sstable.metadata().file_size / (1024 * 1024)).max(1); // MB tiers
-            size_groups.entry(size_tier).or_default().push(Arc::clone(sstable));
+            size_groups
+                .entry(size_tier)
+                .or_default()
+                .push(Arc::clone(sstable));
         }
 
         let mut output_sstables = Vec::new();
@@ -159,13 +165,12 @@ impl CompactionJob {
             }
 
             let mut merger = SSTableMerger::new(&sstables)?;
-            let output_path = self.output_dir.join(format!(
-                "tier_{}_compacted_{}.sst",
-                tier,
-                self.id
-            ));
+            let output_path = self
+                .output_dir
+                .join(format!("tier_{}_compacted_{}.sst", tier, self.id));
 
-            let mut builder = SSTableBuilder::new(&output_path, self.target_level, self.compression_type)?;
+            let mut builder =
+                SSTableBuilder::new(&output_path, self.target_level, self.compression_type)?;
 
             while let Some((key, value)) = merger.next()? {
                 builder.add(key, value)?;
@@ -207,7 +212,7 @@ impl SSTableMerger {
     /// Create a new merger
     fn new(sstables: &[Arc<SSTableReader>]) -> Result<Self> {
         let mut iterators = Vec::new();
-        
+
         for sstable in sstables {
             let wrapper = SSTableIteratorWrapper::new(Arc::clone(sstable))?;
             iterators.push((wrapper, None));
@@ -253,7 +258,7 @@ impl SSTableMerger {
 
         if let Some(key) = min_key {
             let (_, value) = self.iterators[min_index].1.take().unwrap();
-            
+
             // Skip duplicate keys (take the newest value)
             while let Some(same_key_index) = self.find_same_key(&key) {
                 self.advance_iterator(same_key_index)?;
@@ -291,7 +296,7 @@ impl SSTableIteratorWrapper {
         // For now, return empty entries to avoid the reading issues
         // This is a temporary simplification to get the demo working
         let entries = Vec::new();
-        
+
         Ok(Self {
             sstable,
             entries,
@@ -386,12 +391,13 @@ impl CompactionLevel {
         }
 
         // Find overlapping SSTables in next level
-        next_level.sstables
+        next_level
+            .sstables
             .iter()
             .filter(|sstable| {
                 let sst_min = &sstable.metadata().min_key;
                 let sst_max = &sstable.metadata().max_key;
-                
+
                 // Check for overlap: [min_key, max_key] overlaps [sst_min, sst_max]
                 sst_min <= &max_key && sst_max >= &min_key
             })
@@ -433,7 +439,7 @@ impl CompactionManager {
         output_dir: PathBuf,
     ) -> Result<Self> {
         let mut levels = Vec::new();
-        
+
         // Initialize levels with exponential size limits
         for level in 0..max_levels {
             let max_size = if level == 0 {
@@ -445,7 +451,7 @@ impl CompactionManager {
         }
 
         let (job_sender, job_receiver) = unbounded();
-        
+
         Ok(Self {
             levels: Arc::new(RwLock::new(levels)),
             strategy,
@@ -462,13 +468,15 @@ impl CompactionManager {
 
     /// Start compaction workers
     pub fn start(&mut self) -> Result<()> {
-        self.running.store(true, std::sync::atomic::Ordering::SeqCst);
-        
-        for i in 0..4 { // Start 4 workers
+        self.running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        for i in 0..4 {
+            // Start 4 workers
             let receiver = self.job_receiver.clone();
             let running = Arc::clone(&self.running);
             let stats = Arc::clone(&self.stats);
-            
+
             let worker = thread::Builder::new()
                 .name(format!("compaction-worker-{}", i))
                 .spawn(move || {
@@ -494,21 +502,24 @@ impl CompactionManager {
                         }
                     }
                 })?;
-            
+
             self.workers.push(worker);
         }
-        
+
         Ok(())
     }
 
     /// Stop compaction workers
     pub fn stop(&mut self) -> Result<()> {
-        self.running.store(false, std::sync::atomic::Ordering::SeqCst);
-        
+        self.running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+
         for worker in self.workers.drain(..) {
-            worker.join().map_err(|_| Error::Generic("Failed to join worker thread".to_string()))?;
+            worker
+                .join()
+                .map_err(|_| Error::Generic("Failed to join worker thread".to_string()))?;
         }
-        
+
         Ok(())
     }
 
@@ -516,18 +527,18 @@ impl CompactionManager {
     pub fn add_sstable(&self, level: usize, sstable: Arc<SSTableReader>) -> Result<()> {
         let mut levels = self.levels.write();
         if level >= levels.len() {
-            return Err(Error::InvalidOperation { 
-                reason: format!("Level {} does not exist", level) 
+            return Err(Error::InvalidOperation {
+                reason: format!("Level {} does not exist", level),
             });
         }
-        
+
         levels[level].add_sstable(sstable);
-        
+
         // Check if compaction is needed
         if levels[level].needs_compaction() {
             self.schedule_compaction(level)?;
         }
-        
+
         Ok(())
     }
 
@@ -550,13 +561,13 @@ impl CompactionManager {
         } else {
             // Other levels: select overlapping SSTables
             let mut selected = current_level.sstables.clone();
-            
+
             // Add overlapping SSTables from next level
             if level + 1 < levels.len() {
                 let overlapping = current_level.get_overlapping_range(&levels[level + 1]);
                 selected.extend(overlapping);
             }
-            
+
             selected
         };
 
@@ -565,8 +576,10 @@ impl CompactionManager {
         }
 
         let target_level = (level + 1).min(levels.len() - 1);
-        let job_id = self.next_job_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        
+        let job_id = self
+            .next_job_id
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
         let job = CompactionJob::new(
             job_id,
             CompactionPriority::Normal,
@@ -577,8 +590,10 @@ impl CompactionManager {
             1, // zstd compression
         );
 
-        self.job_sender.send(job).map_err(|_| Error::Generic("Failed to schedule compaction job".to_string()))?;
-        
+        self.job_sender
+            .send(job)
+            .map_err(|_| Error::Generic("Failed to schedule compaction job".to_string()))?;
+
         Ok(())
     }
 
@@ -623,7 +638,7 @@ mod tests {
         let mut level = CompactionLevel::new(0, 1024 * 1024); // 1MB
         assert_eq!(level.level, 0);
         assert!(!level.needs_compaction());
-        
+
         // Adding SSTables should update score
         assert_eq!(level.compaction_score, 0.0);
     }
@@ -631,13 +646,10 @@ mod tests {
     #[test]
     fn test_compaction_manager_creation() {
         let dir = TempDir::new().unwrap();
-        let manager = CompactionManager::new(
-            CompactionStrategy::Leveled,
-            7,
-            2,
-            dir.path().to_path_buf(),
-        ).unwrap();
-        
+        let manager =
+            CompactionManager::new(CompactionStrategy::Leveled, 7, 2, dir.path().to_path_buf())
+                .unwrap();
+
         let levels = manager.levels.read();
         assert_eq!(levels.len(), 7);
         assert_eq!(levels[0].level, 0);
@@ -656,7 +668,7 @@ mod tests {
             dir.path().to_path_buf(),
             1,
         );
-        
+
         assert_eq!(job.id, 1);
         assert_eq!(job.target_level, 1);
         assert_eq!(job.strategy, CompactionStrategy::Leveled);

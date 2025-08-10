@@ -3,15 +3,15 @@
 //! Provides efficient incremental backup capabilities with content-based
 //! deduplication, delta compression, and intelligent change detection.
 
-use crate::{Result, Error};
-use std::collections::{HashMap, HashSet, BTreeMap};
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, Duration};
-use std::io::Read;
-use std::fs::File;
-use serde::{Serialize, Deserialize};
-use sha2::{Sha256, Digest};
+use crate::{Error, Result};
 use blake3;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 /// Incremental backup manager with deduplication
 pub struct IncrementalBackupManager {
@@ -42,9 +42,9 @@ pub struct IncrementalConfig {
 impl Default for IncrementalConfig {
     fn default() -> Self {
         Self {
-            chunk_size_bytes: 64 * 1024,        // 64KB default chunk size
-            max_chunk_size_bytes: 1024 * 1024,  // 1MB max chunk size
-            min_chunk_size_bytes: 4 * 1024,     // 4KB min chunk size
+            chunk_size_bytes: 64 * 1024,       // 64KB default chunk size
+            max_chunk_size_bytes: 1024 * 1024, // 1MB max chunk size
+            min_chunk_size_bytes: 4 * 1024,    // 4KB min chunk size
             rolling_hash_window: 64,
             deduplication_enabled: true,
             delta_compression_enabled: true,
@@ -320,29 +320,29 @@ impl IncrementalBackupManager {
                 ChangeType::Created | ChangeType::Modified | ChangeType::Content => {
                     self.process_changed_file(&file_path, change_type, backup_id, &mut result)?;
                     result.files_changed += 1;
-                    
+
                     if change_type == ChangeType::Created {
                         result.files_added += 1;
                         result.change_summary.created_files.push(file_path.clone());
                     } else {
                         result.change_summary.modified_files.push(file_path.clone());
                     }
-                },
+                }
                 ChangeType::Deleted => {
                     self.process_deleted_file(&file_path, backup_id)?;
                     result.files_deleted += 1;
                     result.change_summary.deleted_files.push(file_path);
-                },
+                }
                 ChangeType::Moved => {
                     // Handle moved files
                     println!("📦 File moved: {:?}", file_path);
-                },
+                }
                 ChangeType::Metadata => {
                     // Handle metadata-only changes
                     println!("🏷️  Metadata changed: {:?}", file_path);
-                },
+                }
             }
-            
+
             result.files_processed += 1;
         }
 
@@ -365,7 +365,7 @@ impl IncrementalBackupManager {
             dedup_ratio: result.dedup_ratio,
             changed_files: result.change_summary.created_files.clone(),
         };
-        
+
         self.file_index.snapshots.insert(start_time, snapshot);
 
         println!("✅ Incremental backup completed");
@@ -384,7 +384,7 @@ impl IncrementalBackupManager {
         base_backup_id: Option<&str>,
     ) -> Result<Vec<(PathBuf, ChangeType)>> {
         let mut changes = Vec::new();
-        
+
         // Clone the snapshot information to avoid borrow issues
         let base_snapshot_opt = if let Some(base_id) = base_backup_id {
             self.find_snapshot_by_backup_id(base_id)?.cloned()
@@ -394,7 +394,11 @@ impl IncrementalBackupManager {
 
         // Then scan for changes (this requires &mut self)
         for source_path in source_paths {
-            self.scan_directory_for_changes(source_path, &base_snapshot_opt.as_ref(), &mut changes)?;
+            self.scan_directory_for_changes(
+                source_path,
+                &base_snapshot_opt.as_ref(),
+                &mut changes,
+            )?;
         }
 
         // Sort changes by priority (deletions first, then creates, then modifications)
@@ -460,7 +464,7 @@ impl IncrementalBackupManager {
         if let Some(existing_entry) = self.file_index.files.get(file_path) {
             // File exists in index, check for changes
             let current_modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-            
+
             if current_modified > existing_entry.modified_time {
                 // File has been modified, check if content changed
                 let current_hash = self.calculate_file_hash(file_path)?;
@@ -488,7 +492,7 @@ impl IncrementalBackupManager {
     ) -> Result<()> {
         let metadata = std::fs::metadata(file_path)?;
         let file_size = metadata.len();
-        
+
         println!("📄 Processing file: {:?} ({} bytes)", file_path, file_size);
 
         // Calculate content hash
@@ -550,7 +554,9 @@ impl IncrementalBackupManager {
             }],
         };
 
-        self.file_index.files.insert(file_path.to_path_buf(), file_entry);
+        self.file_index
+            .files
+            .insert(file_path.to_path_buf(), file_entry);
 
         // Update result statistics
         result.total_size += file_size;
@@ -564,7 +570,7 @@ impl IncrementalBackupManager {
     /// Process a deleted file
     fn process_deleted_file(&mut self, file_path: &Path, _backup_id: &str) -> Result<()> {
         println!("🗑️  Processing deleted file: {:?}", file_path);
-        
+
         if let Some(file_entry) = self.file_index.files.remove(file_path) {
             // Decrement reference counts for chunks
             for chunk_hash in &file_entry.chunk_hashes {
@@ -589,7 +595,7 @@ impl IncrementalBackupManager {
             }
 
             let chunk_boundaries = self.find_chunk_boundaries(&buffer[..bytes_read])?;
-            
+
             for &boundary in &chunk_boundaries {
                 if boundary > chunk_start {
                     let chunk_data = &buffer[chunk_start..boundary];
@@ -634,7 +640,7 @@ impl IncrementalBackupManager {
     fn find_chunk_boundaries(&self, data: &[u8]) -> Result<Vec<usize>> {
         let mut boundaries = Vec::new();
         let window_size = self.config.rolling_hash_window;
-        
+
         if data.len() <= window_size {
             return Ok(vec![data.len()]);
         }
@@ -654,7 +660,7 @@ impl IncrementalBackupManager {
             let old_char = data[i - window_size] as u64;
             let new_char = data[i] as u64;
             let base_power = self.mod_pow(base, window_size as u64 - 1, modulus);
-            
+
             rolling_hash = (rolling_hash + modulus - (old_char * base_power) % modulus) % modulus;
             rolling_hash = (rolling_hash * base + new_char) % modulus;
 
@@ -696,16 +702,16 @@ impl IncrementalBackupManager {
                 let mut hasher = Sha256::new();
                 hasher.update(data);
                 format!("{:x}", hasher.finalize())
-            },
+            }
             HashAlgorithm::Blake3 => {
                 let hash = blake3::hash(data);
                 hash.to_hex().to_string()
-            },
+            }
             HashAlgorithm::XxHash => {
                 // For simplicity, fall back to Blake3
                 let hash = blake3::hash(data);
                 hash.to_hex().to_string()
-            },
+            }
         };
 
         Ok(Chunk {
@@ -719,7 +725,7 @@ impl IncrementalBackupManager {
     fn store_chunk(&mut self, chunk: &Chunk) -> Result<ChunkMetadata> {
         let compressed_data = self.compress_chunk_data(&chunk.data)?;
         let chunk_file_path = self.chunk_store.storage_path.join(&chunk.hash);
-        
+
         std::fs::write(&chunk_file_path, &compressed_data)?;
 
         let metadata = ChunkMetadata {
@@ -736,7 +742,9 @@ impl IncrementalBackupManager {
             },
         };
 
-        self.chunk_store.chunks.insert(chunk.hash.clone(), metadata.clone());
+        self.chunk_store
+            .chunks
+            .insert(chunk.hash.clone(), metadata.clone());
         self.chunk_store.total_chunks += 1;
         self.chunk_store.total_size += chunk.size as u64;
 
@@ -757,15 +765,15 @@ impl IncrementalBackupManager {
                 {
                     Err(Error::Generic("Zstd compression not available".to_string()))
                 }
-            },
+            }
             CompressionAlgorithm::Lz4 => {
                 use crate::compression::{Compressor, Lz4Compressor};
                 let compressor = Lz4Compressor;
                 compressor.compress(data)
-            },
-            CompressionAlgorithm::Brotli => {
-                Err(Error::Generic("Brotli compression not yet implemented".to_string()))
-            },
+            }
+            CompressionAlgorithm::Brotli => Err(Error::Generic(
+                "Brotli compression not yet implemented".to_string(),
+            )),
         }
     }
 
@@ -802,7 +810,7 @@ impl IncrementalBackupManager {
     fn update_chunk_references(&mut self, file_path: &Path, chunk_hashes: &[String]) -> Result<()> {
         for chunk_hash in chunk_hashes {
             self.increment_chunk_reference(chunk_hash)?;
-            
+
             self.dedup_index
                 .chunk_references
                 .entry(chunk_hash.clone())
@@ -825,7 +833,7 @@ impl IncrementalBackupManager {
     fn decrement_chunk_reference(&mut self, chunk_hash: &str) -> Result<()> {
         if let Some(chunk_metadata) = self.chunk_store.chunks.get_mut(chunk_hash) {
             chunk_metadata.reference_count = chunk_metadata.reference_count.saturating_sub(1);
-            
+
             // If no more references, mark for cleanup
             if chunk_metadata.reference_count == 0 {
                 println!("🧹 Chunk marked for cleanup: {}", chunk_hash);
@@ -856,7 +864,10 @@ impl IncrementalBackupManager {
     /// Get deduplication statistics
     pub fn get_dedup_statistics(&self) -> DeduplicationStatistics {
         let total_unique_chunks = self.chunk_store.chunks.len();
-        let total_chunk_references: usize = self.chunk_store.chunks.values()
+        let total_chunk_references: usize = self
+            .chunk_store
+            .chunks
+            .values()
             .map(|chunk| chunk.reference_count)
             .sum();
 
@@ -867,7 +878,10 @@ impl IncrementalBackupManager {
         };
 
         let storage_efficiency = if self.chunk_store.total_size > 0 {
-            let total_compressed_size: u64 = self.chunk_store.chunks.values()
+            let total_compressed_size: u64 = self
+                .chunk_store
+                .chunks
+                .values()
                 .map(|chunk| chunk.compressed_size as u64)
                 .sum();
             1.0 - (total_compressed_size as f64 / self.chunk_store.total_size as f64)
@@ -930,7 +944,7 @@ mod tests {
     fn test_chunk_creation() {
         let (manager, _temp_dir) = create_test_manager();
         let test_data = b"This is test data for chunking";
-        
+
         let chunk = manager.create_chunk_from_data(test_data).unwrap();
         assert_eq!(chunk.size, test_data.len());
         assert!(!chunk.hash.is_empty());
@@ -939,15 +953,15 @@ mod tests {
     #[test]
     fn test_content_defined_chunking() {
         let (manager, temp_dir) = create_test_manager();
-        
+
         // Create a test file
         let test_file = temp_dir.path().join("test.txt");
         let test_data = b"This is a test file with some content that will be chunked using content-defined chunking algorithm.";
         std::fs::write(&test_file, test_data).unwrap();
-        
+
         let chunks = manager.create_content_defined_chunks(&test_file).unwrap();
         assert!(!chunks.is_empty());
-        
+
         // Verify total size matches
         let total_chunk_size: usize = chunks.iter().map(|c| c.size).sum();
         assert_eq!(total_chunk_size, test_data.len());
@@ -956,15 +970,15 @@ mod tests {
     #[test]
     fn test_file_hash_calculation() {
         let (manager, temp_dir) = create_test_manager();
-        
+
         // Create a test file
         let test_file = temp_dir.path().join("test.txt");
         let test_data = b"Test content for hash calculation";
         std::fs::write(&test_file, test_data).unwrap();
-        
+
         let hash1 = manager.calculate_file_hash(&test_file).unwrap();
         let hash2 = manager.calculate_file_hash(&test_file).unwrap();
-        
+
         // Same file should produce same hash
         assert_eq!(hash1, hash2);
         assert!(!hash1.is_empty());
@@ -974,7 +988,7 @@ mod tests {
     fn test_dedup_statistics() {
         let (manager, _temp_dir) = create_test_manager();
         let stats = manager.get_dedup_statistics();
-        
+
         assert_eq!(stats.total_unique_chunks, 0);
         assert_eq!(stats.total_storage_size, 0);
         assert_eq!(stats.dedup_savings, 0);

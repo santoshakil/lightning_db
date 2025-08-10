@@ -3,9 +3,9 @@
 //! This module provides comprehensive statistics collection for the cost-based optimizer.
 //! It maintains detailed information about data distribution, cardinality, and access patterns.
 
-use crate::Result;
 use super::{OptimizerConfig, Value};
-use serde::{Serialize, Deserialize};
+use crate::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -193,21 +193,21 @@ impl StatisticsManager {
         // 2. Analyze data distribution
         // 3. Update histograms
         // 4. Calculate correlations
-        
+
         let table_stats = self.collect_table_statistics(table_name)?;
         let column_stats = self.collect_column_statistics(table_name)?;
-        
+
         // Store the statistics
         {
             let mut stats = self.table_stats.write().unwrap();
             stats.insert(table_name.to_string(), table_stats);
         }
-        
+
         for (column_key, column_stat) in column_stats {
             let mut stats = self.column_stats.write().unwrap();
             stats.insert(column_key, column_stat);
         }
-        
+
         Ok(())
     }
 
@@ -221,9 +221,9 @@ impl StatisticsManager {
 
         Ok(TableStatistics {
             table_name: table_name.to_string(),
-            row_count: 100_000, // Would be actual count
-            page_count: 2500,   // Assuming 4KB pages, ~40 rows per page
-            avg_row_size: 160.0, // Average row size
+            row_count: 100_000,     // Would be actual count
+            page_count: 2500,       // Assuming 4KB pages, ~40 rows per page
+            avg_row_size: 160.0,    // Average row size
             table_size: 16_000_000, // 16MB
             last_updated: timestamp,
             modifications_since_update: 0,
@@ -245,23 +245,30 @@ impl StatisticsManager {
     }
 
     /// Collect column-level statistics
-    fn collect_column_statistics(&self, table_name: &str) -> Result<HashMap<String, ColumnStatistics>> {
+    fn collect_column_statistics(
+        &self,
+        table_name: &str,
+    ) -> Result<HashMap<String, ColumnStatistics>> {
         let mut column_stats = HashMap::new();
-        
+
         // Example statistics for common columns
         let columns = vec!["id", "name", "age", "status", "created_at"];
-        
+
         for column in columns {
             let key = format!("{}.{}", table_name, column);
             let stats = self.create_column_statistics(table_name, column)?;
             column_stats.insert(key, stats);
         }
-        
+
         Ok(column_stats)
     }
 
     /// Create statistics for a specific column
-    fn create_column_statistics(&self, table_name: &str, column_name: &str) -> Result<ColumnStatistics> {
+    fn create_column_statistics(
+        &self,
+        table_name: &str,
+        column_name: &str,
+    ) -> Result<ColumnStatistics> {
         let histogram = match column_name {
             "id" => self.create_uniform_histogram(1, 100_000, 100),
             "age" => self.create_normal_histogram(18, 80, 50),
@@ -270,11 +277,23 @@ impl StatisticsManager {
         };
 
         let (min_val, max_val, avg_val) = match column_name {
-            "id" => (Some(Value::Integer(1)), Some(Value::Integer(100_000)), Some(50_000.0)),
-            "age" => (Some(Value::Integer(18)), Some(Value::Integer(80)), Some(35.0)),
+            "id" => (
+                Some(Value::Integer(1)),
+                Some(Value::Integer(100_000)),
+                Some(50_000.0),
+            ),
+            "age" => (
+                Some(Value::Integer(18)),
+                Some(Value::Integer(80)),
+                Some(35.0),
+            ),
             "name" => (None, None, None),
             "status" => (None, None, None),
-            "created_at" => (Some(Value::Integer(1609459200)), Some(Value::Integer(1672531200)), None), // Unix timestamps
+            "created_at" => (
+                Some(Value::Integer(1609459200)),
+                Some(Value::Integer(1672531200)),
+                None,
+            ), // Unix timestamps
             _ => (None, None, None),
         };
 
@@ -335,12 +354,16 @@ impl StatisticsManager {
         let center = buckets / 2;
         for i in 0..buckets {
             let distance_from_center = (i as i32 - center as i32).abs();
-            let frequency = 20_000 / (1 + distance_from_center as u64 * distance_from_center as u64);
+            let frequency =
+                20_000 / (1 + distance_from_center as u64 * distance_from_center as u64);
             frequencies.push(frequency);
         }
 
         let total: u64 = frequencies.iter().sum();
-        let densities = frequencies.iter().map(|&f| f as f64 / total as f64).collect();
+        let densities = frequencies
+            .iter()
+            .map(|&f| f as f64 / total as f64)
+            .collect();
 
         Histogram {
             histogram_type: HistogramType::Adaptive,
@@ -368,7 +391,10 @@ impl StatisticsManager {
         }
 
         let total: u64 = frequencies.iter().sum();
-        let densities = frequencies.iter().map(|&f| f as f64 / total as f64).collect();
+        let densities = frequencies
+            .iter()
+            .map(|&f| f as f64 / total as f64)
+            .collect();
 
         Histogram {
             histogram_type: HistogramType::EqualFrequency,
@@ -403,10 +429,10 @@ impl StatisticsManager {
     /// Estimate distinct count
     fn estimate_distinct_count(&self, column_name: &str) -> u64 {
         match column_name {
-            "id" => 100_000, // Primary key
-            "age" => 62,     // Age range 18-80
-            "name" => 85_000, // High cardinality
-            "status" => 3,   // Low cardinality
+            "id" => 100_000,        // Primary key
+            "age" => 62,            // Age range 18-80
+            "name" => 85_000,       // High cardinality
+            "status" => 3,          // Low cardinality
             "created_at" => 50_000, // Medium cardinality
             _ => 10_000,
         }
@@ -415,10 +441,10 @@ impl StatisticsManager {
     /// Estimate null count
     fn estimate_null_count(&self, column_name: &str) -> u64 {
         match column_name {
-            "id" => 0,      // Primary key, no nulls
-            "age" => 1_000, // Some missing ages
-            "name" => 500,  // Few missing names
-            "status" => 0,  // Required field
+            "id" => 0,         // Primary key, no nulls
+            "age" => 1_000,    // Some missing ages
+            "name" => 500,     // Few missing names
+            "status" => 0,     // Required field
             "created_at" => 0, // System generated
             _ => 2_000,
         }
@@ -448,7 +474,11 @@ impl StatisticsManager {
     }
 
     /// Get column statistics
-    pub fn get_column_statistics(&self, table_name: &str, column_name: &str) -> Option<ColumnStatistics> {
+    pub fn get_column_statistics(
+        &self,
+        table_name: &str,
+        column_name: &str,
+    ) -> Option<ColumnStatistics> {
         let key = format!("{}.{}", table_name, column_name);
         let stats = self.column_stats.read().unwrap();
         stats.get(&key).cloned()
@@ -463,21 +493,20 @@ impl StatisticsManager {
     /// Update index usage statistics
     pub fn update_index_usage(&self, index_name: &str, rows_returned: u64) -> Result<()> {
         let mut stats = self.index_stats.write().unwrap();
-        
+
         if let Some(index_stat) = stats.get_mut(index_name) {
             index_stat.usage_stats.usage_count += 1;
             index_stat.usage_stats.last_used = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            
+
             // Update average rows returned (exponential moving average)
             let alpha = 0.1;
-            index_stat.usage_stats.avg_rows_returned = 
-                alpha * rows_returned as f64 + 
-                (1.0 - alpha) * index_stat.usage_stats.avg_rows_returned;
+            index_stat.usage_stats.avg_rows_returned = alpha * rows_returned as f64
+                + (1.0 - alpha) * index_stat.usage_stats.avg_rows_returned;
         }
-        
+
         Ok(())
     }
 
@@ -488,7 +517,13 @@ impl StatisticsManager {
     }
 
     /// Estimate selectivity for a predicate
-    pub fn estimate_selectivity(&self, table_name: &str, column_name: &str, operator: &str, value: &Value) -> f64 {
+    pub fn estimate_selectivity(
+        &self,
+        table_name: &str,
+        column_name: &str,
+        operator: &str,
+        value: &Value,
+    ) -> f64 {
         if let Some(column_stats) = self.get_column_statistics(table_name, column_name) {
             match operator {
                 "=" => {
@@ -519,7 +554,12 @@ impl StatisticsManager {
     }
 
     /// Estimate range selectivity using histogram
-    fn estimate_range_selectivity(&self, histogram: &Histogram, operator: &str, value: &Value) -> f64 {
+    fn estimate_range_selectivity(
+        &self,
+        histogram: &Histogram,
+        operator: &str,
+        value: &Value,
+    ) -> f64 {
         // Simplified implementation
         // In practice, this would analyze the histogram buckets
         // to estimate what fraction of data satisfies the condition
@@ -546,10 +586,10 @@ mod tests {
     fn test_table_statistics_update() {
         let config = OptimizerConfig::default();
         let stats_mgr = StatisticsManager::new(config);
-        
+
         stats_mgr.update_table_statistics("users").unwrap();
         assert_eq!(stats_mgr.get_table_count(), 1);
-        
+
         let table_stats = stats_mgr.get_table_statistics("users").unwrap();
         assert_eq!(table_stats.table_name, "users");
         assert!(table_stats.row_count > 0);
@@ -559,9 +599,9 @@ mod tests {
     fn test_column_statistics() {
         let config = OptimizerConfig::default();
         let stats_mgr = StatisticsManager::new(config);
-        
+
         stats_mgr.update_table_statistics("users").unwrap();
-        
+
         let column_stats = stats_mgr.get_column_statistics("users", "id").unwrap();
         assert_eq!(column_stats.column_name, "id");
         assert_eq!(column_stats.data_type, "INTEGER");
@@ -572,15 +612,10 @@ mod tests {
     fn test_selectivity_estimation() {
         let config = OptimizerConfig::default();
         let stats_mgr = StatisticsManager::new(config);
-        
+
         stats_mgr.update_table_statistics("users").unwrap();
-        
-        let selectivity = stats_mgr.estimate_selectivity(
-            "users", 
-            "id", 
-            "=", 
-            &Value::Integer(1000)
-        );
+
+        let selectivity = stats_mgr.estimate_selectivity("users", "id", "=", &Value::Integer(1000));
         assert!(selectivity > 0.0 && selectivity <= 1.0);
     }
 
@@ -588,10 +623,13 @@ mod tests {
     fn test_histogram_creation() {
         let config = OptimizerConfig::default();
         let stats_mgr = StatisticsManager::new(config);
-        
+
         let histogram = stats_mgr.create_uniform_histogram(1, 100, 10);
         assert_eq!(histogram.boundaries.len(), 11); // 10 buckets + 1
         assert_eq!(histogram.frequencies.len(), 10);
-        assert!(matches!(histogram.histogram_type, HistogramType::EqualWidth));
+        assert!(matches!(
+            histogram.histogram_type,
+            HistogramType::EqualWidth
+        ));
     }
 }

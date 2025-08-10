@@ -1,11 +1,11 @@
 //! Stress tests for Lightning DB
-//! 
+//!
 //! These tests validate the database under extreme concurrent load conditions.
 
 mod stress_testing_framework;
 
-use stress_testing_framework::{StressTestFramework, StressTestConfig, print_results};
 use std::time::Duration;
+use stress_testing_framework::{print_results, StressTestConfig, StressTestFramework};
 
 #[test]
 fn test_moderate_concurrent_load() {
@@ -22,20 +22,30 @@ fn test_moderate_concurrent_load() {
         enable_compression: true,
         transaction_size: 5,
     };
-    
+
     let framework = StressTestFramework::new(config);
     let results = framework.run();
-    
+
     print_results(&results);
-    
+
     // Assertions
-    assert_eq!(results.consistency_violations, 0, "Data consistency violations detected");
+    assert_eq!(
+        results.consistency_violations, 0,
+        "Data consistency violations detected"
+    );
     assert_eq!(results.data_races_detected, 0, "Data races detected");
     assert_eq!(results.deadlocks_detected, 0, "Deadlocks detected");
-    assert!(results.successful_operations > 0, "No successful operations");
-    
+    assert!(
+        results.successful_operations > 0,
+        "No successful operations"
+    );
+
     let success_rate = results.successful_operations as f64 / results.total_operations as f64;
-    assert!(success_rate > 0.99, "Success rate below 99%: {:.2}%", success_rate * 100.0);
+    assert!(
+        success_rate > 0.99,
+        "Success rate below 99%: {:.2}%",
+        success_rate * 100.0
+    );
 }
 
 #[test]
@@ -53,16 +63,22 @@ fn test_high_concurrency() {
         enable_compression: true,
         transaction_size: 3,
     };
-    
+
     let framework = StressTestFramework::new(config);
     let results = framework.run();
-    
+
     print_results(&results);
-    
+
     // With high concurrency, we still expect no data corruption
-    assert_eq!(results.consistency_violations, 0, "Consistency violations under high concurrency");
-    assert_eq!(results.data_races_detected, 0, "Data races under high concurrency");
-    
+    assert_eq!(
+        results.consistency_violations, 0,
+        "Consistency violations under high concurrency"
+    );
+    assert_eq!(
+        results.data_races_detected, 0,
+        "Data races under high concurrency"
+    );
+
     // Allow some transaction conflicts but no deadlocks
     assert_eq!(results.deadlocks_detected, 0, "Deadlocks detected");
 }
@@ -82,19 +98,26 @@ fn test_transaction_conflicts() {
         enable_compression: false,
         transaction_size: 10,
     };
-    
+
     let framework = StressTestFramework::new(config);
     let results = framework.run();
-    
+
     print_results(&results);
-    
+
     // Even with conflicts, no consistency violations
-    assert_eq!(results.consistency_violations, 0, "Consistency violations in transactions");
+    assert_eq!(
+        results.consistency_violations, 0,
+        "Consistency violations in transactions"
+    );
     assert_eq!(results.data_races_detected, 0, "Data races in transactions");
-    
+
     // Transaction success rate may be lower due to conflicts
     let tx_success_rate = results.successful_operations as f64 / results.total_operations as f64;
-    assert!(tx_success_rate > 0.5, "Transaction success rate too low: {:.2}%", tx_success_rate * 100.0);
+    assert!(
+        tx_success_rate > 0.5,
+        "Transaction success rate too low: {:.2}%",
+        tx_success_rate * 100.0
+    );
 }
 
 #[test]
@@ -112,15 +135,21 @@ fn test_memory_pressure() {
         enable_compression: true,
         transaction_size: 5,
     };
-    
+
     let framework = StressTestFramework::new(config);
     let results = framework.run();
-    
+
     print_results(&results);
-    
+
     // Memory pressure should not cause data corruption
-    assert_eq!(results.consistency_violations, 0, "Consistency violations under memory pressure");
-    assert!(results.successful_operations > 0, "No successful operations under memory pressure");
+    assert_eq!(
+        results.consistency_violations, 0,
+        "Consistency violations under memory pressure"
+    );
+    assert!(
+        results.successful_operations > 0,
+        "No successful operations under memory pressure"
+    );
 }
 
 #[test]
@@ -138,18 +167,25 @@ fn test_chaos_resilience() {
         enable_compression: true,
         transaction_size: 5,
     };
-    
+
     let framework = StressTestFramework::new(config);
     let results = framework.run();
-    
+
     print_results(&results);
-    
+
     // Even with chaos, maintain consistency
-    assert_eq!(results.consistency_violations, 0, "Consistency violations under chaos");
-    
+    assert_eq!(
+        results.consistency_violations, 0,
+        "Consistency violations under chaos"
+    );
+
     // Allow lower success rate under chaos but should still be reasonable
     let success_rate = results.successful_operations as f64 / results.total_operations as f64;
-    assert!(success_rate > 0.9, "Success rate too low under chaos: {:.2}%", success_rate * 100.0);
+    assert!(
+        success_rate > 0.9,
+        "Success rate too low under chaos: {:.2}%",
+        success_rate * 100.0
+    );
 }
 
 #[test]
@@ -168,18 +204,27 @@ fn test_extended_stress() {
         enable_compression: true,
         transaction_size: 10,
     };
-    
+
     let framework = StressTestFramework::new(config);
     let results = framework.run();
-    
+
     print_results(&results);
-    
+
     // Extended stress test assertions
-    assert_eq!(results.consistency_violations, 0, "Consistency violations in extended test");
-    assert!(results.operations_per_second > 1000.0, "Performance too low in extended test");
-    
+    assert_eq!(
+        results.consistency_violations, 0,
+        "Consistency violations in extended test"
+    );
+    assert!(
+        results.operations_per_second > 1000.0,
+        "Performance too low in extended test"
+    );
+
     let success_rate = results.successful_operations as f64 / results.total_operations as f64;
-    assert!(success_rate > 0.95, "Success rate below 95% in extended test");
+    assert!(
+        success_rate > 0.95,
+        "Success rate below 95% in extended test"
+    );
 }
 
 #[test]
@@ -198,15 +243,21 @@ fn test_rapid_key_updates() {
         enable_compression: false,
         transaction_size: 0,
     };
-    
+
     let framework = StressTestFramework::new(config);
     let results = framework.run();
-    
+
     print_results(&results);
-    
+
     // High contention should not cause consistency issues
-    assert_eq!(results.consistency_violations, 0, "Consistency violations with rapid updates");
-    assert_eq!(results.data_races_detected, 0, "Data races with rapid updates");
+    assert_eq!(
+        results.consistency_violations, 0,
+        "Consistency violations with rapid updates"
+    );
+    assert_eq!(
+        results.data_races_detected, 0,
+        "Data races with rapid updates"
+    );
 }
 
 // Helper test to verify the stress testing framework itself
@@ -226,13 +277,22 @@ fn test_stress_framework_sanity() {
         enable_compression: false,
         transaction_size: 0,
     };
-    
+
     let framework = StressTestFramework::new(config);
     let results = framework.run();
-    
+
     // Basic sanity checks
     assert!(results.total_operations > 0, "No operations performed");
-    assert!(results.successful_operations > 0, "No successful operations");
-    assert!(results.average_latency_us > 0.0, "Invalid latency measurement");
-    assert!(results.operations_per_second > 0.0, "Invalid throughput measurement");
+    assert!(
+        results.successful_operations > 0,
+        "No successful operations"
+    );
+    assert!(
+        results.average_latency_us > 0.0,
+        "Invalid latency measurement"
+    );
+    assert!(
+        results.operations_per_second > 0.0,
+        "Invalid throughput measurement"
+    );
 }

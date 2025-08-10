@@ -1,0 +1,140 @@
+# cargo-deny configuration for Lightning DB
+# This file configures cargo-deny to check for security, license, and supply chain issues
+
+[graph]
+# All features enabled by default for comprehensive analysis
+all-features = true
+# Exclude target dependencies that aren't relevant for runtime security
+exclude = []
+
+[advisories]
+# Advisory database configuration
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/RustSec/advisory-db"]
+
+# How to handle security vulnerabilities
+vulnerability = "deny"
+# How to handle unmaintained crates (warning only for now)
+unmaintained = "warn"
+# How to handle yanked crates (critical for supply chain security)
+yanked = "deny"
+# How to handle informational notices
+notice = "warn"
+
+# Specific advisories to ignore (with justification)
+ignore = [
+    # Example: Ignore specific advisory if false positive
+    # "RUSTSEC-2020-0001", # False positive for our use case
+]
+
+# Severity threshold for failing the check
+severity-threshold = "medium"
+
+[licenses]
+# License configuration
+unlicensed = "deny"
+allow-osi-fsf-free = "neither"
+default = "deny"
+confidence-threshold = 0.8
+
+# Allowed licenses (permissive and widely compatible)
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Unlicense",
+    "MPL-2.0",        # Mozilla Public License (weak copyleft)
+    "0BSD",           # BSD Zero Clause License
+    "Zlib",           # Zlib License
+]
+
+# Explicitly denied licenses (strong copyleft)
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-1.0",
+    "AGPL-3.0",
+    "LGPL-2.0",
+    "LGPL-2.1",
+    "LGPL-3.0",
+    "EUPL-1.0",
+    "EUPL-1.1",
+    "EUPL-1.2",
+]
+
+# How to handle copyleft licenses not explicitly denied
+copyleft = "warn"
+
+# License exceptions for specific crates
+[[licenses.exceptions]]
+allow = ["Unicode-DFS-2016"]
+name = "unicode-ident"
+version = "*"
+
+[bans]
+# Multiple versions of the same crate
+multiple-versions = "warn"
+# Allow wildcards in version requirements
+wildcards = "allow"
+# Highlight all duplicate dependencies
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+
+# Specific crates to deny (security reasons)
+deny = [
+    # Example security-problematic crates
+    { name = "openssl", version = "*" },      # Use rustls instead
+    { name = "native-tls", version = "*" },   # Use rustls instead
+    
+    # Crates with known security issues (examples)
+    # { name = "vulnerable-crate", version = "<1.0" },
+]
+
+# Crates to allow despite being in deny list (with justification)
+allow = [
+    # { name = "openssl", version = "0.10.64" },  # Required by specific dependency
+]
+
+# Skip certain crates from analysis
+skip = [
+    # Development and testing crates that don't affect runtime security
+    { name = "proc-macro2", version = "*" },
+]
+
+# Skip entire dependency trees
+skip-tree = [
+    # Skip build dependencies
+    { name = "prost-build", version = "*" },
+]
+
+[sources]
+# Source configuration for supply chain security
+unknown-registry = "warn"
+unknown-git = "warn"
+
+# Only allow crates from the official registry
+allow-registry = [
+    "https://github.com/rust-lang/crates.io-index"
+]
+
+# Allow specific git sources if needed
+allow-git = [
+    # Example: Allow specific git repositories
+    # "https://github.com/trusted-org/trusted-repo",
+]
+
+# Sources to explicitly deny
+deny-git = [
+    # Deny any known problematic sources
+]
+
+# Sources to explicitly deny
+deny-registry = [
+    # Deny any known problematic registries
+]

@@ -5,9 +5,12 @@
 
 use crate::{Database, Error, Result};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
-use std::time::{Duration, Instant, SystemTime};
 use std::collections::HashMap;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+};
+use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
 
 /// Health status levels
@@ -160,10 +163,10 @@ impl Default for HealthThresholds {
         Self {
             healthy_latency_us: 1000,      // 1ms
             degraded_latency_us: 10000,    // 10ms
-            healthy_cache_hit_rate: 0.8,    // 80%
-            healthy_error_rate: 0.01,       // 1%
-            max_memory_usage_percent: 0.9,  // 90%
-            max_disk_usage_percent: 0.85,   // 85%
+            healthy_cache_hit_rate: 0.8,   // 80%
+            healthy_error_rate: 0.01,      // 1%
+            max_memory_usage_percent: 0.9, // 90%
+            max_disk_usage_percent: 0.85,  // 85%
         }
     }
 }
@@ -204,18 +207,18 @@ impl HealthCheckSystem {
         tokio::spawn(async move {
             while running.load(Ordering::SeqCst) {
                 let start = Instant::now();
-                
+
                 // Perform health check
                 let result = Self::perform_health_check(&db, &config).await;
-                
+
                 // Update last result
                 if let Ok(result) = result {
                     let mut last = last_result.write().await;
                     *last = Some(result);
                 }
-                
+
                 check_count.fetch_add(1, Ordering::Relaxed);
-                
+
                 // Wait for next interval
                 let elapsed = start.elapsed();
                 if elapsed < config.interval {
@@ -249,7 +252,7 @@ impl HealthCheckSystem {
     ) -> Result<HealthCheckResult> {
         let mut components = HashMap::new();
         let mut issues = Vec::new();
-        let start = Instant::now();
+        let _start = Instant::now();
 
         // Check storage health
         let storage_health = Self::check_storage_health(db, config).await?;
@@ -280,7 +283,8 @@ impl HealthCheckSystem {
         let metrics = Self::collect_metrics(db).await?;
 
         // Determine overall status
-        let overall_status = Self::determine_overall_status(&components, &metrics, &config.thresholds);
+        let overall_status =
+            Self::determine_overall_status(&components, &metrics, &config.thresholds);
 
         // Version info
         let version = VersionInfo {
@@ -305,14 +309,14 @@ impl HealthCheckSystem {
         db: &Arc<Database>,
         config: &HealthCheckConfig,
     ) -> Result<ComponentHealth> {
-        let start = Instant::now();
+        let _start = Instant::now();
         let mut details = HashMap::new();
         let mut status = HealthStatus::Healthy;
 
         // Check disk space
         let stats = db.get_storage_stats()?;
         let disk_usage_percent = stats.used_bytes as f64 / stats.total_bytes as f64;
-        
+
         details.insert(
             "disk_usage_percent".to_string(),
             serde_json::json!(disk_usage_percent * 100.0),
@@ -332,7 +336,7 @@ impl HealthCheckSystem {
         if config.detailed {
             let test_key = b"__health_check_test__";
             let test_value = b"test";
-            
+
             match db.put(test_key, test_value) {
                 Ok(_) => {
                     // Clean up test key
@@ -341,7 +345,10 @@ impl HealthCheckSystem {
                 }
                 Err(e) => {
                     status = HealthStatus::Critical;
-                    details.insert("write_test".to_string(), serde_json::json!(format!("failed: {}", e)));
+                    details.insert(
+                        "write_test".to_string(),
+                        serde_json::json!(format!("failed: {}", e)),
+                    );
                 }
             }
         }
@@ -364,10 +371,16 @@ impl HealthCheckSystem {
 
         let cache_stats = db.get_cache_stats()?;
         let hit_rate = cache_stats.hits as f64 / (cache_stats.hits + cache_stats.misses) as f64;
-        
+
         details.insert("hit_rate".to_string(), serde_json::json!(hit_rate));
-        details.insert("size_bytes".to_string(), serde_json::json!(cache_stats.size_bytes));
-        details.insert("entry_count".to_string(), serde_json::json!(cache_stats.entry_count));
+        details.insert(
+            "size_bytes".to_string(),
+            serde_json::json!(cache_stats.size_bytes),
+        );
+        details.insert(
+            "entry_count".to_string(),
+            serde_json::json!(cache_stats.entry_count),
+        );
 
         if hit_rate < config.thresholds.healthy_cache_hit_rate {
             status = HealthStatus::Degraded;
@@ -390,18 +403,34 @@ impl HealthCheckSystem {
         let status = HealthStatus::Healthy;
 
         let tx_stats = db.get_transaction_stats()?;
-        
-        details.insert("active_transactions".to_string(), serde_json::json!(tx_stats.active));
-        details.insert("total_commits".to_string(), serde_json::json!(tx_stats.commits));
-        details.insert("total_rollbacks".to_string(), serde_json::json!(tx_stats.rollbacks));
-        details.insert("conflicts".to_string(), serde_json::json!(tx_stats.conflicts));
+
+        details.insert(
+            "active_transactions".to_string(),
+            serde_json::json!(tx_stats.active),
+        );
+        details.insert(
+            "total_commits".to_string(),
+            serde_json::json!(tx_stats.commits),
+        );
+        details.insert(
+            "total_rollbacks".to_string(),
+            serde_json::json!(tx_stats.rollbacks),
+        );
+        details.insert(
+            "conflicts".to_string(),
+            serde_json::json!(tx_stats.conflicts),
+        );
 
         // Test transaction capability
         if config.detailed {
             let test_result = db.test_transaction().await;
             details.insert(
                 "transaction_test".to_string(),
-                serde_json::json!(if test_result.is_ok() { "passed" } else { "failed" }),
+                serde_json::json!(if test_result.is_ok() {
+                    "passed"
+                } else {
+                    "failed"
+                }),
             );
         }
 
@@ -426,7 +455,7 @@ impl HealthCheckSystem {
         let test_key = b"__perf_check__";
         db.get(test_key)?;
         let latency_us = start.elapsed().as_micros() as u64;
-        
+
         details.insert("read_latency_us".to_string(), serde_json::json!(latency_us));
 
         if latency_us > config.thresholds.degraded_latency_us {
@@ -447,7 +476,7 @@ impl HealthCheckSystem {
     async fn collect_metrics(db: &Arc<Database>) -> Result<HealthMetrics> {
         let stats = db.get_stats()?;
         let perf_stats = db.get_performance_stats()?;
-        
+
         Ok(HealthMetrics {
             ops_per_second: perf_stats.operations_per_second,
             avg_latency_us: perf_stats.average_latency_us,
@@ -524,7 +553,7 @@ pub mod http {
     /// Convert health check result to HTTP response
     pub fn to_http_response(result: &HealthCheckResult, include_details: bool) -> HealthResponse {
         let mut checks = HashMap::new();
-        
+
         for (name, component) in &result.components {
             checks.insert(
                 name.clone(),
@@ -569,9 +598,10 @@ pub mod http {
                 let response = to_http_response(&result, false);
                 (status_code, serde_json::to_string(&response).unwrap())
             }
-            Err(e) => {
-                (503, json!({"status": "error", "message": e.to_string()}).to_string())
-            }
+            Err(e) => (
+                503,
+                json!({"status": "error", "message": e.to_string()}).to_string(),
+            ),
         }
     }
 
@@ -584,11 +614,15 @@ pub mod http {
             Ok(result) => {
                 let status_code = result.status.to_http_status();
                 let response = to_http_response(&result, include_details);
-                (status_code, serde_json::to_string_pretty(&response).unwrap())
+                (
+                    status_code,
+                    serde_json::to_string_pretty(&response).unwrap(),
+                )
             }
-            Err(e) => {
-                (503, json!({"status": "error", "message": e.to_string()}).to_string())
-            }
+            Err(e) => (
+                503,
+                json!({"status": "error", "message": e.to_string()}).to_string(),
+            ),
         }
     }
 }

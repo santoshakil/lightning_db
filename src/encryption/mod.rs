@@ -13,15 +13,15 @@
 //! - Zero-copy encryption where possible
 
 use crate::Result;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::SystemTime;
-use serde::{Serialize, Deserialize};
 use zeroize::Zeroize;
 
 pub mod key_manager;
+pub mod key_rotation;
 pub mod page_encryptor;
 pub mod wal_encryptor;
-pub mod key_rotation;
 
 /// Configuration for encryption
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,7 +57,9 @@ impl Default for EncryptionConfig {
 }
 
 /// Supported encryption algorithms
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, bincode::Encode, bincode::Decode)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, bincode::Encode, bincode::Decode,
+)]
 pub enum EncryptionAlgorithm {
     /// AES-256 in GCM mode (authenticated encryption)
     Aes256Gcm,
@@ -66,7 +68,9 @@ pub enum EncryptionAlgorithm {
 }
 
 /// Key derivation functions
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, bincode::Encode, bincode::Decode)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, bincode::Encode, bincode::Decode,
+)]
 pub enum KeyDerivationFunction {
     /// Argon2id - memory-hard, resistant to side-channel attacks
     Argon2id,
@@ -163,10 +167,10 @@ impl EncryptionManager {
         }
 
         self.key_manager.initialize_master_key(master_key)?;
-        
+
         // Generate initial data encryption key
         self.key_manager.generate_data_key()?;
-        
+
         Ok(())
     }
 
@@ -264,12 +268,12 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
-    
+
     let mut result = 0u8;
     for (byte_a, byte_b) in a.iter().zip(b.iter()) {
         result |= byte_a ^ byte_b;
     }
-    
+
     result == 0
 }
 
@@ -289,7 +293,7 @@ mod tests {
     fn test_generate_nonce() {
         let nonce1 = generate_nonce(12);
         let nonce2 = generate_nonce(12);
-        
+
         assert_eq!(nonce1.len(), 12);
         assert_eq!(nonce2.len(), 12);
         assert_ne!(nonce1, nonce2); // Should be different
@@ -300,7 +304,7 @@ mod tests {
         let a = b"hello world";
         let b = b"hello world";
         let c = b"hello worlD";
-        
+
         assert!(constant_time_eq(a, b));
         assert!(!constant_time_eq(a, c));
         assert!(!constant_time_eq(&a[..5], a)); // Different lengths

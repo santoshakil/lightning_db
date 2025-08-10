@@ -3,14 +3,14 @@
 //! Tracks I/O operations, latency, and throughput to identify I/O bottlenecks
 //! and optimize disk access patterns in Lightning DB.
 
-use std::sync::{Arc, Mutex, RwLock};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::thread;
-use std::path::Path;
 use std::fs::File;
-use std::io::{Write, BufWriter};
-use serde::{Serialize, Deserialize};
+use std::io::{BufWriter, Write};
+use std::path::Path;
+use std::sync::{Arc, Mutex, RwLock};
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info};
 
 /// I/O profiler that tracks file system operations
@@ -141,12 +141,13 @@ impl IoProfiler {
     pub fn start(&self) -> Result<(), super::ProfilingError> {
         if self.active.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(super::ProfilingError::IoProfilerError(
-                "I/O profiler already active".to_string()
+                "I/O profiler already active".to_string(),
             ));
         }
 
         info!("Starting I/O profiler");
-        self.active.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.active
+            .store(true, std::sync::atomic::Ordering::Relaxed);
 
         // Clear previous data
         {
@@ -157,10 +158,13 @@ impl IoProfiler {
             let mut stats = self.operation_stats.write().unwrap();
             stats.clear();
         }
-        
-        self.total_operations.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.total_bytes_read.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.total_bytes_written.store(0, std::sync::atomic::Ordering::Relaxed);
+
+        self.total_operations
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.total_bytes_read
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.total_bytes_written
+            .store(0, std::sync::atomic::Ordering::Relaxed);
 
         // Start monitoring thread
         let active = self.active.clone();
@@ -182,9 +186,12 @@ impl IoProfiler {
                     total_bytes_written,
                 );
             })
-            .map_err(|e| super::ProfilingError::IoProfilerError(
-                format!("Failed to start profiler thread: {}", e)
-            ))?;
+            .map_err(|e| {
+                super::ProfilingError::IoProfilerError(format!(
+                    "Failed to start profiler thread: {}",
+                    e
+                ))
+            })?;
 
         Ok(())
     }
@@ -193,21 +200,30 @@ impl IoProfiler {
     pub fn stop(&self) -> Result<(), super::ProfilingError> {
         if !self.active.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(super::ProfilingError::IoProfilerError(
-                "I/O profiler not active".to_string()
+                "I/O profiler not active".to_string(),
             ));
         }
 
         info!("Stopping I/O profiler");
-        self.active.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.active
+            .store(false, std::sync::atomic::Ordering::Relaxed);
 
         // Wait for monitoring thread to finish
         thread::sleep(Duration::from_millis(100));
 
-        let total = self.total_operations.load(std::sync::atomic::Ordering::Relaxed);
-        let read_bytes = self.total_bytes_read.load(std::sync::atomic::Ordering::Relaxed);
-        let write_bytes = self.total_bytes_written.load(std::sync::atomic::Ordering::Relaxed);
-        info!("I/O profiler stopped. Tracked {} operations, {} bytes read, {} bytes written", 
-              total, read_bytes, write_bytes);
+        let total = self
+            .total_operations
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let read_bytes = self
+            .total_bytes_read
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let write_bytes = self
+            .total_bytes_written
+            .load(std::sync::atomic::Ordering::Relaxed);
+        info!(
+            "I/O profiler stopped. Tracked {} operations, {} bytes read, {} bytes written",
+            total, read_bytes, write_bytes
+        );
 
         Ok(())
     }
@@ -216,25 +232,31 @@ impl IoProfiler {
     pub fn export_profile(&self, path: &Path) -> Result<(), super::ProfilingError> {
         let operations = self.operations.lock().unwrap();
         let operation_stats = self.operation_stats.read().unwrap();
-        
+
         let profile_data = IoProfileData {
             total_operations: operations.len() as u64,
-            total_bytes_read: self.total_bytes_read.load(std::sync::atomic::Ordering::Relaxed),
-            total_bytes_written: self.total_bytes_written.load(std::sync::atomic::Ordering::Relaxed),
+            total_bytes_read: self
+                .total_bytes_read
+                .load(std::sync::atomic::Ordering::Relaxed),
+            total_bytes_written: self
+                .total_bytes_written
+                .load(std::sync::atomic::Ordering::Relaxed),
             operations: operations.clone(),
             operation_stats: operation_stats.clone(),
             statistics: self.calculate_statistics(&operations, &operation_stats),
         };
 
-        let file = File::create(path)
-            .map_err(|e| super::ProfilingError::IoError(format!("Failed to create profile file: {}", e)))?;
+        let file = File::create(path).map_err(|e| {
+            super::ProfilingError::IoError(format!("Failed to create profile file: {}", e))
+        })?;
         let mut writer = BufWriter::new(file);
-        
+
         serde_json::to_writer_pretty(&mut writer, &profile_data)
             .map_err(|e| super::ProfilingError::SerializationError(e.to_string()))?;
-        
-        writer.flush()
-            .map_err(|e| super::ProfilingError::IoError(format!("Failed to write profile: {}", e)))?;
+
+        writer.flush().map_err(|e| {
+            super::ProfilingError::IoError(format!("Failed to write profile: {}", e))
+        })?;
 
         info!("I/O profile exported to: {}", path.display());
         Ok(())
@@ -257,7 +279,7 @@ impl IoProfiler {
         total_bytes_written: Arc<std::sync::atomic::AtomicU64>,
     ) {
         debug!("I/O profiler monitoring loop started");
-        
+
         while active.load(std::sync::atomic::Ordering::Relaxed) {
             // Simulate I/O operation detection
             if let Some(io_ops) = Self::collect_io_operations() {
@@ -276,7 +298,7 @@ impl IoProfiler {
             // Sleep for monitoring interval
             thread::sleep(Duration::from_millis(50));
         }
-        
+
         debug!("I/O profiler monitoring loop ended");
     }
 
@@ -290,21 +312,22 @@ impl IoProfiler {
         // Use a hash of the thread ID as a stable thread ID
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         std::thread::current().id().hash(&mut hasher);
         let thread_id = hasher.finish();
-        
+
         let mut operations = Vec::new();
-        
+
         // Simulate various I/O patterns
-        if fastrand::f64() < 0.4 { // 40% chance of read operation
+        if fastrand::f64() < 0.4 {
+            // 40% chance of read operation
             operations.push(IoOperation {
                 timestamp,
                 thread_id,
                 operation_type: IoOperationType::Read,
                 file_path: Self::generate_file_path(),
-                offset: fastrand::u64(0..1024*1024),
+                offset: fastrand::u64(0..1024 * 1024),
                 size: Self::generate_io_size(),
                 duration: Self::generate_io_latency(IoOperationType::Read),
                 result: Self::generate_io_result(),
@@ -312,13 +335,14 @@ impl IoProfiler {
             });
         }
 
-        if fastrand::f64() < 0.3 { // 30% chance of write operation
+        if fastrand::f64() < 0.3 {
+            // 30% chance of write operation
             operations.push(IoOperation {
                 timestamp,
                 thread_id,
                 operation_type: IoOperationType::Write,
                 file_path: Self::generate_file_path(),
-                offset: fastrand::u64(0..1024*1024),
+                offset: fastrand::u64(0..1024 * 1024),
                 size: Self::generate_io_size(),
                 duration: Self::generate_io_latency(IoOperationType::Write),
                 result: Self::generate_io_result(),
@@ -326,7 +350,8 @@ impl IoProfiler {
             });
         }
 
-        if fastrand::f64() < 0.1 { // 10% chance of other operations
+        if fastrand::f64() < 0.1 {
+            // 10% chance of other operations
             let op_type = match fastrand::u32(0..6) {
                 0 => IoOperationType::Seek,
                 1 => IoOperationType::Flush,
@@ -342,7 +367,17 @@ impl IoProfiler {
                 operation_type: op_type.clone(),
                 file_path: Self::generate_file_path(),
                 offset: 0,
-                size: if matches!(op_type, IoOperationType::Seek | IoOperationType::Open | IoOperationType::Close | IoOperationType::Delete) { 0 } else { Self::generate_io_size() },
+                size: if matches!(
+                    op_type,
+                    IoOperationType::Seek
+                        | IoOperationType::Open
+                        | IoOperationType::Close
+                        | IoOperationType::Delete
+                ) {
+                    0
+                } else {
+                    Self::generate_io_size()
+                },
                 duration: Self::generate_io_latency(op_type),
                 result: Self::generate_io_result(),
                 stack_trace: Self::generate_io_stack_trace(),
@@ -365,14 +400,14 @@ impl IoProfiler {
             "/tmp/lightning_db/metadata.meta",
             "/tmp/lightning_db/cache.cache",
         ];
-        
+
         paths[fastrand::usize(0..paths.len())].to_string()
     }
 
     /// Generate realistic I/O sizes
     fn generate_io_size() -> u64 {
         let pattern = fastrand::f64();
-        
+
         if pattern < 0.5 {
             // Small I/O (< 4KB) - common for metadata
             fastrand::u64(64..4096)
@@ -393,7 +428,7 @@ impl IoProfiler {
         let base_latency = match op_type {
             IoOperationType::Read => fastrand::u64(50..2000), // 50µs - 2ms
             IoOperationType::Write => fastrand::u64(100..5000), // 100µs - 5ms
-            IoOperationType::Seek => fastrand::u64(10..500), // 10µs - 500µs
+            IoOperationType::Seek => fastrand::u64(10..500),  // 10µs - 500µs
             IoOperationType::Flush => fastrand::u64(1000..10000), // 1ms - 10ms
             IoOperationType::Sync => fastrand::u64(5000..50000), // 5ms - 50ms
             IoOperationType::Open => fastrand::u64(100..1000), // 100µs - 1ms
@@ -409,7 +444,7 @@ impl IoProfiler {
     /// Generate I/O operation results
     fn generate_io_result() -> IoResult {
         let success_rate = 0.98; // 98% success rate
-        
+
         if fastrand::f64() < success_rate {
             IoResult::Success
         } else if fastrand::f64() < 0.7 {
@@ -423,32 +458,63 @@ impl IoProfiler {
     fn generate_io_stack_trace() -> Vec<StackFrame> {
         let patterns = [
             vec![
-                ("lightning_db::storage::write_page", "lightning_db", "src/storage/page_manager.rs", 234),
-                ("lightning_db::btree::flush_nodes", "lightning_db", "src/btree/mod.rs", 567),
+                (
+                    "lightning_db::storage::write_page",
+                    "lightning_db",
+                    "src/storage/page_manager.rs",
+                    234,
+                ),
+                (
+                    "lightning_db::btree::flush_nodes",
+                    "lightning_db",
+                    "src/btree/mod.rs",
+                    567,
+                ),
                 ("std::fs::File::write", "std", "fs.rs", 1234),
             ],
             vec![
-                ("lightning_db::storage::read_page", "lightning_db", "src/storage/page_manager.rs", 156),
-                ("lightning_db::cache::load_page", "lightning_db", "src/cache/mod.rs", 289),
+                (
+                    "lightning_db::storage::read_page",
+                    "lightning_db",
+                    "src/storage/page_manager.rs",
+                    156,
+                ),
+                (
+                    "lightning_db::cache::load_page",
+                    "lightning_db",
+                    "src/cache/mod.rs",
+                    289,
+                ),
                 ("std::fs::File::read", "std", "fs.rs", 890),
             ],
             vec![
-                ("lightning_db::wal::append_entry", "lightning_db", "src/wal/mod.rs", 345),
-                ("lightning_db::wal::flush_buffer", "lightning_db", "src/wal/buffer.rs", 123),
+                (
+                    "lightning_db::wal::append_entry",
+                    "lightning_db",
+                    "src/wal/mod.rs",
+                    345,
+                ),
+                (
+                    "lightning_db::wal::flush_buffer",
+                    "lightning_db",
+                    "src/wal/buffer.rs",
+                    123,
+                ),
                 ("std::fs::File::sync_all", "std", "fs.rs", 2345),
             ],
         ];
 
         let pattern = &patterns[fastrand::usize(0..patterns.len())];
-        
-        pattern.iter().map(|(func, module, file, line)| {
-            StackFrame {
+
+        pattern
+            .iter()
+            .map(|(func, module, file, line)| StackFrame {
                 function_name: func.to_string(),
                 module_name: module.to_string(),
                 file_name: Some(file.to_string()),
                 line_number: Some(*line),
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     /// Process a single I/O operation
@@ -462,7 +528,7 @@ impl IoProfiler {
     ) {
         // Update counters
         total_operations.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+
         match operation.operation_type {
             IoOperationType::Read => {
                 total_bytes_read.fetch_add(operation.size, std::sync::atomic::Ordering::Relaxed);
@@ -477,7 +543,7 @@ impl IoProfiler {
         {
             let mut operations_guard = operations.lock().unwrap();
             operations_guard.push(operation.clone());
-            
+
             // Limit memory usage
             if operations_guard.len() > 50_000 {
                 operations_guard.drain(..5_000);
@@ -526,10 +592,18 @@ impl IoProfiler {
     }
 
     /// Calculate I/O profiling statistics
-    fn calculate_statistics(&self, operations: &[IoOperation], operation_stats: &HashMap<String, IoOperationStats>) -> IoProfilingStats {
+    fn calculate_statistics(
+        &self,
+        operations: &[IoOperation],
+        operation_stats: &HashMap<String, IoOperationStats>,
+    ) -> IoProfilingStats {
         let total_operations = operations.len() as u64;
-        let total_bytes_read = self.total_bytes_read.load(std::sync::atomic::Ordering::Relaxed);
-        let total_bytes_written = self.total_bytes_written.load(std::sync::atomic::Ordering::Relaxed);
+        let total_bytes_read = self
+            .total_bytes_read
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let total_bytes_written = self
+            .total_bytes_written
+            .load(std::sync::atomic::Ordering::Relaxed);
 
         // Calculate duration and throughput
         let mut duration_secs = 1f64; // Avoid division by zero
@@ -543,31 +617,38 @@ impl IoProfiler {
         let write_throughput = total_bytes_written as f64 / duration_secs;
 
         // Calculate average latencies
-        let read_operations: Vec<_> = operations.iter()
+        let read_operations: Vec<_> = operations
+            .iter()
             .filter(|op| matches!(op.operation_type, IoOperationType::Read))
             .collect();
-        let write_operations: Vec<_> = operations.iter()
+        let write_operations: Vec<_> = operations
+            .iter()
             .filter(|op| matches!(op.operation_type, IoOperationType::Write))
             .collect();
 
         let avg_read_latency = if read_operations.is_empty() {
             Duration::ZERO
         } else {
-            read_operations.iter()
+            read_operations
+                .iter()
                 .map(|op| op.duration)
-                .sum::<Duration>() / read_operations.len() as u32
+                .sum::<Duration>()
+                / read_operations.len() as u32
         };
 
         let avg_write_latency = if write_operations.is_empty() {
             Duration::ZERO
         } else {
-            write_operations.iter()
+            write_operations
+                .iter()
                 .map(|op| op.duration)
-                .sum::<Duration>() / write_operations.len() as u32
+                .sum::<Duration>()
+                / write_operations.len() as u32
         };
 
         // Calculate error rate
-        let error_count = operations.iter()
+        let error_count = operations
+            .iter()
             .filter(|op| !matches!(op.result, IoResult::Success))
             .count();
         let error_rate = if total_operations == 0 {
@@ -608,9 +689,9 @@ impl IoProfiler {
                     BottleneckSeverity::None
                 };
 
-                let impact_score = (stats.avg_latency.as_millis() as f64) * 
-                                  (stats.operation_count as f64) * 
-                                  (1.0 + stats.error_rate / 100.0);
+                let impact_score = (stats.avg_latency.as_millis() as f64)
+                    * (stats.operation_count as f64)
+                    * (1.0 + stats.error_rate / 100.0);
 
                 IoBottleneck {
                     operation_type,
@@ -649,19 +730,29 @@ impl IoProfiler {
         let mut recommendations = Vec::new();
 
         if stats.avg_latency > Duration::from_millis(50) {
-            recommendations.push("Consider using asynchronous I/O for better concurrency".to_string());
+            recommendations
+                .push("Consider using asynchronous I/O for better concurrency".to_string());
         }
 
         if stats.error_rate > 5.0 {
-            recommendations.push("High error rate detected - check file permissions and disk health".to_string());
+            recommendations.push(
+                "High error rate detected - check file permissions and disk health".to_string(),
+            );
         }
 
-        if stats.throughput_bytes_per_sec < 10.0 * 1024.0 * 1024.0 { // < 10 MB/s
-            recommendations.push("Low throughput detected - consider I/O batching or larger buffer sizes".to_string());
+        if stats.throughput_bytes_per_sec < 10.0 * 1024.0 * 1024.0 {
+            // < 10 MB/s
+            recommendations.push(
+                "Low throughput detected - consider I/O batching or larger buffer sizes"
+                    .to_string(),
+            );
         }
 
         if stats.operation_count > 10000 && stats.total_bytes / stats.operation_count < 4096 {
-            recommendations.push("Many small I/O operations detected - consider combining into larger operations".to_string());
+            recommendations.push(
+                "Many small I/O operations detected - consider combining into larger operations"
+                    .to_string(),
+            );
         }
 
         recommendations
@@ -683,39 +774,39 @@ struct IoProfileData {
 pub fn analyze_io_profile(profile_path: &Path) -> Result<Vec<IoBottleneck>, super::ProfilingError> {
     let content = std::fs::read_to_string(profile_path)
         .map_err(|e| super::ProfilingError::IoError(format!("Failed to read profile: {}", e)))?;
-    
+
     let profile_data: IoProfileData = serde_json::from_str(&content)
         .map_err(|e| super::ProfilingError::SerializationError(e.to_string()))?;
-    
+
     Ok(profile_data.statistics.top_bottlenecks)
 }
 
 /// Fast random number generation for simulation
 mod fastrand {
     use std::sync::atomic::{AtomicU64, Ordering};
-    
+
     static STATE: AtomicU64 = AtomicU64::new(1);
-    
+
     pub fn f64() -> f64 {
         let mut x = STATE.load(Ordering::Relaxed);
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         STATE.store(x, Ordering::Relaxed);
-        
+
         (x as f64) / (u64::MAX as f64)
     }
-    
+
     pub fn u64(range: std::ops::Range<u64>) -> u64 {
         let mut x = STATE.load(Ordering::Relaxed);
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         STATE.store(x, Ordering::Relaxed);
-        
+
         range.start + (x % (range.end - range.start))
     }
-    
+
     pub fn usize(range: std::ops::Range<usize>) -> usize {
         u64(range.start as u64..range.end as u64) as usize
     }
@@ -768,7 +859,7 @@ mod tests {
         let stack = IoProfiler::generate_io_stack_trace();
         assert!(!stack.is_empty());
         assert!(stack.len() <= 10);
-        
+
         for frame in &stack {
             assert!(!frame.function_name.is_empty());
             assert!(!frame.module_name.is_empty());
@@ -779,9 +870,9 @@ mod tests {
     fn test_profile_export() {
         let temp_dir = TempDir::new().unwrap();
         let profile_path = temp_dir.path().join("io_profile.json");
-        
+
         let profiler = IoProfiler::new().unwrap();
-        
+
         // Add some mock operations
         {
             let mut operations = profiler.operations.lock().unwrap();
@@ -797,10 +888,10 @@ mod tests {
                 stack_trace: vec![],
             });
         }
-        
+
         profiler.export_profile(&profile_path).unwrap();
         assert!(profile_path.exists());
-        
+
         // Verify we can read it back
         let content = std::fs::read_to_string(&profile_path).unwrap();
         let _: IoProfileData = serde_json::from_str(&content).unwrap();

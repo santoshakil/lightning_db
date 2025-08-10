@@ -1,25 +1,27 @@
 mod delete;
 mod iterator;
+pub mod integrity_validation;
 pub mod lock_free_btree;
 pub mod node;
-mod split_handler;
 pub mod simple_btree;
+mod split_handler;
 #[cfg(test)]
 mod test_utils;
 
 pub use iterator::BTreeLeafIterator;
+pub use integrity_validation::{BTreeIntegrityValidator, TreeConsistencyReport, btree_validators};
 pub use simple_btree::SimpleBTree;
 
 use crate::error::{Error, Result};
 #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
 use crate::simd::key_compare::simd_compare_keys;
-use crate::storage::{Page, PageManager, PageManagerWrapper};
 use crate::storage::page::PAGE_SIZE;
+use crate::storage::{Page, PageManager, PageManagerWrapper};
 use parking_lot::RwLock;
 use split_handler::SplitHandler;
+use std::cell::UnsafeCell;
 use std::cmp::Ordering;
 use std::sync::Arc;
-use std::cell::UnsafeCell;
 
 pub use node::*;
 
@@ -231,7 +233,11 @@ impl BPlusTree {
                 if child_index < node.children.len() {
                     Ok(node.children[child_index])
                 } else {
-                    Err(Error::Index(format!("Invalid child index: {} >= {}", child_index, node.children.len())))
+                    Err(Error::Index(format!(
+                        "Invalid child index: {} >= {}",
+                        child_index,
+                        node.children.len()
+                    )))
                 }
             }
             NodeType::Leaf => Err(Error::Index("Cannot find child in leaf node".to_string())),
@@ -280,7 +286,7 @@ impl BPlusTree {
 
         // Insert new entry
         leaf_node.entries.insert(insert_pos, entry.clone());
-        
+
         // Check if we can serialize the node
         let mut test_page = Page::new(leaf_page_id);
         match leaf_node.serialize_to_page(&mut test_page) {
@@ -292,7 +298,7 @@ impl BPlusTree {
             Err(Error::PageOverflow) => {
                 // Node doesn't fit, need to split
                 let split_result = self.split_leaf_node(&mut leaf_node, leaf_page_id)?;
-                
+
                 // Handle propagation of split up the tree
                 if let Some((split_key, new_page_id)) = split_result {
                     self.propagate_split(path, split_key, new_page_id)
@@ -312,33 +318,33 @@ impl BPlusTree {
         // Find optimal split point based on actual sizes
         let mut split_pos = node.entries.len() / 2;
         let mut left_size = 64; // Base node overhead
-        
+
         // Calculate split position to ensure both halves fit in pages
         for (i, entry) in node.entries.iter().enumerate() {
             let entry_size = 8 + entry.key.len() + entry.value.len() + 8;
             left_size += entry_size;
-            
+
             // If left side is getting close to page limit, split here
             if left_size > PAGE_SIZE / 2 && i > 0 {
                 split_pos = i;
                 break;
             }
         }
-        
+
         // Ensure we have at least one entry on each side
         if split_pos == 0 {
             split_pos = 1;
         } else if split_pos >= node.entries.len() {
             split_pos = node.entries.len() - 1;
         }
-        
+
         let right_entries = node.entries.split_off(split_pos);
-        
+
         // If right_entries is empty, we have a single huge entry that can't be split
         if right_entries.is_empty() {
             return Err(Error::PageOverflow);
         }
-        
+
         let split_key = right_entries[0].key.clone();
 
         // Create new right node
@@ -441,7 +447,7 @@ impl BPlusTree {
     pub fn root_page_id(&self) -> u32 {
         unsafe { *self.root_page_id.get() }
     }
-    
+
     /// Get root page ID (compatible with Database interface)
     pub fn get_root_page_id(&self) -> u64 {
         unsafe { *self.root_page_id.get() as u64 }
@@ -455,7 +461,7 @@ impl BPlusTree {
         // For now, return basic stats
         // TODO: Track free pages and actual page count properly
         crate::DatabaseStats {
-            page_count: 0, // TODO: Implement proper page counting
+            page_count: 0,      // TODO: Implement proper page counting
             free_page_count: 0, // TODO: Track this
             tree_height: self.height(),
             active_transactions: 0, // This is tracked elsewhere

@@ -3,17 +3,17 @@
 //! Provides streaming compression and decompression capabilities for large datasets
 //! and real-time scenarios with adaptive algorithm switching and buffer management.
 
-use crate::Result;
 use super::{
-    CompressionAlgorithm, CompressionLevel,
-    AdaptiveCompressionEngine, SelectionContext, DataType, StorageSpeed,
+    AdaptiveCompressionEngine, CompressionAlgorithm, CompressionLevel, DataType, SelectionContext,
+    StorageSpeed,
 };
-use std::io::{Read, Write, BufReader, BufWriter};
-use std::sync::Arc;
+use crate::Result;
+use parking_lot::{Mutex, RwLock};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::time::{Instant, Duration};
-use parking_lot::{RwLock, Mutex};
-use serde::{Serialize, Deserialize};
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// Streaming compression configuration
 #[derive(Debug, Clone)]
@@ -193,10 +193,7 @@ pub struct StreamingWriter<W: Write> {
 
 impl StreamingCompressor {
     /// Create a new streaming compressor
-    pub fn new(
-        config: StreamingConfig,
-        engine: Arc<AdaptiveCompressionEngine>,
-    ) -> Result<Self> {
+    pub fn new(config: StreamingConfig, engine: Arc<AdaptiveCompressionEngine>) -> Result<Self> {
         let stats = StreamingStats {
             total_input_bytes: 0,
             total_output_bytes: 0,
@@ -209,7 +206,7 @@ impl StreamingCompressor {
             start_time: std::time::SystemTime::now(),
             last_update: std::time::SystemTime::now(),
         };
-        
+
         Ok(Self {
             config,
             engine,
@@ -225,82 +222,83 @@ impl StreamingCompressor {
             data_type_detector: DataTypeDetector::new(1024), // 1KB sample
         })
     }
-    
+
     /// Write data to the compressor
     pub fn write(&mut self, data: &[u8]) -> Result<()> {
         if data.is_empty() {
             return Ok(());
         }
-        
+
         // Add data to input buffer
         {
             let mut buffer = self.input_buffer.lock();
             buffer.extend(data);
         }
-        
+
         // Update data type detector
         self.data_type_detector.process_data(data);
-        
+
         // Process chunks if buffer is large enough
         self.process_pending_chunks()?;
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write();
             stats.total_input_bytes += data.len() as u64;
             stats.last_update = std::time::SystemTime::now();
         }
-        
+
         Ok(())
     }
-    
+
     /// Read compressed data from the compressor
     pub fn read(&mut self, buffer: &mut [u8]) -> Result<usize> {
         let mut output_buffer = self.output_buffer.lock();
-        
+
         let bytes_to_read = buffer.len().min(output_buffer.len());
         if bytes_to_read == 0 {
             return Ok(0);
         }
-        
+
         for i in 0..bytes_to_read {
             buffer[i] = output_buffer.pop_front().unwrap();
         }
-        
+
         Ok(bytes_to_read)
     }
-    
+
     /// Flush all pending data
     pub fn flush(&mut self) -> Result<()> {
         // Process any remaining data in input buffer
         self.force_process_remaining()?;
-        
+
         // Process all pending chunks
         while !self.chunk_queue.lock().is_empty() {
             self.process_pending_chunks()?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Get current statistics
     pub fn stats(&self) -> StreamingStats {
         self.stats.read().clone()
     }
-    
+
     /// Process pending chunks
     fn process_pending_chunks(&mut self) -> Result<()> {
         // Check if we need to create new chunks
         self.create_chunks_from_buffer()?;
-        
+
         // Process queued chunks
         let mut processed_count = 0;
-        while processed_count < 10 { // Limit processing per call
+        while processed_count < 10 {
+            // Limit processing per call
             let chunk_data = {
                 let mut queue = self.chunk_queue.lock();
                 queue.pop_front()
             };
-            
+
             if let Some(data) = chunk_data {
                 self.process_chunk(data)?;
                 processed_count += 1;
@@ -308,52 +306,56 @@ impl StreamingCompressor {
                 break;
             }
         }
-        
+
         // Check if we need to switch algorithms
         if self.config.adaptive_switching {
             self.evaluate_algorithm_performance()?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Create chunks from input buffer
     fn create_chunks_from_buffer(&mut self) -> Result<()> {
         let mut input_buffer = self.input_buffer.lock();
         let mut chunk_queue = self.chunk_queue.lock();
-        
+
         // Limit the number of buffered chunks
         if chunk_queue.len() >= self.config.max_buffered_chunks {
             return Ok(());
         }
-        
+
         while input_buffer.len() >= self.config.chunk_size {
             let chunk_data: Vec<u8> = input_buffer.drain(..self.config.chunk_size).collect();
             chunk_queue.push_back(chunk_data);
-            
+
             if chunk_queue.len() >= self.config.max_buffered_chunks {
                 break;
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Process a single chunk
     fn process_chunk(&mut self, data: Vec<u8>) -> Result<()> {
         let start_time = Instant::now();
-        let sequence = self.sequence_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        
+        let sequence = self
+            .sequence_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
         // Get current algorithm and level
         let algorithm = *self.current_algorithm.read();
         let level = *self.current_level.read();
-        
+
         // Compress the chunk
-        let compressed = self.engine.compress_with_algorithm(&data, algorithm, level)?;
-        
+        let compressed = self
+            .engine
+            .compress_with_algorithm(&data, algorithm, level)?;
+
         let compression_time = start_time.elapsed();
         let ratio = compressed.compressed_size as f64 / data.len() as f64;
-        
+
         // Create chunk
         let chunk = CompressionChunk {
             data,
@@ -364,30 +366,35 @@ impl StreamingCompressor {
             compression_time,
             sequence,
         };
-        
+
         // Add to output buffer
         {
             let mut output_buffer = self.output_buffer.lock();
             output_buffer.extend(&chunk.compressed);
         }
-        
+
         // Store processed chunk
         {
             let mut processed = self.processed_chunks.write();
             processed.push_back(chunk);
-            
+
             // Limit stored chunks
             while processed.len() > 100 {
                 processed.pop_front();
             }
         }
-        
+
         // Update statistics
-        self.update_compression_stats(compressed.original_size, compressed.compressed_size, compression_time, algorithm);
-        
+        self.update_compression_stats(
+            compressed.original_size,
+            compressed.compressed_size,
+            compression_time,
+            algorithm,
+        );
+
         Ok(())
     }
-    
+
     /// Force process remaining data
     fn force_process_remaining(&mut self) -> Result<()> {
         let remaining_data: Vec<u8> = {
@@ -397,67 +404,70 @@ impl StreamingCompressor {
             }
             input_buffer.drain(..).collect()
         };
-        
+
         if !remaining_data.is_empty() {
             self.process_chunk(remaining_data)?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Evaluate algorithm performance and switch if needed
     fn evaluate_algorithm_performance(&mut self) -> Result<()> {
         let now = Instant::now();
         let last_eval = *self.last_evaluation.read();
-        
+
         if now.duration_since(last_eval) < self.config.evaluation_interval {
             return Ok(());
         }
-        
+
         *self.last_evaluation.write() = now;
-        
+
         // Analyze recent performance
         let recent_chunks: Vec<_> = {
             let processed = self.processed_chunks.read();
             processed.iter().rev().take(10).cloned().collect()
         };
-        
+
         if recent_chunks.len() < 5 {
             return Ok(());
         }
-        
+
         // Calculate current performance
         let current_algorithm = *self.current_algorithm.read();
-        let current_avg_ratio = recent_chunks.iter()
-            .map(|c| c.ratio)
-            .sum::<f64>() / recent_chunks.len() as f64;
-        
+        let current_avg_ratio =
+            recent_chunks.iter().map(|c| c.ratio).sum::<f64>() / recent_chunks.len() as f64;
+
         // Try different algorithm selection
-        let sample_data = recent_chunks.last().map(|c| c.data.clone()).unwrap_or_default();
+        let sample_data = recent_chunks
+            .last()
+            .map(|c| c.data.clone())
+            .unwrap_or_default();
         if !sample_data.is_empty() {
             let data_type = self.data_type_detector.current_type();
             let entropy = self.calculate_entropy(&sample_data);
-            
+
             let context = SelectionContext {
                 data_type,
                 data_size: sample_data.len(),
                 entropy,
-                system_load: 0.5, // TODO: Detect actual system load
-                available_memory_mb: 1024, // TODO: Detect actual available memory
+                system_load: 0.5,                  // TODO: Detect actual system load
+                available_memory_mb: 1024,         // TODO: Detect actual available memory
                 storage_speed: StorageSpeed::Fast, // TODO: Detect actual storage speed
                 time_constraint_ms: None,
                 min_compression_ratio: None,
             };
-            
+
             let selection = self.engine.selector.select_with_context(&context);
-            
+
             // Switch if new algorithm is significantly better
             if selection.algorithm != current_algorithm {
-                let improvement = (current_avg_ratio - selection.estimated_ratio) / current_avg_ratio;
+                let improvement =
+                    (current_avg_ratio - selection.estimated_ratio) / current_avg_ratio;
                 if improvement > self.config.switching_threshold {
                     *self.current_algorithm.write() = selection.algorithm;
                     *self.current_level.write() = selection.level;
-                    
+
                     // Update statistics
                     {
                         let mut stats = self.stats.write();
@@ -467,34 +477,34 @@ impl StreamingCompressor {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Calculate entropy of data
     fn calculate_entropy(&self, data: &[u8]) -> f64 {
         if data.is_empty() {
             return 0.0;
         }
-        
+
         let mut counts = [0u32; 256];
         for &byte in data {
             counts[byte as usize] += 1;
         }
-        
+
         let len = data.len() as f64;
         let mut entropy = 0.0;
-        
+
         for count in counts.iter() {
             if *count > 0 {
                 let p = *count as f64 / len;
                 entropy -= p * p.log2();
             }
         }
-        
+
         entropy
     }
-    
+
     /// Update compression statistics
     fn update_compression_stats(
         &self,
@@ -504,15 +514,15 @@ impl StreamingCompressor {
         algorithm: CompressionAlgorithm,
     ) {
         let mut stats = self.stats.write();
-        
+
         stats.total_output_bytes += output_size as u64;
         stats.chunks_processed += 1;
-        
+
         // Update overall ratio
         if stats.total_input_bytes > 0 {
             stats.overall_ratio = stats.total_output_bytes as f64 / stats.total_input_bytes as f64;
         }
-        
+
         // Update average speed
         let mb_processed = input_size as f64 / (1024.0 * 1024.0);
         let time_seconds = compression_time.as_secs_f64();
@@ -522,13 +532,14 @@ impl StreamingCompressor {
                 stats.avg_compression_speed = current_speed;
             } else {
                 // Exponential moving average
-                stats.avg_compression_speed = stats.avg_compression_speed * 0.9 + current_speed * 0.1;
+                stats.avg_compression_speed =
+                    stats.avg_compression_speed * 0.9 + current_speed * 0.1;
             }
         }
-        
+
         // Update algorithm usage
         *stats.algorithm_usage.entry(algorithm).or_insert(0) += 1;
-        
+
         stats.last_update = std::time::SystemTime::now();
     }
 }
@@ -542,7 +553,7 @@ impl DataTypeDetector {
             confidence: 0.0,
         }
     }
-    
+
     fn process_data(&mut self, data: &[u8]) {
         // Add data to sample buffer
         for &byte in data {
@@ -551,19 +562,19 @@ impl DataTypeDetector {
             }
             self.sample_buffer.push_back(byte);
         }
-        
+
         // Update detection if we have enough samples
         if self.sample_buffer.len() >= self.sample_size / 2 {
             self.update_detection();
         }
     }
-    
+
     fn update_detection(&mut self) {
         let sample: Vec<u8> = self.sample_buffer.iter().cloned().collect();
-        
+
         // Calculate entropy
         let entropy = self.calculate_entropy(&sample);
-        
+
         // Detect data type
         let (detected_type, confidence) = if entropy > 7.5 {
             (DataType::Compressed, 0.9)
@@ -578,7 +589,7 @@ impl DataTypeDetector {
         } else {
             (DataType::Binary, 0.6)
         };
-        
+
         // Update with exponential smoothing
         if confidence > self.confidence {
             self.current_type = detected_type;
@@ -587,41 +598,42 @@ impl DataTypeDetector {
             self.confidence = self.confidence * 0.9 + confidence * 0.1;
         }
     }
-    
+
     fn current_type(&self) -> DataType {
         self.current_type.clone()
     }
-    
+
     fn calculate_entropy(&self, data: &[u8]) -> f64 {
         if data.is_empty() {
             return 0.0;
         }
-        
+
         let mut counts = [0u32; 256];
         for &byte in data {
             counts[byte as usize] += 1;
         }
-        
+
         let len = data.len() as f64;
         let mut entropy = 0.0;
-        
+
         for count in counts.iter() {
             if *count > 0 {
                 let p = *count as f64 / len;
                 entropy -= p * p.log2();
             }
         }
-        
+
         entropy
     }
-    
+
     fn is_text_data(&self, data: &[u8]) -> bool {
         if data.is_empty() {
             return false;
         }
-        
+
         if let Ok(text) = std::str::from_utf8(data) {
-            let printable_count = text.chars()
+            let printable_count = text
+                .chars()
                 .filter(|c| c.is_ascii_graphic() || c.is_ascii_whitespace())
                 .count();
             printable_count as f64 / text.chars().count() as f64 > 0.8
@@ -629,15 +641,16 @@ impl DataTypeDetector {
             false
         }
     }
-    
+
     fn is_json_data(&self, data: &[u8]) -> bool {
         if data.is_empty() {
             return false;
         }
-        
+
         let first_char = data[0];
         if first_char == b'{' || first_char == b'[' {
-            let json_chars = data.iter()
+            let json_chars = data
+                .iter()
                 .filter(|&&b| matches!(b, b'{' | b'}' | b'[' | b']' | b':' | b',' | b'\"'))
                 .count();
             json_chars as f64 / data.len() as f64 > 0.1
@@ -645,13 +658,14 @@ impl DataTypeDetector {
             false
         }
     }
-    
+
     fn is_numeric_data(&self, data: &[u8]) -> bool {
         if data.is_empty() {
             return false;
         }
-        
-        let numeric_chars = data.iter()
+
+        let numeric_chars = data
+            .iter()
             .filter(|&&b| matches!(b, b'0'..=b'9' | b'.' | b'-' | b'+' | b'e' | b'E'))
             .count();
         numeric_chars as f64 / data.len() as f64 > 0.6
@@ -660,9 +674,13 @@ impl DataTypeDetector {
 
 impl<R: Read> StreamingReader<R> {
     /// Create a new streaming reader
-    pub fn new(reader: R, config: StreamingConfig, engine: Arc<AdaptiveCompressionEngine>) -> Result<Self> {
+    pub fn new(
+        reader: R,
+        config: StreamingConfig,
+        engine: Arc<AdaptiveCompressionEngine>,
+    ) -> Result<Self> {
         let compressor = StreamingCompressor::new(config, engine)?;
-        
+
         Ok(Self {
             inner: BufReader::new(reader),
             compressor,
@@ -678,53 +696,60 @@ impl<R: Read> Read for StreamingReader<R> {
         if self.buffer_pos < self.output_buffer.len() {
             let bytes_available = self.output_buffer.len() - self.buffer_pos;
             let bytes_to_copy = buf.len().min(bytes_available);
-            
+
             buf[..bytes_to_copy].copy_from_slice(
-                &self.output_buffer[self.buffer_pos..self.buffer_pos + bytes_to_copy]
+                &self.output_buffer[self.buffer_pos..self.buffer_pos + bytes_to_copy],
             );
             self.buffer_pos += bytes_to_copy;
-            
+
             return Ok(bytes_to_copy);
         }
-        
+
         // Read more data from input and compress
         let mut input_buf = vec![0u8; 8192];
         let bytes_read = self.inner.read(&mut input_buf)?;
-        
+
         if bytes_read == 0 {
             return Ok(0); // EOF
         }
-        
+
         input_buf.truncate(bytes_read);
-        
+
         // Compress the data
-        self.compressor.write(&input_buf)
+        self.compressor
+            .write(&input_buf)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        
+
         // Read compressed output
         self.output_buffer.clear();
         self.output_buffer.resize(buf.len() * 2, 0); // Conservative size
-        
-        let compressed_bytes = self.compressor.read(&mut self.output_buffer)
+
+        let compressed_bytes = self
+            .compressor
+            .read(&mut self.output_buffer)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        
+
         self.output_buffer.truncate(compressed_bytes);
         self.buffer_pos = 0;
-        
+
         // Return compressed data
         let bytes_to_copy = buf.len().min(compressed_bytes);
         buf[..bytes_to_copy].copy_from_slice(&self.output_buffer[..bytes_to_copy]);
         self.buffer_pos = bytes_to_copy;
-        
+
         Ok(bytes_to_copy)
     }
 }
 
 impl<W: Write> StreamingWriter<W> {
     /// Create a new streaming writer
-    pub fn new(writer: W, config: StreamingConfig, engine: Arc<AdaptiveCompressionEngine>) -> Result<Self> {
+    pub fn new(
+        writer: W,
+        config: StreamingConfig,
+        engine: Arc<AdaptiveCompressionEngine>,
+    ) -> Result<Self> {
         let compressor = StreamingCompressor::new(config, engine)?;
-        
+
         Ok(Self {
             inner: BufWriter::new(writer),
             compressor,
@@ -736,40 +761,46 @@ impl<W: Write> StreamingWriter<W> {
 impl<W: Write> Write for StreamingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         // Add data to compressor
-        self.compressor.write(buf)
+        self.compressor
+            .write(buf)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        
+
         // Read compressed output and write to underlying writer
         let mut output_buf = vec![0u8; buf.len() * 2]; // Conservative size
-        let compressed_bytes = self.compressor.read(&mut output_buf)
+        let compressed_bytes = self
+            .compressor
+            .read(&mut output_buf)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        
+
         if compressed_bytes > 0 {
             output_buf.truncate(compressed_bytes);
             self.inner.write_all(&output_buf)?;
         }
-        
+
         Ok(buf.len())
     }
-    
+
     fn flush(&mut self) -> std::io::Result<()> {
         // Flush compressor
-        self.compressor.flush()
+        self.compressor
+            .flush()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        
+
         // Read any remaining compressed data
         let mut output_buf = vec![0u8; 8192];
         loop {
-            let bytes = self.compressor.read(&mut output_buf)
+            let bytes = self
+                .compressor
+                .read(&mut output_buf)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-            
+
             if bytes == 0 {
                 break;
             }
-            
+
             self.inner.write_all(&output_buf[..bytes])?;
         }
-        
+
         self.inner.flush()
     }
 }
@@ -777,12 +808,12 @@ impl<W: Write> Write for StreamingWriter<W> {
 impl Default for StreamingConfig {
     fn default() -> Self {
         Self {
-            input_buffer_size: 64 * 1024,   // 64KB
-            output_buffer_size: 64 * 1024,  // 64KB
-            chunk_size: 32 * 1024,          // 32KB
+            input_buffer_size: 64 * 1024,  // 64KB
+            output_buffer_size: 64 * 1024, // 64KB
+            chunk_size: 32 * 1024,         // 32KB
             max_buffered_chunks: 10,
             adaptive_switching: true,
-            switching_threshold: 0.1,       // 10% improvement required
+            switching_threshold: 0.1, // 10% improvement required
             evaluation_interval: Duration::from_secs(10),
             flush_interval: Duration::from_millis(100),
             collect_statistics: true,
@@ -795,7 +826,7 @@ mod tests {
     use super::*;
     use crate::adaptive_compression::AdaptiveCompressionEngine;
     use std::io::Cursor;
-    
+
     #[test]
     fn test_streaming_config() {
         let config = StreamingConfig::default();
@@ -804,104 +835,104 @@ mod tests {
         assert!(config.chunk_size > 0);
         assert!(config.max_buffered_chunks > 0);
     }
-    
+
     #[test]
     fn test_data_type_detector() {
         let mut detector = DataTypeDetector::new(100);
-        
+
         // Test text detection
         let text_data = b"Hello, World! This is text data.";
         detector.process_data(text_data);
-        
+
         // Should detect as text (though may need more data for confidence)
         detector.update_detection();
         assert!(detector.confidence > 0.0);
     }
-    
+
     #[test]
     fn test_streaming_compressor() {
         let engine = Arc::new(AdaptiveCompressionEngine::new().unwrap());
         let config = StreamingConfig::default();
         let mut compressor = StreamingCompressor::new(config, engine).unwrap();
-        
+
         // Write some test data
         let test_data = b"Hello, World! This is test data for streaming compression.";
         compressor.write(test_data).unwrap();
-        
+
         // Flush to ensure processing
         compressor.flush().unwrap();
-        
+
         // Read compressed output
         let mut output = vec![0u8; 1024];
         let bytes_read = compressor.read(&mut output).unwrap();
-        
+
         // Should have some compressed output
         assert!(bytes_read > 0);
         assert!(bytes_read < test_data.len()); // Should be compressed
-        
+
         // Check statistics
         let stats = compressor.stats();
         assert!(stats.total_input_bytes > 0);
         assert!(stats.chunks_processed > 0);
     }
-    
+
     #[test]
     fn test_streaming_reader() {
         let engine = Arc::new(AdaptiveCompressionEngine::new().unwrap());
         let config = StreamingConfig::default();
-        
+
         let test_data = b"This is test data for streaming reader functionality.";
         let cursor = Cursor::new(test_data.to_vec());
-        
+
         let mut reader = StreamingReader::new(cursor, config, engine).unwrap();
-        
+
         // Read compressed data
         let mut output = vec![0u8; 1024];
         let bytes_read = reader.read(&mut output).unwrap();
-        
+
         assert!(bytes_read > 0);
         output.truncate(bytes_read);
-        
+
         // Output should be different from input (compressed)
         assert_ne!(output, test_data);
     }
-    
+
     #[test]
     fn test_streaming_writer() {
         let engine = Arc::new(AdaptiveCompressionEngine::new().unwrap());
         let config = StreamingConfig::default();
-        
+
         let output_vec = Vec::new();
         let mut writer = StreamingWriter::new(output_vec, config, engine).unwrap();
-        
+
         let test_data = b"This is test data for streaming writer functionality.";
-        
+
         // Write data
         let bytes_written = writer.write(test_data).unwrap();
         assert_eq!(bytes_written, test_data.len());
-        
+
         // Flush to ensure all data is processed
         writer.flush().unwrap();
-        
+
         // Should have written some compressed data
         let output = writer.inner.into_inner().unwrap();
         assert!(!output.is_empty());
         assert_ne!(output, test_data); // Should be compressed
     }
-    
+
     #[test]
     fn test_chunk_processing() {
         let engine = Arc::new(AdaptiveCompressionEngine::new().unwrap());
         let mut config = StreamingConfig::default();
         config.chunk_size = 32; // Small chunks for testing
-        
+
         let mut compressor = StreamingCompressor::new(config, engine).unwrap();
-        
+
         // Write data larger than chunk size
         let test_data = b"This is a longer piece of test data that should be split into multiple chunks for processing.";
         compressor.write(test_data).unwrap();
         compressor.flush().unwrap();
-        
+
         let stats = compressor.stats();
         assert!(stats.chunks_processed > 1); // Should process multiple chunks
     }

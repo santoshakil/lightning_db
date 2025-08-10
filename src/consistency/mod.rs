@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 

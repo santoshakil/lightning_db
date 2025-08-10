@@ -4,16 +4,17 @@
 //! applied to the memtable. In case of a crash, the WAL can be replayed to
 //! recover uncommitted data.
 
-use crate::{Result, Error};
-use std::fs::{File, OpenOptions};
-use std::io::{Write, Read, Seek, SeekFrom, BufReader, BufWriter};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use parking_lot::Mutex;
-use serde::{Serialize, Deserialize};
-use std::time::{SystemTime, UNIX_EPOCH, Instant};
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use crate::{Error, Result};
 use crc32fast::Hasher;
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
+use std::fs::{File, OpenOptions};
+use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use tracing::{error, warn};
 
 const WAL_MAGIC: u32 = 0x57414C47; // "WALG"
 const WAL_VERSION: u32 = 1;
@@ -51,18 +52,20 @@ pub struct WalEntry {
 
 impl WalEntry {
     /// Create a new PUT entry
-    pub fn put(sequence_number: u64, key: Vec<u8>, value: Vec<u8>) -> Self {
+    pub fn put(sequence_number: u64, key: Vec<u8>, value: Vec<u8>) -> Result<Self> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .map_err(|_| Error::InvalidOperation {
+                reason: "System clock is before Unix epoch".to_string(),
+            })?
             .as_millis() as u64;
-        
+
         let mut hasher = Hasher::new();
         hasher.update(&key);
         hasher.update(&value);
         let crc = hasher.finalize();
-        
-        Self {
+
+        Ok(Self {
             header: WalEntryHeader {
                 entry_type: WalEntryType::Put,
                 sequence_number,
@@ -73,21 +76,23 @@ impl WalEntry {
             },
             key,
             value: Some(value),
-        }
+        })
     }
 
     /// Create a new DELETE entry
-    pub fn delete(sequence_number: u64, key: Vec<u8>) -> Self {
+    pub fn delete(sequence_number: u64, key: Vec<u8>) -> Result<Self> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .map_err(|_| Error::InvalidOperation {
+                reason: "System clock is before Unix epoch".to_string(),
+            })?
             .as_millis() as u64;
-        
+
         let mut hasher = Hasher::new();
         hasher.update(&key);
         let crc = hasher.finalize();
-        
-        Self {
+
+        Ok(Self {
             header: WalEntryHeader {
                 entry_type: WalEntryType::Delete,
                 sequence_number,
@@ -98,17 +103,19 @@ impl WalEntry {
             },
             key,
             value: None,
-        }
+        })
     }
 
     /// Create a checkpoint entry
-    pub fn checkpoint(sequence_number: u64) -> Self {
+    pub fn checkpoint(sequence_number: u64) -> Result<Self> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .map_err(|_| Error::InvalidOperation {
+                reason: "System clock is before Unix epoch".to_string(),
+            })?
             .as_millis() as u64;
-        
-        Self {
+
+        Ok(Self {
             header: WalEntryHeader {
                 entry_type: WalEntryType::Checkpoint,
                 sequence_number,
@@ -119,13 +126,13 @@ impl WalEntry {
             },
             key: Vec::new(),
             value: None,
-        }
+        })
     }
 
     /// Serialize entry to bytes
     pub fn serialize(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
-        
+
         // Write header
         data.extend_from_slice(&(self.header.entry_type as u8).to_le_bytes());
         data.extend_from_slice(&self.header.sequence_number.to_le_bytes());
@@ -133,26 +140,27 @@ impl WalEntry {
         data.extend_from_slice(&self.header.key_len.to_le_bytes());
         data.extend_from_slice(&self.header.value_len.to_le_bytes());
         data.extend_from_slice(&self.header.crc.to_le_bytes());
-        
+
         // Write key
         data.extend_from_slice(&self.key);
-        
+
         // Write value if present
         if let Some(ref value) = self.value {
             data.extend_from_slice(value);
         }
-        
+
         Ok(data)
     }
 
     /// Deserialize entry from bytes
     pub fn deserialize(data: &[u8]) -> Result<Self> {
-        if data.len() < 33 { // Minimum header size
+        if data.len() < 33 {
+            // Minimum header size
             return Err(Error::InvalidFormat("WAL entry too small".to_string()));
         }
-        
+
         let mut offset = 0;
-        
+
         // Read header
         let entry_type = match data[offset] {
             1 => WalEntryType::Put,
@@ -164,22 +172,42 @@ impl WalEntry {
             _ => return Err(Error::InvalidFormat("Invalid WAL entry type".to_string())),
         };
         offset += 1;
-        
-        let sequence_number = u64::from_le_bytes(data[offset..offset+8].try_into().unwrap());
+
+        let sequence_number = u64::from_le_bytes(
+            data[offset..offset + 8]
+                .try_into()
+                .map_err(|_| Error::InvalidFormat("Invalid sequence number format".to_string()))?,
+        );
         offset += 8;
-        
-        let timestamp = u64::from_le_bytes(data[offset..offset+8].try_into().unwrap());
+
+        let timestamp = u64::from_le_bytes(
+            data[offset..offset + 8]
+                .try_into()
+                .map_err(|_| Error::InvalidFormat("Invalid timestamp format".to_string()))?,
+        );
         offset += 8;
-        
-        let key_len = u32::from_le_bytes(data[offset..offset+4].try_into().unwrap());
+
+        let key_len = u32::from_le_bytes(
+            data[offset..offset + 4]
+                .try_into()
+                .map_err(|_| Error::InvalidFormat("Invalid key length format".to_string()))?,
+        );
         offset += 4;
-        
-        let value_len = u32::from_le_bytes(data[offset..offset+4].try_into().unwrap());
+
+        let value_len = u32::from_le_bytes(
+            data[offset..offset + 4]
+                .try_into()
+                .map_err(|_| Error::InvalidFormat("Invalid value length format".to_string()))?,
+        );
         offset += 4;
-        
-        let crc = u32::from_le_bytes(data[offset..offset+4].try_into().unwrap());
+
+        let crc = u32::from_le_bytes(
+            data[offset..offset + 4]
+                .try_into()
+                .map_err(|_| Error::InvalidFormat("Invalid CRC format".to_string()))?,
+        );
         offset += 4;
-        
+
         // Read key
         let key = if key_len > 0 {
             if offset + key_len as usize > data.len() {
@@ -190,17 +218,19 @@ impl WalEntry {
             Vec::new()
         };
         offset += key_len as usize;
-        
+
         // Read value
         let value = if value_len > 0 {
             if offset + value_len as usize > data.len() {
-                return Err(Error::InvalidFormat("WAL entry value truncated".to_string()));
+                return Err(Error::InvalidFormat(
+                    "WAL entry value truncated".to_string(),
+                ));
             }
             Some(data[offset..offset + value_len as usize].to_vec())
         } else {
             None
         };
-        
+
         // Verify CRC
         if entry_type == WalEntryType::Put || entry_type == WalEntryType::Delete {
             let mut hasher = Hasher::new();
@@ -209,12 +239,12 @@ impl WalEntry {
                 hasher.update(v);
             }
             let computed_crc = hasher.finalize();
-            
+
             if computed_crc != crc {
                 return Err(Error::InvalidFormat("WAL entry CRC mismatch".to_string()));
             }
         }
-        
+
         Ok(Self {
             header: WalEntryHeader {
                 entry_type,
@@ -259,13 +289,17 @@ pub struct WriteAheadLog {
 
 impl WriteAheadLog {
     /// Create a new WAL
-    pub fn new(wal_dir: PathBuf, max_file_size: u64, sync_mode: super::WalSyncMode) -> Result<Self> {
+    pub fn new(
+        wal_dir: PathBuf,
+        max_file_size: u64,
+        sync_mode: super::WalSyncMode,
+    ) -> Result<Self> {
         std::fs::create_dir_all(&wal_dir)?;
-        
+
         // Find the latest WAL file
         let (file_id, sequence_number) = Self::find_latest_wal(&wal_dir)?;
         let file_id = file_id + 1; // Start with next file
-        
+
         // Create new WAL file
         let file_path = wal_dir.join(format!("wal_{:010}.log", file_id));
         let file = OpenOptions::new()
@@ -273,11 +307,11 @@ impl WriteAheadLog {
             .write(true)
             .append(true)
             .open(&file_path)?;
-        
+
         // Write header
         let mut writer = BufWriter::new(file);
         Self::write_header(&mut writer)?;
-        
+
         Ok(Self {
             file: Arc::new(Mutex::new(writer)),
             wal_dir,
@@ -303,12 +337,12 @@ impl WriteAheadLog {
     fn find_latest_wal(wal_dir: &Path) -> Result<(u64, u64)> {
         let mut latest_id = 0;
         let mut latest_seq = 0;
-        
+
         for entry in std::fs::read_dir(wal_dir)? {
             let entry = entry?;
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            
+
             if name_str.starts_with("wal_") && name_str.ends_with(".log") {
                 if let Ok(id) = name_str[4..14].parse::<u64>() {
                     if id > latest_id {
@@ -321,7 +355,7 @@ impl WriteAheadLog {
                 }
             }
         }
-        
+
         Ok((latest_id, latest_seq))
     }
 
@@ -329,68 +363,84 @@ impl WriteAheadLog {
     fn read_last_sequence(path: &Path) -> Result<u64> {
         let mut file = File::open(path)?;
         let file_size = file.metadata()?.len();
-        
+
         if file_size < 8 {
             return Ok(0);
         }
-        
+
         // Read header
         let mut header = [0u8; 8];
         file.read_exact(&mut header)?;
-        
-        let magic = u32::from_le_bytes(header[0..4].try_into().unwrap());
+
+        let magic = u32::from_le_bytes(
+            header[0..4]
+                .try_into()
+                .map_err(|_| Error::InvalidFormat("Invalid WAL header format".to_string()))?,
+        );
         if magic != WAL_MAGIC {
             return Err(Error::InvalidFormat("Invalid WAL magic".to_string()));
         }
-        
+
         // Read entries to find last sequence number
         let mut last_seq = 0;
         let mut offset = 8;
-        
+
         while offset < file_size {
             file.seek(SeekFrom::Start(offset))?;
-            
+
             let mut entry_header = vec![0u8; 33];
             match file.read_exact(&mut entry_header) {
                 Ok(()) => {
-                    let seq = u64::from_le_bytes(entry_header[1..9].try_into().unwrap());
+                    let seq = u64::from_le_bytes(
+                        entry_header[1..9]
+                            .try_into()
+                            .map_err(|_| Error::InvalidFormat("Invalid sequence number in WAL".to_string()))?,
+                    );
                     if seq > last_seq {
                         last_seq = seq;
                     }
-                    
-                    let key_len = u32::from_le_bytes(entry_header[17..21].try_into().unwrap());
-                    let value_len = u32::from_le_bytes(entry_header[21..25].try_into().unwrap());
-                    
+
+                    let key_len = u32::from_le_bytes(
+                        entry_header[17..21]
+                            .try_into()
+                            .map_err(|_| Error::InvalidFormat("Invalid key length in WAL".to_string()))?,
+                    );
+                    let value_len = u32::from_le_bytes(
+                        entry_header[21..25]
+                            .try_into()
+                            .map_err(|_| Error::InvalidFormat("Invalid value length in WAL".to_string()))?,
+                    );
+
                     offset += 33 + key_len as u64 + value_len as u64;
                 }
                 Err(_) => break,
             }
         }
-        
+
         Ok(last_seq)
     }
 
     /// Append an entry to the WAL
     pub fn append(&self, entry: WalEntry) -> Result<()> {
         if self.closed.load(Ordering::Relaxed) {
-            return Err(Error::InvalidOperation { 
-                reason: "WAL is closed".to_string() 
+            return Err(Error::InvalidOperation {
+                reason: "WAL is closed".to_string(),
             });
         }
-        
+
         let data = entry.serialize()?;
         let data_len = data.len() as u64;
-        
+
         // Check if we need to rotate
         if self.file_size.load(Ordering::Relaxed) + data_len > self.max_file_size {
             self.rotate()?;
         }
-        
+
         // Write entry
         {
             let mut file = self.file.lock();
             file.write_all(&data)?;
-            
+
             // Handle sync based on mode
             match self.sync_mode {
                 super::WalSyncMode::Sync => {
@@ -410,9 +460,9 @@ impl WriteAheadLog {
                 }
             }
         }
-        
+
         self.file_size.fetch_add(data_len, Ordering::Relaxed);
-        
+
         Ok(())
     }
 
@@ -420,16 +470,16 @@ impl WriteAheadLog {
     fn rotate(&self) -> Result<()> {
         let new_file_id = self.file_id.fetch_add(1, Ordering::SeqCst) + 1;
         let file_path = self.wal_dir.join(format!("wal_{:010}.log", new_file_id));
-        
+
         let file = OpenOptions::new()
             .create(true)
             .write(true)
             .append(true)
             .open(&file_path)?;
-        
+
         let mut writer = BufWriter::new(file);
         Self::write_header(&mut writer)?;
-        
+
         // Replace the file
         {
             let mut current_file = self.file.lock();
@@ -437,9 +487,9 @@ impl WriteAheadLog {
             current_file.get_ref().sync_all()?;
             *current_file = writer;
         }
-        
+
         self.file_size.store(8, Ordering::Relaxed); // Header size
-        
+
         Ok(())
     }
 
@@ -466,40 +516,40 @@ impl WriteAheadLog {
     /// Create an iterator over all WAL files
     pub fn iter(&self) -> Result<WalIterator> {
         let mut files = Vec::new();
-        
+
         for entry in std::fs::read_dir(&self.wal_dir)? {
             let entry = entry?;
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            
+
             if name_str.starts_with("wal_") && name_str.ends_with(".log") {
                 files.push(entry.path());
             }
         }
-        
+
         files.sort();
-        
+
         Ok(WalIterator::new(files))
     }
 
     /// Delete old WAL files
     pub fn cleanup(&self, keep_files: usize) -> Result<()> {
         let mut files = Vec::new();
-        
+
         for entry in std::fs::read_dir(&self.wal_dir)? {
             let entry = entry?;
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            
+
             if name_str.starts_with("wal_") && name_str.ends_with(".log") {
                 if let Ok(id) = name_str[4..14].parse::<u64>() {
                     files.push((id, entry.path()));
                 }
             }
         }
-        
+
         files.sort_by_key(|f| f.0);
-        
+
         // Keep the latest N files
         let current_id = self.file_id.load(Ordering::Relaxed);
         for (id, path) in files {
@@ -507,7 +557,7 @@ impl WriteAheadLog {
                 std::fs::remove_file(path)?;
             }
         }
-        
+
         Ok(())
     }
 }
@@ -536,23 +586,27 @@ impl WalIterator {
         if self.current_file_index >= self.files.len() {
             return Ok(false);
         }
-        
+
         let file = File::open(&self.files[self.current_file_index])?;
         let mut reader = BufReader::new(file);
-        
+
         // Read and verify header
         let mut header = [0u8; 8];
         reader.read_exact(&mut header)?;
-        
-        let magic = u32::from_le_bytes(header[0..4].try_into().unwrap());
+
+        let magic = u32::from_le_bytes(
+            header[0..4]
+                .try_into()
+                .map_err(|_| Error::InvalidFormat("Invalid WAL header format".to_string()))?,
+        );
         if magic != WAL_MAGIC {
             return Err(Error::InvalidFormat("Invalid WAL magic".to_string()));
         }
-        
+
         self.current_reader = Some(reader);
         self.current_offset = 8;
         self.current_file_index += 1;
-        
+
         Ok(true)
     }
 }
@@ -569,32 +623,67 @@ impl Iterator for WalIterator {
                     Err(e) => return Some(Err(e)),
                 }
             }
-            
-            let reader = self.current_reader.as_mut().unwrap();
-            
+
+            let reader = match self.current_reader.as_mut() {
+                Some(r) => r,
+                None => {
+                    // Corrupted iterator state, move to next file
+                    continue;
+                }
+            };
+
             // Try to read entry header
+            let current_offset = reader.stream_position().unwrap_or(0);
             let mut header_buf = vec![0u8; 33];
             match reader.read_exact(&mut header_buf) {
                 Ok(()) => {
                     // Parse header to get entry size
-                    let key_len = u32::from_le_bytes(header_buf[17..21].try_into().unwrap()) as usize;
-                    let value_len = u32::from_le_bytes(header_buf[21..25].try_into().unwrap()) as usize;
-                    
+                    let key_len = match header_buf[17..21].try_into() {
+                        Ok(bytes) => u32::from_le_bytes(bytes) as usize,
+                        Err(conversion_error) => {
+                            // CRITICAL: Header corruption detected in key length field
+                            let error = Error::WalBinaryCorruption {
+                                offset: current_offset,
+                                details: format!(
+                                    "Corrupted key length field at offset {}: invalid byte sequence",
+                                    current_offset
+                                ),
+                            };
+                            return Some(Err(error));
+                        }
+                    };
+                    let value_len = match header_buf[21..25].try_into() {
+                        Ok(bytes) => u32::from_le_bytes(bytes) as usize,
+                        Err(conversion_error) => {
+                            // CRITICAL: Header corruption detected in value length field
+                            let error = Error::WalBinaryCorruption {
+                                offset: current_offset,
+                                details: format!(
+                                    "Corrupted value length field at offset {}: invalid byte sequence",
+                                    current_offset
+                                ),
+                            };
+                            return Some(Err(error));
+                        }
+                    };
+
                     // Read key and value
                     let mut data = header_buf;
                     data.resize(33 + key_len + value_len, 0);
-                    
+
                     match reader.read_exact(&mut data[33..]) {
-                        Ok(()) => {
-                            match WalEntry::deserialize(&data) {
-                                Ok(entry) => return Some(Ok(entry)),
-                                Err(e) => return Some(Err(e)),
-                            }
-                        }
-                        Err(_) => {
-                            // Corrupted entry, move to next file
-                            self.current_reader = None;
-                            continue;
+                        Ok(()) => match WalEntry::deserialize(&data) {
+                            Ok(entry) => return Some(Ok(entry)),
+                            Err(e) => return Some(Err(e)),
+                        },
+                        Err(read_error) => {
+                            // CRITICAL: Partial read indicates corruption - don't silently skip
+                            let error = Error::WalPartialEntry {
+                                offset: current_offset,
+                                expected_size: 33 + key_len + value_len,
+                                actual_size: 33, // Only header was read
+                            };
+                            return Some(Err(error));
                         }
                     }
                 }
@@ -617,32 +706,40 @@ impl WalRecovery {
     /// Recover entries from WAL
     pub fn recover(wal_dir: &Path) -> Result<Self> {
         let mut files = Vec::new();
-        
+
         for entry in std::fs::read_dir(wal_dir)? {
             let entry = entry?;
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            
+
             if name_str.starts_with("wal_") && name_str.ends_with(".log") {
                 files.push(entry.path());
             }
         }
-        
+
         files.sort();
-        
+
         let mut entries = Vec::new();
         let iter = WalIterator::new(files);
-        
-        for entry in iter {
-            match entry {
+
+        for (index, entry_result) in iter.enumerate() {
+            match entry_result {
                 Ok(e) => entries.push(e),
-                Err(_) => {
-                    // Log error but continue recovery
-                    continue;
+                Err(corruption_error) => {
+                    // CRITICAL: Never silently skip corrupted entries
+                    error!(
+                        "WAL corruption detected at entry {}: {}. Recovery cannot continue safely.",
+                        index, corruption_error
+                    );
+                    
+                    return Err(Error::WalCorruption {
+                        offset: index as u64,
+                        reason: format!("Corrupted entry at index {}: {}", index, corruption_error),
+                    });
                 }
             }
         }
-        
+
         Ok(Self { entries })
     }
 
@@ -670,10 +767,10 @@ mod tests {
 
     #[test]
     fn test_wal_entry_serialization() {
-        let entry = WalEntry::put(100, b"key".to_vec(), b"value".to_vec());
+        let entry = WalEntry::put(100, b"key".to_vec(), b"value".to_vec()).unwrap();
         let data = entry.serialize().unwrap();
         let deserialized = WalEntry::deserialize(&data).unwrap();
-        
+
         assert_eq!(deserialized.header.sequence_number, 100);
         assert_eq!(deserialized.key, b"key");
         assert_eq!(deserialized.value, Some(b"value".to_vec()));
@@ -686,23 +783,26 @@ mod tests {
             dir.path().to_path_buf(),
             1024 * 1024, // 1MB
             super::super::WalSyncMode::NoSync,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // Write some entries
         let seq1 = wal.next_sequence();
-        wal.append(WalEntry::put(seq1, b"key1".to_vec(), b"value1".to_vec())).unwrap();
-        
+        wal.append(WalEntry::put(seq1, b"key1".to_vec(), b"value1".to_vec()).unwrap())
+            .unwrap();
+
         let seq2 = wal.next_sequence();
-        wal.append(WalEntry::delete(seq2, b"key2".to_vec())).unwrap();
-        
+        wal.append(WalEntry::delete(seq2, b"key2".to_vec()).unwrap())
+            .unwrap();
+
         // Sync and close
         wal.sync().unwrap();
         wal.close().unwrap();
-        
+
         // Recover
         let recovery = WalRecovery::recover(dir.path()).unwrap();
         let entries = recovery.entries();
-        
+
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].key, b"key1");
         assert_eq!(entries[1].key, b"key2");
@@ -715,25 +815,27 @@ mod tests {
             dir.path().to_path_buf(),
             100, // Small size to force rotation
             super::super::WalSyncMode::NoSync,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // Write entries to force rotation
         for i in 0..10 {
             let seq = wal.next_sequence();
             let key = format!("key{}", i);
             let value = format!("value{}", i);
-            wal.append(WalEntry::put(seq, key.into_bytes(), value.into_bytes())).unwrap();
+            wal.append(WalEntry::put(seq, key.into_bytes(), value.into_bytes()).unwrap())
+                .unwrap();
         }
-        
+
         wal.close().unwrap();
-        
+
         // Check that multiple files were created
         let files: Vec<_> = std::fs::read_dir(dir.path())
             .unwrap()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_name().to_string_lossy().starts_with("wal_"))
             .collect();
-        
+
         assert!(files.len() > 1);
     }
 }

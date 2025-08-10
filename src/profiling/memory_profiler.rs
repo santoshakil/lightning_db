@@ -3,14 +3,14 @@
 //! Tracks memory allocations, deallocations, and usage patterns to identify
 //! memory hotspots and potential memory leaks in Lightning DB.
 
-use std::sync::{Arc, Mutex, RwLock};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::thread;
-use std::path::Path;
 use std::fs::File;
-use std::io::{Write, BufWriter};
-use serde::{Serialize, Deserialize};
+use std::io::{BufWriter, Write};
+use std::path::Path;
+use std::sync::{Arc, Mutex, RwLock};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info};
 
 /// Memory profiler that tracks allocations and usage patterns
@@ -111,7 +111,7 @@ impl MemoryProfiler {
     pub fn new(sample_interval: Duration) -> Result<Self, super::ProfilingError> {
         if sample_interval < Duration::from_millis(1) {
             return Err(super::ProfilingError::MemoryProfilerError(
-                "Sample interval must be at least 1ms".to_string()
+                "Sample interval must be at least 1ms".to_string(),
             ));
         }
 
@@ -130,12 +130,16 @@ impl MemoryProfiler {
     pub fn start(&self) -> Result<(), super::ProfilingError> {
         if self.active.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(super::ProfilingError::MemoryProfilerError(
-                "Memory profiler already active".to_string()
+                "Memory profiler already active".to_string(),
             ));
         }
 
-        info!("Starting memory profiler with {}ms interval", self.sample_interval.as_millis());
-        self.active.store(true, std::sync::atomic::Ordering::Relaxed);
+        info!(
+            "Starting memory profiler with {}ms interval",
+            self.sample_interval.as_millis()
+        );
+        self.active
+            .store(true, std::sync::atomic::Ordering::Relaxed);
 
         // Clear previous data
         {
@@ -146,10 +150,13 @@ impl MemoryProfiler {
             let mut sites = self.allocation_sites.write().unwrap();
             sites.clear();
         }
-        
-        self.total_samples.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.current_memory_usage.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.peak_memory_usage.store(0, std::sync::atomic::Ordering::Relaxed);
+
+        self.total_samples
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.current_memory_usage
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.peak_memory_usage
+            .store(0, std::sync::atomic::Ordering::Relaxed);
 
         // Start monitoring thread
         let active = self.active.clone();
@@ -173,9 +180,12 @@ impl MemoryProfiler {
                     interval,
                 );
             })
-            .map_err(|e| super::ProfilingError::MemoryProfilerError(
-                format!("Failed to start profiler thread: {}", e)
-            ))?;
+            .map_err(|e| {
+                super::ProfilingError::MemoryProfilerError(format!(
+                    "Failed to start profiler thread: {}",
+                    e
+                ))
+            })?;
 
         Ok(())
     }
@@ -184,19 +194,27 @@ impl MemoryProfiler {
     pub fn stop(&self) -> Result<(), super::ProfilingError> {
         if !self.active.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(super::ProfilingError::MemoryProfilerError(
-                "Memory profiler not active".to_string()
+                "Memory profiler not active".to_string(),
             ));
         }
 
         info!("Stopping memory profiler");
-        self.active.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.active
+            .store(false, std::sync::atomic::Ordering::Relaxed);
 
         // Wait for monitoring thread to finish
         thread::sleep(Duration::from_millis(100));
 
-        let total = self.total_samples.load(std::sync::atomic::Ordering::Relaxed);
-        let peak = self.peak_memory_usage.load(std::sync::atomic::Ordering::Relaxed);
-        info!("Memory profiler stopped. Collected {} samples, peak usage: {} bytes", total, peak);
+        let total = self
+            .total_samples
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let peak = self
+            .peak_memory_usage
+            .load(std::sync::atomic::Ordering::Relaxed);
+        info!(
+            "Memory profiler stopped. Collected {} samples, peak usage: {} bytes",
+            total, peak
+        );
 
         Ok(())
     }
@@ -205,26 +223,32 @@ impl MemoryProfiler {
     pub fn export_profile(&self, path: &Path) -> Result<(), super::ProfilingError> {
         let allocations = self.allocations.lock().unwrap();
         let allocation_sites = self.allocation_sites.read().unwrap();
-        
+
         let profile_data = MemoryProfileData {
             sample_interval_ms: self.sample_interval.as_millis() as u64,
             total_samples: allocations.len() as u64,
-            current_memory_usage: self.current_memory_usage.load(std::sync::atomic::Ordering::Relaxed),
-            peak_memory_usage: self.peak_memory_usage.load(std::sync::atomic::Ordering::Relaxed),
+            current_memory_usage: self
+                .current_memory_usage
+                .load(std::sync::atomic::Ordering::Relaxed),
+            peak_memory_usage: self
+                .peak_memory_usage
+                .load(std::sync::atomic::Ordering::Relaxed),
             allocations: allocations.clone(),
             allocation_sites: allocation_sites.clone(),
             statistics: self.calculate_statistics(&allocations, &allocation_sites),
         };
 
-        let file = File::create(path)
-            .map_err(|e| super::ProfilingError::IoError(format!("Failed to create profile file: {}", e)))?;
+        let file = File::create(path).map_err(|e| {
+            super::ProfilingError::IoError(format!("Failed to create profile file: {}", e))
+        })?;
         let mut writer = BufWriter::new(file);
-        
+
         serde_json::to_writer_pretty(&mut writer, &profile_data)
             .map_err(|e| super::ProfilingError::SerializationError(e.to_string()))?;
-        
-        writer.flush()
-            .map_err(|e| super::ProfilingError::IoError(format!("Failed to write profile: {}", e)))?;
+
+        writer.flush().map_err(|e| {
+            super::ProfilingError::IoError(format!("Failed to write profile: {}", e))
+        })?;
 
         info!("Memory profile exported to: {}", path.display());
         Ok(())
@@ -248,10 +272,10 @@ impl MemoryProfiler {
         interval: Duration,
     ) {
         debug!("Memory profiler monitoring loop started");
-        
+
         while active.load(std::sync::atomic::Ordering::Relaxed) {
             let start = Instant::now();
-            
+
             // Simulate memory allocation tracking
             if let Some(samples) = Self::collect_memory_samples() {
                 for sample in samples {
@@ -272,7 +296,7 @@ impl MemoryProfiler {
                 thread::sleep(interval - elapsed);
             }
         }
-        
+
         debug!("Memory profiler monitoring loop ended");
     }
 
@@ -288,15 +312,16 @@ impl MemoryProfiler {
         // Use a hash of the thread ID as a stable thread ID
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         std::thread::current().id().hash(&mut hasher);
         let thread_id = hasher.finish();
-        
+
         let mut samples = Vec::new();
-        
+
         // Simulate various allocation patterns
-        if fastrand::f64() < 0.3 { // 30% chance of allocation
+        if fastrand::f64() < 0.3 {
+            // 30% chance of allocation
             samples.push(AllocationSample {
                 timestamp,
                 thread_id,
@@ -308,7 +333,8 @@ impl MemoryProfiler {
             });
         }
 
-        if fastrand::f64() < 0.2 { // 20% chance of deallocation
+        if fastrand::f64() < 0.2 {
+            // 20% chance of deallocation
             samples.push(AllocationSample {
                 timestamp,
                 thread_id,
@@ -330,7 +356,7 @@ impl MemoryProfiler {
     /// Generate realistic allocation sizes based on common patterns
     fn generate_realistic_allocation_size() -> u64 {
         let pattern = fastrand::f64();
-        
+
         if pattern < 0.4 {
             // Small allocations (< 1KB) - common for metadata
             fastrand::u64(8..1024)
@@ -350,32 +376,73 @@ impl MemoryProfiler {
     fn generate_allocation_stack_trace() -> Vec<StackFrame> {
         let patterns = [
             vec![
-                ("lightning_db::btree::insert", "lightning_db", "src/btree/mod.rs", 245),
-                ("lightning_db::btree::split_node", "lightning_db", "src/btree/split.rs", 89),
-                ("lightning_db::storage::allocate_page", "lightning_db", "src/storage/page_manager.rs", 156),
+                (
+                    "lightning_db::btree::insert",
+                    "lightning_db",
+                    "src/btree/mod.rs",
+                    245,
+                ),
+                (
+                    "lightning_db::btree::split_node",
+                    "lightning_db",
+                    "src/btree/split.rs",
+                    89,
+                ),
+                (
+                    "lightning_db::storage::allocate_page",
+                    "lightning_db",
+                    "src/storage/page_manager.rs",
+                    156,
+                ),
             ],
             vec![
-                ("lightning_db::cache::insert", "lightning_db", "src/cache/mod.rs", 178),
-                ("lightning_db::cache::evict_lru", "lightning_db", "src/cache/lru.rs", 234),
-                ("std::collections::HashMap::reserve", "std", "hashmap.rs", 1234),
+                (
+                    "lightning_db::cache::insert",
+                    "lightning_db",
+                    "src/cache/mod.rs",
+                    178,
+                ),
+                (
+                    "lightning_db::cache::evict_lru",
+                    "lightning_db",
+                    "src/cache/lru.rs",
+                    234,
+                ),
+                (
+                    "std::collections::HashMap::reserve",
+                    "std",
+                    "hashmap.rs",
+                    1234,
+                ),
             ],
             vec![
-                ("lightning_db::wal::append", "lightning_db", "src/wal/mod.rs", 298),
-                ("lightning_db::wal::allocate_buffer", "lightning_db", "src/wal/buffer.rs", 67),
+                (
+                    "lightning_db::wal::append",
+                    "lightning_db",
+                    "src/wal/mod.rs",
+                    298,
+                ),
+                (
+                    "lightning_db::wal::allocate_buffer",
+                    "lightning_db",
+                    "src/wal/buffer.rs",
+                    67,
+                ),
                 ("std::vec::Vec::reserve", "std", "vec.rs", 567),
             ],
         ];
 
         let pattern = &patterns[fastrand::usize(0..patterns.len())];
-        
-        pattern.iter().map(|(func, module, file, line)| {
-            StackFrame {
+
+        pattern
+            .iter()
+            .map(|(func, module, file, line)| StackFrame {
                 function_name: func.to_string(),
                 module_name: module.to_string(),
                 file_name: Some(file.to_string()),
                 line_number: Some(*line),
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     /// Process a single allocation sample
@@ -389,16 +456,21 @@ impl MemoryProfiler {
         // Update current memory usage
         let current = match &sample.allocation_type {
             AllocationType::Allocation => {
-                current_memory.fetch_add(sample.size, std::sync::atomic::Ordering::Relaxed) + sample.size
+                current_memory.fetch_add(sample.size, std::sync::atomic::Ordering::Relaxed)
+                    + sample.size
             }
-            AllocationType::Deallocation => {
-                current_memory.fetch_sub(sample.size, std::sync::atomic::Ordering::Relaxed).saturating_sub(sample.size)
-            }
+            AllocationType::Deallocation => current_memory
+                .fetch_sub(sample.size, std::sync::atomic::Ordering::Relaxed)
+                .saturating_sub(sample.size),
             AllocationType::Reallocation { old_size } => {
                 if sample.size > *old_size {
-                    current_memory.fetch_add(sample.size - old_size, std::sync::atomic::Ordering::Relaxed) + (sample.size - old_size)
+                    current_memory
+                        .fetch_add(sample.size - old_size, std::sync::atomic::Ordering::Relaxed)
+                        + (sample.size - old_size)
                 } else {
-                    current_memory.fetch_sub(old_size - sample.size, std::sync::atomic::Ordering::Relaxed).saturating_sub(old_size - sample.size)
+                    current_memory
+                        .fetch_sub(old_size - sample.size, std::sync::atomic::Ordering::Relaxed)
+                        .saturating_sub(old_size - sample.size)
                 }
             }
         };
@@ -425,7 +497,7 @@ impl MemoryProfiler {
         {
             let mut allocations_guard = allocations.lock().unwrap();
             allocations_guard.push(updated_sample);
-            
+
             // Limit memory usage
             if allocations_guard.len() > 100_000 {
                 allocations_guard.drain(..10_000);
@@ -438,20 +510,22 @@ impl MemoryProfiler {
             let now = SystemTime::now();
 
             let mut sites = allocation_sites.write().unwrap();
-            let site = sites.entry(location.clone()).or_insert_with(|| AllocationSite {
-                location: location.clone(),
-                total_allocations: 0,
-                total_bytes_allocated: 0,
-                total_deallocations: 0,
-                total_bytes_deallocated: 0,
-                current_allocations: 0,
-                current_bytes: 0,
-                peak_allocations: 0,
-                peak_bytes: 0,
-                allocation_rate: 0.0,
-                first_seen: now,
-                last_seen: now,
-            });
+            let site = sites
+                .entry(location.clone())
+                .or_insert_with(|| AllocationSite {
+                    location: location.clone(),
+                    total_allocations: 0,
+                    total_bytes_allocated: 0,
+                    total_deallocations: 0,
+                    total_bytes_deallocated: 0,
+                    current_allocations: 0,
+                    current_bytes: 0,
+                    peak_allocations: 0,
+                    peak_bytes: 0,
+                    allocation_rate: 0.0,
+                    first_seen: now,
+                    last_seen: now,
+                });
 
             match &sample.allocation_type {
                 AllocationType::Allocation => {
@@ -487,17 +561,26 @@ impl MemoryProfiler {
             // Calculate allocation rate (bytes per second)
             if let Ok(duration) = now.duration_since(site.first_seen) {
                 if duration.as_secs() > 0 {
-                    site.allocation_rate = site.total_bytes_allocated as f64 / duration.as_secs_f64();
+                    site.allocation_rate =
+                        site.total_bytes_allocated as f64 / duration.as_secs_f64();
                 }
             }
         }
     }
 
     /// Calculate memory profiling statistics
-    fn calculate_statistics(&self, allocations: &[AllocationSample], allocation_sites: &HashMap<String, AllocationSite>) -> MemoryProfilingStats {
+    fn calculate_statistics(
+        &self,
+        allocations: &[AllocationSample],
+        allocation_sites: &HashMap<String, AllocationSite>,
+    ) -> MemoryProfilingStats {
         let total_samples = allocations.len() as u64;
-        let current_memory = self.current_memory_usage.load(std::sync::atomic::Ordering::Relaxed);
-        let peak_memory = self.peak_memory_usage.load(std::sync::atomic::Ordering::Relaxed);
+        let current_memory = self
+            .current_memory_usage
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let peak_memory = self
+            .peak_memory_usage
+            .load(std::sync::atomic::Ordering::Relaxed);
 
         // Calculate allocation and deallocation rates
         let mut total_allocated = 0u64;
@@ -549,7 +632,8 @@ impl MemoryProfiler {
                     _ => LeakPotential::None,
                 };
 
-                let impact_score = (site.total_bytes_allocated as f64 / 1024.0 / 1024.0) * leak_score;
+                let impact_score =
+                    (site.total_bytes_allocated as f64 / 1024.0 / 1024.0) * leak_score;
 
                 MemoryHotspot {
                     location: site.location.clone(),
@@ -585,19 +669,25 @@ impl MemoryProfiler {
         let mut recommendations = Vec::new();
 
         if site.current_bytes > site.total_bytes_deallocated {
-            recommendations.push("Consider implementing proper cleanup for allocated memory".to_string());
+            recommendations
+                .push("Consider implementing proper cleanup for allocated memory".to_string());
         }
 
-        if site.allocation_rate > 10.0 * 1024.0 * 1024.0 { // > 10 MB/s
-            recommendations.push("High allocation rate detected - consider object pooling".to_string());
+        if site.allocation_rate > 10.0 * 1024.0 * 1024.0 {
+            // > 10 MB/s
+            recommendations
+                .push("High allocation rate detected - consider object pooling".to_string());
         }
 
         if site.current_allocations > 1000 {
-            recommendations.push("Large number of small allocations - consider batch allocation".to_string());
+            recommendations
+                .push("Large number of small allocations - consider batch allocation".to_string());
         }
 
-        if site.peak_bytes > 100 * 1024 * 1024 { // > 100 MB
-            recommendations.push("Large memory usage - consider streaming or chunked processing".to_string());
+        if site.peak_bytes > 100 * 1024 * 1024 {
+            // > 100 MB
+            recommendations
+                .push("Large memory usage - consider streaming or chunked processing".to_string());
         }
 
         recommendations
@@ -617,42 +707,44 @@ struct MemoryProfileData {
 }
 
 /// Analyze a memory profile file and extract hotspots
-pub fn analyze_memory_profile(profile_path: &Path) -> Result<Vec<MemoryHotspot>, super::ProfilingError> {
+pub fn analyze_memory_profile(
+    profile_path: &Path,
+) -> Result<Vec<MemoryHotspot>, super::ProfilingError> {
     let content = std::fs::read_to_string(profile_path)
         .map_err(|e| super::ProfilingError::IoError(format!("Failed to read profile: {}", e)))?;
-    
+
     let profile_data: MemoryProfileData = serde_json::from_str(&content)
         .map_err(|e| super::ProfilingError::SerializationError(e.to_string()))?;
-    
+
     Ok(profile_data.statistics.top_allocators)
 }
 
 /// Fast random number generation for simulation
 mod fastrand {
     use std::sync::atomic::{AtomicU64, Ordering};
-    
+
     static STATE: AtomicU64 = AtomicU64::new(1);
-    
+
     pub fn f64() -> f64 {
         let mut x = STATE.load(Ordering::Relaxed);
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         STATE.store(x, Ordering::Relaxed);
-        
+
         (x as f64) / (u64::MAX as f64)
     }
-    
+
     pub fn u64(range: std::ops::Range<u64>) -> u64 {
         let mut x = STATE.load(Ordering::Relaxed);
         x ^= x << 13;
         x ^= x >> 7;
         x ^= x << 17;
         STATE.store(x, Ordering::Relaxed);
-        
+
         range.start + (x % (range.end - range.start))
     }
-    
+
     pub fn usize(range: std::ops::Range<usize>) -> usize {
         u64(range.start as u64..range.end as u64) as usize
     }
@@ -688,7 +780,7 @@ mod tests {
         let stack = MemoryProfiler::generate_allocation_stack_trace();
         assert!(!stack.is_empty());
         assert!(stack.len() <= 10);
-        
+
         for frame in &stack {
             assert!(!frame.function_name.is_empty());
             assert!(!frame.module_name.is_empty());
@@ -699,9 +791,9 @@ mod tests {
     fn test_profile_export() {
         let temp_dir = TempDir::new().unwrap();
         let profile_path = temp_dir.path().join("memory_profile.json");
-        
+
         let profiler = MemoryProfiler::new(Duration::from_millis(10)).unwrap();
-        
+
         // Simulate some allocations
         {
             let mut allocations = profiler.allocations.lock().unwrap();
@@ -715,10 +807,10 @@ mod tests {
                 total_memory_usage: 1024,
             });
         }
-        
+
         profiler.export_profile(&profile_path).unwrap();
         assert!(profile_path.exists());
-        
+
         // Verify we can read it back
         let content = std::fs::read_to_string(&profile_path).unwrap();
         let _: MemoryProfileData = serde_json::from_str(&content).unwrap();
