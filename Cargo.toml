@@ -12,7 +12,7 @@ prost = "0.14"
 bytes = "1.10"
 memmap2 = "0.9"
 parking_lot = "0.12"
-crc32fast = "1.4"
+crc32fast = "1.5"
 zstd = { version = "0.13", default-features = false, features = ["zstdmt"], optional = true }
 lz4_flex = "0.11"
 snap = "1.1"
