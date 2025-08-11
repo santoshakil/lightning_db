@@ -76,7 +76,7 @@ sysinfo = "0.33"
 flate2 = "1.0"
 sha2 = "0.10"
 nix = { version = "0.29", features = ["fs"] }
-ctor = "0.2"
+ctor = "0.5"
 
 [build-dependencies]
 prost-build = "0.14"
