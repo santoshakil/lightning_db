@@ -272,7 +272,7 @@ impl PowerLossTest {
             // Inject failure based on probability
             if rng.gen::<f64>() < self.config.failure_probability {
                 let failure_point =
-                    self.failure_points[rng.gen_range(0..self.failure_points.len())];
+                    self.failure_points[rng.random_range(0..self.failure_points.len())];
                 self.inject_failure_at_point(&db, failure_point, write_record)?;
             } else {
                 // Normal write operation
@@ -280,7 +280,7 @@ impl PowerLossTest {
             }
 
             // Small delay to simulate realistic workload
-            thread::sleep(Duration::from_micros(rng.gen_range(10..100)));
+            thread::sleep(Duration::from_micros(rng.random_range(10..100)));
         }
 
         Ok(())

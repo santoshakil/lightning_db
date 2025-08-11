@@ -1,3 +1,0 @@
-cargo:rustc-env=RUSTC_VERSION=rustc 1.87.0 (17067e9ac 2025-05-09)
-cargo:rustc-env=BUILD_TIME=2025-08-10 07:09:53 UTC
-cargo:rustc-env=GIT_COMMIT=6c43b3774a485fe087d51ae8234591c69040de55

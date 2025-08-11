@@ -146,7 +146,7 @@ impl PerformanceValidator {
 
             if is_read {
                 // Read operation
-                let key_id = rng.gen_range(0..workload.key_range);
+                let key_id = rng.random_range(0..workload.key_range);
                 let key = format!("key_{:08}", key_id).into_bytes();
 
                 let op_start = Instant::now();
@@ -156,7 +156,7 @@ impl PerformanceValidator {
                 read_latencies.push(latency.as_micros() as f64);
             } else {
                 // Write operation
-                let key_id = rng.gen_range(0..workload.key_range);
+                let key_id = rng.random_range(0..workload.key_range);
                 let key = format!("key_{:08}", key_id).into_bytes();
                 let value = vec![rng.gen::<u8>(); workload.value_size];
 
@@ -259,13 +259,13 @@ impl PerformanceValidator {
     /// Estimate CPU usage (placeholder)
     fn estimate_cpu_usage(&self) -> f64 {
         // In production, would use actual CPU metrics
-        rand::rng().gen_range(10.0..50.0)
+        rand::rng().random_range(10.0..50.0)
     }
 
     /// Estimate memory usage (placeholder)
     fn estimate_memory_usage(&self) -> u64 {
         // In production, would use actual memory metrics
-        rand::rng().gen_range(100..500)
+        rand::rng().random_range(100..500)
     }
 
     /// Compare two configurations

@@ -202,7 +202,7 @@ impl CorruptionEngine {
         let rng = if let Some(seed) = seed {
             StdRng::seed_from_u64(seed)
         } else {
-            StdRng::seed_from_u64(rng().gen())
+            StdRng::seed_from_u64(rng().random())
         };
 
         let mut patterns = HashMap::new();
@@ -216,8 +216,8 @@ impl CorruptionEngine {
                     generator: |rng, data, _| {
                         let mut corrupted = data.to_vec();
                         if !corrupted.is_empty() {
-                            let byte_idx = rng.gen_range(0..corrupted.len());
-                            let bit_idx = rng.gen_range(0..8);
+                            let byte_idx = rng.random_range(0..corrupted.len());
+                            let bit_idx = rng.random_range(0..8);
                             corrupted[byte_idx] ^= 1 << bit_idx;
                         }
                         corrupted
@@ -228,10 +228,10 @@ impl CorruptionEngine {
                     name: "Multiple Bit Flips".to_string(),
                     generator: |rng, data, max_bytes| {
                         let mut corrupted = data.to_vec();
-                        let flip_count = rng.gen_range(1..=5.min(max_bytes));
+                        let flip_count = rng.random_range(1..=5.min(max_bytes));
                         for _ in 0..flip_count {
                             if !corrupted.is_empty() {
-                                let byte_idx = rng.gen_range(0..corrupted.len());
+                                let byte_idx = rng.random_range(0..corrupted.len());
                                 corrupted[byte_idx] = !corrupted[byte_idx];
                             }
                         }
@@ -250,7 +250,7 @@ impl CorruptionEngine {
                     let mut corrupted = data.to_vec();
                     // Corrupt first 16 bytes (typical header size)
                     for i in 0..16.min(corrupted.len()) {
-                        corrupted[i] = rng.gen();
+                        corrupted[i] = rng.random();
                     }
                     corrupted
                 },
@@ -266,8 +266,8 @@ impl CorruptionEngine {
                     let mut corrupted = data.to_vec();
                     // Modify data but keep checksum area intact
                     if corrupted.len() > 8 {
-                        let modify_idx = rng.gen_range(8..corrupted.len());
-                        corrupted[modify_idx] = rng.gen();
+                        let modify_idx = rng.random_range(8..corrupted.len());
+                        corrupted[modify_idx] = rng.random();
                     }
                     corrupted
                 },
@@ -282,7 +282,7 @@ impl CorruptionEngine {
                 generator: |rng, data, _| {
                     let mut corrupted = data.to_vec();
                     // Simulate partial write by zeroing out latter half
-                    let cutoff = rng.gen_range(data.len() / 2..data.len());
+                    let cutoff = rng.random_range(data.len() / 2..data.len());
                     for i in cutoff..corrupted.len() {
                         corrupted[i] = 0;
                     }
@@ -322,7 +322,7 @@ impl CorruptionEngine {
             .ok_or_else(|| Error::Generic("No patterns for corruption type".to_string()))?;
 
         let mut rng = self.rng.lock();
-        let pattern = &patterns[rng.gen_range(0..patterns.len())];
+        let pattern = &patterns[rng.random_range(0..patterns.len())];
         let corrupted_data = (pattern.generator)(&mut *rng, &original_data, size);
 
         // Write corrupted data
@@ -545,8 +545,8 @@ impl ChaosTest for CorruptionInjectionTest {
                     // In real implementation, would target actual database files
                     let _ = self.corruption_engine.inject_corruption(
                         &std::env::temp_dir().join("test_corruption_file"),
-                        rng().gen_range(0..1024),
-                        rng().gen_range(1..self.config.max_corruption_bytes),
+                        rng().random_range(0..1024),
+                        rng().random_range(1..self.config.max_corruption_bytes),
                         *corruption_type,
                     );
                 }

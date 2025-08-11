@@ -7,6 +7,8 @@ use super::{
     CardinalityEstimator, CostModel, JoinCondition, JoinType, LogicalJoin, LogicalQuery,
     OptimizerConfig, Predicate,
 };
+#[cfg(test)]
+use super::StatisticsManager;
 use crate::{Error, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -920,7 +922,7 @@ mod tests {
     #[test]
     fn test_join_optimizer_creation() {
         let config = OptimizerConfig::default();
-        let cardinality_estimator = Arc::new(CardinalityEstimator::new());
+        let cardinality_estimator = Arc::new(CardinalityEstimator::new(Arc::new(StatisticsManager::new(OptimizerConfig::default()))));
         let cost_model = Arc::new(CostModel::new(config));
 
         let optimizer = JoinOptimizer::new(cardinality_estimator, cost_model);
@@ -930,7 +932,7 @@ mod tests {
     #[test]
     fn test_join_algorithm_selection() {
         let config = OptimizerConfig::default();
-        let cardinality_estimator = Arc::new(CardinalityEstimator::new());
+        let cardinality_estimator = Arc::new(CardinalityEstimator::new(Arc::new(StatisticsManager::new(OptimizerConfig::default()))));
         let cost_model = Arc::new(CostModel::new(config));
         let optimizer = JoinOptimizer::new(cardinality_estimator, cost_model);
 
@@ -955,7 +957,7 @@ mod tests {
     #[test]
     fn test_join_graph_construction() {
         let config = OptimizerConfig::default();
-        let cardinality_estimator = Arc::new(CardinalityEstimator::new());
+        let cardinality_estimator = Arc::new(CardinalityEstimator::new(Arc::new(StatisticsManager::new(OptimizerConfig::default()))));
         let cost_model = Arc::new(CostModel::new(config));
         let optimizer = JoinOptimizer::new(cardinality_estimator, cost_model);
 
@@ -987,7 +989,7 @@ mod tests {
     #[test]
     fn test_optimization_strategy_selection() {
         let config = OptimizerConfig::default();
-        let cardinality_estimator = Arc::new(CardinalityEstimator::new());
+        let cardinality_estimator = Arc::new(CardinalityEstimator::new(Arc::new(StatisticsManager::new(OptimizerConfig::default()))));
         let cost_model = Arc::new(CostModel::new(config));
         let optimizer = JoinOptimizer::new(cardinality_estimator, cost_model);
 

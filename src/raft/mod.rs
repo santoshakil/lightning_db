@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 // use crate::storage::{DataStore, PageManager};
 use parking_lot::Mutex;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use std::pin::Pin;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Sleep;
@@ -719,19 +719,19 @@ impl RaftNode {
     /// Handle incoming message
     async fn handle_message(&self, message: RaftMessage) -> Result<()> {
         match message {
-            RaftMessage::RequestVote(args) => {
+            RaftMessage::RequestVote(_args) => {
                 // Handle in leader_election module
             }
-            RaftMessage::AppendEntries(args) => {
+            RaftMessage::AppendEntries(_args) => {
                 // Handle in log_replication module
             }
-            RaftMessage::InstallSnapshot(args) => {
+            RaftMessage::InstallSnapshot(_args) => {
                 // Handle in snapshot module
             }
-            RaftMessage::ClientCommand(args) => {
+            RaftMessage::ClientCommand(_args) => {
                 // Handle client command
             }
-            RaftMessage::ClientRead(args) => {
+            RaftMessage::ClientRead(_args) => {
                 // Handle client read
             }
             _ => {}
@@ -742,9 +742,9 @@ impl RaftNode {
     /// Reset election timer with random timeout
     async fn reset_election_timer(&self) {
         let timeout = {
-            let mut rng = thread_rng();
+            let mut rng = rng();
             let (min, max) = self.config.election_timeout_range;
-            Duration::from_millis(rng.gen_range(min..(max + 1)))
+            Duration::from_millis(rng.random_range(min..(max + 1)))
         };
 
         let timer = tokio::time::sleep(timeout);

@@ -147,7 +147,10 @@ impl LockFreeBTree {
                 return SearchResult { value: None, path };
             }
 
-            let node = unsafe { current.as_ref() }.unwrap();
+            let node = match unsafe { current.as_ref() } {
+                Some(n) => n,
+                None => return SearchResult { value: None, path },
+            };
             let version = node.meta.version.load(Ordering::Acquire);
 
             // Check if node is deleted
@@ -480,20 +483,24 @@ impl LockFreeBTree {
         if node.meta.is_leaf {
             let next_ptr = node.next.load(Ordering::Acquire);
             unsafe {
-                new_node_shared
-                    .as_ref()
-                    .unwrap()
-                    .next
-                    .store(next_ptr, Ordering::Release);
-                node.next
-                    .store(new_node_shared.as_raw() as *mut Node, Ordering::Release);
+                if let Some(new_node_ref) = new_node_shared.as_ref() {
+                    new_node_ref.next.store(next_ptr, Ordering::Release);
+                    node.next
+                        .store(new_node_shared.as_raw() as *mut Node, Ordering::Release);
+                } else {
+                    return Err(Error::Generic("Failed to access new node after split".to_string()));
+                }
             }
         }
 
         // Insert key into appropriate node
         // Compare against the first key of the right node (split key)
-        let split_key =
-            unsafe { new_node_shared.as_ref().unwrap().keys[0].load(Ordering::Acquire) };
+        let split_key = unsafe {
+            match new_node_shared.as_ref() {
+                Some(node_ref) => node_ref.keys[0].load(Ordering::Acquire),
+                None => return Err(Error::Generic("Failed to access new node for split key".to_string())),
+            }
+        };
 
         if key < split_key {
             // Insert into original (left) node
@@ -501,26 +508,17 @@ impl LockFreeBTree {
             self.insert_into_node(node, key, value, insert_index, guard)?;
         } else {
             // Insert into new (right) node
-            let new_key_count = unsafe {
-                new_node_shared
-                    .as_ref()
-                    .unwrap()
-                    .meta
-                    .key_count
-                    .load(Ordering::Acquire)
+            let (new_key_count, new_node_ref) = unsafe {
+                match new_node_shared.as_ref() {
+                    Some(node_ref) => {
+                        let count = node_ref.meta.key_count.load(Ordering::Acquire);
+                        (count, node_ref)
+                    },
+                    None => return Err(Error::Generic("Failed to access new node for insertion".to_string())),
+                }
             };
-            let insert_index = self.binary_search_keys(
-                unsafe { new_node_shared.as_ref().unwrap() },
-                key,
-                new_key_count,
-            );
-            self.insert_into_node(
-                unsafe { new_node_shared.as_ref().unwrap() },
-                key,
-                value,
-                insert_index,
-                guard,
-            )?;
+            let insert_index = self.binary_search_keys(new_node_ref, key, new_key_count);
+            self.insert_into_node(new_node_ref, key, value, insert_index, guard)?;
         }
 
         // Finalize version update
@@ -547,10 +545,15 @@ impl LockFreeBTree {
             // Set up new root with two children
             new_root.meta.key_count.store(1, Ordering::Release);
             unsafe {
-                new_root.keys[0].store(
-                    new_node_shared.as_ref().unwrap().keys[0].load(Ordering::Acquire),
-                    Ordering::Release,
-                );
+                match new_node_shared.as_ref() {
+                    Some(node_ref) => {
+                        new_root.keys[0].store(
+                            node_ref.keys[0].load(Ordering::Acquire),
+                            Ordering::Release,
+                        );
+                    },
+                    None => return Err(Error::Generic("Failed to access new node for root key".to_string())),
+                }
             }
 
             // Store child pointers
@@ -570,8 +573,12 @@ impl LockFreeBTree {
             let parent_node = unsafe { &*parent_path.node };
 
             // The separator key is the first key of the new (right) node
-            let separator_key =
-                unsafe { new_node_shared.as_ref().unwrap().keys[0].load(Ordering::Acquire) };
+            let separator_key = unsafe {
+                match new_node_shared.as_ref() {
+                    Some(node_ref) => node_ref.keys[0].load(Ordering::Acquire),
+                    None => return Err(Error::Generic("Failed to access new node for separator key".to_string())),
+                }
+            };
 
             // Check if parent has space
             let parent_key_count = parent_node.meta.key_count.load(Ordering::Acquire);
@@ -780,7 +787,10 @@ impl<'a> RangeIterator<'a> {
 
         // Traverse to leftmost leaf
         while !current.is_null() {
-            let node = unsafe { current.as_ref() }.unwrap();
+            let node = match unsafe { current.as_ref() } {
+                Some(n) => n,
+                None => break,
+            };
 
             if node.meta.is_leaf {
                 self.current = node as *const Node;

@@ -527,13 +527,12 @@ impl Database {
 
     /// Create a temporary database for testing
     pub fn create_temp() -> Result<Self> {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "lightning_db_test_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| Error::Io(format!("System time error: {}", e)))?
+            .as_nanos();
+
+        let temp_dir = std::env::temp_dir().join(format!("lightning_db_test_{}", nanos));
         Self::create(temp_dir, LightningDbConfig::default())
     }
 
@@ -1801,9 +1800,9 @@ impl Database {
 
     /// Verify database integrity
     pub async fn verify_integrity(&self) -> Result<integrity::IntegrityReport> {
-        use integrity::{IntegrityConfig, IntegrityValidator};
+        use integrity::{NewIntegrityConfig, IntegrityValidator};
 
-        let config = IntegrityConfig::default();
+        let config = NewIntegrityConfig::default();
         let validator = IntegrityValidator::new(Arc::new(self.clone()), config);
 
         validator.validate().await
@@ -1812,7 +1811,7 @@ impl Database {
     /// Verify integrity with custom configuration
     pub async fn verify_integrity_with_config(
         &self,
-        config: integrity::IntegrityConfig,
+        config: integrity::NewIntegrityConfig,
     ) -> Result<integrity::IntegrityReport> {
         use integrity::IntegrityValidator;
 
@@ -1826,10 +1825,10 @@ impl Database {
         &self,
         _report: &integrity::IntegrityReport,
     ) -> Result<Vec<integrity::RepairAction>> {
-        use integrity::{IntegrityConfig, IntegrityValidator};
+        use integrity::{NewIntegrityConfig, IntegrityValidator};
 
-        let mut config = IntegrityConfig::default();
-        config.enable_repair = true;
+        let mut config = NewIntegrityConfig::default();
+        config.auto_repair = true;
         let validator = IntegrityValidator::new(Arc::new(self.clone()), config);
         validator.repair().await
     }

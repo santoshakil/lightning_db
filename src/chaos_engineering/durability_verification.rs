@@ -1028,7 +1028,7 @@ impl DurabilityVerificationTest {
 
         for i in 0..count {
             let key = format!("test_key_{}", i).into_bytes();
-            let value_size = rng.gen_range(100..10000);
+            let value_size = rng.random_range(100..10000);
             let value = (0..value_size).map(|_| rng.gen::<u8>()).collect();
             data.push((key, value));
         }

@@ -865,12 +865,14 @@ enum JoinAlgorithmChoice {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query_optimizer::StatisticsManager;
 
     #[test]
     fn test_plan_enumerator_creation() {
         let config = OptimizerConfig::default();
         let cost_model = Arc::new(CostModel::new(config.clone()));
-        let cardinality_estimator = Arc::new(CardinalityEstimator::new());
+        let statistics_manager = Arc::new(StatisticsManager::new(config.clone()));
+        let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics_manager));
 
         let enumerator = PlanEnumerator::new(cost_model, cardinality_estimator, config);
         assert!(enumerator.plan_cache.is_empty());
@@ -880,7 +882,8 @@ mod tests {
     fn test_enumeration_strategy_selection() {
         let config = OptimizerConfig::default();
         let cost_model = Arc::new(CostModel::new(config.clone()));
-        let cardinality_estimator = Arc::new(CardinalityEstimator::new());
+        let statistics_manager = Arc::new(StatisticsManager::new(config.clone()));
+        let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics_manager));
         let enumerator = PlanEnumerator::new(cost_model, cardinality_estimator, config);
 
         // Small query should use exhaustive
@@ -944,7 +947,8 @@ mod tests {
     fn test_table_access_plan_generation() {
         let config = OptimizerConfig::default();
         let cost_model = Arc::new(CostModel::new(config.clone()));
-        let cardinality_estimator = Arc::new(CardinalityEstimator::new());
+        let statistics_manager = Arc::new(StatisticsManager::new(config.clone()));
+        let cardinality_estimator = Arc::new(CardinalityEstimator::new(statistics_manager));
         let enumerator = PlanEnumerator::new(cost_model, cardinality_estimator, config);
 
         let query = LogicalQuery {

@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use tracing::{error, warn};
+use tracing::error;
 
 const WAL_MAGIC: u32 = 0x57414C47; // "WALG"
 const WAL_VERSION: u32 = 1;

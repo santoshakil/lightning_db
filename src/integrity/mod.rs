@@ -273,7 +273,7 @@ pub enum IntegrityStatus {
 
 /// Main integrity validator
 pub struct IntegrityValidator {
-    config: IntegrityConfig,
+    config: NewIntegrityConfig,
     database: Arc<Database>,
     report: Arc<RwLock<IntegrityReport>>,
     error_count: Arc<RwLock<usize>>,
@@ -281,7 +281,7 @@ pub struct IntegrityValidator {
 
 impl IntegrityValidator {
     /// Create new integrity validator
-    pub fn new(database: Arc<Database>, config: IntegrityConfig) -> Self {
+    pub fn new(database: Arc<Database>, config: NewIntegrityConfig) -> Self {
         Self {
             config,
             database,
@@ -307,31 +307,31 @@ impl IntegrityValidator {
         println!("Starting integrity validation...");
 
         // Phase 1: Checksum validation
-        if self.config.validate_checksums {
+        if self.config.enabled {
             println!("Phase 1: Validating checksums...");
             self.validate_checksums().await?;
         }
 
         // Phase 2: Page structure validation
-        if self.config.validate_page_structure {
+        if self.config.deep_structural_validation {
             println!("Phase 2: Validating page structures...");
             self.validate_page_structures().await?;
         }
 
         // Phase 3: B+Tree consistency
-        if self.config.validate_btree_consistency {
+        if self.config.deep_structural_validation {
             println!("Phase 3: Validating B+Tree consistency...");
             self.validate_btree_consistency().await?;
         }
 
         // Phase 4: Transaction log validation
-        if self.config.validate_transaction_log {
+        if self.config.temporal_consistency_checks {
             println!("Phase 4: Validating transaction log...");
             self.validate_transaction_log().await?;
         }
 
         // Phase 5: Cross-reference validation
-        if self.config.validate_cross_references {
+        if self.config.cross_reference_validation {
             println!("Phase 5: Validating cross-references...");
             self.validate_cross_references().await?;
         }
@@ -432,7 +432,7 @@ impl IntegrityValidator {
 
     /// Attempt repairs if enabled
     pub async fn repair(&self) -> Result<Vec<RepairAction>> {
-        if !self.config.enable_repair {
+        if !self.config.auto_repair {
             return Err(Error::InvalidOperation {
                 reason: "Repair not enabled in configuration".to_string(),
             });
@@ -516,15 +516,15 @@ impl IntegrityValidator {
 
 /// Quick integrity check for routine validation
 pub async fn quick_integrity_check(database: Arc<Database>) -> Result<bool> {
-    let config = IntegrityConfig {
-        validate_checksums: true,
-        validate_page_structure: false,
-        validate_btree_consistency: false,
-        validate_transaction_log: false,
-        validate_cross_references: false,
-        max_errors: 10,
-        enable_repair: false,
+    let config = NewIntegrityConfig {
+        enabled: true,
+        deep_structural_validation: false,
+        cross_reference_validation: false,
+        temporal_consistency_checks: false,
+        max_errors_threshold: 10,
+        auto_repair: false,
         backup_before_repair: false,
+        ..NewIntegrityConfig::default()
     };
 
     let validator = IntegrityValidator::new(database, config);

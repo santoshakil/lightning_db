@@ -401,7 +401,7 @@ impl TwoPhaseCommitCoordinator {
     async fn send_commit_request(
         &self,
         shard_id: ShardId,
-        tx_id: &str,
+        _tx_id: &str,
         operations: Vec<TransactionOp>,
     ) -> Result<()> {
         let leader_node = self.find_shard_leader(shard_id).await?;
@@ -478,7 +478,7 @@ impl TwoPhaseCommitCoordinator {
     }
 
     /// Find the leader node for a shard
-    async fn find_shard_leader(&self, shard_id: ShardId) -> Result<Arc<RaftNode>> {
+    async fn find_shard_leader(&self, _shard_id: ShardId) -> Result<Arc<RaftNode>> {
         let nodes = self.nodes.read();
 
         // For simplicity, use the first available node

@@ -1083,7 +1083,7 @@ mod tests {
         let strategy = prewarmer.generate_warming_strategy(&workload_pattern, &allocation);
         assert!(strategy.is_ok());
 
-        let strategy = strategy.unwrap_or_else(Vec::new);
+        let strategy = strategy.unwrap_or_else(|_| Vec::new());
         assert!(!strategy.is_empty());
     }
 }

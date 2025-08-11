@@ -575,15 +575,15 @@ impl IntegrityMonitor {
             results.pages_checked += 1;
 
             // Simulate checksum calculation and verification
-            if rng().gen_bool(0.001) {
+            if rng().random_bool(0.001) {
                 // 0.1% failure rate for testing
                 results.failures += 1;
                 results.failure_locations.push(format!("page_{}", i));
 
                 let failure = ChecksumFailure {
                     location: format!("page_{}", i),
-                    expected: rng().gen(),
-                    actual: rng().gen(),
+                    expected: rng().random(),
+                    actual: rng().random(),
                     timestamp: SystemTime::now(),
                     data_size: 4096,
                     repair_attempted: false,
@@ -625,11 +625,11 @@ impl IntegrityMonitor {
             results.pages_validated += 1;
 
             // Simulate various structural checks
-            if rng().gen_bool(0.0001) {
+            if rng().random_bool(0.0001) {
                 // 0.01% error rate
                 results.errors_found += 1;
 
-                let error_type = match rng().gen_range(0..6) {
+                let error_type = match rng().random_range(0..6) {
                     0 => StructuralErrorType::InvalidPageHeader,
                     1 => StructuralErrorType::CorruptedIndex,
                     2 => StructuralErrorType::BrokenLinkage,
@@ -695,7 +695,7 @@ impl IntegrityMonitor {
             results.references_checked += 1;
 
             // Simulate reference validation
-            if rng().gen_bool(0.0001) {
+            if rng().random_bool(0.0001) {
                 // 0.01% violation rate
                 results.violations += 1;
 
@@ -741,7 +741,7 @@ impl IntegrityMonitor {
             results.repair_attempts += 1;
 
             // Simulate repair attempt
-            if rng().gen_bool(0.8) {
+            if rng().random_bool(0.8) {
                 // 80% success rate
                 results.successful_repairs += 1;
                 failure.repair_attempted = true;
@@ -829,14 +829,14 @@ impl IntegrityMonitor {
         // Collect current metrics
         let metrics = SystemMetrics {
             timestamp: SystemTime::now(),
-            read_ops_per_sec: rng().gen_range(900.0..1100.0),
-            write_ops_per_sec: rng().gen_range(400.0..600.0),
-            average_latency_ms: rng().gen_range(0.8..1.2),
-            memory_usage_mb: rng().gen_range(100..200),
-            disk_usage_mb: rng().gen_range(1000..2000),
-            error_rate: rng().gen_range(0.0..0.002),
-            cache_hit_rate: rng().gen_range(0.85..0.95),
-            page_fault_rate: rng().gen_range(0.0..0.01),
+            read_ops_per_sec: rng().random_range(900.0..1100.0),
+            write_ops_per_sec: rng().random_range(400.0..600.0),
+            average_latency_ms: rng().random_range(0.8..1.2),
+            memory_usage_mb: rng().random_range(100..200),
+            disk_usage_mb: rng().random_range(1000..2000),
+            error_rate: rng().random_range(0.0..0.002),
+            cache_hit_rate: rng().random_range(0.85..0.95),
+            page_fault_rate: rng().random_range(0.0..0.01),
         };
 
         // Check for anomalies
