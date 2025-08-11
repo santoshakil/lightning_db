@@ -65,7 +65,7 @@ zeroize = { version = "1.8", features = ["derive"] }
 libc = "0.2"
 
 [dev-dependencies]
-criterion = "0.6"
+criterion = "0.7"
 proptest = "1.7"
 tempfile = "3.20"
 rand = "0.9"
