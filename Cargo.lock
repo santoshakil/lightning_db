@@ -576,17 +576,6 @@ dependencies = [
 
 [[package]]
 name = "brotli"
-version = "6.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74f7971dbd9326d58187408ab83117d8ac1bb9c17b085fdacd1cf2f598719b6b"
-dependencies = [
- "alloc-no-stdlib",
- "alloc-stdlib",
- "brotli-decompressor",
-]
-
-[[package]]
-name = "brotli"
 version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc97b8f16f944bba54f0433f07e30be199b6dc2bd25937444bbad560bcea29bd"
@@ -1991,7 +1980,7 @@ dependencies = [
  "bincode",
  "blake3",
  "bloom",
- "brotli 6.0.0",
+ "brotli",
  "bytemuck",
  "bytes",
  "chacha20poly1305",
@@ -2481,7 +2470,7 @@ dependencies = [
  "arrow-schema",
  "arrow-select",
  "base64 0.22.1",
- "brotli 7.0.0",
+ "brotli",
  "bytes",
  "chrono",
  "flate2",
