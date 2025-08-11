@@ -133,7 +133,7 @@ impl RpcHandler {
 
         // For some messages, we need to wait for response
         match message {
-            RaftMessage::RequestVote(args) => {
+            RaftMessage::RequestVote(_args) => {
                 // TODO: Implement proper response handling
                 RpcResponseType::RequestVote(RequestVoteReply {
                     term: 0,
@@ -141,7 +141,7 @@ impl RpcHandler {
                     reason: Some("Not implemented".to_string()),
                 })
             }
-            RaftMessage::AppendEntries(args) => {
+            RaftMessage::AppendEntries(_args) => {
                 // TODO: Implement proper response handling
                 RpcResponseType::AppendEntries(AppendEntriesReply {
                     term: 0,
@@ -151,7 +151,7 @@ impl RpcHandler {
                     conflict_index: None,
                 })
             }
-            RaftMessage::InstallSnapshot(args) => {
+            RaftMessage::InstallSnapshot(_args) => {
                 // TODO: Implement proper response handling
                 RpcResponseType::InstallSnapshot(InstallSnapshotReply {
                     term: 0,

@@ -305,7 +305,7 @@ impl EtcdServiceDiscovery {
     }
 
     /// Check health of a node
-    async fn check_node_health(address: &str) -> (bool, Option<String>) {
+    async fn check_node_health(_address: &str) -> (bool, Option<String>) {
         // Simulate network health check
         // In a real implementation, this would make an HTTP/gRPC call
         tokio::time::sleep(Duration::from_millis(5)).await;

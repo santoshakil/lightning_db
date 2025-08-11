@@ -6,7 +6,7 @@
 use crate::performance_tuning::{LatencyMetrics, PerformanceMetrics, TuningParameters};
 use crate::{Database, Error, LightningDbConfig, Result};
 use parking_lot::RwLock;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -418,7 +418,7 @@ impl PerformanceValidationFramework {
         // Generate workload
         for i in 0..self.workload_size {
             let key = format!("bench_key_{}", i);
-            let value = format!("bench_value_{}", thread_rng().gen::<u64>());
+            let value = format!("bench_value_{}", rng().random::<u64>());
 
             // Write operation
             let write_start = Instant::now();
@@ -428,7 +428,7 @@ impl PerformanceValidationFramework {
             write_ops += 1;
 
             // Read operation (50% chance)
-            if thread_rng().gen_bool(0.5) {
+            if rng().random_bool(0.5) {
                 let read_start = Instant::now();
                 let _ = db.get(key.as_bytes())?;
                 let read_latency = read_start.elapsed();

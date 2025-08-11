@@ -537,7 +537,7 @@ impl ByzantineFailuresTest {
     /// Measure cold cache access
     fn measure_cold_cache_access(&self, db: &Arc<Database>) -> Result<Duration> {
         // Create unique keys that haven't been accessed
-        let key = format!("cold_cache_test_{}", rng().gen::<u64>()).into_bytes();
+        let key = format!("cold_cache_test_{}", rng().random::<u64>()).into_bytes();
         db.put(&key, b"test_value")?;
 
         // Ensure it's evicted from cache (simplified)
@@ -730,7 +730,7 @@ impl ByzantineFailuresTest {
             let handle = thread::spawn(move || {
                 let mut rng = rng();
                 for _ in 0..1000 {
-                    let key = &keys[rng.gen_range(0..keys.len())];
+                    let key = &keys[rng.random_range(0..keys.len())];
                     if let Ok(Some(value)) = db_clone.get(key) {
                         // Verify value consistency
                         if value != b"initial" && value != b"updated" {
@@ -750,7 +750,7 @@ impl ByzantineFailuresTest {
             let handle = thread::spawn(move || {
                 let mut rng = rng();
                 for _ in 0..1000 {
-                    let key = &keys[rng.gen_range(0..keys.len())];
+                    let key = &keys[rng.random_range(0..keys.len())];
                     let _ = db_clone.put(key, b"updated");
                 }
             });
@@ -861,7 +861,7 @@ impl ByzantineFailuresTest {
                 for _ in 0..100 {
                     // Simulate rapid resource acquisition/release
                     // In real scenario, would test file handles, connections, etc.
-                    thread::sleep(Duration::from_micros(rng().gen_range(0..100)));
+                    thread::sleep(Duration::from_micros(rng().random_range(0..100)));
                 }
             });
             handles.push(handle);

@@ -128,7 +128,7 @@ impl ConsistencyChecker {
 
         // Recurse to children if internal node
         if node.node_type == crate::btree::node::NodeType::Internal {
-            for (i, &child_id) in node.children.iter().enumerate() {
+            for (_i, &child_id) in node.children.iter().enumerate() {
                 if child_id != 0 {
                     Box::pin(self.traverse_tree(child_id, Some(page_id), depth + 1, errors))
                         .await?;
@@ -224,7 +224,7 @@ impl ConsistencyChecker {
         // Find all leaf nodes
         let leaf_depths: HashSet<usize> = depth_map
             .iter()
-            .filter_map(|(page_id, depth)| {
+            .filter_map(|(_page_id, depth)| {
                 // Check if this is a leaf by loading the page
                 // In production, we'd optimize this
                 Some(*depth)

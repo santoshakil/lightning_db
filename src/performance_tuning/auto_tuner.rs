@@ -193,7 +193,7 @@ impl AutoTuner {
 
         // Randomly select a parameter to modify
         let mut rng = rand::rng();
-        if let Some(param) = tunable_params.get(rng.gen_range(0..tunable_params.len())) {
+        if let Some(param) = tunable_params.get(rng.random_range(0..tunable_params.len())) {
             new_params.insert(
                 param.name.clone(),
                 self.adjust_parameter(&param.value, &param, 1.0)?,
@@ -257,7 +257,7 @@ impl AutoTuner {
                 let mut rng = rand::rng();
 
                 if rng.gen::<f64>() < self.exploration_rate {
-                    if let Some(param) = tunable_params.get(rng.gen_range(0..tunable_params.len()))
+                    if let Some(param) = tunable_params.get(rng.random_range(0..tunable_params.len()))
                     {
                         new_params.insert(
                             param.name.clone(),
@@ -367,7 +367,7 @@ impl AutoTuner {
                 };
 
                 let range = ((*max - *min) as f64 * magnitude * 0.2) as i64;
-                let delta = rng.gen_range(-range..=range) / step * step;
+                let delta = rng.random_range(-range..=range) / step * step;
                 let new_val = (*val + delta).clamp(*min, *max);
 
                 Ok(ParameterValue::Integer(new_val))
@@ -378,7 +378,7 @@ impl AutoTuner {
                 ParameterValue::Float(max),
             ) => {
                 let range = (*max - *min) * magnitude * 0.2;
-                let delta = rng.gen_range(-range..=range);
+                let delta = rng.random_range(-range..=range);
                 let new_val = (*val + delta).clamp(*min, *max);
 
                 Ok(ParameterValue::Float(new_val))
@@ -392,7 +392,7 @@ impl AutoTuner {
             }
             (ParameterValue::Enum(current, options), _, _) => {
                 if rng.gen::<f64>() < magnitude * 0.2 && !options.is_empty() {
-                    let new_idx = rng.gen_range(0..options.len());
+                    let new_idx = rng.random_range(0..options.len());
                     Ok(ParameterValue::Enum(
                         options[new_idx].clone(),
                         options.clone(),

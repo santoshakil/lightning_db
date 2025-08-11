@@ -150,7 +150,7 @@ impl RepairTool {
     }
 
     /// Rebuild metadata checksum
-    async fn rebuild_metadata_checksum(&self, page_id: u64) -> RepairAction {
+    async fn rebuild_metadata_checksum(&self, _page_id: u64) -> RepairAction {
         let mut action = RepairAction {
             action_type: RepairActionType::RebuildChecksum,
             target: RepairTarget::Metadata,
@@ -211,7 +211,7 @@ impl RepairTool {
         match self.page_manager.load_page(page_id).await {
             Ok(page) => {
                 match BTreeNode::deserialize_from_page(&page) {
-                    Ok(node) => {
+                    Ok(_node) => {
                         // Update key count in page header
                         // Implementation would update the actual count
                         action.success = true;

@@ -423,7 +423,7 @@ impl ResourceExhaustionTest {
 
             // Allocate various sized blocks
             for _ in 0..50 {
-                let size = match rng.gen_range(0..3) {
+                let size = match rng.random_range(0..3) {
                     0 => 1024,       // 1KB
                     1 => 64 * 1024,  // 64KB
                     _ => 512 * 1024, // 512KB
@@ -515,7 +515,7 @@ impl ResourceExhaustionTest {
             operations += 1;
 
             // Randomly fail allocations
-            if rng.gen_range(0..100) < failure_rate {
+            if rng.random_range(0..100) < failure_rate {
                 self.memory_pressure
                     .allocation_failures
                     .fetch_add(1, Ordering::Relaxed);
@@ -550,7 +550,7 @@ impl ResourceExhaustionTest {
 
         for i in 0..100 {
             let key = format!("pressure_test_{}", i).into_bytes();
-            let value = vec![0u8; rng.gen_range(100..10000)];
+            let value = vec![0u8; rng.random_range(100..10000)];
 
             match db.put(&key, &value) {
                 Ok(_) => {}
@@ -873,7 +873,7 @@ impl ResourceExhaustionTest {
             let key = format!("write_failure_test_{}", i).into_bytes();
 
             // Inject failure based on rate
-            if rng.gen_range(0..100) < failure_rate {
+            if rng.random_range(0..100) < failure_rate {
                 failures += 1;
                 // Simulate write failure
                 println!("   Injecting write failure for operation {}", i);

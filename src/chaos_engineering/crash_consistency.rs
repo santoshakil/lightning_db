@@ -477,7 +477,7 @@ impl CrashConsistencyTest {
             let key = format!("key_{}_{}", tx_id, op_idx).into_bytes();
             let value = format!("value_{}_{}", tx_id, op_idx).into_bytes();
 
-            let operation = if rng.gen_bool(0.7) {
+            let operation = if rng.random_bool(0.7) {
                 // Put operation
                 match db.put_tx(transaction_id, &key, &value) {
                     Ok(_) => Operation {
@@ -508,7 +508,7 @@ impl CrashConsistencyTest {
         }
 
         // Decide whether to commit or abort
-        if rng.gen_bool(0.8) {
+        if rng.random_bool(0.8) {
             // Commit transaction
             crash_simulator.maybe_crash(CrashScenario::DuringCommit)?;
 
@@ -642,7 +642,7 @@ impl CrashSimulator {
 
         let crash_points = self.crash_points.read();
         if let Some(crash_point) = crash_points.get(&scenario) {
-            if crash_point.enabled && rng().gen_bool(crash_point.probability) {
+            if crash_point.enabled && rng().random_bool(crash_point.probability) {
                 // Simulate crash
                 self.trigger_crash(scenario)?;
             }

@@ -270,7 +270,7 @@ impl ChecksumValidator {
         start_page: u64,
         end_page: u64,
     ) -> Result<Vec<ChecksumError>> {
-        let errors: Vec<ChecksumError> = Vec::new();
+        let _errors: Vec<ChecksumError> = Vec::new();
 
         for page_id in start_page..=end_page {
             if !self.validate_page(page_id).await.unwrap_or(false) {
@@ -295,7 +295,7 @@ impl ChecksumValidator {
 
         // Update data checksum
         if data.len() > 32 {
-            let data_checksum = calculate_checksum(&data[32..]);
+            let _data_checksum = calculate_checksum(&data[32..]);
             // Store data checksum in appropriate location
         }
 

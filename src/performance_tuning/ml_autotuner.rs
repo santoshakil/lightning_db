@@ -5,7 +5,7 @@
 
 use crate::performance_tuning::{PerformanceMetrics, TuningParameters, WorkloadType};
 use crate::Result;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, SystemTime};
@@ -724,13 +724,13 @@ impl GeneticOptimizer {
 
         for _ in 0..self.population_size {
             let parameters = TuningParameters {
-                cache_size_mb: thread_rng().gen_range(64..2048), // 64MB to 2GB
-                write_buffer_size: (thread_rng().gen_range(1024..32768) as usize)
+                cache_size_mb: rng().random_range(64..2048), // 64MB to 2GB
+                write_buffer_size: (rng().random_range(1024..32768) as usize)
                     .next_power_of_two(), // 1KB to 32KB (power of 2)
-                compaction_threads: thread_rng().gen_range(1..=8), // 1 to 8 threads
-                bloom_filter_bits_per_key: thread_rng().gen_range(8..=20), // 8 to 20 bits
-                prefetch_distance: (thread_rng().gen_range(8..64) as usize).next_power_of_two(), // 8 to 64 (power of 2)
-                write_batch_size: thread_rng().gen_range(100..5000), // 100 to 5000
+                compaction_threads: rng().random_range(1..=8), // 1 to 8 threads
+                bloom_filter_bits_per_key: rng().random_range(8..=20), // 8 to 20 bits
+                prefetch_distance: (rng().random_range(8..64) as usize).next_power_of_two(), // 8 to 64 (power of 2)
+                write_batch_size: rng().random_range(100..5000), // 100 to 5000
             };
 
             let genome = ParameterGenome {
@@ -830,7 +830,7 @@ impl GeneticOptimizer {
         let mut best = &self.population[0];
 
         for _ in 0..tournament_size {
-            let candidate_idx = thread_rng().gen_range(0..self.population.len());
+            let candidate_idx = rng().random_range(0..self.population.len());
             let candidate = &self.population[candidate_idx];
             if candidate.fitness > best.fitness {
                 best = candidate;
@@ -898,7 +898,7 @@ impl GeneticOptimizer {
         if rand::random::<f64>() < 0.2 {
             // Cache size mutation (±25%)
             let variation = (params.cache_size_mb as f64 * 0.25) as usize;
-            let delta = thread_rng().gen_range(0..=variation * 2);
+            let delta = rng().random_range(0..=variation * 2);
             params.cache_size_mb = (params.cache_size_mb + delta)
                 .saturating_sub(variation)
                 .max(64)
@@ -951,7 +951,7 @@ impl GeneticOptimizer {
         if rand::random::<f64>() < 0.2 {
             // Write batch size mutation (±20%)
             let variation = (params.write_batch_size as f64 * 0.2) as usize;
-            let delta = thread_rng().gen_range(0..=variation * 2);
+            let delta = rng().random_range(0..=variation * 2);
             params.write_batch_size = (params.write_batch_size + delta)
                 .saturating_sub(variation)
                 .max(100)
@@ -1239,12 +1239,12 @@ impl BayesianOptimizer {
     /// Random exploration for early stages
     fn random_exploration(&self) -> Result<Option<TuningParameters>> {
         let params = TuningParameters {
-            cache_size_mb: thread_rng().gen_range(128..2048), // 128MB to 2GB
-            write_buffer_size: (thread_rng().gen_range(2048..32768) as usize).next_power_of_two(),
-            compaction_threads: thread_rng().gen_range(2..=8), // 2 to 8 threads
-            bloom_filter_bits_per_key: thread_rng().gen_range(10..=18), // 10 to 18 bits
-            prefetch_distance: (thread_rng().gen_range(16..64) as usize).next_power_of_two(),
-            write_batch_size: thread_rng().gen_range(500..3500), // 500 to 3500
+            cache_size_mb: rng().random_range(128..2048), // 128MB to 2GB
+            write_buffer_size: (rng().random_range(2048..32768) as usize).next_power_of_two(),
+            compaction_threads: rng().random_range(2..=8), // 2 to 8 threads
+            bloom_filter_bits_per_key: rng().random_range(10..=18), // 10 to 18 bits
+            prefetch_distance: (rng().random_range(16..64) as usize).next_power_of_two(),
+            write_batch_size: rng().random_range(500..3500), // 500 to 3500
         };
 
         Ok(Some(params))
@@ -1725,7 +1725,7 @@ impl ReinforcementLearningAgent {
 
     /// Choose random action for exploration
     fn random_action(&self) -> TuningAction {
-        let idx = thread_rng().gen_range(0..self.action_space.len());
+        let idx = rng().random_range(0..self.action_space.len());
         self.action_space[idx].clone()
     }
 

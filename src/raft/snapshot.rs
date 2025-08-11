@@ -205,7 +205,7 @@ impl RaftNode {
     }
 
     /// Store partial snapshot chunk
-    async fn store_snapshot_chunk(&self, args: InstallSnapshotArgs) -> Result<()> {
+    async fn store_snapshot_chunk(&self, _args: InstallSnapshotArgs) -> Result<()> {
         // TODO: Implement streaming snapshot support
         // For now, we only support single-chunk snapshots
         Err(Error::NotImplemented(
