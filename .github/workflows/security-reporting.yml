@@ -47,7 +47,7 @@ jobs:
       report_summary: ${{ steps.analysis.outputs.report_summary }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Get latest workflow runs
         id: get-workflows
@@ -199,7 +199,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Generate comprehensive security report
         run: |
