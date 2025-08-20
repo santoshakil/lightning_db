@@ -20,13 +20,13 @@ fn generate_build_info() {
         Ok(output) => String::from_utf8_lossy(&output.stdout).trim().to_string(),
         Err(_) => "unknown".to_string(),
     };
-    println!("cargo:rustc-env=RUSTC_VERSION={}", rustc_version);
+    println!("cargo:rustc-env=RUSTC_VERSION={rustc_version}");
 
     // Get build time
     let build_time = chrono::Utc::now()
         .format("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
-    println!("cargo:rustc-env=BUILD_TIME={}", build_time);
+    println!("cargo:rustc-env=BUILD_TIME={build_time}");
 
     // Get git commit hash
     let git_commit = match Command::new("git").args(["rev-parse", "HEAD"]).output() {
@@ -40,7 +40,7 @@ fn generate_build_info() {
         }
         Err(_) => "unknown".to_string(),
     };
-    println!("cargo:rustc-env=GIT_COMMIT={}", git_commit);
+    println!("cargo:rustc-env=GIT_COMMIT={git_commit}");
 
     // C headers are generated in the lightning-db-ffi subdirectory via cbindgen
     // FFI implementation is complete in lightning-db-ffi/

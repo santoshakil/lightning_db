@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use lightning_db::{Database, LightningDbConfig};
 use std::hint::black_box;
 use std::sync::Arc;

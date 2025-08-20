@@ -1,34 +1,30 @@
 # Lightning DB ⚡
 
-A production-ready, high-performance embedded key-value database written in Rust. Achieves **20.4M ops/sec** read and **1.14M ops/sec** write performance with sub-microsecond latency. **Status: PRODUCTION READY with 100% ACID compliance.**
+A high-performance embedded key-value database written in Rust with sub-microsecond latency and exceptional throughput capabilities.
 
 ## Features
 
-- **Extreme Performance**: 20.4M reads/sec (0.049μs), 1.14M writes/sec (0.88μs)
+- **High Performance**: 14.4M reads/sec, 356K writes/sec with <0.1μs read latency
 - **Small Footprint**: <5MB binary size, configurable memory from 10MB
-- **100% ACID Compliant**: Full transaction support with MVCC, zero data loss
-- **Perfect Crash Recovery**: 100% data recovery with WAL and integrity checks
+- **ACID Transactions**: Full transaction support with MVCC
 - **Write Optimization**: LSM tree with parallel compaction
-- **Adaptive Caching**: ARC algorithm with batch eviction
+- **Adaptive Caching**: ARC algorithm with intelligent memory management
 - **Compression**: Zstd/LZ4/Snappy with adaptive selection
 - **Cross-Platform**: Linux, macOS, Windows support
 - **FFI Support**: C/C++ API for language integration
-- **Lock-Free Operations**: Zero contention on hot paths
-- **Thread-Safe**: Concurrent access with zero errors
+- **Thread-Safe**: Concurrent access with safety guarantees
 - **Production Monitoring**: Prometheus, health checks, distributed tracing
 
 ## Performance
 
-Production validation results:
+Benchmarked on typical development hardware:
 
-| Metric | Target | **Achieved** | Status |
-|--------|--------|------------|--------|
-| Write Performance | 100K ops/sec | **1.14M ops/sec** | ✅ 11x target |
-| Read Performance | 1M ops/sec | **20.4M ops/sec** | ✅ 20x target |
-| Crash Recovery | 90% | **100%** | ✅ Perfect |
-| ACID Compliance | Required | **100%** | ✅ Full compliance |
-| Memory Safety | No leaks | **Zero leaks** | ✅ Verified |
-| Concurrent Safety | Thread-safe | **Zero errors** | ✅ 8+ threads |
+| Operation | Throughput | Latency | Status |
+|-----------|------------|---------|---------|
+| Read (cached) | 14.4M ops/sec | 0.07 μs | ✅ Excellent |
+| Write | 356K ops/sec | 2.81 μs | ✅ High performance |
+| Batch Write | 500K+ ops/sec | <2 μs | ✅ Optimized |
+| Range Scan | 2M+ entries/sec | - | ✅ Fast iteration |
 
 ## Quick Start
 
@@ -208,17 +204,6 @@ Lightning DB uses a hybrid architecture optimized for both read and write perfor
 
 ## Production Deployment
 
-### Docker Deployment
-
-```bash
-# Build and run with Docker Compose
-cd docker
-docker-compose up -d
-
-# Access monitoring dashboards
-# - Prometheus: http://localhost:9090
-# - Grafana: http://localhost:3000 (admin/admin123)
-```
 
 ### Monitoring and Observability
 
@@ -247,35 +232,6 @@ if !health.is_healthy {
 }
 ```
 
-### Dart SDK Performance Monitoring
-
-The Dart SDK includes comprehensive performance monitoring and diagnostics:
-
-```dart
-// Monitor database performance
-final monitoredDb = MonitoredLightningDb(rawDb);
-
-// Access real-time metrics
-final metrics = monitoredDb.monitor.metrics;
-print('Total reads: ${metrics.totalReads}');
-print('Cache hit rate: ${metrics.cacheHitRate}');
-print('Reads per second: ${metrics.readsPerSecond}');
-
-// Generate performance report
-final report = await monitoredDb.monitor.generateReport();
-print('Average read latency: ${report.metrics.averageReadLatency}');
-
-// Real-time diagnostics screen (Flutter)
-Navigator.push(context, 
-  MaterialPageRoute(builder: (_) => DiagnosticsScreen()));
-```
-
-Features include:
-- **Real-time performance tracking** with latency and throughput metrics
-- **Interactive diagnostics screen** with live charts and load testing
-- **Performance recommendations** based on usage patterns
-- **Event timeline** showing recent operations and their performance
-- **Load testing tools** for stress testing database performance
 
 ## Building from Source
 
@@ -299,55 +255,45 @@ cargo build --release --all-features
 
 ## Documentation
 
-- [Production Guide](./docs/PRODUCTION_GUIDE.md) - Comprehensive production deployment
-- [API Reference](./docs/api-reference.md) - Complete API documentation
-- [Architecture Overview](./docs/architecture-overview.md) - System design details
-- [Development Guide](./docs/development-guide.md) - Contributing and development
-- [Benchmarking Guide](./docs/benchmarking-guide.md) - Performance testing
-- [Integration Guide](./docs/integration-guide.md) - Platform integration
+For comprehensive documentation, see the inline code documentation generated with:
+
+```bash
+cargo doc --open
+```
+
+Additional documentation files in this repository:
+- [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md) - Production deployment status
+- [CACHE_OPTIMIZATIONS.md](./CACHE_OPTIMIZATIONS.md) - Cache layer optimizations
+- [MEMORY_OPTIMIZATIONS.md](./MEMORY_OPTIMIZATIONS.md) - Memory allocation improvements
 
 ## Examples
 
-Examples are organized by category in the `examples/` directory:
+Example applications are provided in the `examples/` directory:
 
-### Basic
-- `basic/basic_usage.rs` - Simple key-value operations
-- `basic/demo.rs` - Quick feature demonstration
-- `basic/best_practices.rs` - Recommended patterns
+- `basic_usage.rs` - Simple key-value operations and transactions
+- `io_benchmark_demo.rs` - I/O performance testing
+- `perf_test.rs` - Performance benchmarking
 
-### Production
-- `production/config_management_demo.rs` - Configuration management
-- `production/health_check_server.rs` - Health monitoring
-- `production/distributed_tracing_example.rs` - OpenTelemetry integration
+To run an example:
 
-### Advanced
-- `advanced/encryption_example.rs` - Encryption features
-- `advanced/all_features.rs` - Comprehensive showcase
-
-### Performance
-- `benchmarks/benchmark.rs` - Performance benchmarks
-- `benchmarks/stress_test_suite.rs` - Stress testing
+```bash
+cargo run --example basic_usage
+```
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please ensure all tests pass and follow Rust best practices.
 
 ## License
 
 Lightning DB is licensed under the MIT License. See [LICENSE](./LICENSE) for details.
 
-## Support
-
-- GitHub Issues: [Report bugs or request features](https://github.com/yourusername/lightning_db/issues)
-- Documentation: [Full documentation](https://docs.lightning-db.com)
-- Community: [Discord server](https://discord.gg/lightning-db)
-
 ## Roadmap
 
-See [PRODUCTION_ROADMAP.md](./PRODUCTION_ROADMAP.md) for detailed development plans including:
+Future development plans include:
 
 - Secondary indexes
-- Column families
+- Column families  
 - Distributed replication
 - Time-series optimizations
 - SQL query layer

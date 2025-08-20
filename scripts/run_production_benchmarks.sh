@@ -1,0 +1,204 @@
+#!/bin/bash
+
+# Production benchmark runner for Lightning DB
+# This script runs comprehensive performance benchmarks and generates reports
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+echo -e "${BLUE}=== Lightning DB Production Benchmark Suite ===${NC}"
+echo ""
+
+# Check if criterion is available
+if ! command -v cargo &> /dev/null; then
+    echo -e "${RED}Error: cargo not found${NC}"
+    exit 1
+fi
+
+# Create output directory
+OUTPUT_DIR="benchmark_results/$(date +%Y%m%d_%H%M%S)"
+mkdir -p "$OUTPUT_DIR"
+
+echo -e "${YELLOW}Output directory: $OUTPUT_DIR${NC}"
+echo ""
+
+# Set performance governor (Linux only)
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    echo -e "${YELLOW}Setting CPU governor to performance mode...${NC}"
+    if command -v cpupower &> /dev/null; then
+        sudo cpupower frequency-set -g performance 2>/dev/null || echo "Warning: Could not set CPU governor"
+    fi
+fi
+
+# Build in release mode
+echo -e "${BLUE}Building Lightning DB in release mode...${NC}"
+cargo build --release --features="sys-info"
+
+# Function to run benchmark with proper setup
+run_benchmark() {
+    local bench_name=$1
+    local description=$2
+    
+    echo -e "${GREEN}Running $description...${NC}"
+    echo "Benchmark: $bench_name"
+    echo "Started at: $(date)"
+    
+    # Run benchmark and save output
+    cargo bench --bench "$bench_name" -- --output-format json --quiet > "$OUTPUT_DIR/${bench_name}_results.json" 2>&1 || {
+        echo -e "${RED}Warning: $bench_name benchmark failed, continuing...${NC}"
+        echo "Error: Benchmark failed" > "$OUTPUT_DIR/${bench_name}_results.json"
+    }
+    
+    echo "Completed at: $(date)"
+    echo ""
+}
+
+# Run core performance benchmarks
+echo -e "${BLUE}=== Core Performance Benchmarks ===${NC}"
+run_benchmark "production_benchmarks" "Core Performance Tests"
+
+# Run existing benchmarks for comparison
+echo -e "${BLUE}=== Regression Comparison ===${NC}"
+run_benchmark "performance_regression_suite" "Performance Regression Tests"
+
+# Generate performance report
+echo -e "${BLUE}=== Generating Performance Report ===${NC}"
+
+# Create a simple benchmark results analyzer
+cat > "$OUTPUT_DIR/analyze_results.py" << 'EOF'
+#!/usr/bin/env python3
+import json
+import sys
+import os
+from datetime import datetime
+
+def analyze_benchmark_results(results_dir):
+    """Analyze benchmark results and generate summary"""
+    
+    print("Lightning DB Performance Analysis")
+    print("=" * 50)
+    print(f"Results from: {results_dir}")
+    print(f"Generated: {datetime.now()}")
+    print()
+    
+    # Try to parse JSON results
+    results_files = [f for f in os.listdir(results_dir) if f.endswith('_results.json')]
+    
+    if not results_files:
+        print("No benchmark result files found!")
+        return
+    
+    for results_file in results_files:
+        print(f"Processing: {results_file}")
+        try:
+            with open(os.path.join(results_dir, results_file), 'r') as f:
+                content = f.read()
+                if content.strip() == "Error: Benchmark failed":
+                    print(f"  ❌ Benchmark failed")
+                else:
+                    print(f"  ✅ Benchmark completed ({len(content)} bytes of data)")
+        except Exception as e:
+            print(f"  ⚠️  Error reading file: {e}")
+        print()
+
+    # Generate summary report
+    with open(os.path.join(results_dir, "performance_summary.md"), 'w') as f:
+        f.write(f"""# Lightning DB Performance Summary
+
+Generated: {datetime.now()}
+
+## Benchmark Execution Summary
+
+""")
+        
+        for results_file in results_files:
+            benchmark_name = results_file.replace('_results.json', '')
+            f.write(f"### {benchmark_name}\n\n")
+            
+            try:
+                with open(os.path.join(results_dir, results_file), 'r') as rf:
+                    content = rf.read()
+                    if content.strip() == "Error: Benchmark failed":
+                        f.write("❌ **Status:** Failed\n\n")
+                    else:
+                        f.write("✅ **Status:** Completed\n")
+                        f.write(f"**Data Size:** {len(content)} bytes\n\n")
+            except:
+                f.write("⚠️ **Status:** Error reading results\n\n")
+        
+        f.write("""
+## Performance Targets
+
+| Metric | Target | Status |
+|--------|--------|---------|
+| Read Throughput | 14M+ ops/sec | To be measured |
+| Write Throughput | 350K+ ops/sec | To be measured |
+| P99 Latency | <1ms | To be measured |
+| Memory Usage | <1GB for 10GB DB | To be measured |
+| CPU Utilization | <80% at peak | To be measured |
+
+## Next Steps
+
+1. Analyze detailed benchmark results
+2. Compare against performance targets
+3. Identify optimization opportunities
+4. Generate comprehensive performance report
+
+---
+*Generated by Lightning DB Production Benchmark Suite*
+""")
+    
+    print("Summary report generated: performance_summary.md")
+
+if __name__ == "__main__":
+    results_dir = sys.argv[1] if len(sys.argv) > 1 else "."
+    analyze_benchmark_results(results_dir)
+EOF
+
+# Make analyzer executable and run it
+chmod +x "$OUTPUT_DIR/analyze_results.py"
+python3 "$OUTPUT_DIR/analyze_results.py" "$OUTPUT_DIR"
+
+# System information
+echo -e "${BLUE}=== System Information ===${NC}"
+echo "Hardware Configuration:" > "$OUTPUT_DIR/system_info.txt"
+echo "CPU: $(nproc) cores" >> "$OUTPUT_DIR/system_info.txt"
+echo "Memory: $(free -h | awk '/^Mem:/ {print $2}' 2>/dev/null || echo 'Unknown')" >> "$OUTPUT_DIR/system_info.txt"
+echo "OS: $(uname -a)" >> "$OUTPUT_DIR/system_info.txt"
+echo "Rust Version: $(rustc --version)" >> "$OUTPUT_DIR/system_info.txt"
+echo "Cargo Version: $(cargo --version)" >> "$OUTPUT_DIR/system_info.txt"
+echo "" >> "$OUTPUT_DIR/system_info.txt"
+
+cat "$OUTPUT_DIR/system_info.txt"
+
+# Reset CPU governor (Linux only)
+if [[ "$OSTYPE" == "linux-gnu"* ]] && command -v cpupower &> /dev/null; then
+    echo -e "${YELLOW}Restoring CPU governor...${NC}"
+    sudo cpupower frequency-set -g powersave 2>/dev/null || echo "Warning: Could not restore CPU governor"
+fi
+
+echo -e "${GREEN}=== Benchmark Suite Complete ===${NC}"
+echo -e "Results saved to: ${BLUE}$OUTPUT_DIR${NC}"
+echo ""
+echo "Files generated:"
+echo "  - production_benchmarks_results.json"
+echo "  - performance_regression_suite_results.json"
+echo "  - performance_summary.md"
+echo "  - system_info.txt"
+echo ""
+echo -e "${YELLOW}To view detailed results:${NC}"
+echo "  cat $OUTPUT_DIR/performance_summary.md"
+echo ""
+echo -e "${YELLOW}To run specific benchmark groups:${NC}"
+echo "  cargo bench --bench production_benchmarks core_performance"
+echo "  cargo bench --bench production_benchmarks latency"
+echo "  cargo bench --bench production_benchmarks scalability"
+echo "  cargo bench --bench production_benchmarks workloads"
+echo "  cargo bench --bench production_benchmarks validation"
+echo ""

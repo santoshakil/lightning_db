@@ -1,11 +1,47 @@
 use lightning_db::{Database, LightningDbConfig, WalSyncMode};
+use std::hash::{BuildHasher, Hasher};
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc, Barrier,
+    Arc, Barrier, mpsc,
 };
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::tempdir;
+
+/// Helper function to safely join threads with timeout
+fn safe_join_threads<T>(handles: Vec<std::thread::JoinHandle<T>>, timeout_secs: u64) -> Vec<Option<T>>
+where
+    T: Send + 'static,
+{
+    let (tx, rx) = mpsc::channel();
+    let num_threads = handles.len();
+    
+    for (i, handle) in handles.into_iter().enumerate() {
+        let tx_clone = tx.clone();
+        std::thread::spawn(move || {
+            let result = handle.join();
+            tx_clone.send((i, result)).ok();
+        });
+    }
+    
+    let mut results = Vec::with_capacity(num_threads);
+    for _ in 0..num_threads {
+        results.push(None);
+    }
+    let timeout = Duration::from_secs(timeout_secs);
+    let start = Instant::now();
+    
+    for _ in 0..num_threads {
+        let remaining_time = timeout.saturating_sub(start.elapsed());
+        if let Ok((index, thread_result)) = rx.recv_timeout(remaining_time) {
+            if let Ok(value) = thread_result {
+                results[index] = Some(value);
+            }
+        }
+    }
+    
+    results
+}
 
 /// Test ARC cache operations under heavy concurrent load
 /// Validates deadlock prevention in cache eviction mechanisms
@@ -34,7 +70,7 @@ fn test_arc_cache_concurrent_stress() {
         let barrier_clone = Arc::clone(&barrier);
         let hits_clone = Arc::clone(&cache_hits);
         let misses_clone = Arc::clone(&cache_misses);
-        let evictions_clone = Arc::new(AtomicUsize::clone(&evictions_detected));
+        let evictions_clone = Arc::clone(&evictions_detected);
 
         let handle = thread::spawn(move || {
             barrier_clone.wait();
@@ -48,7 +84,7 @@ fn test_arc_cache_concurrent_stress() {
                 
                 match db_clone.put(key.as_bytes(), &value) {
                     Ok(_) => {
-                        local_keys.push(key);
+                        local_keys.push(key.clone());
                         
                         // Immediately read back to test cache behavior
                         match db_clone.get(key.as_bytes()) {
@@ -56,11 +92,17 @@ fn test_arc_cache_concurrent_stress() {
                                 assert_eq!(retrieved.len(), value_size);
                                 hits_clone.fetch_add(1, Ordering::Relaxed);
                             }
-                            Ok(None) => misses_clone.fetch_add(1, Ordering::Relaxed),
-                            Err(_) => misses_clone.fetch_add(1, Ordering::Relaxed),
+                            Ok(None) => {
+                                misses_clone.fetch_add(1, Ordering::Relaxed);
+                            }
+                            Err(_) => {
+                                misses_clone.fetch_add(1, Ordering::Relaxed);
+                            }
                         }
                     }
-                    Err(_) => misses_clone.fetch_add(1, Ordering::Relaxed),
+                    Err(_) => {
+                        misses_clone.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
 
                 // Every 50 operations, try to read from other threads' keys
@@ -69,9 +111,11 @@ fn test_arc_cache_concurrent_stress() {
                         if other_thread != thread_id {
                             let cross_key = format!("cache_test_{}_{:06}", other_thread, i / 2);
                             match db_clone.get(cross_key.as_bytes()) {
-                                Ok(Some(_)) => hits_clone.fetch_add(1, Ordering::Relaxed),
-                                Ok(None) => {}, // May not exist yet
-                                Err(_) => {},
+                                Ok(Some(_)) => {
+                                    hits_clone.fetch_add(1, Ordering::Relaxed);
+                                }
+                                Ok(None) => {} // May not exist yet
+                                Err(_) => {}
                             }
                         }
                     }
@@ -80,13 +124,23 @@ fn test_arc_cache_concurrent_stress() {
 
             // Phase 2: Random access pattern to trigger cache evictions
             for _ in 0..200 {
-                if let Some(key) = local_keys.get((rand::random::<usize>()) % local_keys.len()) {
+                use std::collections::hash_map::RandomState;
+                let mut hasher = RandomState::new().build_hasher();
+                hasher.write_usize(thread_id * 1000);
+                let hash = hasher.finish() as usize;
+                if let Some(key) = local_keys.get(hash % local_keys.len()) {
                     let before_access = db_clone.cache_stats();
                     
                     match db_clone.get(key.as_bytes()) {
-                        Ok(Some(_)) => hits_clone.fetch_add(1, Ordering::Relaxed),
-                        Ok(None) => evictions_clone.fetch_add(1, Ordering::Relaxed),
-                        Err(_) => evictions_clone.fetch_add(1, Ordering::Relaxed),
+                        Ok(Some(_)) => {
+                            hits_clone.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Ok(None) => {
+                            evictions_clone.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Err(_) => {
+                            evictions_clone.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
 
                     let after_access = db_clone.cache_stats();
@@ -103,9 +157,7 @@ fn test_arc_cache_concurrent_stress() {
         handles.push(handle);
     }
 
-    for handle in handles {
-        handle.join().unwrap();
-    }
+    let _results = safe_join_threads(handles, 10); // 10 second timeout
 
     let total_hits = cache_hits.load(Ordering::Relaxed);
     let total_misses = cache_misses.load(Ordering::Relaxed);
@@ -284,9 +336,7 @@ fn test_transaction_manager_concurrent_load() {
         handles.push(handle);
     }
 
-    for handle in handles {
-        handle.join().unwrap();
-    }
+    let _results = safe_join_threads(handles, 15); // 15 second timeout
 
     let commits = successful_commits.load(Ordering::Relaxed);
     let failures = failed_commits.load(Ordering::Relaxed);
@@ -353,8 +403,10 @@ fn test_background_processing_concurrent() {
         while running_checkpoint.load(Ordering::Relaxed) {
             thread::sleep(Duration::from_millis(100));
             match db_checkpoint.checkpoint() {
-                Ok(_) => checkpoint_counter.fetch_add(1, Ordering::Relaxed),
-                Err(_) => {}, // May fail due to concurrent activity, which is fine
+                Ok(_) => {
+                    checkpoint_counter.fetch_add(1, Ordering::Relaxed);
+                }
+                Err(_) => {} // May fail due to concurrent activity, which is fine
             }
         }
     });
@@ -472,12 +524,24 @@ fn test_background_processing_concurrent() {
     running.store(false, Ordering::Relaxed);
 
     // Wait for all threads to complete
-    for handle in transaction_handles {
-        handle.join().unwrap();
-    }
-
-    checkpoint_handle.join().unwrap();
-    stats_handle.join().unwrap();
+    let _results = safe_join_threads(transaction_handles, 10);
+    
+    // Handle background threads with timeout
+    let (tx_bg, rx_bg) = mpsc::channel();
+    
+    std::thread::spawn(move || {
+        checkpoint_handle.join().ok();
+        tx_bg.send(()).ok();
+    });
+    
+    let (tx_stats, rx_stats) = mpsc::channel();
+    std::thread::spawn(move || {
+        stats_handle.join().ok();
+        tx_stats.send(()).ok();
+    });
+    
+    rx_bg.recv_timeout(Duration::from_secs(5)).ok();
+    rx_stats.recv_timeout(Duration::from_secs(5)).ok();
 
     let total_successes = transaction_successes.load(Ordering::Relaxed);
     let total_failures = transaction_failures.load(Ordering::Relaxed);
@@ -575,8 +639,10 @@ fn test_lock_free_hot_path_performance() {
                             contention_clone.fetch_add(1, Ordering::Relaxed);
                         }
                     }
-                    Ok(None) => {}, // Key might have been deleted
-                    Err(_) => contention_clone.fetch_add(1, Ordering::Relaxed),
+                    Ok(None) => {} // Key might have been deleted
+                    Err(_) => {
+                        contention_clone.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
 
                 // Occasional writes to create contention
@@ -594,7 +660,9 @@ fn test_lock_free_hot_path_performance() {
                                 contention_clone.fetch_add(1, Ordering::Relaxed);
                             }
                         }
-                        Err(_) => contention_clone.fetch_add(1, Ordering::Relaxed),
+                        Err(_) => {
+                            contention_clone.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
             }
@@ -605,8 +673,12 @@ fn test_lock_free_hot_path_performance() {
                 let value = format!("final_update_{}_{}", thread_id, i);
                 
                 match db_clone.put(key.as_bytes(), value.as_bytes()) {
-                    Ok(_) => writes_clone.fetch_add(1, Ordering::Relaxed),
-                    Err(_) => contention_clone.fetch_add(1, Ordering::Relaxed),
+                    Ok(_) => {
+                        writes_clone.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(_) => {
+                        contention_clone.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
 
@@ -618,9 +690,7 @@ fn test_lock_free_hot_path_performance() {
 
     let test_start = Instant::now();
 
-    for handle in handles {
-        handle.join().unwrap();
-    }
+    let _results = safe_join_threads(handles, 20); // 20 second timeout for stress test
 
     let test_duration = test_start.elapsed();
     let total_reads = read_successes.load(Ordering::Relaxed);

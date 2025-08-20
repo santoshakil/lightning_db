@@ -1,6 +1,6 @@
 #[cfg(test)]
-use crate::error::Error;
-use crate::error::Result;
+use crate::core::error::Error;
+use crate::core::error::Result;
 use std::thread;
 use std::time::Duration;
 use tracing::warn;
