@@ -4,7 +4,8 @@ use crate::{Database, LightningDbConfig};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, oneshot};
+use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
 
 /// Comprehensive recovery manager that coordinates all recovery operations
@@ -27,6 +28,8 @@ pub struct ComprehensiveRecoveryManager {
     // Recovery state
     recovery_config: RecoveryConfiguration,
     health_monitor: Arc<RwLock<RecoveryHealthMonitor>>,
+    shutdown_tx: Arc<RwLock<Option<oneshot::Sender<()>>>>,
+    monitoring_task: Arc<RwLock<Option<JoinHandle<()>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -94,6 +97,8 @@ impl ComprehensiveRecoveryManager {
             corruption_recovery_manager,
             recovery_config,
             health_monitor,
+            shutdown_tx: Arc::new(RwLock::new(None)),
+            monitoring_task: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -176,6 +181,8 @@ impl ComprehensiveRecoveryManager {
             corruption_recovery_manager,
             recovery_config,
             health_monitor,
+            shutdown_tx: Arc::new(RwLock::new(None)),
+            monitoring_task: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -378,6 +385,9 @@ impl ComprehensiveRecoveryManager {
     async fn start_health_monitoring(&self) {
         info!("Starting continuous health monitoring");
 
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
+        *self.shutdown_tx.write().await = Some(shutdown_tx);
+
         let health_monitor = self.health_monitor.clone();
         let io_recovery = self.io_recovery_manager.clone();
         let memory_recovery = self.memory_recovery_manager.clone();
@@ -385,32 +395,53 @@ impl ComprehensiveRecoveryManager {
         let corruption_recovery = self.corruption_recovery_manager.clone();
         let interval = self.recovery_config.health_check_interval;
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
+            let mut interval_timer = tokio::time::interval(interval);
+            
             loop {
-                tokio::time::sleep(interval).await;
+                tokio::select! {
+                    _ = interval_timer.tick() => {
+                        let mut monitor = health_monitor.write().await;
+                        
+                        // Update health metrics
+                        if let Ok(disk_health) = io_recovery.monitor_disk_health().await {
+                            monitor.update_io_health(disk_health);
+                        }
 
-                let mut monitor = health_monitor.write().await;
-                
-                // Update health metrics
-                if let Ok(disk_health) = io_recovery.monitor_disk_health().await {
-                    monitor.update_io_health(disk_health);
-                }
+                        let memory_health = memory_recovery.get_memory_health_report().await;
+                        monitor.update_memory_health(memory_health);
 
-                let memory_health = memory_recovery.get_memory_health_report().await;
-                monitor.update_memory_health(memory_health);
+                        let transaction_health = transaction_recovery.get_transaction_health_report().await;
+                        monitor.update_transaction_health(transaction_health);
 
-                let transaction_health = transaction_recovery.get_transaction_health_report().await;
-                monitor.update_transaction_health(transaction_health);
+                        let corruption_health = corruption_recovery.get_corruption_health_report().await;
+                        monitor.update_corruption_health(corruption_health);
 
-                let corruption_health = corruption_recovery.get_corruption_health_report().await;
-                monitor.update_corruption_health(corruption_health);
-
-                // Log critical issues
-                if monitor.has_critical_issues() {
-                    error!("Critical health issues detected: {:?}", monitor.get_critical_issues());
+                        // Log critical issues
+                        if monitor.has_critical_issues() {
+                            error!("Critical health issues detected: {:?}", monitor.get_critical_issues());
+                        }
+                    }
+                    _ = &mut shutdown_rx => {
+                        info!("Stopping health monitoring");
+                        break;
+                    }
                 }
             }
         });
+        
+        *self.monitoring_task.write().await = Some(handle);
+    }
+    
+    /// Stop health monitoring gracefully
+    pub async fn stop_health_monitoring(&self) {
+        if let Some(tx) = self.shutdown_tx.write().await.take() {
+            let _ = tx.send(());
+        }
+        
+        if let Some(handle) = self.monitoring_task.write().await.take() {
+            let _ = handle.await;
+        }
     }
 
     async fn check_system_resources(&self) -> Result<()> {
@@ -447,8 +478,18 @@ impl ComprehensiveRecoveryManager {
         if recovery_marker.exists() {
             return Ok(true);
         }
+        
+        // Check if this is a fresh database (no data files yet)
+        let data_file = db_path.join("data.db");
+        let pages_dir = db_path.join("pages");
+        let has_data = data_file.exists() || pages_dir.exists();
+        
+        if !has_data {
+            // Fresh database, no recovery needed
+            return Ok(false);
+        }
 
-        // Check for incomplete shutdown marker
+        // For existing databases, check for incomplete shutdown marker
         let shutdown_marker = db_path.join(".clean_shutdown");
         if !shutdown_marker.exists() {
             return Ok(true);
@@ -676,6 +717,9 @@ mod tests {
         // Test health report
         let health_report = recovery_manager.get_health_report().await;
         assert_eq!(health_report.overall_status, OverallHealthStatus::Unknown);
+        
+        // Clean up any background tasks
+        recovery_manager.stop_health_monitoring().await;
     }
 
     #[tokio::test]
@@ -700,5 +744,8 @@ mod tests {
         ).unwrap();
         
         assert!(recovery_manager.crash_recovery().is_none());
+        
+        // Clean up any background tasks
+        recovery_manager.stop_health_monitoring().await;
     }
 }

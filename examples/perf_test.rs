@@ -5,8 +5,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create config with optimizations enabled
     let config = LightningDbConfig {
         cache_size: 256 * 1024 * 1024, // 256MB cache
-        use_improved_wal: true,
         use_optimized_transactions: true,
+        use_optimized_page_manager: true,
+        prefetch_enabled: true,
         ..Default::default()
     };
     
@@ -47,6 +48,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Read:  {:.0} ops/sec ({:.2} μs/op)", read_ops_per_sec, read_time.as_micros() as f64 / n as f64);
     println!("Range Scan: {} items in {:.2}ms", count, scan_time.as_secs_f64() * 1000.0);
     println!("\nTotal entries: {}", n);
+    
+    // Explicitly drop the database to ensure clean shutdown
+    drop(db);
+    
+    // Small delay to let background tasks finish
+    std::thread::sleep(std::time::Duration::from_millis(100));
     
     // Cleanup
     std::fs::remove_dir_all("/tmp/perf_test").ok();
