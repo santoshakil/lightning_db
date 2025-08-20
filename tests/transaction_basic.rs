@@ -1,4 +1,4 @@
-use lightning_db::transaction::{TransactionManager, VersionStore};
+use lightning_db::core::transaction::{UnifiedTransactionManager as TransactionManager, UnifiedVersionStore as VersionStore};
 use std::sync::Arc;
 
 #[test]

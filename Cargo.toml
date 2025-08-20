@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "lightning_db_ffi"]
+members = [".", "lightning_db_ffi", "lightning_db_wasm"]
 resolver = "2"
 
 [package]
@@ -8,7 +8,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-prost = "0.14"
+prost = "0.13"
 bytes = "1.10"
 memmap2 = "0.9"
 parking_lot = "0.12"
@@ -16,33 +16,40 @@ crc32fast = "1.4"
 zstd = { version = "0.13", default-features = false, features = ["zstdmt"], optional = true }
 lz4_flex = "0.11"
 snap = "1.1"
-bloom = "0.3"
-dashmap = "6.1" # TODO: Test dashmap 7.0 upgrade for hashbrown consolidation
+dashmap = "6.1" # Stable version for production use
+ahash = "0.8" # SIMD-optimized hashing
 crossbeam-epoch = "0.9"
 crossbeam-skiplist = "0.1"
-thiserror = "2.0" # Keep thiserror 2.x for consistency
+thiserror = "1.0" # Consistent version across workspace
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 bincode = "2.0"
 lru = "0.16" # Upgraded for hashbrown consolidation
-tokio = { version = "1.42", features = ["full"] }
-futures = "0.3"
+tokio = { version = "1.42", features = ["rt-multi-thread", "net", "io-util", "fs", "time", "sync", "macros"] } # Optimized features, removed unused
 crossbeam = "0.8.4"
 crossbeam-queue = "0.3"
 rayon = "1.10.0"
 async-trait = "0.1"
 prometheus = "0.14"
 lazy_static = "1.5"
-rand = { version = "0.9", optional = true }
+once_cell = "1.19"
+rand = "0.9"
+rand_core = "0.6"
+rand_chacha = "0.3"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "json"] }
 clap = { version = "4.5", features = ["derive"] }
-smallvec = "1.13"
+smallvec = { version = "1.13", features = ["union", "serde"] }
+bumpalo = "3.14"
+indexmap = "2.5"
+rustc-hash = "2.0"
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.6"
 chrono = { version = "0.4", features = ["serde"] }
 tempfile = "3.20"
 hex = "0.4"
 num_cpus = "1.16"
-bytemuck = { version = "1.19", features = ["derive"] }
 xxhash-rust = { version = "0.8", features = ["xxh32", "xxh64"] }
 fastrand = "2.1"
 
@@ -61,6 +68,32 @@ sha2 = "0.10"
 blake3 = "1.5"
 zeroize = { version = "1.8", features = ["derive"] }
 
+# Security dependencies
+ring = "0.17"
+rustls = { version = "0.23", features = ["ring"] }
+rustls-pemfile = "2.1"
+x509-parser = "0.16"
+webpki-roots = "0.26"
+jsonwebtoken = "9.3"
+bcrypt = "0.16"
+secrecy = { version = "0.8", features = ["serde"] }
+tokio-rustls = "0.25"
+constant_time_eq = "0.3"
+subtle = "2.6"
+ratelimit = "0.9"
+governor = "0.6"
+ipnet = "2.10"
+regex-automata = "0.4"
+serde_bytes = "0.11"
+
+# Optional feature-gated dependencies
+notify = { version = "6.1", optional = true }
+serde_yaml = { version = "0.9", optional = true }
+toml = { version = "0.8", optional = true }
+reqwest = { version = "0.12", features = ["blocking", "json"], optional = true }
+sysinfo = { version = "0.33", optional = true }
+csv = { version = "1.3", optional = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 
@@ -77,15 +110,32 @@ flate2 = "1.0"
 sha2 = "0.10"
 nix = { version = "0.29", features = ["fs"] }
 ctor = "0.2"
+rayon = "1.10.0"
 
 [build-dependencies]
-prost-build = "0.14"
+prost = "0.13"
+prost-build = "0.13"
 chrono = { version = "0.4", features = ["serde"] }
 
 [features]
-default = ["zstd-compression", "rand"]
+default = ["zstd-compression"]
 zstd-compression = ["zstd"]
-ios = []  # iOS build without zstd
+ios = []
+wasm = []
+data-import = ["csv"]
+data-export-parquet = []
+proto = []
+lzma = []
+brotli = []
+file-watching = ["notify"]
+config-formats = ["serde_yaml", "toml"]
+http-client = ["reqwest"]
+sys-info = ["sysinfo"]
+opentelemetry = []
+testing = []
+numa_syscalls = []
+cli-tools = []
+rand = []
 
 [lib]
 name = "lightning_db"
@@ -102,9 +152,6 @@ path = "src/bin/lightning-admin.rs"
 [[bin]]
 name = "lightning-admin-server"
 path = "src/bin/lightning-admin-server.rs"
-[[bin]]
-name = "lightning-migrate"
-path = "src/bin/lightning-migrate.rs"
 
 [profile.release]
 lto = true
@@ -140,4 +187,12 @@ harness = false
 
 [[bench]]
 name = "performance_regression_suite"
+harness = false
+
+[[bench]]
+name = "production_benchmarks"
+harness = false
+
+[[bench]]
+name = "simple_production_test"
 harness = false

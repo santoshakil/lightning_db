@@ -1,4 +1,4 @@
-use lightning_db::storage::page::PageManager;
+use lightning_db::core::storage::PageManager;
 use parking_lot::RwLock;
 use std::sync::Arc;
 use tempfile::tempdir;

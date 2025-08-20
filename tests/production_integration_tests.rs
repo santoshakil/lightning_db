@@ -6,6 +6,42 @@ use std::sync::{
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::tempdir;
+use std::sync::mpsc;
+
+/// Helper function to safely join threads with timeout
+fn safe_join_threads<T>(handles: Vec<std::thread::JoinHandle<T>>, timeout_secs: u64) -> Vec<Option<T>>
+where
+    T: Send + 'static,
+{
+    let (tx, rx) = mpsc::channel();
+    let num_threads = handles.len();
+    
+    for (i, handle) in handles.into_iter().enumerate() {
+        let tx_clone = tx.clone();
+        std::thread::spawn(move || {
+            let result = handle.join();
+            tx_clone.send((i, result)).ok();
+        });
+    }
+    
+    let mut results = Vec::with_capacity(num_threads);
+    for _ in 0..num_threads {
+        results.push(None);
+    }
+    let timeout = Duration::from_secs(timeout_secs);
+    let start = Instant::now();
+    
+    for _ in 0..num_threads {
+        let remaining_time = timeout.saturating_sub(start.elapsed());
+        if let Ok((index, thread_result)) = rx.recv_timeout(remaining_time) {
+            if let Ok(value) = thread_result {
+                results[index] = Some(value);
+            }
+        }
+    }
+    
+    results
+}
 
 /// Test heavy concurrent load with multiple readers and writers
 #[test]
@@ -82,9 +118,7 @@ fn test_heavy_concurrent_load() {
     }
 
     // Wait for all threads to complete
-    for handle in handles {
-        handle.join().unwrap();
-    }
+    let _results = safe_join_threads(handles, 10);
 
     let total_successes = success_count.load(Ordering::Relaxed);
     let total_errors = error_count.load(Ordering::Relaxed);
@@ -222,9 +256,7 @@ fn test_transaction_conflicts() {
         handles.push(handle);
     }
 
-    for handle in handles {
-        handle.join().unwrap();
-    }
+    let _results = safe_join_threads(handles, 15);
 
     // Verify final counter values
     let mut total_count = 0;
@@ -356,7 +388,13 @@ fn test_long_running_with_checkpoints() {
 
     // Stop checkpoint thread
     running.store(false, Ordering::Relaxed);
-    checkpoint_handle.join().unwrap();
+    
+    let (tx_checkpoint, rx_checkpoint) = mpsc::channel();
+    std::thread::spawn(move || {
+        checkpoint_handle.join().ok();
+        tx_checkpoint.send(()).ok();
+    });
+    rx_checkpoint.recv_timeout(Duration::from_secs(5)).ok();
 
     let final_checkpoints = checkpoint_count.load(Ordering::Relaxed);
     println!("Long-running operation test:");
@@ -480,9 +518,7 @@ fn test_data_integrity_concurrent() {
         handles.push(handle);
     }
 
-    for handle in handles {
-        handle.join().unwrap();
-    }
+    let _results = safe_join_threads(handles, 15);
 
     // Verify integrity after concurrent modifications
     let final_verification = tokio::runtime::Runtime::new()

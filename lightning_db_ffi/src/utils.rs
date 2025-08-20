@@ -42,10 +42,20 @@ pub unsafe extern "C" fn lightning_db_free_string(ptr: *mut c_char) {
 
 /// Convert a byte slice to a Rust Vec
 ///
+/// Maximum allowed buffer size for FFI operations (100MB)
+const MAX_FFI_BUFFER_SIZE: usize = 100 * 1024 * 1024;
+
 /// # Safety
 /// - The pointer must be valid for `len` bytes
+/// - `len` must not exceed MAX_FFI_BUFFER_SIZE
 pub unsafe fn bytes_to_vec(ptr: *const u8, len: usize) -> Vec<u8> {
     if ptr.is_null() || len == 0 {
+        return Vec::new();
+    }
+    
+    // Prevent potential buffer overflow attacks
+    if len > MAX_FFI_BUFFER_SIZE {
+        eprintln!("FFI buffer size {} exceeds maximum {}", len, MAX_FFI_BUFFER_SIZE);
         return Vec::new();
     }
 

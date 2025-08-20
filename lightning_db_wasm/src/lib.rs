@@ -45,9 +45,9 @@ enum Operation {
 #[wasm_bindgen]
 #[derive(Serialize, Deserialize)]
 pub struct Config {
-    pub cache_size: u32,
-    pub compression_enabled: bool,
-    pub sync_mode: String,
+    cache_size: u32,
+    compression_enabled: bool,
+    sync_mode: String,
 }
 
 #[wasm_bindgen]
@@ -59,6 +59,36 @@ impl Config {
             compression_enabled: true,
             sync_mode: "async".to_string(),
         }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn cache_size(&self) -> u32 {
+        self.cache_size
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_cache_size(&mut self, value: u32) {
+        self.cache_size = value;
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn compression_enabled(&self) -> bool {
+        self.compression_enabled
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_compression_enabled(&mut self, value: bool) {
+        self.compression_enabled = value;
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn sync_mode(&self) -> String {
+        self.sync_mode.clone()
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_sync_mode(&mut self, value: String) {
+        self.sync_mode = value;
     }
 }
 

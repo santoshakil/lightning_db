@@ -1,5 +1,5 @@
-use lightning_db::btree::BPlusTree;
-use lightning_db::storage::page::PageManager;
+use lightning_db::core::btree::BPlusTree;
+use lightning_db::core::storage::PageManager;
 use parking_lot::RwLock;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -27,7 +27,7 @@ fn test_btree_simple_insert_get() {
 
 #[test]
 fn test_btree_create_iterator() {
-    use lightning_db::btree::BTreeLeafIterator;
+    use lightning_db::core::btree::BTreeLeafIterator;
 
     let dir = tempdir().unwrap();
     let page_manager = Arc::new(RwLock::new(
@@ -41,13 +41,13 @@ fn test_btree_create_iterator() {
 
     // Try to create an iterator
     println!("Creating iterator...");
-    let iter = BTreeLeafIterator::new(&btree, None, None, true);
+    let iter = BTreeLeafIterator::<256>::new(&btree, None, None, true);
     assert!(iter.is_ok(), "Failed to create iterator: {:?}", iter.err());
     println!("Iterator created successfully");
 
     // Try to get one item from iterator
     println!("Getting first item from iterator...");
-    let mut iter = iter.unwrap();
+    let mut iter: BTreeLeafIterator<'_, 256> = iter.unwrap();
     let first = iter.next();
     println!("First item: {:?}", first);
 

@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 use crate::utils::retry::{RetryPolicy, RetryableOperations};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::Arc;

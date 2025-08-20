@@ -11,7 +11,7 @@ rust-version = "1.70"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
-cbindgen = "0.26"
+cbindgen = "0.27"
 
 [dependencies]
 lightning_db = { path = "..", default-features = false, features = [] }
