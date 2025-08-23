@@ -1,9 +1,8 @@
 use crate::core::error::{Error, Result};
-use crate::utils::retry::RetryPolicy;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::timeout;
 use tracing::{error, info, warn};
@@ -162,9 +161,9 @@ impl TransactionRecoveryManager {
     }
 
     pub async fn commit_transaction(&self, tx_id: u64) -> Result<()> {
-        let tx_info = {
+        let _tx_info = {
             let mut transactions = self.transactions.write().await;
-            if let Some(mut tx) = transactions.get_mut(&tx_id) {
+            if let Some(tx) = transactions.get_mut(&tx_id) {
                 if tx.state != TransactionState::Active {
                     return Err(Error::TransactionInvalidState {
                         id: tx_id,
@@ -206,7 +205,7 @@ impl TransactionRecoveryManager {
     pub async fn rollback_transaction(&self, tx_id: u64) -> Result<()> {
         let tx_info = {
             let mut transactions = self.transactions.write().await;
-            if let Some(mut tx) = transactions.get_mut(&tx_id) {
+            if let Some(tx) = transactions.get_mut(&tx_id) {
                 if matches!(tx.state, TransactionState::Committed) {
                     return Err(Error::TransactionInvalidState {
                         id: tx_id,
@@ -293,7 +292,7 @@ impl TransactionRecoveryManager {
         // Update transaction state
         {
             let mut transactions = self.transactions.write().await;
-            if let Some(mut tx) = transactions.get_mut(&tx_id) {
+            if let Some(tx) = transactions.get_mut(&tx_id) {
                 tx.state = final_state;
             }
         }

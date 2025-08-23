@@ -448,7 +448,7 @@ fn compact_database(path: PathBuf, _target: u8) -> Result<(), Box<dyn std::error
         "\n🔄 Running compaction (target: {}% reduction)...",
         _target
     );
-    let compact_stats = db.compact(_target)?;
+    let pages_reclaimed = db.compact()?;
 
     // Get final stats
     let final_stats = db.stats();
@@ -467,7 +467,7 @@ fn compact_database(path: PathBuf, _target: u8) -> Result<(), Box<dyn std::error
     );
     println!(
         "   Pages: {} → {} ({} reclaimed)",
-        initial_stats.page_count, final_stats.page_count, compact_stats.pages_reclaimed
+        initial_stats.page_count, final_stats.page_count, pages_reclaimed
     );
     println!("   Duration: {:.2}s", duration.as_secs_f64());
 

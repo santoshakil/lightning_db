@@ -35,22 +35,53 @@ const DEFAULT_BATCH_SIZE: usize = 1024;  // Increased from typical 100-200
 const MAX_BATCH_SIZE: usize = 8192;     // Allow larger batches for better throughput
 const STACK_BUFFER_SIZE: usize = 64;    // For small key-value pairs
 
-/// Stack-allocated buffer for small batches to avoid heap allocations
+/// Safe stack-like buffer for small batches to avoid heap allocations
 #[repr(align(64))]
 #[derive(Debug)]
-struct StackBuffer {
-    data: [(Vec<u8>, Vec<u8>); STACK_BUFFER_SIZE],
-    len: usize,
+struct SafeStackBuffer {
+    data: Vec<(Vec<u8>, Vec<u8>)>,
+    capacity: usize,
 }
 
-impl Default for StackBuffer {
+impl Default for SafeStackBuffer {
     fn default() -> Self {
-        unsafe {
-            let mut buffer = std::mem::MaybeUninit::<Self>::uninit();
-            let ptr = buffer.as_mut_ptr();
-            std::ptr::write(&mut (*ptr).len, 0);
-            buffer.assume_init()
+        Self {
+            data: Vec::with_capacity(STACK_BUFFER_SIZE),
+            capacity: STACK_BUFFER_SIZE,
         }
+    }
+}
+
+impl SafeStackBuffer {
+    #[inline(always)]
+    fn push(&mut self, key: Vec<u8>, value: Vec<u8>) {
+        debug_assert!(self.data.len() < self.capacity, "Stack buffer overflow - should check capacity before calling push");
+        self.data.push((key, value));
+    }
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    #[inline(always)]
+    fn clear(&mut self) {
+        self.data.clear();
+    }
+
+    #[inline(always)]
+    fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    #[inline(always)]
+    fn drain(&mut self) -> std::vec::Drain<'_, (Vec<u8>, Vec<u8>)> {
+        self.data.drain(..)
+    }
+
+    #[inline(always)]
+    fn capacity(&self) -> usize {
+        self.capacity
     }
 }
 
@@ -66,7 +97,7 @@ pub struct FastAutoBatcher {
 #[derive(Debug)]
 struct BatcherInner {
     pending: VecDeque<(Vec<u8>, Vec<u8>)>,
-    stack_buffer: StackBuffer,  // For small fast batches
+    stack_buffer: SafeStackBuffer,  // For small fast batches
     last_flush: Instant,
     batch_size: usize,
     max_delay: Duration,
@@ -87,7 +118,7 @@ impl FastAutoBatcher {
         
         let inner = Arc::new(Mutex::new(BatcherInner {
             pending: VecDeque::with_capacity(optimized_batch_size * 2),
-            stack_buffer: StackBuffer::default(),
+            stack_buffer: SafeStackBuffer::default(),
             last_flush: Instant::now(),
             batch_size: optimized_batch_size,
             max_delay: Duration::from_millis(max_delay_ms),
@@ -137,10 +168,10 @@ impl FastAutoBatcher {
 
                 let should_flush = {
                     let inner = inner_clone.lock();
-                    !inner.pending.is_empty()
+                    (!inner.pending.is_empty() || !inner.stack_buffer.is_empty())
                         && (inner.pending.len() >= inner.batch_size
                             || inner.last_flush.elapsed() >= inner.max_delay
-                            || inner.stack_buffer.len >= STACK_BUFFER_SIZE)
+                            || inner.stack_buffer.len() >= STACK_BUFFER_SIZE)
                 };
 
                 if should_flush {
@@ -168,21 +199,14 @@ impl FastAutoBatcher {
 
         // Try stack buffer first for small items to reduce lock contention
         let total_size = key.len() + value.len();
-        if total_size <= 256 {  // Small key-value pairs
-            let mut inner = self.inner.lock();
-            if inner.write_combining_enabled && inner.stack_buffer.len < STACK_BUFFER_SIZE {
-                unsafe {
-                    let idx = inner.stack_buffer.len;
-                    std::ptr::write(&mut inner.stack_buffer.data[idx], (key, value));
-                    inner.stack_buffer.len += 1;
-                }
-                return Ok(());
-            }
-            // Fall through to normal path if stack buffer full
-            inner.pending.push_back((key, value));
+        let mut inner = self.inner.lock();
+        
+        if total_size <= 256 && inner.write_combining_enabled && inner.stack_buffer.len() < inner.stack_buffer.capacity() {
+            // Stack buffer has space, add to it
+            inner.stack_buffer.push(key, value);
         } else {
-            // Large items go directly to pending queue
-            let mut inner = self.inner.lock();
+            // Either too large for stack buffer or stack buffer is full
+            // Add to pending queue instead
             inner.pending.push_back((key, value));
         }
 
@@ -204,17 +228,8 @@ impl FastAutoBatcher {
         let (writes, stack_writes) = {
             let mut inner = inner.lock();
             
-            // Collect stack buffer writes first
-            let mut stack_writes = Vec::new();
-            if inner.stack_buffer.len > 0 {
-                for i in 0..inner.stack_buffer.len {
-                    unsafe {
-                        let item = std::ptr::read(&inner.stack_buffer.data[i]);
-                        stack_writes.push(item);
-                    }
-                }
-                inner.stack_buffer.len = 0;
-            }
+            // Collect stack buffer writes first - now completely safe
+            let stack_writes: Vec<(Vec<u8>, Vec<u8>)> = inner.stack_buffer.drain().collect();
             
             if inner.pending.is_empty() && stack_writes.is_empty() {
                 return;

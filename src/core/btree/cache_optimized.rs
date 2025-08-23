@@ -40,6 +40,9 @@ impl CacheOptimizedNode {
     /// Binary search using SIMD when available
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
+    /// # Safety
+    /// - Caller must ensure CPU supports AVX2 instructions
+    /// - first_keys array must be properly aligned and initialized
     pub unsafe fn find_key_simd(&self, key_hash: u32) -> Option<usize> {
         use std::arch::x86_64::*;
         
@@ -85,6 +88,9 @@ impl CacheOptimizedNode {
 /// Fast key comparison using SIMD
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse4.2")]
+/// # Safety
+/// - Caller must ensure CPU supports SSE4.2 instructions
+/// - Input slices must be valid for reads of up to 16 bytes
 pub unsafe fn compare_keys_simd(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
     use std::arch::x86_64::*;
     
@@ -115,6 +121,14 @@ pub unsafe fn compare_keys_simd(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
 #[inline(always)]
 pub fn prefetch_node(addr: *const u8) {
     #[cfg(target_arch = "x86_64")]
+    // SAFETY: Hardware prefetch hint for performance optimization
+    // Invariants:
+    // 1. addr must be a valid pointer (not necessarily dereferenceable)
+    // 2. Prefetch is a hint only - no memory access occurs
+    // 3. Invalid addresses are safely ignored by CPU
+    // Guarantees:
+    // - No memory safety violations (prefetch is non-binding)
+    // - Performance improvement for sequential access patterns
     unsafe {
         use std::arch::x86_64::_mm_prefetch;
         _mm_prefetch(addr as *const i8, 3); // Prefetch to all cache levels

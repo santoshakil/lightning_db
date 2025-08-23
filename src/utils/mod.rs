@@ -13,3 +13,6 @@ pub mod retry;
 
 pub use retry::{RetryPolicy, RetryableOperations};
 pub use lock_utils::{LockUtils, RwLockExt, ArcRwLockExt};
+pub use memory_tracker::{MemoryTracker, MemoryStats, get_memory_tracker};
+pub use leak_detector::{LeakDetector, LeakReport, LeakType, get_leak_detector};
+pub use resource_manager::{ResourceManager, ResourceUsageStats, get_resource_manager};

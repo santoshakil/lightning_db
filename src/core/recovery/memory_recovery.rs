@@ -2,7 +2,7 @@ use crate::core::error::{Error, Result};
 use std::alloc::{alloc, dealloc, Layout};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
@@ -472,7 +472,7 @@ impl MemoryPool {
         }
 
         // Allocate new block using recovery manager
-        let ptr = self.recovery_manager.try_allocate(self.block_size).await?;
+        let _ptr = self.recovery_manager.try_allocate(self.block_size).await?;
         let mut block = Vec::with_capacity(self.block_size);
         unsafe {
             block.set_len(self.block_size);

@@ -1,0 +1,468 @@
+name: Performance Regression Testing
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+    types: [ opened, synchronize, reopened ]
+  schedule:
+    # Run nightly performance tests at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      benchmark_mode:
+        description: 'Benchmark mode'
+        required: false
+        default: 'quick'
+        type: choice
+        options:
+        - quick
+        - full
+        - specific
+      fail_on_regression:
+        description: 'Fail on performance regression'
+        required: false
+        default: true
+        type: boolean
+      update_baseline:
+        description: 'Update baseline values'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Optimize for benchmarking
+  RUSTFLAGS: "-C target-cpu=native -C opt-level=3"
+  # Configure memory allocator for consistent measurements
+  MALLOC_CONF: "prof:true,prof_active:false,lg_prof_sample:19"
+
+jobs:
+  performance-regression:
+    name: Performance Regression Tests
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: [stable, nightly]
+        include:
+          # Additional configuration for specific combinations
+          - os: ubuntu-latest
+            rust: stable
+            benchmark_config: "full"
+          - os: macos-latest
+            rust: stable
+            benchmark_config: "quick"
+          - os: ubuntu-latest
+            rust: nightly
+            benchmark_config: "experimental"
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Need full history for baseline comparison
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.rust }}
+        profile: minimal
+        override: true
+        components: rustfmt, clippy
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        # Cache based on OS, Rust version, and Cargo.lock
+        key: ${{ matrix.os }}-${{ matrix.rust }}-benchmark
+        # Don't cache benchmark binaries as they need to be rebuilt
+        cache-targets: false
+
+    - name: Install system dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          pkg-config \
+          libssl-dev \
+          libc6-dev \
+          linux-tools-common \
+          linux-tools-generic \
+          cpufrequtils \
+          jq
+        
+        # Set CPU governor to performance for consistent benchmarking
+        sudo cpufreq-set -g performance || true
+        
+        # Increase file descriptor limits
+        echo "* soft nofile 65536" | sudo tee -a /etc/security/limits.conf
+        echo "* hard nofile 65536" | sudo tee -a /etc/security/limits.conf
+        ulimit -n 65536
+
+    - name: Install system dependencies (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install jq
+        # Disable thermal throttling for more consistent benchmarks
+        sudo sysctl debug.lowpri_throttle_enabled=0 || true
+
+    - name: System information
+      run: |
+        echo "=== System Information ==="
+        uname -a
+        
+        echo "=== CPU Information ==="
+        if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+          lscpu
+          cat /proc/cpuinfo | grep "model name" | head -1
+        elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+          sysctl -n machdep.cpu.brand_string
+          system_profiler SPHardwareDataType
+        fi
+        
+        echo "=== Memory Information ==="
+        if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+          free -h
+        elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+          vm_stat
+        fi
+        
+        echo "=== Disk Information ==="
+        df -h
+        
+        echo "=== Rust Information ==="
+        rustc --version
+        cargo --version
+
+    - name: Build project in release mode
+      run: |
+        cargo build --release --all-features
+        cargo build --release --benches
+
+    - name: Download baseline data
+      id: baseline
+      continue-on-error: true
+      run: |
+        # Try to download baseline from previous successful run
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          # For PRs, try to get baseline from target branch
+          BASE_BRANCH="${{ github.base_ref }}"
+          echo "Attempting to download baseline from branch: $BASE_BRANCH"
+        else
+          # For pushes, try to get baseline from previous commit
+          BASE_BRANCH="${{ github.ref_name }}"
+        fi
+        
+        # Create artifacts directory
+        mkdir -p performance_reports
+        
+        # Try to fetch baseline from artifacts (this would need to be implemented)
+        # For now, we'll create a default baseline if none exists
+        if [[ ! -f "performance-baselines.json" ]]; then
+          echo "No existing baseline found, will establish new baseline"
+          echo "baseline_exists=false" >> $GITHUB_OUTPUT
+        else
+          echo "Found existing baseline"
+          echo "baseline_exists=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Determine benchmark mode
+      id: config
+      run: |
+        MODE="${{ github.event.inputs.benchmark_mode }}"
+        FAIL_ON_REGRESSION="${{ github.event.inputs.fail_on_regression }}"
+        UPDATE_BASELINE="${{ github.event.inputs.update_baseline }}"
+        
+        # Set defaults based on event type
+        if [[ -z "$MODE" ]]; then
+          case "${{ github.event_name }}" in
+            "pull_request")
+              MODE="quick"
+              ;;
+            "schedule")
+              MODE="full"
+              ;;
+            "push")
+              if [[ "${{ github.ref_name }}" == "main" ]] || [[ "${{ github.ref_name }}" == "master" ]]; then
+                MODE="full"
+              else
+                MODE="quick"
+              fi
+              ;;
+            *)
+              MODE="quick"
+              ;;
+          esac
+        fi
+        
+        if [[ -z "$FAIL_ON_REGRESSION" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            FAIL_ON_REGRESSION="true"
+          else
+            FAIL_ON_REGRESSION="false"
+          fi
+        fi
+        
+        if [[ -z "$UPDATE_BASELINE" ]]; then
+          if [[ "${{ github.event_name }}" == "push" ]] && [[ "${{ github.ref_name }}" == "main" || "${{ github.ref_name }}" == "master" ]]; then
+            UPDATE_BASELINE="true"
+          else
+            UPDATE_BASELINE="false"
+          fi
+        fi
+        
+        echo "mode=$MODE" >> $GITHUB_OUTPUT
+        echo "fail_on_regression=$FAIL_ON_REGRESSION" >> $GITHUB_OUTPUT
+        echo "update_baseline=$UPDATE_BASELINE" >> $GITHUB_OUTPUT
+        
+        echo "=== Benchmark Configuration ==="
+        echo "Mode: $MODE"
+        echo "Fail on regression: $FAIL_ON_REGRESSION"
+        echo "Update baseline: $UPDATE_BASELINE"
+
+    - name: Run performance benchmarks
+      id: benchmarks
+      run: |
+        # Configure benchmark parameters based on mode
+        case "${{ steps.config.outputs.mode }}" in
+          "quick")
+            DURATION=10
+            THREADS="1,4"
+            VALUE_SIZES="256,1024"
+            CACHE_SIZES="256MB"
+            ;;
+          "full")
+            DURATION=30
+            THREADS="1,4,8,16"
+            VALUE_SIZES="64,256,1024,4096"
+            CACHE_SIZES="64MB,256MB,1GB"
+            ;;
+          "experimental")
+            DURATION=60
+            THREADS="1,2,4,8,16,32"
+            VALUE_SIZES="64,128,256,512,1024,2048,4096"
+            CACHE_SIZES="64MB,128MB,256MB,512MB,1GB,2GB"
+            ;;
+          *)
+            DURATION=15
+            THREADS="1,8"
+            VALUE_SIZES="1024"
+            CACHE_SIZES="256MB"
+            ;;
+        esac
+        
+        # Run the benchmark suite
+        ./scripts/run_regression_benchmarks.sh \
+          --mode "${{ steps.config.outputs.mode }}" \
+          --duration "$DURATION" \
+          --threads "$THREADS" \
+          --value-sizes "$VALUE_SIZES" \
+          --cache-sizes "$CACHE_SIZES" \
+          --output "html,json,csv,md" \
+          --report-dir "./performance_reports" \
+          $(if [[ "${{ steps.config.outputs.fail_on_regression }}" == "true" ]]; then echo "--fail-on-regression"; else echo "--no-fail-on-regression"; fi) \
+          $(if [[ "${{ steps.config.outputs.update_baseline }}" == "true" ]]; then echo "--update-baseline"; fi) \
+          --verbose
+      
+      # Continue even if benchmarks fail so we can upload artifacts
+      continue-on-error: true
+
+    - name: Parse benchmark results
+      id: results
+      run: |
+        if [[ -f "performance_reports/performance_report.json" ]]; then
+          # Extract key metrics for GitHub summary
+          TOTAL_BENCHMARKS=$(jq -r '.summary.total_benchmarks // 0' performance_reports/performance_report.json)
+          REGRESSIONS=$(jq -r '.summary.regressions_detected // 0' performance_reports/performance_report.json)
+          IMPROVEMENTS=$(jq -r '.summary.improvements_detected // 0' performance_reports/performance_report.json)
+          OVERALL_STATUS=$(jq -r '.summary.overall_status // "Unknown"' performance_reports/performance_report.json)
+          
+          echo "total_benchmarks=$TOTAL_BENCHMARKS" >> $GITHUB_OUTPUT
+          echo "regressions=$REGRESSIONS" >> $GITHUB_OUTPUT
+          echo "improvements=$IMPROVEMENTS" >> $GITHUB_OUTPUT
+          echo "overall_status=$OVERALL_STATUS" >> $GITHUB_OUTPUT
+          echo "results_available=true" >> $GITHUB_OUTPUT
+          
+          # Set exit code for job
+          if [[ "$REGRESSIONS" -gt 0 ]] && [[ "${{ steps.config.outputs.fail_on_regression }}" == "true" ]]; then
+            echo "benchmark_failed=true" >> $GITHUB_OUTPUT
+          else
+            echo "benchmark_failed=false" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "results_available=false" >> $GITHUB_OUTPUT
+          echo "benchmark_failed=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Generate performance summary
+      if: always()
+      run: |
+        echo "# Performance Benchmark Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ steps.results.outputs.results_available }}" == "true" ]]; then
+          case "${{ steps.results.outputs.overall_status }}" in
+            "Passing")
+              echo "## ✅ Overall Status: PASSING" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "Warning")
+              echo "## ⚠️ Overall Status: WARNING" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "Failing")
+              echo "## ❌ Overall Status: FAILING" >> $GITHUB_STEP_SUMMARY
+              ;;
+            *)
+              echo "## ❓ Overall Status: UNKNOWN" >> $GITHUB_STEP_SUMMARY
+              ;;
+          esac
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Benchmarks | ${{ steps.results.outputs.total_benchmarks }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Regressions Detected | ${{ steps.results.outputs.regressions }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Improvements Detected | ${{ steps.results.outputs.improvements }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Benchmark Mode | ${{ steps.config.outputs.mode }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| OS/Rust | ${{ matrix.os }}/${{ matrix.rust }} |" >> $GITHUB_STEP_SUMMARY
+          
+          # Add detailed results if available
+          if [[ -f "performance_reports/performance_report.md" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## Detailed Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            cat performance_reports/performance_report.md >> $GITHUB_STEP_SUMMARY
+          fi
+        else
+          echo "## ❌ Benchmark execution failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "No performance results available. Check the logs for errors." >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Upload performance reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: performance-reports-${{ matrix.os }}-${{ matrix.rust }}
+        path: |
+          performance_reports/
+          performance-baselines.json
+        retention-days: 30
+
+    - name: Upload benchmark data for trend analysis
+      if: always() && steps.results.outputs.results_available == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-data-${{ matrix.os }}-${{ matrix.rust }}-${{ github.run_number }}
+        path: |
+          performance_reports/performance_data.csv
+          performance_reports/performance_report.json
+        retention-days: 90
+
+    - name: Comment PR with results
+      if: github.event_name == 'pull_request' && steps.results.outputs.results_available == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          
+          let comment = '## 🚀 Performance Benchmark Results\n\n';
+          
+          const status = '${{ steps.results.outputs.overall_status }}';
+          const statusIcon = status === 'Passing' ? '✅' : status === 'Warning' ? '⚠️' : '❌';
+          
+          comment += `**Overall Status:** ${statusIcon} ${status}\n\n`;
+          comment += `| Metric | Value |\n`;
+          comment += `|--------|-------|\n`;
+          comment += `| Total Benchmarks | ${{ steps.results.outputs.total_benchmarks }} |\n`;
+          comment += `| Regressions | ${{ steps.results.outputs.regressions }} |\n`;
+          comment += `| Improvements | ${{ steps.results.outputs.improvements }} |\n`;
+          comment += `| Test Environment | ${{ matrix.os }} / ${{ matrix.rust }} |\n`;
+          comment += `| Benchmark Mode | ${{ steps.config.outputs.mode }} |\n\n`;
+          
+          if (parseInt('${{ steps.results.outputs.regressions }}') > 0) {
+            comment += '⚠️ **Performance regressions detected!** Please review the detailed report.\n\n';
+          }
+          
+          if (parseInt('${{ steps.results.outputs.improvements }}') > 0) {
+            comment += '🎉 **Performance improvements detected!** Great work!\n\n';
+          }
+          
+          comment += '📊 Detailed reports are available in the workflow artifacts.\n';
+          
+          try {
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          } catch (error) {
+            console.log('Error posting comment:', error);
+          }
+
+    - name: Update baseline (if configured)
+      if: steps.config.outputs.update_baseline == 'true' && steps.results.outputs.results_available == 'true' && steps.results.outputs.benchmark_failed == 'false'
+      run: |
+        echo "Updating performance baseline..."
+        # In a real implementation, this would commit the new baseline to the repository
+        # For now, we'll just create a baseline artifact
+        cp performance_reports/performance_report.json performance-baselines-new.json
+        echo "New baseline created: performance-baselines-new.json"
+
+    - name: Fail job if regressions detected
+      if: steps.results.outputs.benchmark_failed == 'true' && steps.config.outputs.fail_on_regression == 'true'
+      run: |
+        echo "::error::Performance regressions detected and fail_on_regression is enabled"
+        exit 1
+
+  # Aggregate results from multiple OS/Rust combinations
+  aggregate-results:
+    name: Aggregate Performance Results
+    needs: performance-regression
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: all-reports
+        
+    - name: Aggregate results
+      run: |
+        echo "# Aggregated Performance Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        # Create summary table
+        echo "| Environment | Status | Regressions | Improvements |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------------|--------|-------------|--------------|" >> $GITHUB_STEP_SUMMARY
+        
+        # Process each report
+        for report_dir in all-reports/performance-reports-*; do
+          if [[ -f "$report_dir/performance_report.json" ]]; then
+            env_name=$(basename "$report_dir" | sed 's/performance-reports-//')
+            total=$(jq -r '.summary.total_benchmarks // 0' "$report_dir/performance_report.json")
+            regressions=$(jq -r '.summary.regressions_detected // 0' "$report_dir/performance_report.json")
+            improvements=$(jq -r '.summary.improvements_detected // 0' "$report_dir/performance_report.json")
+            status=$(jq -r '.summary.overall_status // "Unknown"' "$report_dir/performance_report.json")
+            
+            status_icon="❓"
+            case "$status" in
+              "Passing") status_icon="✅" ;;
+              "Warning") status_icon="⚠️" ;;
+              "Failing") status_icon="❌" ;;
+            esac
+            
+            echo "| $env_name | $status_icon $status | $regressions | $improvements |" >> $GITHUB_STEP_SUMMARY
+          fi
+        done
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📊 Individual reports are available as workflow artifacts." >> $GITHUB_STEP_SUMMARY

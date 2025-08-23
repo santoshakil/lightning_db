@@ -126,10 +126,10 @@ mod tests {
 
     #[test]
     fn test_error_context_propagation() {
-        use crate::core::error::ErrorContext;
+        
         
         let base_error: Result<(), Error> = Err(Error::Generic("base error".to_string()));
-        let contextualized = base_error.context("During recovery");
+        let contextualized = base_error.map_err(|e| Error::Generic(format!("During recovery: {}", e)));
         
         assert!(contextualized.is_err());
         if let Err(err) = contextualized {

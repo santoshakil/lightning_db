@@ -1,6 +1,5 @@
-use super::*;
 use crate::security::{
-    access_control::{AuthenticationManager, RoleId, UserId},
+    access_control::{AuthenticationManager, RoleId},
     audit::{AuditConfig, AuditLogger},
     crypto::CryptographicManager,
     input_validation::InputValidator,
@@ -9,7 +8,6 @@ use crate::security::{
     resource_protection::{ResourceProtectionManager, ResourceQuotas},
     SecurityConfig,
 };
-use std::collections::HashSet;
 use std::time::Duration;
 
 #[tokio::test]

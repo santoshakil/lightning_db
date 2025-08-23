@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 pub mod checksum_validator;
+pub mod checker;
 pub mod consistency_checker;
 pub mod page_scanner;
 pub mod repair_tool;
@@ -20,6 +21,7 @@ pub mod validation_config;
 pub mod metrics;
 
 pub use checksum_validator::ChecksumValidator;
+pub use checker::{IntegrityChecker, IntegrityReport as CheckerReport, IntegrityError as CheckerError};
 pub use consistency_checker::ConsistencyChecker;
 pub use data_integrity::{DataIntegrityValidator, IntegrityReport as NewIntegrityReport};
 pub use error_types::{IntegrityError, IntegrityViolation, ValidationResult, ViolationSeverity};

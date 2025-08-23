@@ -8,19 +8,16 @@
 //! - Integration with existing profiling system
 
 use std::{
-    collections::{HashMap, BTreeMap},
     sync::{Arc, Mutex, RwLock, atomic::{AtomicU64, AtomicBool, Ordering}},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
     thread,
-    mem,
     alloc::{GlobalAlloc, Layout},
 };
 
 use parking_lot::RwLock as ParkingRwLock;
-use crossbeam_epoch::{self as epoch, Atomic, Owned, Shared, Guard};
 use dashmap::DashMap;
 use serde::{Serialize, Deserialize};
-use tracing::{warn, info, debug, error};
+use tracing::{warn, info};
 
 /// Global memory tracker instance
 pub static MEMORY_TRACKER: once_cell::sync::Lazy<Arc<MemoryTracker>> = 
@@ -199,8 +196,10 @@ impl MemoryTracker {
         // Reset statistics
         self.reset_statistics();
         
-        // Start monitoring thread
-        self.start_monitoring_thread();
+        // Start monitoring thread - need to get Arc reference to self
+        // Since we're in the global MEMORY_TRACKER, we can safely clone the Arc
+        let tracker_arc = MEMORY_TRACKER.clone();
+        Self::start_monitoring_thread(tracker_arc);
     }
 
     /// Stop memory tracking
@@ -225,7 +224,7 @@ impl MemoryTracker {
     }
 
     /// Record memory allocation
-    pub fn record_allocation(&self, addr: usize, size: usize, layout: Layout) {
+    pub fn record_allocation(&self, addr: usize, size: usize, _layout: Layout) {
         if !self.enabled.load(Ordering::Relaxed) {
             return;
         }
@@ -419,32 +418,35 @@ impl MemoryTracker {
         self.deallocation_count.store(0, Ordering::Relaxed);
     }
 
-    fn start_monitoring_thread(&self) {
-        let config = self.config.read().clone();
+    fn start_monitoring_thread(tracker_arc: Arc<MemoryTracker>) {
+        let config = tracker_arc.config.read().clone();
         if !config.collect_statistics {
             return;
         }
 
-        let tracker = Arc::new(self as *const _ as usize); // Unsafe but needed for thread
-        let shutdown_flag = self.shutdown_flag.clone();
+        // Use Arc directly - completely safe, no type punning needed
+        let shutdown_flag = tracker_arc.shutdown_flag.clone();
+        let tracker_for_thread = tracker_arc.clone();
         
         let handle = thread::Builder::new()
             .name("memory-monitor".to_string())
             .spawn(move || {
-                Self::monitoring_loop(tracker, shutdown_flag, config);
+                Self::safe_monitoring_loop(tracker_for_thread, shutdown_flag, config);
             })
             .expect("Failed to start memory monitoring thread");
 
-        *self.monitoring_thread.lock().unwrap() = Some(handle);
+        // Store the handle safely
+        if let Ok(mut monitoring_thread) = tracker_arc.monitoring_thread.lock() {
+            *monitoring_thread = Some(handle);
+        }
     }
 
-    fn monitoring_loop(
-        tracker_ptr: Arc<usize>,
+    fn safe_monitoring_loop(
+        tracker: Arc<MemoryTracker>,
         shutdown_flag: Arc<AtomicBool>,
         config: MemoryTrackingConfig,
     ) {
-        let tracker = unsafe { &*(tracker_ptr.as_ref() as *const usize as *const MemoryTracker) };
-        
+        // Completely safe monitoring loop - no unsafe operations needed
         while !shutdown_flag.load(Ordering::Relaxed) {
             // Collect statistics
             tracker.collect_statistics();
@@ -716,6 +718,14 @@ impl<A: GlobalAlloc> TrackingAllocator<A> {
     }
 }
 
+// SAFETY: GlobalAlloc implementation that wraps another allocator
+// Invariants:
+// - All methods delegate to inner allocator
+// - Tracking operations are side-effect only
+// - Returns same pointers as inner allocator
+// Guarantees:
+// - Memory safety preserved from inner allocator
+// - Tracking doesn't affect allocation behavior
 unsafe impl<A: GlobalAlloc> GlobalAlloc for TrackingAllocator<A> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = self.inner.alloc(layout);
@@ -725,11 +735,26 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for TrackingAllocator<A> {
         ptr
     }
 
+    // SAFETY: Deallocating memory through inner allocator
+    // Invariants:
+    // 1. ptr must have been allocated by this allocator
+    // 2. layout must match original allocation
+    // 3. ptr not used after deallocation
+    // Guarantees:
+    // - Tracking updated before actual deallocation
+    // - Memory freed by inner allocator
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         MEMORY_TRACKER.record_deallocation(ptr as usize);
         self.inner.dealloc(ptr, layout);
     }
 
+    // SAFETY: Allocating zeroed memory through inner allocator
+    // Invariants:
+    // 1. Layout must be valid
+    // 2. Inner allocator handles zeroing
+    // Guarantees:
+    // - Returns zeroed memory or null
+    // - Tracking records allocation if successful
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let ptr = self.inner.alloc_zeroed(layout);
         if !ptr.is_null() {
@@ -738,10 +763,21 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for TrackingAllocator<A> {
         ptr
     }
 
+    // SAFETY: Reallocating memory through inner allocator
+    // Invariants:
+    // 1. ptr must have been allocated by this allocator
+    // 2. layout must match original allocation
+    // 3. new_size and alignment must be valid
+    // Guarantees:
+    // - Old allocation tracked as deallocated
+    // - New allocation tracked if successful
+    // - Memory moved/resized by inner allocator
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         MEMORY_TRACKER.record_deallocation(ptr as usize);
         let new_ptr = self.inner.realloc(ptr, layout, new_size);
         if !new_ptr.is_null() {
+            // SAFETY: Creating layout with known valid size and alignment
+            // Alignment preserved from original layout
             let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
             MEMORY_TRACKER.record_allocation(new_ptr as usize, new_size, new_layout);
         }
@@ -768,7 +804,7 @@ pub fn get_memory_tracker() -> &'static Arc<MemoryTracker> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+    
 
     #[test]
     fn test_memory_tracker_creation() {

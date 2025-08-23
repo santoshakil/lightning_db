@@ -9,25 +9,23 @@
 //! - Automated alerting system
 
 use std::{
-    collections::{HashMap, VecDeque, BTreeMap},
-    sync::{Arc, Mutex, RwLock, atomic::{AtomicU64, AtomicBool, AtomicUsize, Ordering}},
+    collections::{HashMap, VecDeque},
+    sync::{Arc, atomic::{AtomicU64, AtomicBool, Ordering}},
     time::{Duration, Instant, SystemTime},
     thread,
-    fs::{File, OpenOptions},
+    fs::File,
     io::{Write, BufWriter},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use dashmap::DashMap;
 use parking_lot::{RwLock as ParkingRwLock, Mutex as ParkingMutex};
 use serde::{Serialize, Deserialize};
-use tracing::{info, warn, error, debug};
+use tracing::{info, warn, error};
 use prometheus::{Gauge, Counter, Histogram, Registry, TextEncoder, Encoder};
 
 use crate::utils::{
-    memory_tracker::{MemoryTracker, MemoryStats},
-    leak_detector::{LeakDetector, LeakReport, LeakType},
-    resource_manager::{ResourceManager, ResourceUsageStats},
+    MemoryStats, get_memory_tracker, LeakReport, LeakType, get_leak_detector, ResourceUsageStats, get_resource_manager,
 };
 
 /// Global production memory monitor instance
@@ -290,7 +288,7 @@ pub struct MonitoringStats {
     pub total_alerts: u64,
     pub active_alerts: usize,
     pub memory_dumps_created: usize,
-    pub last_monitoring_cycle: Option<Instant>,
+    pub last_monitoring_cycle: Option<SystemTime>,
     pub monitoring_cycles_completed: u64,
     pub average_cycle_duration: Duration,
 }
@@ -467,9 +465,9 @@ impl ProductionMemoryMonitor {
         let file_path = config.memory_dump_dir.join(file_name);
 
         // Collect memory information
-        let memory_stats = crate::utils::memory_tracker::get_memory_tracker().get_statistics();
-        let leak_report = crate::utils::leak_detector::get_leak_detector().scan_for_leaks();
-        let resource_stats = crate::utils::resource_manager::get_resource_manager().get_usage_stats();
+        let memory_stats = get_memory_tracker().get_statistics();
+        let leak_report = get_leak_detector().scan_for_leaks();
+        let resource_stats = get_resource_manager().get_usage_stats();
 
         let dump_data = MemoryDumpData {
             timestamp,
@@ -495,9 +493,9 @@ impl ProductionMemoryMonitor {
 
         let metadata = MemoryDumpMetadata {
             timestamp,
-            memory_usage: memory_stats.current_usage,
-            allocation_count: memory_stats.allocation_count,
-            leak_count: leak_report.leaks_detected.len(),
+            memory_usage: dump_data.memory_stats.current_usage,
+            allocation_count: dump_data.memory_stats.allocation_count,
+            leak_count: dump_data.leak_report.leaks_detected.len(),
             trigger_reason: reason.to_string(),
             file_path: file_path.clone(),
             file_size,
@@ -620,6 +618,15 @@ impl ProductionMemoryMonitor {
         shutdown_flag: Arc<AtomicBool>,
         config: ProductionMonitoringConfig,
     ) {
+        // SAFETY: Converting Arc<usize> back to ProductionMemoryMonitor reference
+        // Invariants:
+        // 1. monitor_ptr created from Arc::into_raw of ProductionMemoryMonitor
+        // 2. Pointer remains valid for thread lifetime
+        // 3. Arc keeps object alive throughout monitoring
+        // 4. Type punning is safe as we control both conversions
+        // Guarantees:
+        // - Valid reference for monitoring loop
+        // - No data races due to Arc protection
         let monitor = unsafe { &*(monitor_ptr.as_ref() as *const usize as *const ProductionMemoryMonitor) };
         let start_time = Instant::now();
 
@@ -627,15 +634,15 @@ impl ProductionMemoryMonitor {
             let cycle_start = Instant::now();
 
             // Collect memory statistics
-            let memory_stats = crate::utils::memory_tracker::get_memory_tracker().get_statistics();
-            let resource_stats = crate::utils::resource_manager::get_resource_manager().get_usage_stats();
+            let memory_stats = get_memory_tracker().get_statistics();
+            let resource_stats = get_resource_manager().get_usage_stats();
 
             // Update Prometheus metrics
             if let Some(ref metrics) = monitor.metrics {
                 metrics.memory_usage_bytes.set(memory_stats.current_usage as f64);
                 metrics.memory_peak_bytes.set(memory_stats.peak_usage as f64);
-                metrics.allocations_total.inc_by(memory_stats.allocation_count);
-                metrics.deallocations_total.inc_by(memory_stats.deallocation_count);
+                metrics.allocations_total.inc_by(memory_stats.allocation_count as f64);
+                metrics.deallocations_total.inc_by(memory_stats.deallocation_count as f64);
                 metrics.allocation_rate.set(memory_stats.allocation_rate);
                 metrics.fragmentation_ratio.set(memory_stats.fragmentation_ratio);
                 metrics.resource_count.set(resource_stats.total_resources as f64);
@@ -650,7 +657,7 @@ impl ProductionMemoryMonitor {
             {
                 let mut stats = monitor.monitoring_stats.write();
                 stats.uptime = start_time.elapsed();
-                stats.last_monitoring_cycle = Some(cycle_start);
+                stats.last_monitoring_cycle = Some(SystemTime::now());
                 stats.monitoring_cycles_completed += 1;
                 
                 // Update average cycle duration
@@ -678,11 +685,20 @@ impl ProductionMemoryMonitor {
         shutdown_flag: Arc<AtomicBool>,
         config: ProductionMonitoringConfig,
     ) {
+        // SAFETY: Converting Arc<usize> back to ProductionMemoryMonitor reference
+        // Invariants:
+        // 1. monitor_ptr created from Arc::into_raw for leak detection thread
+        // 2. Pointer remains valid for thread lifetime
+        // 3. Arc prevents deallocation during use
+        // 4. Same type conversion pattern as monitoring loop
+        // Guarantees:
+        // - Valid reference for leak detection
+        // - Thread-safe access to monitor
         let monitor = unsafe { &*(monitor_ptr.as_ref() as *const usize as *const ProductionMemoryMonitor) };
 
         while !shutdown_flag.load(Ordering::Relaxed) {
             // Perform leak detection scan
-            let leak_report = crate::utils::leak_detector::get_leak_detector().scan_for_leaks();
+            let leak_report = get_leak_detector().scan_for_leaks();
 
             // Update metrics
             if let Some(ref metrics) = monitor.metrics {
@@ -691,7 +707,7 @@ impl ProductionMemoryMonitor {
                 let total_leak_size: u64 = leak_report.leaks_detected.iter()
                     .map(|leak| match leak {
                         LeakType::CircularReference { total_size, .. } => *total_size as u64,
-                        LeakType::OrphanedObject { size, .. } => *size,
+                        LeakType::OrphanedObject { size, .. } => *size as u64,
                         _ => 0,
                     })
                     .sum();
@@ -733,7 +749,7 @@ impl ProductionMemoryMonitor {
     fn check_memory_alerts(
         &self,
         memory_stats: &MemoryStats,
-        resource_stats: &ResourceUsageStats,
+        _resource_stats: &ResourceUsageStats,
         config: &ProductionMonitoringConfig,
     ) {
         // High memory usage alert

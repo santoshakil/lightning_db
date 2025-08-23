@@ -325,6 +325,14 @@ impl MappedBuffer {
         let layout = Layout::from_size_align(aligned_size, MemoryLayoutOps::OPTIMAL_PAGE_SIZE)
             .map_err(|_| AllocError)?;
 
+        // SAFETY: Allocating memory for mapped buffer
+        // Invariants:
+        // 1. Layout is valid (checked above)
+        // 2. Size is page-aligned
+        // 3. Alignment is power of two
+        // Guarantees:
+        // - Returns null on failure
+        // - Allocated memory is uninitialized
         let ptr = unsafe { alloc(layout) };
         let ptr = NonNull::new(ptr).ok_or(AllocError)?;
 
@@ -337,11 +345,27 @@ impl MappedBuffer {
 
     /// Get a slice to the buffer
     pub fn as_slice(&self) -> &[u8] {
+        // SAFETY: Creating slice from owned buffer
+        // Invariants:
+        // 1. ptr is valid and points to allocated memory
+        // 2. size matches allocated size
+        // 3. Lifetime tied to &self
+        // Guarantees:
+        // - Valid slice for lifetime of borrow
+        // - No mutable aliasing
         unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.size) }
     }
 
     /// Get a mutable slice to the buffer
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        // SAFETY: Creating mutable slice from owned buffer
+        // Invariants:
+        // 1. ptr is valid and points to allocated memory
+        // 2. size matches allocated size
+        // 3. Exclusive access via &mut self
+        // Guarantees:
+        // - No aliasing due to exclusive borrow
+        // - Valid mutable slice for lifetime
         unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.size) }
     }
 
@@ -349,6 +373,14 @@ impl MappedBuffer {
     #[cfg(target_arch = "x86_64")]
     pub fn prefetch(&self, offset: usize, len: usize) {
         if offset + len <= self.size {
+            // SAFETY: Prefetching memory within buffer bounds
+            // Invariants:
+            // 1. offset + len <= size (checked above)
+            // 2. ptr is valid for entire buffer
+            // 3. Prefetch is hint only, no actual access
+            // Guarantees:
+            // - No out-of-bounds access
+            // - Performance improvement for sequential access
             unsafe {
                 let ptr = self.ptr.as_ptr().add(offset);
                 let end = ptr.add(len);
@@ -373,6 +405,14 @@ impl MappedBuffer {
 
 impl Drop for MappedBuffer {
     fn drop(&mut self) {
+        // SAFETY: Deallocating owned memory
+        // Invariants:
+        // 1. ptr was allocated with same layout
+        // 2. Called exactly once in Drop
+        // 3. No other references exist (Drop guarantees)
+        // Guarantees:
+        // - Memory freed properly
+        // - No use-after-free
         unsafe {
             dealloc(self.ptr.as_ptr(), self.layout);
         }
@@ -459,6 +499,14 @@ impl CompactRecord {
 
     /// Get the key from this record
     pub fn key(&self) -> &[u8] {
+        // SAFETY: Accessing variable-length key data
+        // Invariants:
+        // 1. Record header contains valid key_len
+        // 2. Memory after header contains key data
+        // 3. Self-referential structure properly initialized
+        // Guarantees:
+        // - Returns slice to embedded key data
+        // - Lifetime tied to record lifetime
         unsafe {
             let data_ptr = (self as *const CompactRecord as *const u8)
                 .add(std::mem::size_of::<RecordHeader>());
@@ -468,6 +516,14 @@ impl CompactRecord {
 
     /// Get the value from this record
     pub fn value(&self) -> &[u8] {
+        // SAFETY: Accessing variable-length value data
+        // Invariants:
+        // 1. Record header contains valid value_len
+        // 2. Value data follows key data in memory
+        // 3. Offsets calculated correctly
+        // Guarantees:
+        // - Returns slice to embedded value data
+        // - No overlap with key data
         unsafe {
             let data_ptr = (self as *const CompactRecord as *const u8)
                 .add(std::mem::size_of::<RecordHeader>())
@@ -478,6 +534,14 @@ impl CompactRecord {
 
     /// Verify record integrity using checksum
     pub fn verify_integrity(&self) -> bool {
+        // SAFETY: Reading record data for checksum verification
+        // Invariants:
+        // 1. Record structure is properly initialized
+        // 2. Lengths in header are valid
+        // 3. Memory layout matches expected format
+        // Guarantees:
+        // - Read-only access for verification
+        // - No modification of data
         unsafe {
             let data_ptr = (self as *const CompactRecord as *const u8)
                 .add(std::mem::size_of::<RecordHeader>());
@@ -602,6 +666,14 @@ mod tests {
 
         let mut buffer = vec![0u8; record_size];
 
+        // SAFETY: Creating record in pre-allocated buffer
+        // Invariants:
+        // 1. Buffer has sufficient size (calculated above)
+        // 2. CompactRecord::create_in_buffer validates parameters
+        // 3. Test environment, controlled inputs
+        // Guarantees:
+        // - Record properly initialized in buffer
+        // - Test validates record structure
         unsafe {
             let record = CompactRecord::create_in_buffer(&mut buffer, key, value).unwrap();
 
@@ -628,6 +700,14 @@ mod tests {
         // Check alignment
         assert_eq!(ptr.as_ptr() as usize % MemoryLayoutOps::CACHE_LINE_SIZE, 0);
 
+        // SAFETY: Deallocating test allocation
+        // Invariants:
+        // 1. ptr was allocated with size 1024 above
+        // 2. Same size passed to deallocate
+        // 3. No other references to memory
+        // Guarantees:
+        // - Proper cleanup in test
+        // - No memory leak
         unsafe {
             CacheAlignedAllocator::deallocate(ptr, 1024);
         }

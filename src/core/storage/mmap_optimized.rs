@@ -217,7 +217,17 @@ impl OptimizedMmapManager {
                 .len(aligned_size);
         }
 
-        let mut mmap = unsafe {
+        // SAFETY: Creating memory mapping from file descriptor
+        // Invariants:
+        // 1. file is a valid, open file descriptor (locked above)
+        // 2. offset and region_size are validated to be within file bounds
+        // 3. mmap_options configured with valid parameters
+        // 4. File remains open for lifetime of mapping
+        // Guarantees:
+        // - Memory mapping is valid for file's lifetime
+        // - OS manages page fault handling and synchronization
+        // - map_mut() ensures exclusive access to mapped region
+        let mmap = unsafe {
             if self.config.enable_huge_pages {
                 mmap_options
                     .offset(offset)
@@ -298,6 +308,16 @@ impl OptimizedMmapManager {
 
         // Touch pages to pre-fault them into memory
         for i in (0..mmap.len()).step_by(page_size) {
+            // SAFETY: Pre-faulting pages by touching memory
+            // Invariants:
+            // 1. ptr points within valid mmap bounds (i < mmap.len())
+            // 2. mmap is exclusively owned by this thread
+            // 3. Page-aligned access for optimal faulting
+            // 4. Volatile operations prevent compiler optimization
+            // Guarantees:
+            // - Forces OS to allocate physical pages
+            // - Read-modify-write preserves existing data
+            // - No data races as mmap is exclusively owned
             unsafe {
                 let ptr = mmap.as_ptr().add(i) as *mut u8;
                 // Read and write to ensure page is fully faulted
@@ -322,6 +342,15 @@ impl OptimizedMmapManager {
         const MADV_SEQUENTIAL: i32 = 2;
         const MADV_WILLNEED: i32 = 3;
         
+        // SAFETY: Providing memory usage hints to kernel via madvise
+        // Invariants:
+        // 1. mmap points to valid memory-mapped region
+        // 2. Length covers entire mapped region
+        // 3. MADV_* constants are valid for target platform
+        // 4. Calls are advisory only - failures are non-critical
+        // Guarantees:
+        // - Kernel may optimize memory management based on hints
+        // - No memory corruption as these are hints only
         unsafe {
             // Advise kernel to use huge pages
             libc::madvise(

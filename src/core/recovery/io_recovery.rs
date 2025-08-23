@@ -1,13 +1,12 @@
 use crate::core::error::{Error, Result};
-use crate::utils::retry::{RetryPolicy, RetryableOperations};
-use std::fs::Metadata;
-use std::io::{ErrorKind, Read, Seek, Write};
+use crate::utils::retry::RetryPolicy;
+use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::fs as async_fs;
-use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 

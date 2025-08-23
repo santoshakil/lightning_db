@@ -6,12 +6,11 @@ use argon2::password_hash::{rand_core::OsRng, SaltString};
 use blake3::{Hash, Hasher};
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit as ChaChaKeyInit};
 use ring::rand::{SecureRandom, SystemRandom};
-use secrecy::{ExposeSecret, Secret, Zeroize};
+use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use zeroize::ZeroizeOnDrop;
+use std::time::{Duration, SystemTime};
 
 const KEY_SIZE: usize = 32;
 const NONCE_SIZE: usize = 12;

@@ -118,8 +118,8 @@ impl Database {
         })
     }
 
-    /// Compact the database to reclaim space
-    pub fn compact(&self, _target_reduction: u8) -> Result<CompactStats> {
+    /// Compact the database to reclaim space with target reduction
+    pub fn compact_with_target(&self, _target_reduction: u8) -> Result<CompactStats> {
         let initial_stats = self.stats();
 
         // Compact LSM tree if enabled

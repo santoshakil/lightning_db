@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::core::error::Error;
 use crate::core::error::Result;
 use std::thread;
 use std::time::Duration;

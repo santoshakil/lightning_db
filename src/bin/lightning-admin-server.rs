@@ -1,5 +1,6 @@
 use clap::{Arg, Command};
-use lightning_db::{simple_http_admin::start_admin_server, Database, LightningDbConfig};
+use lightning_db::{Database, LightningDbConfig};
+use lightning_db::features::admin::http_server::SimpleAdminServer;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -64,7 +65,8 @@ fn main() {
     };
 
     // Start admin server
-    if let Err(e) = start_admin_server(db, port) {
+    let admin_server = SimpleAdminServer::new(db, port);
+    if let Err(e) = admin_server.start() {
         eprintln!("Server error: {}", e);
         std::process::exit(1);
     }

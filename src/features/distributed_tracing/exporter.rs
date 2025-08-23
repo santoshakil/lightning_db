@@ -3,7 +3,7 @@
 //! Provides various exporters for sending trace data to different backends
 //! including OpenTelemetry collectors, logging systems, and metrics stores.
 
-use super::{Span, SpanStatus, TraceExporter};
+use super::{Span, TraceExporter};
 use crate::core::error::Result;
 use serde_json;
 use std::collections::HashMap;

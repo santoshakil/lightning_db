@@ -12,8 +12,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let config = LightningDbConfig {
         cache_size: 32 * 1024 * 1024, // 32MB cache for testing
-        enable_hot_path_cache: true,
-        enable_thread_local_cache: true,
+        prefetch_enabled: true,
+        use_optimized_transactions: true,
         ..Default::default()
     };
     
@@ -98,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n5. Testing database statistics...");
     let stats = db.get_stats()?;
     println!("   Pages: {}", stats.page_count);
-    println!("   B+Tree height: {}", stats.btree_height);
+    println!("   B+Tree height: {}", stats.tree_height);
     println!("   Transactions: {}", stats.active_transactions);
     
     println!("\n✅ Production validation PASSED!");

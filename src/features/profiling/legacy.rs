@@ -286,7 +286,16 @@ macro_rules! profile {
 pub fn profile_operation(operation: &str) -> Option<ProfileGuard<'static>> {
     let profiler_lock = PROFILER.read();
     if profiler_lock.is_enabled() {
-        // This is safe because PROFILER is a static and lives for the entire program
+        // SAFETY: This is safe because:
+        // 1. PROFILER is a static Arc<RwLock<PerformanceProfiler>> that lives for program duration
+        // 2. We hold a valid read lock (profiler_lock) ensuring the object exists
+        // 3. We transmute the lifetime to 'static which is valid for static data
+        // 4. The pointer cast is valid as we're going from &T to &T with extended lifetime
+        // 5. We drop the lock immediately after creating the reference to prevent deadlock
+        // INVARIANTS:
+        // - PROFILER must remain valid for entire program duration (guaranteed by lazy_static)
+        // - Caller must not hold the returned reference across lock boundaries
+        // RISKS: Potential deadlock if ProfileGuard holds reference too long
         let profiler_ref: &'static PerformanceProfiler =
             unsafe { &*(profiler_lock.deref() as *const PerformanceProfiler) };
         drop(profiler_lock);

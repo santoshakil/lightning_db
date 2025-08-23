@@ -1,8 +1,7 @@
 use clap::{Arg, ArgMatches, Command};
-use lightning_db::{
-    backup::{BackupConfig, BackupManager},
-    Database, LightningDbConfig,
-};
+use lightning_db::{Database, LightningDbConfig};
+use lightning_db::features::backup::{BackupConfig, BackupManager};
+use lightning_db::utils::integrity::checker::{check_database_integrity, format_integrity_report};
 use std::io::{self, Write};
 use std::time::Instant;
 
@@ -514,7 +513,7 @@ fn cmd_stats(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     let _db = Database::open(path, LightningDbConfig::default())?;
 
     // Get statistics from realtime stats
-    use lightning_db::realtime_stats::REALTIME_STATS;
+    use lightning_db::features::statistics::REALTIME_STATS;
     let stats = REALTIME_STATS.read().get_current_stats();
     println!("=== Lightning DB Statistics ===");
     println!("\nOperations:");
@@ -744,9 +743,7 @@ fn cmd_check(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::open(path, LightningDbConfig::default())?;
 
     // Run integrity check
-    use lightning_db::integrity_checker::{
-        check_database_integrity, format_integrity_report, IntegrityChecker,
-    };
+    use lightning_db::utils::integrity::checker::IntegrityChecker;
 
     let mut checker = IntegrityChecker::new(&db);
 

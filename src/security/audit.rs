@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tracing::{error, info, warn};
+use tracing::error;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AuditEventType {

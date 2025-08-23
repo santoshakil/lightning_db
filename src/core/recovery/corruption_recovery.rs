@@ -1,8 +1,8 @@
 use crate::core::error::{Error, Result};
-use crate::utils::integrity::{ChecksumValidatorStub, ConsistencyCheckerStub, DataIntegrityChecker, IntegrityResult};
-use std::collections::{HashMap, HashSet};
+use crate::utils::integrity::{ChecksumValidatorStub, ConsistencyCheckerStub, DataIntegrityChecker};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::fs;

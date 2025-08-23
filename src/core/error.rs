@@ -1,7 +1,85 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
+pub type DatabaseResult<T> = std::result::Result<T, DatabaseError>;
+
+fn holders_display(holders: &[String]) -> String {
+    holders.join(", ")
+}
+
+/// Error category for better error handling and recovery strategies
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorCategory {
+    /// Critical errors that require immediate shutdown
+    Critical,
+    /// Transient errors that can be retried
+    Transient,
+    /// User input errors
+    UserInput,
+    /// Configuration errors
+    Configuration,
+    /// Network-related errors
+    Network,
+    /// Storage/IO errors
+    Storage,
+    /// Data corruption errors
+    Corruption,
+    /// Resource exhaustion
+    Resource,
+    /// Internal logic errors (bugs)
+    Internal,
+}
+
+/// Error severity levels for logging and monitoring
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ErrorSeverity {
+    Debug = 0,
+    Info = 1,
+    Warning = 2,
+    Error = 3,
+    Critical = 4,
+}
+
+/// Enhanced error context with debugging information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErrorContext {
+    pub operation: String,
+    pub component: String,
+    pub file: Option<String>,
+    pub line: Option<u32>,
+    pub thread_id: Option<String>,
+    pub additional_data: std::collections::HashMap<String, String>,
+}
+
+impl ErrorContext {
+    pub fn new(operation: &str, component: &str) -> Self {
+        Self {
+            operation: operation.to_string(),
+            component: component.to_string(),
+            file: None,
+            line: None,
+            thread_id: None,
+            additional_data: std::collections::HashMap::new(),
+        }
+    }
+    
+    pub fn with_location(mut self, file: &str, line: u32) -> Self {
+        self.file = Some(file.to_string());
+        self.line = Some(line);
+        self
+    }
+    
+    pub fn with_thread(mut self) -> Self {
+        self.thread_id = Some(format!("{:?}", std::thread::current().id()));
+        self
+    }
+    
+    pub fn with_data(mut self, key: &str, value: &str) -> Self {
+        self.additional_data.insert(key.to_string(), value.to_string());
+        self
+    }
+}
 
 #[derive(Error, Debug, Clone, Serialize)]
 pub enum Error {
@@ -223,12 +301,30 @@ pub enum Error {
     #[error("Internal error: {0}")]
     Internal(String),
 
-    // Distributed transaction errors
-    #[error("Transaction failed: {0}")]
-    TransactionFailed(String),
+    // Transaction isolation errors
+    // Note: TransactionNotFound already exists above with different signature
+
+    #[error("Snapshot {0} not found")]
+    SnapshotNotFound(u64),
+
+    #[error("Lock timeout: {0}")]
+    LockTimeout(String),
+
+    #[error("Lock conflict: {0}")]
+    LockConflict(String),
 
     #[error("Deadlock detected: {0}")]
     Deadlock(String),
+
+    #[error("Transaction retry required: {0}")]
+    TransactionRetry(String),
+
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
+
+    // Distributed transaction errors
+    #[error("Transaction failed: {0}")]
+    TransactionFailed(String),
 
     // === CRASH RECOVERY ERROR HIERARCHY ===
     
@@ -337,6 +433,99 @@ pub enum Error {
         details: String,
         critical: bool,
     },
+
+    // === ENHANCED ERROR HANDLING ===
+    
+    /// Context-aware error with detailed information
+    #[error("{message}")]
+    WithContext {
+        message: String,
+        source: Box<Error>,
+        context: ErrorContext,
+        backtrace: Option<String>,
+    },
+    
+    /// Resource exhaustion with specific details
+    #[error("Resource '{resource}' exhausted: {current}/{limit} - {suggestion}")]
+    ResourceExhaustion {
+        resource: String,
+        current: u64,
+        limit: u64,
+        suggestion: String,
+    },
+    
+    /// Thread safety violation
+    #[error("Thread safety violation in {component}: {details}")]
+    ThreadSafetyViolation {
+        component: String,
+        details: String,
+        thread_id: String,
+    },
+    
+    /// Async operation errors
+    #[error("Async operation failed in {operation}: {reason}")]
+    AsyncOperationFailed {
+        operation: String,
+        reason: String,
+        timeout: Option<std::time::Duration>,
+    },
+    
+    /// Lock contention error with diagnostics
+    #[error("Lock contention on '{resource}': waited {wait_time:?}, holders: {}", holders_display(.holders))]
+    LockContention {
+        resource: String,
+        wait_time: std::time::Duration,
+        holders: Vec<String>,
+    },
+    
+    /// Invariant violation (internal logic error)
+    #[error("Invariant violation in {function}: {invariant} - {details}")]
+    InvariantViolation {
+        function: String,
+        invariant: String,
+        details: String,
+        backtrace: String,
+    },
+    
+    /// Recoverable error with retry information
+    #[error("Recoverable error: {reason} (attempt {attempt}/{max_attempts})")]
+    Recoverable {
+        reason: String,
+        attempt: u32,
+        max_attempts: u32,
+        retry_after: Option<std::time::Duration>,
+        source: Box<Error>,
+    },
+
+    /// Migration errors
+    #[error("Migration error: {0}")]
+    Migration(String),
+
+    /// Backup errors
+    #[error("Backup error: {0}")]
+    Backup(String),
+}
+
+/// Database-specific error types for migration system
+#[derive(Error, Debug, Clone)]
+pub enum DatabaseError {
+    #[error("IO error: {0}")]
+    IoError(String),
+
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
+
+    #[error("Migration error: {0}")]
+    MigrationError(String),
+
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
+
+    #[error("Internal error: {0}")]
+    InternalError(String),
 }
 
 impl From<std::io::Error> for Error {
@@ -359,6 +548,88 @@ impl From<std::io::Error> for Error {
 }
 
 impl Error {
+    /// Get the error category for handling decisions
+    pub fn category(&self) -> ErrorCategory {
+        match self {
+            Error::Io(_) | Error::IoError(_) => ErrorCategory::Storage,
+            Error::InvalidDatabase | Error::CorruptedPage | Error::CorruptedDatabase(_) => ErrorCategory::Corruption,
+            Error::KeyNotFound | Error::PageNotFound => ErrorCategory::UserInput,
+            Error::Config(_) | Error::InvalidFormat(_) => ErrorCategory::Configuration,
+            Error::Memory | Error::ResourceExhausted { .. } | Error::ResourceExhaustion { .. } => ErrorCategory::Resource,
+            Error::Timeout(_) | Error::RequestTimeout | Error::RecoveryTimeout { .. } => ErrorCategory::Transient,
+            Error::ThreadPanic(_) | Error::InvariantViolation { .. } => ErrorCategory::Internal,
+            Error::RecoveryImpossible { .. } | Error::WalCorrupted { .. } => ErrorCategory::Critical,
+            Error::LockContention { .. } | Error::AsyncOperationFailed { .. } => ErrorCategory::Transient,
+            Error::ThreadSafetyViolation { .. } => ErrorCategory::Internal,
+            _ => ErrorCategory::Internal,
+        }
+    }
+    
+    /// Get the error severity for logging decisions
+    pub fn severity(&self) -> ErrorSeverity {
+        match self.category() {
+            ErrorCategory::Critical => ErrorSeverity::Critical,
+            ErrorCategory::Corruption => ErrorSeverity::Critical,
+            ErrorCategory::Internal => ErrorSeverity::Error,
+            ErrorCategory::Resource => ErrorSeverity::Error,
+            ErrorCategory::Storage => ErrorSeverity::Error,
+            ErrorCategory::Network => ErrorSeverity::Warning,
+            ErrorCategory::Transient => ErrorSeverity::Warning,
+            ErrorCategory::Configuration => ErrorSeverity::Error,
+            ErrorCategory::UserInput => ErrorSeverity::Info,
+        }
+    }
+    
+    /// Check if this error suggests system shutdown
+    pub fn requires_shutdown(&self) -> bool {
+        matches!(self.category(), ErrorCategory::Critical) ||
+        matches!(self, 
+            Error::Memory | 
+            Error::InvariantViolation { .. } |
+            Error::ThreadSafetyViolation { .. } |
+            Error::RecoveryImpossible { .. }
+        )
+    }
+    
+    /// Get retry delay for transient errors
+    pub fn retry_delay(&self) -> Option<std::time::Duration> {
+        match self {
+            Error::Recoverable { retry_after, .. } => *retry_after,
+            Error::LockContention { wait_time, .. } => {
+                Some(std::time::Duration::from_millis(100).min(*wait_time * 2))
+            },
+            Error::AsyncOperationFailed { timeout, .. } => {
+                timeout.map(|t| t / 4) // Quarter of timeout as retry delay
+            },
+            _ if self.category() == ErrorCategory::Transient => {
+                Some(std::time::Duration::from_millis(100))
+            },
+            _ => None,
+        }
+    }
+    
+    /// Add context to an error
+    pub fn with_context(self, context: ErrorContext) -> Self {
+        let backtrace = std::backtrace::Backtrace::capture();
+        Error::WithContext {
+            message: self.to_string(),
+            source: Box::new(self),
+            context,
+            backtrace: Some(format!("{}", backtrace)),
+        }
+    }
+    
+    /// Create a recoverable error wrapper
+    pub fn recoverable(self, attempt: u32, max_attempts: u32) -> Self {
+        Error::Recoverable {
+            reason: self.to_string(),
+            attempt,
+            max_attempts,
+            retry_after: self.retry_delay(),
+            source: Box::new(self),
+        }
+    }
+    
     pub fn error_code(&self) -> i32 {
         match self {
             Error::Io(_) => -1,
@@ -451,6 +722,23 @@ impl Error {
             Error::RecoveryRollbackFailed { .. } => -81,
             Error::RecoveryStageDependencyFailed { .. } => -82,
             Error::RecoveryVerificationFailed { .. } => -83,
+            
+            // Enhanced error codes (84-99 range)
+            Error::WithContext { .. } => -84,
+            Error::ResourceExhaustion { .. } => -85,
+            Error::ThreadSafetyViolation { .. } => -86,
+            Error::AsyncOperationFailed { .. } => -87,
+            Error::LockContention { .. } => -88,
+            Error::InvariantViolation { .. } => -89,
+            Error::Recoverable { .. } => -90,
+            Error::SnapshotNotFound(_) => -91,
+            Error::LockTimeout(_) => -92,
+            Error::LockConflict(_) => -93,
+            Error::Serialization(_) => -94,
+            Error::Migration(_) => -95,
+            Error::Backup(_) => -96,
+            Error::TransactionRetry(_) => -97,
+            Error::InvalidArgument(_) => -98,
         }
     }
 
@@ -494,7 +782,11 @@ impl Error {
                 | Error::RecoveryTimeout { .. }
                 | Error::RecoveryDependencyError { .. }
                 | Error::RecoveryPermissionError { .. }
-        )
+                | Error::LockContention { .. }
+                | Error::AsyncOperationFailed { .. }
+                | Error::Recoverable { .. }
+                | Error::ResourceExhaustion { .. }
+        ) || self.category() == ErrorCategory::Transient
     }
 
     /// Check if this error indicates data corruption
@@ -521,24 +813,110 @@ impl Error {
     }
 }
 
-/// Context trait for adding context to errors
-pub trait ErrorContext<T> {
+/// Enhanced context trait for adding context to errors
+pub trait ErrorContextExt<T> {
     fn context(self, msg: &str) -> Result<T>;
     fn with_context<F>(self, f: F) -> Result<T>
     where
         F: FnOnce() -> String;
+    fn with_error_context(self, context: crate::core::error::ErrorContext) -> Result<T>;
+    fn operation_context(self, operation: &str, component: &str) -> Result<T>;
 }
 
-impl<T> ErrorContext<T> for Result<T> {
+impl<T> ErrorContextExt<T> for Result<T> {
     fn context(self, msg: &str) -> Result<T> {
-        self.map_err(|e| Error::Generic(format!("{}: {}", msg, e)))
+        self.map_err(|e| e.with_context(
+            crate::core::error::ErrorContext::new(msg, "unknown")
+        ))
     }
 
     fn with_context<F>(self, f: F) -> Result<T>
     where
         F: FnOnce() -> String,
     {
-        self.map_err(|e| Error::Generic(format!("{}: {}", f(), e)))
+        self.map_err(|e| e.with_context(
+            crate::core::error::ErrorContext::new(&f(), "unknown")
+        ))
+    }
+    
+    fn with_error_context(self, context: crate::core::error::ErrorContext) -> Result<T> {
+        self.map_err(|e| e.with_context(context))
+    }
+    
+    fn operation_context(self, operation: &str, component: &str) -> Result<T> {
+        self.map_err(|e| e.with_context(
+            crate::core::error::ErrorContext::new(operation, component)
+                .with_thread()
+        ))
+    }
+}
+
+// Macros for easier error context creation
+#[macro_export]
+macro_rules! error_context {
+    ($operation:expr, $component:expr) => {
+        $crate::core::error::ErrorContext::new($operation, $component)
+            .with_location(file!(), line!())
+            .with_thread()
+    };
+    ($operation:expr, $component:expr, $($key:expr => $value:expr),+) => {
+        {
+            let mut ctx = $crate::core::error::ErrorContext::new($operation, $component)
+                .with_location(file!(), line!())
+                .with_thread();
+            $(ctx = ctx.with_data($key, $value);)+
+            ctx
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! bail_with_context {
+    ($err:expr, $operation:expr, $component:expr) => {
+        return Err($err.with_context(error_context!($operation, $component)))
+    };
+    ($err:expr, $operation:expr, $component:expr, $($key:expr => $value:expr),+) => {
+        return Err($err.with_context(error_context!($operation, $component, $($key => $value),+)))
+    };
+}
+
+/// Safe unwrap alternatives
+pub trait SafeUnwrap<T> {
+    /// Safe unwrap that returns an error instead of panicking
+    fn safe_unwrap(self) -> Result<T>;
+    /// Safe unwrap with custom error message
+    fn safe_unwrap_or_error(self, error: Error) -> Result<T>;
+    /// Safe unwrap with context
+    fn safe_unwrap_with_context(self, operation: &str, component: &str) -> Result<T>;
+}
+
+impl<T> SafeUnwrap<T> for Option<T> {
+    fn safe_unwrap(self) -> Result<T> {
+        self.ok_or(Error::Generic("None value encountered".to_string()))
+    }
+    
+    fn safe_unwrap_or_error(self, error: Error) -> Result<T> {
+        self.ok_or(error)
+    }
+    
+    fn safe_unwrap_with_context(self, operation: &str, component: &str) -> Result<T> {
+        self.ok_or(Error::Generic(format!("None value in {} ({})", operation, component)))
+    }
+}
+
+impl<T, E: Into<Error>> SafeUnwrap<T> for std::result::Result<T, E> {
+    fn safe_unwrap(self) -> Result<T> {
+        self.map_err(Into::into)
+    }
+    
+    fn safe_unwrap_or_error(self, error: Error) -> Result<T> {
+        self.map_err(|_| error)
+    }
+    
+    fn safe_unwrap_with_context(self, operation: &str, component: &str) -> Result<T> {
+        self.map_err(|e| e.into().with_context(
+            crate::core::error::ErrorContext::new(operation, component)
+        ))
     }
 }
 
@@ -586,6 +964,12 @@ impl From<regex::Error> for Error {
     }
 }
 
+impl From<std::fmt::Error> for Error {
+    fn from(err: std::fmt::Error) -> Self {
+        Error::Generic(format!("Format error: {}", err))
+    }
+}
+
 impl From<std::time::SystemTimeError> for Error {
     fn from(err: std::time::SystemTimeError) -> Self {
         Error::Generic(format!("System time error: {}", err))
@@ -597,6 +981,10 @@ impl From<snap::Error> for Error {
         Error::Compression(format!("Snappy compression error: {}", err))
     }
 }
+
+// Note: std::error::Error is automatically implemented by the Error derive macro
+
+// std::error::Error is automatically implemented by the Error derive macro
 
 #[cfg(test)]
 mod tests {

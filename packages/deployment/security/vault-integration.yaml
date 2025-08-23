@@ -1,0 +1,243 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-auth
+  namespace: lightning-db
+  labels:
+    app.kubernetes.io/name: lightning-db
+    app.kubernetes.io/component: vault-integration
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-auth-delegator
+  labels:
+    app.kubernetes.io/name: lightning-db
+    app.kubernetes.io/component: vault-integration
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  name: vault-auth
+  namespace: lightning-db
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-config
+  namespace: lightning-db
+  labels:
+    app.kubernetes.io/name: lightning-db
+    app.kubernetes.io/component: vault-integration
+data:
+  vault-config.hcl: |
+    # Vault configuration for Lightning DB
+    storage "consul" {
+      address = "consul.vault.svc.cluster.local:8500"
+      path    = "vault/"
+    }
+    
+    listener "tcp" {
+      address     = "0.0.0.0:8200"
+      tls_disable = false
+      tls_cert_file = "/vault/tls/vault.crt"
+      tls_key_file  = "/vault/tls/vault.key"
+    }
+    
+    api_addr = "https://vault.vault.svc.cluster.local:8200"
+    cluster_addr = "https://vault.vault.svc.cluster.local:8201"
+    
+    ui = true
+    
+    # Enable Kubernetes auth method
+    auth "kubernetes" {
+      config = {
+        kubernetes_host = "https://kubernetes.default.svc.cluster.local"
+        kubernetes_ca_cert = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        token_reviewer_jwt = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      }
+    }
+    
+  vault-policy.hcl: |
+    # Lightning DB Vault Policy
+    path "secret/data/lightning-db/*" {
+      capabilities = ["create", "read", "update", "delete", "list"]
+    }
+    
+    path "secret/metadata/lightning-db/*" {
+      capabilities = ["list"]
+    }
+    
+    path "database/creds/lightning-db-role" {
+      capabilities = ["read"]
+    }
+    
+    path "pki/issue/lightning-db" {
+      capabilities = ["create", "update"]
+    }
+    
+    path "transit/encrypt/lightning-db" {
+      capabilities = ["update"]
+    }
+    
+    path "transit/decrypt/lightning-db" {
+      capabilities = ["update"]
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-init-scripts
+  namespace: lightning-db
+  labels:
+    app.kubernetes.io/name: lightning-db
+    app.kubernetes.io/component: vault-integration
+data:
+  init-vault.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Wait for Vault to be ready
+    until vault status > /dev/null 2>&1; do
+      echo "Waiting for Vault to be ready..."
+      sleep 5
+    done
+    
+    # Enable Kubernetes auth method
+    vault auth enable kubernetes || true
+    
+    # Configure Kubernetes auth
+    vault write auth/kubernetes/config \
+      token_reviewer_jwt="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+      kubernetes_host="https://$KUBERNETES_PORT_443_TCP_ADDR:443" \
+      kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    
+    # Create Lightning DB policy
+    vault policy write lightning-db-policy /vault/config/vault-policy.hcl
+    
+    # Create role for Lightning DB
+    vault write auth/kubernetes/role/lightning-db \
+      bound_service_account_names=lightning-db \
+      bound_service_account_namespaces=lightning-db \
+      policies=lightning-db-policy \
+      ttl=24h
+    
+    # Enable secrets engine
+    vault secrets enable -path=secret/ kv-v2 || true
+    
+    # Enable transit engine for encryption
+    vault secrets enable transit || true
+    vault write -f transit/keys/lightning-db
+    
+    # Enable PKI for TLS certificates
+    vault secrets enable pki || true
+    vault secrets tune -max-lease-ttl=87600h pki
+    
+    # Generate root CA
+    vault write -field=certificate pki/root/generate/internal \
+      common_name="Lightning DB CA" \
+      ttl=87600h > /tmp/ca.crt
+    
+    # Configure URLs
+    vault write pki/config/urls \
+      issuing_certificates="https://vault.vault.svc.cluster.local:8200/v1/pki/ca" \
+      crl_distribution_points="https://vault.vault.svc.cluster.local:8200/v1/pki/crl"
+    
+    # Create role for Lightning DB certificates
+    vault write pki/roles/lightning-db \
+      allowed_domains="lightning-db.svc.cluster.local,lightning-db" \
+      allow_subdomains=true \
+      max_ttl=72h
+    
+    echo "Vault initialization completed"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault
+  namespace: lightning-db
+  labels:
+    app: vault
+    app.kubernetes.io/name: lightning-db
+    app.kubernetes.io/component: vault
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vault
+  template:
+    metadata:
+      labels:
+        app: vault
+    spec:
+      serviceAccountName: vault-auth
+      containers:
+      - name: vault
+        image: vault:1.15.2
+        ports:
+        - containerPort: 8200
+          name: vault
+        - containerPort: 8201
+          name: cluster
+        env:
+        - name: VAULT_ADDR
+          value: "https://127.0.0.1:8200"
+        - name: VAULT_API_ADDR
+          value: "https://vault.vault.svc.cluster.local:8200"
+        - name: VAULT_CLUSTER_ADDR
+          value: "https://vault.vault.svc.cluster.local:8201"
+        volumeMounts:
+        - name: vault-config
+          mountPath: /vault/config
+        - name: vault-data
+          mountPath: /vault/data
+        - name: vault-tls
+          mountPath: /vault/tls
+        command:
+        - vault
+        - server
+        - -config=/vault/config/vault-config.hcl
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        securityContext:
+          capabilities:
+            add:
+            - IPC_LOCK
+          runAsNonRoot: true
+          runAsUser: 100
+      volumes:
+      - name: vault-config
+        configMap:
+          name: vault-config
+      - name: vault-data
+        emptyDir: {}
+      - name: vault-tls
+        secret:
+          secretName: vault-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  namespace: lightning-db
+  labels:
+    app: vault
+    app.kubernetes.io/name: lightning-db
+    app.kubernetes.io/component: vault
+spec:
+  ports:
+  - name: vault
+    port: 8200
+    targetPort: 8200
+  - name: cluster
+    port: 8201
+    targetPort: 8201
+  selector:
+    app: vault

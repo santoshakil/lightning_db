@@ -8,20 +8,17 @@
 //! - Weak reference analysis
 
 use std::{
-    collections::{HashMap, HashSet, VecDeque, BTreeSet},
-    sync::{Arc, Weak, Mutex, RwLock, atomic::{AtomicU64, AtomicUsize, Ordering}},
-    time::{Duration, Instant, SystemTime},
+    collections::{HashMap, HashSet},
+    sync::{Arc, Weak, Mutex, RwLock, atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering}},
+    time::{Duration, SystemTime},
     thread,
     hash::{Hash, Hasher},
-    fmt,
     marker::PhantomData,
-    ptr::NonNull,
 };
 
-use crossbeam_epoch::{self as epoch, Atomic, Owned, Shared, Guard};
 use dashmap::DashMap;
 use serde::{Serialize, Deserialize};
-use tracing::{warn, info, debug, error};
+use tracing::{warn, info};
 
 /// Global leak detector instance
 pub static LEAK_DETECTOR: once_cell::sync::Lazy<Arc<LeakDetector>> = 
@@ -150,7 +147,7 @@ pub enum LeakType {
 }
 
 /// Leak detection report
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LeakReport {
     pub timestamp: SystemTime,
     pub scan_duration: Duration,
@@ -161,7 +158,7 @@ pub struct LeakReport {
 }
 
 /// Object summary statistics
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectSummary {
     pub total_objects: usize,
     pub total_memory: usize,
@@ -304,7 +301,7 @@ pub struct LeakDetector {
     // Scanning state
     scan_thread: Mutex<Option<thread::JoinHandle<()>>>,
     shutdown_flag: Arc<AtomicBool>,
-    last_scan: Mutex<Option<Instant>>,
+    last_scan: Mutex<Option<SystemTime>>,
     
     // Statistics
     total_scans: AtomicU64,
@@ -457,7 +454,7 @@ impl LeakDetector {
 
     /// Perform a comprehensive leak detection scan
     pub fn scan_for_leaks(&self) -> LeakReport {
-        let start_time = Instant::now();
+        let start_time = SystemTime::now();
         let scan_start = SystemTime::now();
         
         info!("Starting leak detection scan");
@@ -508,7 +505,7 @@ impl LeakDetector {
         
         LeakReport {
             timestamp: scan_start,
-            scan_duration,
+            scan_duration: scan_start.elapsed().unwrap_or_default(),
             objects_scanned,
             leaks_detected: leaks,
             object_summary,
@@ -805,7 +802,7 @@ pub struct LeakDetectionStats {
     pub total_objects_tracked: usize,
     pub total_scans_performed: u64,
     pub total_leaks_detected: u64,
-    pub last_scan_time: Option<Instant>,
+    pub last_scan_time: Option<SystemTime>,
     pub objects_by_type: HashMap<ObjectType, usize>,
 }
 

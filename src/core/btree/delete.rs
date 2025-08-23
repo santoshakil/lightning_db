@@ -377,6 +377,15 @@ impl BPlusTree {
         {
             let new_root_id = root_node.children[0];
             self.page_manager.free_page(self.root_page_id());
+            // SAFETY: Updating tree metadata after structural change
+            // Invariants:
+            // 1. Exclusive access to tree via &mut self
+            // 2. New root ID is valid (from existing child)
+            // 3. Height decreases by exactly 1 level
+            // 4. Old root already freed above
+            // Guarantees:
+            // - Tree structure remains valid
+            // - Metadata accurately reflects new structure
             unsafe {
                 *self.root_page_id.get() = new_root_id;
                 *self.height.get() -= 1;

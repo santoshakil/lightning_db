@@ -76,6 +76,12 @@ pub struct AlignedBuffer {
     owned: bool,
 }
 
+// SAFETY: AlignedBuffer is safe to send/sync when:
+// 1. The ptr field is owned and exclusively managed by this instance
+// 2. The owned flag ensures proper ownership semantics
+// 3. NonNull<u8> is safe to send/sync as it's just a pointer wrapper
+// 4. All other fields are basic types that are naturally Send/Sync
+// RISK: MEDIUM - Incorrect ownership could lead to data races
 unsafe impl Send for AlignedBuffer {}
 unsafe impl Sync for AlignedBuffer {}
 
@@ -83,8 +89,19 @@ impl Clone for AlignedBuffer {
     fn clone(&self) -> Self {
         // Create a new buffer with the same content
         match AlignedBuffer::new(self.len, self.alignment) {
-            Ok(mut new_buffer) => {
+            Ok(new_buffer) => {
                 // Copy the data
+                // SAFETY: Copying data between aligned buffers
+                // Invariants:
+                // 1. Source and destination pointers are valid and aligned
+                // 2. Buffers are non-overlapping (new allocation)
+                // 3. Length is validated to fit in both buffers
+                // 4. Both pointers are properly owned
+                // Guarantees:
+                // - Data is copied without aliasing
+                // - Alignment is preserved
+                // SAFETY: Copying data between aligned buffers with existing comments
+                // RISK: LOW - Safe copy between owned buffers
                 unsafe {
                     std::ptr::copy_nonoverlapping(
                         self.ptr.as_ptr(),
@@ -117,6 +134,23 @@ impl AlignedBuffer {
         let layout = Layout::from_size_align(aligned_size, align_size)
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid layout"))?;
 
+        // SAFETY: Allocating aligned memory with valid layout
+        // Invariants:
+        // 1. Layout is validated above with from_size_align
+        // 2. Size and alignment are powers of two
+        // 3. Allocation follows system alignment requirements
+        // Guarantees:
+        // - Returns aligned memory or null on failure
+        // - Memory is uninitialized but owned
+        // SAFETY: Allocating aligned memory with valid layout
+        // Invariants:
+        // 1. Layout is validated above with from_size_align
+        // 2. Size and alignment are powers of two
+        // 3. Allocation follows system alignment requirements
+        // Guarantees:
+        // - Returns aligned memory or null on failure
+        // - Memory is uninitialized but owned
+        // RISK: LOW - Standard allocation pattern with proper validation
         let ptr = unsafe { alloc(layout) };
 
         if ptr.is_null() {
@@ -136,7 +170,29 @@ impl AlignedBuffer {
     }
 
     /// Create a buffer from existing memory (non-owning)
+    /// 
+    /// # Safety
+    /// - ptr must be valid for reads/writes of len bytes
+    /// - ptr must be properly aligned according to alignment parameter
+    /// - ptr must remain valid for the lifetime of the AlignedBuffer
+    /// - Caller must ensure no data races occur
+    /// Create a buffer from existing memory (non-owning)
+    /// 
+    /// # Safety
+    /// - ptr must be valid for reads/writes of len bytes
+    /// - ptr must be properly aligned according to alignment parameter
+    /// - ptr must remain valid for the lifetime of the AlignedBuffer
+    /// - Caller must ensure no data races occur
+    /// 
+    /// # Risk Assessment: HIGH
+    /// - Can cause use-after-free if ptr becomes invalid
+    /// - Can cause data races if multiple mutable references exist
+    /// - Can cause undefined behavior if alignment is incorrect
     pub unsafe fn from_raw_parts(ptr: *mut u8, len: usize, alignment: BufferAlignment) -> Self {
+        debug_assert!(!ptr.is_null(), "Cannot create AlignedBuffer from null pointer");
+        debug_assert!(len > 0, "Cannot create AlignedBuffer with zero length");
+        debug_assert_eq!(ptr as usize % alignment.size(), 0, "Pointer not properly aligned");
+        
         AlignedBuffer {
             ptr: NonNull::new_unchecked(ptr),
             len,
@@ -188,6 +244,27 @@ impl AlignedBuffer {
         let page_size = PAGE_SIZE_4K;
         // Touch each page to fault it in
         for offset in (0..self.len).step_by(page_size) {
+            // SAFETY: Pre-faulting pages within buffer bounds
+            // Invariants:
+            // 1. offset is always < self.len due to step_by iteration
+            // 2. ptr.add(offset) stays within allocated buffer
+            // 3. Buffer is exclusively owned (mutable reference)
+            // 4. Volatile operations prevent optimization
+            // Guarantees:
+            // - Forces OS page allocation
+            // - Read-modify-write preserves data
+            // - No data races due to exclusive ownership
+            // SAFETY: Pre-faulting pages within buffer bounds
+            // Invariants:
+            // 1. offset is always < self.len due to step_by iteration
+            // 2. ptr.add(offset) stays within allocated buffer
+            // 3. Buffer is exclusively owned (mutable reference)
+            // 4. Volatile operations prevent optimization
+            // Guarantees:
+            // - Forces OS page allocation
+            // - Read-modify-write preserves data
+            // - No data races due to exclusive ownership
+            // RISK: LOW - Bounded access within owned buffer
             unsafe {
                 let ptr = self.ptr.as_ptr().add(offset);
                 std::ptr::read_volatile(ptr);
@@ -205,16 +282,69 @@ impl AlignedBuffer {
             ));
         }
 
+        // SAFETY: Creating pointer to split point
+        // Invariants:
+        // 1. mid <= self.len (checked above)
+        // 2. Resulting pointer stays within allocation
+        // 3. Original buffer remains valid for [0..mid]
+        // Guarantees:
+        // - Split creates non-overlapping regions
+        // - Both halves remain valid
+        // SAFETY: Creating pointer to split point
+        // Invariants:
+        // 1. mid <= self.len (checked above)
+        // 2. Resulting pointer stays within allocation
+        // 3. Original buffer remains valid for [0..mid]
+        // Guarantees:
+        // - Split creates non-overlapping regions
+        // - Both halves remain valid
+        // RISK: LOW - Bounds checked pointer arithmetic
         let second_ptr = unsafe { self.ptr.as_ptr().add(mid) };
         let second_len = self.len - mid;
 
         self.len = mid;
 
+        // SAFETY: Creating non-owning buffer from split region
+        // Invariants:
+        // 1. second_ptr points to valid memory within original allocation
+        // 2. second_len doesn't exceed remaining buffer size
+        // 3. Alignment is preserved from parent buffer
+        // 4. Parent buffer lifetime exceeds split buffer
+        // Guarantees:
+        // - Split buffer is non-owning (owned: false)
+        // - No double-free as only parent owns memory
+        // SAFETY: Creating non-owning buffer from split region
+        // Invariants:
+        // 1. second_ptr points to valid memory within original allocation
+        // 2. second_len doesn't exceed remaining buffer size
+        // 3. Alignment is preserved from parent buffer
+        // 4. Parent buffer lifetime exceeds split buffer
+        // Guarantees:
+        // - Split buffer is non-owning (owned: false)
+        // - No double-free as only parent owns memory
+        // RISK: MEDIUM - Caller must ensure parent buffer outlives split
         Ok(unsafe { AlignedBuffer::from_raw_parts(second_ptr, second_len, self.alignment) })
     }
 
     /// Zero the buffer
     pub fn zero(&mut self) {
+        // SAFETY: Zeroing owned buffer memory
+        // Invariants:
+        // 1. ptr points to valid allocated memory
+        // 2. len is within allocated capacity
+        // 3. Exclusive access via mutable reference
+        // Guarantees:
+        // - All bytes set to zero
+        // - No data races
+        // SAFETY: Zeroing owned buffer memory
+        // Invariants:
+        // 1. ptr points to valid allocated memory
+        // 2. len is within allocated capacity
+        // 3. Exclusive access via mutable reference
+        // Guarantees:
+        // - All bytes set to zero
+        // - No data races
+        // RISK: LOW - Safe operation on owned memory
         unsafe {
             std::ptr::write_bytes(self.ptr.as_ptr(), 0, self.len);
         }
@@ -222,11 +352,30 @@ impl AlignedBuffer {
 
     /// Get buffer as a slice
     pub fn as_slice(&self) -> &[u8] {
+        // SAFETY: Creating slice from owned buffer
+        // Invariants:
+        // 1. ptr is valid and properly aligned
+        // 2. len bytes are allocated and initialized
+        // 3. Lifetime tied to &self reference
+        // Guarantees:
+        // - Slice is valid for lifetime of borrow
+        // - No mutable aliasing possible
+        // RISK: LOW - Standard slice creation from owned memory
         unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
     }
 
     /// Get buffer as a mutable slice
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        // SAFETY: Creating mutable slice from owned buffer
+        // Invariants:
+        // 1. ptr is valid and properly aligned
+        // 2. len bytes are allocated
+        // 3. Exclusive access via &mut self
+        // 4. Lifetime tied to mutable borrow
+        // Guarantees:
+        // - No aliasing due to exclusive access
+        // - Slice valid for lifetime of mutable borrow
+        // RISK: LOW - Safe mutable slice creation
         unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
     }
 }
@@ -236,6 +385,25 @@ impl Drop for AlignedBuffer {
         if self.owned {
             let align_size = self.alignment.size();
             let layout = Layout::from_size_align(self.cap, align_size).unwrap();
+            // SAFETY: Deallocating owned aligned memory
+            // Invariants:
+            // 1. Memory was allocated with same layout (cap, align_size)
+            // 2. owned flag ensures we only free our allocations
+            // 3. Drop is called exactly once
+            // 4. No other references exist (Drop impl)
+            // Guarantees:
+            // - Memory is returned to allocator
+            // - No use-after-free as Drop invalidates buffer
+            // SAFETY: Deallocating owned aligned memory
+            // Invariants:
+            // 1. Memory was allocated with same layout (cap, align_size)
+            // 2. owned flag ensures we only free our allocations
+            // 3. Drop is called exactly once
+            // 4. No other references exist (Drop impl)
+            // Guarantees:
+            // - Memory is returned to allocator
+            // - No use-after-free as Drop invalidates buffer
+            // RISK: LOW - Standard deallocation pattern
             unsafe {
                 dealloc(self.ptr.as_ptr(), layout);
             }
@@ -247,12 +415,18 @@ impl Deref for AlignedBuffer {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
+        // SAFETY: Creating slice for Deref implementation
+        // Same invariants as as_slice() method
+        // RISK: LOW - Standard deref pattern
         unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
     }
 }
 
 impl DerefMut for AlignedBuffer {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: Creating mutable slice for DerefMut implementation
+        // Same invariants as as_mut_slice() method
+        // RISK: LOW - Standard mutable deref pattern
         unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
     }
 }

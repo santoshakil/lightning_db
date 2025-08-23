@@ -6,7 +6,7 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::tempdir;
-use rand::{thread_rng, Rng, RngCore};
+use rand::{Rng, RngCore};
 use rayon::prelude::*;
 
 /// Performance targets for validation
@@ -156,7 +156,7 @@ fn benchmark_random_reads_single_thread(c: &mut Criterion) {
             }
             
             // Generate random access pattern
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             let indices: Vec<usize> = (0..size).map(|_| rng.gen_range(0..size)).collect();
             
             b.iter(|| {
@@ -194,7 +194,7 @@ fn benchmark_random_reads_multi_thread(c: &mut Criterion) {
                     let barrier = Arc::clone(&barrier);
                     thread::spawn(move || {
                         barrier.wait();
-                        let mut rng = thread_rng();
+                        let mut rng = rand::rng();
                         for _ in 0..1000 {
                             let i = rng.gen_range(0..size);
                             let key = format!("key_{:08}", i);
@@ -289,7 +289,7 @@ fn benchmark_random_writes_single_thread(c: &mut Criterion) {
                 || {
                     let temp_dir = tempdir().unwrap();
                     let db = Database::create(temp_dir.path(), LightningDbConfig::default()).unwrap();
-                    let mut rng = thread_rng();
+                    let mut rng = rand::rng();
                     let indices: Vec<usize> = (0..*size).map(|_| rng.gen_range(0..*size)).collect();
                     (db, indices)
                 },
@@ -325,7 +325,7 @@ fn benchmark_random_writes_multi_thread(c: &mut Criterion) {
                         let barrier = Arc::clone(&barrier);
                         thread::spawn(move || {
                             barrier.wait();
-                            let mut rng = thread_rng();
+                            let mut rng = rand::rng();
                             for i in 0..1000 {
                                 let rand_id = rng.gen_range(0..size);
                                 let key = format!("key_{:08}_{:02}", rand_id, thread_id);
@@ -366,7 +366,7 @@ fn benchmark_mixed_workload(c: &mut Criterion) {
                 }
                 
                 b.iter(|| {
-                    let mut rng = thread_rng();
+                    let mut rng = rand::rng();
                     for _ in 0..1000 {
                         if rng.gen_range(0..100) < read_pct {
                             // Read operation
@@ -467,7 +467,7 @@ fn benchmark_read_latency_distribution(c: &mut Criterion) {
         
         b.iter_custom(|iters| {
             let mut total_time = Duration::new(0, 0);
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             
             for _ in 0..iters {
                 let i = rng.gen_range(0..10000);
@@ -509,12 +509,12 @@ fn benchmark_write_latency_distribution(c: &mut Criterion) {
                 (db, latencies)
             },
             |(db, mut latencies)| {
-                let mut rng = thread_rng();
+                let mut rng = rand::rng();
                 let mut total_time = Duration::new(0, 0);
                 
                 for i in 0..1000 {
                     let key = format!("key_{:08}", i);
-                    let value = format!("value_{:08}", rng.gen::<u64>());
+                    let value = format!("value_{:08}", rng.random::<u64>());
                     
                     let start = Instant::now();
                     db.put(key.as_bytes(), value.as_bytes()).unwrap();
@@ -561,11 +561,11 @@ fn benchmark_latency_under_load(c: &mut Criterion) {
                         let barrier = Arc::clone(&barrier);
                         thread::spawn(move || {
                             barrier.wait();
-                            let mut rng = thread_rng();
+                            let mut rng = rand::rng();
                             for _ in 0..1000 {
                                 let i = rng.gen_range(0..10000);
                                 let key = format!("load_key_{:08}", i);
-                                let value = format!("load_value_{:08}", rng.gen::<u64>());
+                                let value = format!("load_value_{:08}", rng.random::<u64>());
                                 let _ = db.put(key.as_bytes(), value.as_bytes());
                             }
                         })
@@ -573,7 +573,7 @@ fn benchmark_latency_under_load(c: &mut Criterion) {
                     
                     // Measure latency under load
                     barrier.wait();
-                    let mut rng = thread_rng();
+                    let mut rng = rand::rng();
                     for _ in 0..100 {
                         let i = rng.gen_range(0..10000);
                         let key = format!("key_{:08}", i);
@@ -622,7 +622,7 @@ fn benchmark_thread_scaling(c: &mut Criterion) {
                     let barrier = Arc::clone(&barrier);
                     thread::spawn(move || {
                         barrier.wait();
-                        let mut rng = thread_rng();
+                        let mut rng = rand::rng();
                         for _ in 0..10000 / threads {
                             let i = rng.gen_range(0..100000);
                             let key = format!("key_{:08}", i);
@@ -665,7 +665,7 @@ fn benchmark_database_size_scaling(c: &mut Criterion) {
                 },
                 |db| {
                     // Measure random read performance on large DB
-                    let mut rng = thread_rng();
+                    let mut rng = rand::rng();
                     for _ in 0..1000 {
                         let i = rng.gen_range(0..records);
                         let key = format!("key_{:08}", i);
@@ -745,7 +745,7 @@ fn benchmark_oltp_workload(c: &mut Criterion) {
         
         b.iter(|| {
             let tx_id = db.begin_transaction().unwrap();
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             
             // Simulate new order transaction
             let warehouse_id = rng.gen_range(0..10);
@@ -765,7 +765,7 @@ fn benchmark_oltp_workload(c: &mut Criterion) {
             }
             
             // Create order record
-            let order_id = rng.gen::<u64>();
+            let order_id = rng.random::<u64>();
             let order_key = format!("order_{}_{}", warehouse_id * 10 + district_id, order_id);
             let order_value = format!("order_data_{}", order_id);
             db.put_tx(tx_id, order_key.as_bytes(), order_value.as_bytes()).unwrap();
@@ -788,9 +788,9 @@ fn benchmark_analytics_workload(c: &mut Criterion) {
         for i in 0..100000 {
             let lineitem_key = format!("lineitem_{:08}", i);
             let lineitem_value = format!("price:{:.2},quantity:{},discount:{:.2}", 
-                rand::thread_rng().gen_range(1.0..1000.0),
-                rand::thread_rng().gen_range(1..100),
-                rand::thread_rng().gen_range(0.0..0.1)
+                rand::rng().gen_range(1.0..1000.0),
+                rand::rng().gen_range(1..100),
+                rand::rng().gen_range(0.0..0.1)
             );
             db.put(lineitem_key.as_bytes(), lineitem_value.as_bytes()).unwrap();
         }
@@ -842,7 +842,7 @@ fn benchmark_key_value_workload(c: &mut Criterion) {
             }
             
             b.iter(|| {
-                let mut rng = thread_rng();
+                let mut rng = rand::rng();
                 
                 match workload {
                     "A" => {
@@ -975,7 +975,7 @@ fn validate_performance_targets(c: &mut Criterion) {
         
         b.iter_custom(|iters| {
             let start = Instant::now();
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             
             for _ in 0..iters {
                 let i = rng.gen_range(0..100000);
@@ -1047,7 +1047,7 @@ fn validate_performance_targets(c: &mut Criterion) {
         
         b.iter(|| {
             let mut latencies = LatencyMeasurement::new();
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             
             for _ in 0..1000 {
                 let i = rng.gen_range(0..10000);
