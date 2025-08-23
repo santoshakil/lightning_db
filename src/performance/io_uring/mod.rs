@@ -22,6 +22,8 @@ pub mod direct_io;
 pub mod fixed_buffers;
 pub mod io_scheduler;
 pub mod readahead;
+pub mod safe_wrappers;
+pub mod security_validation;
 pub mod zero_copy_buffer;
 
 use std::io::{Error, ErrorKind, Result};
@@ -117,6 +119,13 @@ pub enum IoBuffer {
     Vectored(Vec<IoVec>),
 }
 
+// SAFETY: IoBuffer is safe to send/sync when:
+// 1. Standard buffers contain owned Vec<u8> data
+// 2. Fixed buffers use index-based access (no direct pointers)
+// 3. Mapped buffers require caller to ensure thread safety
+// 4. Vectored buffers contain IoVec which are validated separately
+// RISK: HIGH - Mapped buffer variant contains raw pointers
+// MITIGATION: Use safe_wrappers module for better safety
 unsafe impl Send for IoBuffer {}
 unsafe impl Sync for IoBuffer {}
 
@@ -127,6 +136,12 @@ pub struct IoVec {
     pub len: usize,
 }
 
+// SAFETY: IoVec is safe to send/sync when:
+// 1. Raw pointers are used only for system call interface
+// 2. Lifetime management is handled by containing structures
+// 3. Used primarily for scatter-gather operations
+// RISK: HIGH - Contains raw pointers without lifetime tracking
+// MITIGATION: Always validate with SafeBufferValidator before use
 unsafe impl Send for IoVec {}
 unsafe impl Sync for IoVec {}
 

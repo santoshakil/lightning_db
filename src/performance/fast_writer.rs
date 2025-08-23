@@ -1,5 +1,5 @@
 use crate::core::error::{Error, Result};
-use crate::{Database, LightningDbConfig};
+use crate::Database;
 use crossbeam::channel::{bounded, Sender};
 use parking_lot::Mutex;
 use std::collections::HashMap;

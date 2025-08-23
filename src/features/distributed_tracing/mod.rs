@@ -412,13 +412,31 @@ static TRACER_INIT: std::sync::Once = std::sync::Once::new();
 
 /// Initialize global tracer
 pub fn init_tracer(tracer: Tracer) {
-    TRACER_INIT.call_once(|| unsafe {
-        GLOBAL_TRACER = Some(Arc::new(tracer));
+    TRACER_INIT.call_once(|| {
+        // SAFETY: One-time initialization of global tracer
+        // Invariants:
+        // 1. call_once ensures single initialization
+        // 2. No concurrent writes after initialization
+        // 3. Arc provides thread-safe reference counting
+        // Guarantees:
+        // - Global tracer initialized exactly once
+        // - Thread-safe access via Arc
+        unsafe {
+            GLOBAL_TRACER = Some(Arc::new(tracer));
+        }
     });
 }
 
 /// Get global tracer
 pub fn global_tracer() -> Option<Arc<Tracer>> {
+    // SAFETY: Reading global tracer after initialization
+    // Invariants:
+    // 1. GLOBAL_TRACER is only written once via init_tracer
+    // 2. Arc provides thread-safe cloning
+    // 3. Read-only access after initialization
+    // Guarantees:
+    // - Safe read of global state
+    // - Arc clone is thread-safe
     unsafe { GLOBAL_TRACER.as_ref().cloned() }
 }
 

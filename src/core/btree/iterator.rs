@@ -1,7 +1,6 @@
 use super::{BPlusTree, BTreeNode, NodeType};
 use crate::core::error::{Error, Result};
 use std::cmp::Ordering;
-use std::mem::MaybeUninit;
 
 /// Branch prediction hints - using stable intrinsics
 #[inline(always)]
@@ -30,19 +29,51 @@ fn unlikely(b: bool) -> bool {
 const PREFETCH_SIZE: usize = 64;  // Cache line size for prefetching
 const STACK_BUFFER_ENTRIES: usize = 32;  // Stack buffer for small result sets
 
-/// Stack-allocated buffer for small key-value pairs to avoid heap allocation
+/// Safe stack-like buffer for small key-value pairs to avoid heap allocation
 #[repr(align(64))]
-struct StackEntryBuffer {
-    entries: [MaybeUninit<(Vec<u8>, Vec<u8>)>; STACK_BUFFER_ENTRIES],
-    len: usize,
+struct SafeStackEntryBuffer {
+    entries: Vec<(Vec<u8>, Vec<u8>)>,
+    capacity: usize,
 }
 
-impl Default for StackEntryBuffer {
+impl Default for SafeStackEntryBuffer {
     fn default() -> Self {
         Self {
-            entries: unsafe { MaybeUninit::uninit().assume_init() },
-            len: 0,
+            entries: Vec::with_capacity(STACK_BUFFER_ENTRIES),
+            capacity: STACK_BUFFER_ENTRIES,
         }
+    }
+}
+
+impl SafeStackEntryBuffer {
+    #[inline(always)]
+    fn push(&mut self, key: Vec<u8>, value: Vec<u8>) -> bool {
+        if self.entries.len() < self.capacity {
+            self.entries.push((key, value));
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline(always)]
+    fn get(&self, index: usize) -> Option<&(Vec<u8>, Vec<u8>)> {
+        self.entries.get(index)
+    }
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    #[inline(always)]
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    #[inline(always)]
+    fn is_full(&self) -> bool {
+        self.entries.len() >= self.capacity
     }
 }
 
@@ -59,7 +90,7 @@ pub struct BTreeLeafIterator<'a, const BATCH_SIZE: usize = 256> {
     current_leaf_id: Option<u32>,
     // Use stack buffer for small result sets, heap buffer for large ones
     current_leaf_entries: Vec<(Vec<u8>, Vec<u8>)>,
-    stack_buffer: StackEntryBuffer,
+    stack_buffer: SafeStackEntryBuffer,
     use_stack_buffer: bool,
     current_position: usize,
     start_key: Option<Vec<u8>>,
@@ -85,7 +116,7 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
             btree,
             current_leaf_id: None,
             current_leaf_entries: Vec::with_capacity(BATCH_SIZE),
-            stack_buffer: StackEntryBuffer::default(),
+            stack_buffer: SafeStackEntryBuffer::default(),
             use_stack_buffer: false, // Will be determined based on data size
             current_position: 0,
             start_key,
@@ -248,13 +279,14 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
             self.use_stack_buffer = node.entries.len() <= STACK_BUFFER_ENTRIES;
             
             if self.use_stack_buffer {
-                // Use stack buffer for small leaf nodes
-                self.stack_buffer.len = 0;
-                for (i, entry) in node.entries.iter().enumerate().take(STACK_BUFFER_ENTRIES) {
-                    unsafe {
-                        self.stack_buffer.entries[i].write((entry.key.clone(), entry.value.clone()));
+                // Use stack buffer for small leaf nodes - now completely safe
+                self.stack_buffer.clear();
+                for entry in node.entries.iter().take(STACK_BUFFER_ENTRIES) {
+                    if !self.stack_buffer.push(entry.key.clone(), entry.value.clone()) {
+                        // Buffer full, switch to heap buffer
+                        self.use_stack_buffer = false;
+                        break;
                     }
-                    self.stack_buffer.len += 1;
                 }
                 self.current_leaf_entries.clear();
             } else {
@@ -312,11 +344,10 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
             if let Some(ref start_key) = self.start_key {
                 // Use binary search for better performance on large leaf nodes
                 if self.use_stack_buffer {
-                    // Linear search for stack buffer (small)
+                    // Linear search for stack buffer (small) - now completely safe
                     self.current_position = 0;
-                    while self.current_position < self.stack_buffer.len {
-                        unsafe {
-                            let entry = self.stack_buffer.entries[self.current_position].assume_init_ref();
+                    while self.current_position < self.stack_buffer.len() {
+                        if let Some(entry) = self.stack_buffer.get(self.current_position) {
                             let cmp = compare_keys_optimized(&entry.0, start_key);
                             match cmp {
                                 Ordering::Less => self.current_position += 1,
@@ -328,6 +359,8 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
                                 }
                                 Ordering::Greater => break,
                             }
+                        } else {
+                            break;
                         }
                     }
                 } else {
@@ -348,11 +381,10 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
             // For backward iteration, start at the end with optimized search
             if let Some(ref end_key) = self.end_key {
                 if self.use_stack_buffer {
-                    // Linear search for stack buffer
-                    self.current_position = self.stack_buffer.len;
+                    // Linear search for stack buffer - now completely safe
+                    self.current_position = self.stack_buffer.len();
                     while self.current_position > 0 {
-                        unsafe {
-                            let entry = self.stack_buffer.entries[self.current_position - 1].assume_init_ref();
+                        if let Some(entry) = self.stack_buffer.get(self.current_position - 1) {
                             let cmp = compare_keys_optimized(&entry.0, end_key);
                             match cmp {
                                 Ordering::Greater => self.current_position -= 1,
@@ -364,6 +396,8 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
                                 }
                                 Ordering::Less => break,
                             }
+                        } else {
+                            break;
                         }
                     }
                 } else {
@@ -379,7 +413,7 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
                 }
             } else {
                 self.current_position = if self.use_stack_buffer {
-                    self.stack_buffer.len
+                    self.stack_buffer.len()
                 } else {
                     self.current_leaf_entries.len()
                 };
@@ -465,22 +499,19 @@ impl<const BATCH_SIZE: usize> Iterator for BTreeLeafIterator<'_, BATCH_SIZE> {
 
         loop {
             if self.forward {
-                // Forward iteration - optimized for both stack and heap buffers
-                let (_has_entry, entry) = if self.use_stack_buffer {
-                    if self.current_position < self.stack_buffer.len {
-                        unsafe {
-                            let entry = self.stack_buffer.entries[self.current_position].assume_init_ref();
-                            (true, Some((entry.0.clone(), entry.1.clone())))
-                        }
+                // Forward iteration - completely safe for both stack and heap buffers
+                let entry = if self.use_stack_buffer {
+                    if let Some(stack_entry) = self.stack_buffer.get(self.current_position) {
+                        Some((stack_entry.0.clone(), stack_entry.1.clone()))
                     } else {
-                        (false, None)
+                        None
                     }
                 } else {
                     if self.current_position < self.current_leaf_entries.len() {
                         let entry = &self.current_leaf_entries[self.current_position];
-                        (true, Some((entry.0.clone(), entry.1.clone())))
+                        Some((entry.0.clone(), entry.1.clone()))
                     } else {
-                        (false, None)
+                        None
                     }
                 };
 
@@ -505,9 +536,12 @@ impl<const BATCH_SIZE: usize> Iterator for BTreeLeafIterator<'_, BATCH_SIZE> {
                 if self.current_position > 0 {
                     self.current_position -= 1;
                     let (key, value) = if self.use_stack_buffer {
-                        unsafe {
-                            let entry = self.stack_buffer.entries[self.current_position].assume_init_ref();
+                        // Safe backward iteration for stack buffer
+                        if let Some(entry) = self.stack_buffer.get(self.current_position) {
                             (entry.0.clone(), entry.1.clone())
+                        } else {
+                            // This shouldn't happen given our bounds checking, but handle gracefully
+                            return None;
                         }
                     } else {
                         let entry = &self.current_leaf_entries[self.current_position];

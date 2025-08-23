@@ -1,6 +1,6 @@
 use crate::security::{SecurityError, SecurityResult};
 use governor::{
-    clock::{Clock, DefaultClock, QuantaClock},
+    clock::{Clock, DefaultClock},
     middleware::NoOpMiddleware,
     state::{InMemoryState, NotKeyed, keyed::DashMapStateStore},
     Quota, RateLimiter,
@@ -52,7 +52,7 @@ impl RateLimitingManager {
     pub fn new(
         global_requests_per_minute: u32,
         ip_requests_per_minute: u32,
-        user_requests_per_minute: u32,
+        _user_requests_per_minute: u32,
         max_connections_per_ip: usize,
         max_total_connections: usize,
     ) -> SecurityResult<Self> {
@@ -61,7 +61,7 @@ impl RateLimitingManager {
                 .ok_or_else(|| SecurityError::InputValidationFailed("Invalid global rate limit".to_string()))?
         );
         
-        let ip_quota = Quota::per_minute(
+        let _ip_quota = Quota::per_minute(
             NonZeroU32::new(ip_requests_per_minute)
                 .ok_or_else(|| SecurityError::InputValidationFailed("Invalid IP rate limit".to_string()))?
         );

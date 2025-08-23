@@ -9,6 +9,10 @@ impl SimdOps {
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse4.2")]
     #[inline]
+    /// # Safety
+    /// - Caller must ensure CPU supports SSE4.2 instructions
+    /// - Input slices must be valid for reads
+    /// - No alignment requirements (uses unaligned loads)
     pub unsafe fn compare_keys_simd(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
         let len = std::cmp::min(a.len(), b.len());
 
@@ -55,6 +59,10 @@ impl SimdOps {
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse4.2")]
     #[inline]
+    /// # Safety
+    /// - Caller must ensure CPU supports SSE4.2 with CRC32 instructions
+    /// - Data slice must be valid for reads
+    /// - Uses unaligned reads for efficiency
     pub unsafe fn crc32_simd(data: &[u8]) -> u32 {
         let mut crc = 0u32;
         let mut pos = 0;
@@ -86,6 +94,11 @@ impl SimdOps {
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
     #[inline]
+    /// # Safety
+    /// - Caller must ensure CPU supports AVX2 instructions
+    /// - Source and destination must not overlap
+    /// - Both slices must have equal length
+    /// - Uses unaligned loads/stores for flexibility
     pub unsafe fn bulk_copy_avx2(src: &[u8], dst: &mut [u8]) {
         assert_eq!(src.len(), dst.len());
         let len = src.len();
@@ -113,6 +126,10 @@ impl SimdOps {
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse4.2")]
     #[inline]
+    /// # Safety
+    /// - Caller must ensure CPU supports SSE4.2 instructions
+    /// - Both slices must be valid for reads
+    /// - Uses unaligned loads for pattern matching
     pub unsafe fn search_prefix_simd(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         if needle.is_empty() || haystack.len() < needle.len() {
             return None;
@@ -153,6 +170,10 @@ impl SimdOps {
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
     #[inline]
+    /// # Safety
+    /// - Caller must ensure CPU supports AVX2 instructions
+    /// - Data slice must be valid for reads
+    /// - Uses unaligned loads for processing
     pub unsafe fn hash_simd(data: &[u8], seed: u64) -> u64 {
         let mut hash = seed;
         let mut pos = 0;
@@ -192,6 +213,10 @@ impl SimdOps {
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
     #[inline]
+    /// # Safety
+    /// - Caller must ensure CPU supports AVX2 instructions
+    /// - Data slice must be valid for reads
+    /// - Uses unaligned loads for entropy calculation
     pub unsafe fn estimate_compression_ratio_simd(data: &[u8]) -> f32 {
         if data.len() < 32 {
             return Self::estimate_compression_ratio_scalar(data);
@@ -271,6 +296,13 @@ pub mod safe {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("sse4.2") {
+                // SAFETY: CPU feature detection ensures SSE4.2 support
+                // Invariants:
+                // 1. is_x86_feature_detected confirms SSE4.2 availability
+                // 2. Input slices are valid (from safe references)
+                // Guarantees:
+                // - Safe execution of SIMD instructions
+                // - Fallback to scalar on unsupported CPUs
                 unsafe { SimdOps::compare_keys_simd(a, b) }
             } else {
                 a.cmp(b)
@@ -288,6 +320,13 @@ pub mod safe {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("sse4.2") {
+                // SAFETY: CPU feature detection ensures CRC32 support
+                // Invariants:
+                // 1. Runtime check confirms SSE4.2 with CRC32
+                // 2. Data slice is valid from safe reference
+                // Guarantees:
+                // - Hardware CRC32 acceleration when available
+                // - Correct checksum calculation
                 unsafe { SimdOps::crc32_simd(data) }
             } else {
                 crc32_scalar(data)
@@ -305,6 +344,14 @@ pub mod safe {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx2") {
+                // SAFETY: CPU feature detection ensures AVX2 support
+                // Invariants:
+                // 1. Runtime check confirms AVX2 availability
+                // 2. Slices from safe references, non-overlapping
+                // 3. Length equality checked in function
+                // Guarantees:
+                // - Vectorized copy when hardware supports it
+                // - Correct data transfer
                 unsafe { SimdOps::bulk_copy_avx2(src, dst) }
             } else {
                 dst.copy_from_slice(src);
@@ -322,6 +369,13 @@ pub mod safe {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("sse4.2") {
+                // SAFETY: CPU feature detection ensures SSE4.2 support
+                // Invariants:
+                // 1. Runtime check confirms SSE4.2 availability
+                // 2. Slices from safe references
+                // Guarantees:
+                // - Accelerated pattern matching when possible
+                // - Correct search results
                 unsafe { SimdOps::search_prefix_simd(haystack, needle) }
             } else {
                 search_prefix_scalar(haystack, needle)
@@ -339,6 +393,13 @@ pub mod safe {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx2") {
+                // SAFETY: CPU feature detection ensures AVX2 support
+                // Invariants:
+                // 1. Runtime check confirms AVX2 availability
+                // 2. Data slice from safe reference
+                // Guarantees:
+                // - SIMD-accelerated hashing when available
+                // - Consistent hash values
                 unsafe { SimdOps::hash_simd(data, seed) }
             } else {
                 hash_scalar(data, seed)
@@ -356,6 +417,13 @@ pub mod safe {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx2") {
+                // SAFETY: CPU feature detection ensures AVX2 support
+                // Invariants:
+                // 1. Runtime check confirms AVX2 availability
+                // 2. Data slice from safe reference
+                // Guarantees:
+                // - Parallel entropy estimation when possible
+                // - Accurate compression ratio estimate
                 unsafe { SimdOps::estimate_compression_ratio_simd(data) }
             } else {
                 SimdOps::estimate_compression_ratio_scalar(data)

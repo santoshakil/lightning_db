@@ -270,6 +270,15 @@ impl FallbackIo {
         } else {
             // Create new file from fd
             use std::os::unix::io::FromRawFd;
+            // SAFETY: Creating File from raw file descriptor
+            // Invariants:
+            // 1. fd is a valid file descriptor from system
+            // 2. Caller ensures fd lifetime matches File usage
+            // 3. No other File objects use this fd
+            // Guarantees:
+            // - File takes ownership of fd
+            // - Proper cleanup when File is dropped
+            // RISK: HIGH - Can cause double-close if fd is used elsewhere
             let file = unsafe { File::from_raw_fd(fd) };
             let file = Arc::new(Mutex::new(file));
             cache.insert(fd, Arc::clone(&file));

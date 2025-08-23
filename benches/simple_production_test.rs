@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::hint::black_box;
 use std::thread;
 use std::time::{Duration, Instant};
-use rand::{thread_rng, Rng};
+use rand::Rng;
 
 /// Mock database for testing benchmark structure
 struct MockDatabase {
@@ -142,7 +142,7 @@ fn benchmark_latency_distribution(c: &mut Criterion) {
         
         b.iter_custom(|iters| {
             let mut total_time = Duration::new(0, 0);
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             
             for _ in 0..iters {
                 let i = rng.gen_range(0..10000);
@@ -186,7 +186,7 @@ fn benchmark_mixed_workload(c: &mut Criterion) {
                 }
                 
                 b.iter(|| {
-                    let mut rng = thread_rng();
+                    let mut rng = rand::rng();
                     for _ in 0..100 {
                         if rng.gen_range(0..100) < read_pct {
                             // Read operation
@@ -225,7 +225,7 @@ fn benchmark_performance_validation(c: &mut Criterion) {
         
         b.iter_custom(|iters| {
             let start = Instant::now();
-            let mut rng = thread_rng();
+            let mut rng = rand::rng();
             
             for _ in 0..iters {
                 let i = rng.gen_range(0..1000);

@@ -122,6 +122,25 @@ impl DirectIoFile {
             const BLKSSZGET: c_int = 0x1268;
 
             let mut block_size: c_int = 0;
+            // SAFETY: Getting block size via ioctl system call
+            // Invariants:
+            // 1. fd is a valid file descriptor from open file
+            // 2. BLKSSZGET is correct ioctl command for Linux
+            // 3. block_size is properly aligned c_int variable
+            // 4. ioctl is safe for read-only query operations
+            // Guarantees:
+            // - Returns 0 on success, -1 on failure
+            // - block_size is set to device block size
+            // SAFETY: Getting block size via ioctl system call
+            // Invariants:
+            // 1. fd is a valid file descriptor from open file
+            // 2. BLKSSZGET is correct ioctl command for Linux
+            // 3. block_size is properly aligned c_int variable
+            // 4. ioctl is safe for read-only query operations
+            // Guarantees:
+            // - Returns 0 on success, -1 on failure
+            // - block_size is set to device block size
+            // RISK: LOW - Read-only system call with proper validation
             let result = unsafe { libc::ioctl(fd, BLKSSZGET as libc::c_ulong, &mut block_size) };
 
             if result == 0 && block_size > 0 {
@@ -148,6 +167,25 @@ impl DirectIoFile {
             const BLKIOOPT: c_int = 0x1279;
             
             let mut optimal_size: c_int = 0;
+            // SAFETY: Getting optimal I/O size via ioctl
+            // Invariants:
+            // 1. fd is valid file descriptor
+            // 2. BLKIOOPT is correct ioctl command
+            // 3. optimal_size is properly aligned variable
+            // 4. Read-only query operation
+            // Guarantees:
+            // - Returns optimal I/O size for device
+            // - Fallback to defaults on failure
+            // SAFETY: Getting optimal I/O size via ioctl
+            // Invariants:
+            // 1. fd is valid file descriptor
+            // 2. BLKIOOPT is correct ioctl command
+            // 3. optimal_size is properly aligned variable
+            // 4. Read-only query operation
+            // Guarantees:
+            // - Returns optimal I/O size for device
+            // - Fallback to defaults on failure
+            // RISK: LOW - Read-only system call with fallback
             let result = unsafe { libc::ioctl(fd, BLKIOOPT as libc::c_ulong, &mut optimal_size) };
             
             if result == 0 && optimal_size > 0 {
@@ -240,6 +278,29 @@ impl DirectIoFile {
         // Use pread for positioned read
         #[cfg(target_os = "linux")]
         {
+            // SAFETY: Direct I/O read using pread system call
+            // Invariants:
+            // 1. fd is valid and opened with O_DIRECT
+            // 2. Buffer is properly aligned for direct I/O (checked above)
+            // 3. Offset and length are block-aligned (checked above)
+            // 4. Buffer has sufficient capacity for read
+            // 5. Buffer pointer is valid for writes
+            // Guarantees:
+            // - Atomic positioned read without affecting file position
+            // - Returns bytes read or -1 on error
+            // - Direct I/O bypasses kernel page cache
+            // SAFETY: Direct I/O read using pread system call
+            // Invariants:
+            // 1. fd is valid and opened with O_DIRECT
+            // 2. Buffer is properly aligned for direct I/O (checked above)
+            // 3. Offset and length are block-aligned (checked above)
+            // 4. Buffer has sufficient capacity for read
+            // 5. Buffer pointer is valid for writes
+            // Guarantees:
+            // - Atomic positioned read without affecting file position
+            // - Returns bytes read or -1 on error
+            // - Direct I/O bypasses kernel page cache
+            // RISK: MEDIUM - Direct hardware access with alignment requirements
             let result = unsafe {
                 libc::pread(
                     self.fd,
@@ -285,6 +346,29 @@ impl DirectIoFile {
         // Use pwrite for positioned write
         #[cfg(target_os = "linux")]
         {
+            // SAFETY: Direct I/O write using pwrite system call
+            // Invariants:
+            // 1. fd is valid and opened with O_DIRECT
+            // 2. Buffer is properly aligned for direct I/O (checked above)
+            // 3. Offset and length are block-aligned (checked above)
+            // 4. Buffer contains valid data to write
+            // 5. Buffer pointer is valid for reads
+            // Guarantees:
+            // - Atomic positioned write without affecting file position
+            // - Returns bytes written or -1 on error
+            // - Direct I/O ensures data goes directly to device
+            // SAFETY: Direct I/O write using pwrite system call
+            // Invariants:
+            // 1. fd is valid and opened with O_DIRECT
+            // 2. Buffer is properly aligned for direct I/O (checked above)
+            // 3. Offset and length are block-aligned (checked above)
+            // 4. Buffer contains valid data to write
+            // 5. Buffer pointer is valid for reads
+            // Guarantees:
+            // - Atomic positioned write without affecting file position
+            // - Returns bytes written or -1 on error
+            // - Direct I/O ensures data goes directly to device
+            // RISK: MEDIUM - Direct hardware access, data corruption if misaligned
             let result = unsafe {
                 libc::pwrite(
                     self.fd,
@@ -315,6 +399,25 @@ impl DirectIoFile {
     pub fn sync_data(&self) -> Result<()> {
         #[cfg(target_os = "linux")]
         {
+            // SAFETY: Syncing file data to disk
+            // Invariants:
+            // 1. fd is valid file descriptor
+            // 2. File is open for writing
+            // 3. fdatasync is async-signal-safe
+            // Guarantees:
+            // - Forces data to stable storage
+            // - Metadata sync not guaranteed (unlike fsync)
+            // - Returns 0 on success, -1 on error
+            // SAFETY: Syncing file data to disk
+            // Invariants:
+            // 1. fd is valid file descriptor
+            // 2. File is open for writing
+            // 3. fdatasync is async-signal-safe
+            // Guarantees:
+            // - Forces data to stable storage
+            // - Metadata sync not guaranteed (unlike fsync)
+            // - Returns 0 on success, -1 on error
+            // RISK: LOW - Standard sync operation
             let result = unsafe { libc::fdatasync(self.fd) };
 
             if result < 0 {
@@ -334,6 +437,25 @@ impl DirectIoFile {
     pub fn sync_all(&self) -> Result<()> {
         #[cfg(target_os = "linux")]
         {
+            // SAFETY: Syncing file data and metadata to disk
+            // Invariants:
+            // 1. fd is valid file descriptor
+            // 2. File is open for writing
+            // 3. fsync is async-signal-safe
+            // Guarantees:
+            // - Forces both data and metadata to stable storage
+            // - More thorough than fdatasync
+            // - Returns 0 on success, -1 on error
+            // SAFETY: Syncing file data and metadata to disk
+            // Invariants:
+            // 1. fd is valid file descriptor
+            // 2. File is open for writing
+            // 3. fsync is async-signal-safe
+            // Guarantees:
+            // - Forces both data and metadata to stable storage
+            // - More thorough than fdatasync
+            // - Returns 0 on success, -1 on error
+            // RISK: LOW - Standard sync operation
             let result = unsafe { libc::fsync(self.fd) };
 
             if result < 0 {
@@ -353,6 +475,15 @@ impl DirectIoFile {
     pub fn allocate(&self, offset: u64, len: u64) -> Result<()> {
         #[cfg(target_os = "linux")]
         {
+            // SAFETY: Pre-allocating file space
+            // Invariants:
+            // 1. fd is valid file descriptor opened for writing
+            // 2. offset and len are valid ranges
+            // 3. fallocate is available on Linux
+            // Guarantees:
+            // - Allocates space without writing data
+            // - Returns 0 on success, -1 on error
+            // RISK: LOW - Space allocation system call
             let result =
                 unsafe { libc::fallocate(self.fd, 0, offset as libc::off_t, len as libc::off_t) };
 
@@ -378,6 +509,15 @@ impl DirectIoFile {
     pub fn advise(&self, _offset: u64, _len: u64, _advice: PosixAdvice) -> Result<()> {
         #[cfg(target_os = "linux")]
         {
+            // SAFETY: Providing access pattern hints to kernel
+            // Invariants:
+            // 1. fd is valid file descriptor
+            // 2. offset and len specify valid file range
+            // 3. advice is valid PosixAdvice value
+            // Guarantees:
+            // - Hint-only operation, no data corruption risk
+            // - Returns 0 on success, error code on failure
+            // RISK: LOW - Advisory operation only
             let result = unsafe {
                 libc::posix_fadvise(
                     self.fd,

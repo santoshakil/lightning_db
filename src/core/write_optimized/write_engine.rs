@@ -256,7 +256,7 @@ impl WriteOptimizedEngine {
     /// Put a key-value pair
     pub fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         let start = Instant::now();
-        let sequence = self.sequence_generator.fetch_add(1, Ordering::SeqCst);
+        let _sequence = self.sequence_generator.fetch_add(1, Ordering::SeqCst);
 
         // TODO: Write to unified WAL first
         // if self.config.base.enable_wal {
@@ -288,7 +288,7 @@ impl WriteOptimizedEngine {
 
     /// Delete a key
     pub fn delete(&self, key: Vec<u8>) -> Result<()> {
-        let sequence = self.sequence_generator.fetch_add(1, Ordering::SeqCst);
+        let _sequence = self.sequence_generator.fetch_add(1, Ordering::SeqCst);
 
         // TODO: Write to unified WAL first
         // if self.config.base.enable_wal {
@@ -578,7 +578,7 @@ impl WriteOptimizedEngine {
 
     /// Recover from WAL
     pub fn recover(&self) -> Result<u64> {
-        let wal_dir = self.config.data_dir.join("wal");
+        let _wal_dir = self.config.data_dir.join("wal");
         // TODO: Integrate with unified WAL recovery
         // let recovery = crate::core::write_optimized::wal::WalRecovery::recover(&wal_dir)?;
 

@@ -163,7 +163,15 @@ impl<K: Clone + Eq + std::hash::Hash + std::fmt::Debug, V: Clone + std::fmt::Deb
             return None;
         }
 
-        // SAFETY: Dereferencing epoch-protected cache entry
+        // SAFETY: Dereferencing epoch-protected cache entry for zero-copy access
+        // Invariants:
+        // 1. entry_ptr is protected by local epoch guard
+        // 2. Pointer validity checked above (non-null)
+        // 3. Closure executes within guard scope
+        // 4. Only immutable reference passed to closure
+        // Guarantees:
+        // - Memory remains valid for closure duration
+        // - No data races as only immutable access allowed
         unsafe {
             let entry = entry_ptr.deref();
             if likely(entry.hash == hash && entry.key == *key) {
@@ -203,7 +211,14 @@ impl<K: Clone + Eq + std::hash::Hash + std::fmt::Debug, V: Clone + std::fmt::Deb
         if unlikely(old_entry.is_null()) {
             self.size.fetch_add(1, Ordering::Relaxed);
         } else {
-            // SAFETY: old_entry is being replaced and will be reclaimed by epoch GC
+            // SAFETY: Deferring destruction of replaced cache entry
+            // Invariants:
+            // 1. old_entry was obtained from atomic swap operation
+            // 2. No other thread can access this pointer after swap
+            // 3. Epoch guard ensures safe reclamation timing
+            // Guarantees:
+            // - Memory freed only after all readers complete
+            // - No use-after-free as pointer is no longer accessible
             unsafe {
                 guard.defer_destroy(old_entry);
             }
@@ -254,6 +269,14 @@ impl<K: Clone + Eq + std::hash::Hash + std::fmt::Debug, V: Clone + std::fmt::Deb
         for slot in self.slots.iter() {
             let entry = slot.ptr.load(Ordering::Acquire, guard);
             if !entry.is_null() {
+                // SAFETY: Taking ownership during Drop implementation
+                // Invariants:
+                // 1. We're in Drop, so no other threads can access this cache
+                // 2. entry is non-null (checked above)
+                // 3. No other references exist to this entry
+                // Guarantees:
+                // - Proper cleanup of all allocated entries
+                // - Memory leak prevention
                 unsafe {
                     // Take ownership and drop immediately since we're in Drop
                     let _ = entry.into_owned();

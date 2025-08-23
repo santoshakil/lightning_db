@@ -4,18 +4,14 @@
 //! resource pooling, and emergency cleanup procedures for Lightning DB.
 
 use std::{
-    sync::{Arc, Weak, Mutex, RwLock, atomic::{AtomicU64, AtomicBool, AtomicUsize, Ordering}},
-    collections::{HashMap, VecDeque, BTreeSet},
-    time::{Duration, Instant, SystemTime},
+    sync::{Arc, Weak, RwLock, atomic::{AtomicU64, AtomicBool, AtomicUsize, Ordering}},
+    collections::{HashMap, VecDeque},
+    time::{Duration, SystemTime},
     thread,
-    fmt,
-    marker::PhantomData,
     ops::{Deref, DerefMut},
-    ptr::NonNull,
     mem,
 };
 
-use crossbeam_epoch::{self as epoch, Atomic, Owned, Shared, Guard};
 use dashmap::DashMap;
 use parking_lot::{RwLock as ParkingRwLock, Mutex as ParkingMutex};
 use serde::{Serialize, Deserialize};
@@ -96,8 +92,8 @@ pub struct ResourceHandle<T> {
     inner: Option<T>,
     resource_id: u64,
     resource_type: ResourceType,
-    created_at: Instant,
-    last_accessed: RwLock<Instant>,
+    created_at: SystemTime,
+    last_accessed: RwLock<SystemTime>,
     priority: Priority,
     size: usize,
     cleanup_fn: Option<Box<dyn Fn(&mut T) + Send + Sync>>,
@@ -114,11 +110,11 @@ impl<T> ResourceHandle<T> {
         manager: Weak<ResourceManager>,
     ) -> Self {
         let resource_id = Self::generate_id();
-        let now = Instant::now();
+        let now = SystemTime::now();
         
         // Register with resource manager
         if let Some(mgr) = manager.upgrade() {
-            mgr.register_resource(resource_id, &resource_type, size, priority);
+            mgr.register_resource(resource_id, &resource_type, size, priority.clone());
         }
         
         Self {
@@ -141,7 +137,9 @@ impl<T> ResourceHandle<T> {
 
     /// Get the resource with access tracking
     pub fn get(&self) -> Option<&T> {
-        *self.last_accessed.write().unwrap() = Instant::now();
+        if let Ok(mut last_accessed) = self.last_accessed.write() {
+            *last_accessed = SystemTime::now();
+        }
         
         if let Some(mgr) = self.manager.upgrade() {
             mgr.update_access_time(self.resource_id);
@@ -152,7 +150,9 @@ impl<T> ResourceHandle<T> {
 
     /// Get mutable access to the resource
     pub fn get_mut(&mut self) -> Option<&mut T> {
-        *self.last_accessed.write().unwrap() = Instant::now();
+        if let Ok(mut last_accessed) = self.last_accessed.write() {
+            *last_accessed = SystemTime::now();
+        }
         
         if let Some(mgr) = self.manager.upgrade() {
             mgr.update_access_time(self.resource_id);
@@ -167,10 +167,10 @@ impl<T> ResourceHandle<T> {
             resource_id: self.resource_id,
             resource_type: self.resource_type.clone(),
             created_at: self.created_at,
-            last_accessed: *self.last_accessed.read().unwrap(),
+            last_accessed: self.last_accessed.read().ok().map(|r| *r).unwrap_or_else(SystemTime::now),
             priority: self.priority.clone(),
             size: self.size,
-            age: self.created_at.elapsed(),
+            age: self.created_at.elapsed().unwrap_or_default(),
         }
     }
 
@@ -218,8 +218,8 @@ impl<T> DerefMut for ResourceHandle<T> {
 pub struct ResourceMetadata {
     pub resource_id: u64,
     pub resource_type: ResourceType,
-    pub created_at: Instant,
-    pub last_accessed: Instant,
+    pub created_at: SystemTime,
+    pub last_accessed: SystemTime,
     pub priority: Priority,
     pub size: usize,
     pub age: Duration,
@@ -262,7 +262,7 @@ impl<T> ResourcePool<T> {
 
     /// Get a resource from the pool
     pub fn acquire(&self) -> PooledResource<T> {
-        let resource = {
+        let _resource = {
             let mut available = self.available.lock();
             
             // Try to reuse from pool
@@ -351,13 +351,13 @@ impl<T> Deref for PooledResource<T> {
     type Target = T;
     
     fn deref(&self) -> &Self::Target {
-        self.inner.as_ref().unwrap()
+        self.inner.as_ref().expect("PooledResource should always contain a valid resource")
     }
 }
 
 impl<T> DerefMut for PooledResource<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.inner.as_mut().unwrap()
+        self.inner.as_mut().expect("PooledResource should always contain a valid resource")
     }
 }
 
@@ -379,8 +379,8 @@ struct ResourceTracker {
     resource_type: ResourceType,
     size: usize,
     priority: Priority,
-    created_at: Instant,
-    last_accessed: Instant,
+    created_at: SystemTime,
+    last_accessed: SystemTime,
     access_count: u64,
 }
 
@@ -403,7 +403,7 @@ pub struct CleanupStats {
     pub emergency_cleanups: u64,
     pub resources_cleaned: u64,
     pub memory_freed: u64,
-    pub last_cleanup: Option<Instant>,
+    pub last_cleanup: Option<SystemTime>,
     pub avg_cleanup_time: Duration,
 }
 
@@ -507,13 +507,15 @@ impl ResourceManager {
         let pools = &self.pools;
         
         if let Some(existing) = pools.get(name) {
-            if let Ok(pool) = existing.value().downcast_ref::<Arc<ResourcePool<T>>>() {
-                return pool.clone();
+            // Try to downcast the Arc<dyn Any> to Arc<ResourcePool<T>>
+            let any_arc = existing.value().clone();
+            if let Ok(pool) = any_arc.downcast::<ResourcePool<T>>() {
+                return pool;
             }
         }
 
         let pool = Arc::new(ResourcePool::new(100, factory));
-        pools.insert(name.to_string(), pool.clone());
+        pools.insert(name.to_string(), pool.clone() as Arc<dyn std::any::Any + Send + Sync>);
         pool
     }
 
@@ -554,7 +556,7 @@ impl ResourceManager {
         let mut total_age = Duration::ZERO;
         let mut oldest_age = Duration::ZERO;
         
-        let now = Instant::now();
+        let now = SystemTime::now();
         
         for entry in self.resources.iter() {
             let tracker = entry.value();
@@ -562,7 +564,7 @@ impl ResourceManager {
             *resources_by_type.entry(tracker.resource_type.clone()).or_insert(0) += 1;
             *memory_by_type.entry(tracker.resource_type.clone()).or_insert(0) += tracker.size;
             
-            let age = now.duration_since(tracker.created_at);
+            let age = now.duration_since(tracker.created_at).unwrap_or(Duration::ZERO);
             total_age += age;
             
             if age > oldest_age {
@@ -592,7 +594,7 @@ impl ResourceManager {
     pub fn emergency_cleanup(&self) -> EmergencyCleanupResult {
         warn!("Performing emergency resource cleanup");
         
-        let start_time = Instant::now();
+        let start_time = SystemTime::now();
         let mut cleaned_count = 0;
         let mut memory_freed = 0;
         
@@ -600,7 +602,7 @@ impl ResourceManager {
         let mut candidates: Vec<_> = self.resources.iter()
             .map(|entry| {
                 let tracker = entry.value();
-                let age_score = tracker.created_at.elapsed().as_secs() as f64;
+                let age_score = tracker.created_at.elapsed().unwrap_or_default().as_secs() as f64;
                 let priority_score = match tracker.priority {
                     Priority::Background => 5.0,
                     Priority::Low => 4.0,
@@ -608,14 +610,14 @@ impl ResourceManager {
                     Priority::High => 2.0,
                     Priority::Critical => 1.0,
                 };
-                let idle_score = tracker.last_accessed.elapsed().as_secs() as f64;
+                let idle_score = tracker.last_accessed.elapsed().unwrap_or_default().as_secs() as f64;
                 
                 (*entry.key(), age_score + priority_score + idle_score)
             })
             .collect();
 
         // Sort by cleanup score (higher = more likely to clean)
-        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         
         // Clean up top 50% of candidates
         let cleanup_count = candidates.len() / 2;
@@ -628,7 +630,7 @@ impl ResourceManager {
 
         self.total_memory.fetch_sub(memory_freed, Ordering::Relaxed);
         
-        let cleanup_time = start_time.elapsed();
+        let cleanup_time = start_time.elapsed().unwrap_or_default();
         
         // Update statistics
         {
@@ -645,7 +647,7 @@ impl ResourceManager {
             let new_avg = (old_avg * (total_cleanups - 1.0) + cleanup_time.as_secs_f64()) / total_cleanups;
             stats.avg_cleanup_time = Duration::from_secs_f64(new_avg);
         }
-
+        
         warn!(
             "Emergency cleanup completed: {} resources cleaned, {} bytes freed in {:?}",
             cleaned_count, memory_freed, cleanup_time
@@ -661,7 +663,7 @@ impl ResourceManager {
     // Private helper methods
 
     fn register_resource(&self, id: u64, resource_type: &ResourceType, size: usize, priority: Priority) {
-        let now = Instant::now();
+        let now = SystemTime::now();
         let tracker = ResourceTracker {
             resource_id: id,
             resource_type: resource_type.clone(),
@@ -683,7 +685,7 @@ impl ResourceManager {
 
     fn update_access_time(&self, id: u64) {
         if let Some(mut tracker) = self.resources.get_mut(&id) {
-            tracker.last_accessed = Instant::now();
+            tracker.last_accessed = SystemTime::now();
             tracker.access_count += 1;
         }
     }
@@ -709,12 +711,12 @@ impl ResourceManager {
     }
 
     fn periodic_cleanup(&self) {
-        let start_time = Instant::now();
+        let start_time = SystemTime::now();
         let mut cleaned_count = 0;
         let mut memory_freed = 0;
         
         let configs = self.configs.read();
-        let now = Instant::now();
+        let _now = SystemTime::now();
         
         // Collect resources to clean based on their configs
         let mut to_remove = Vec::new();
@@ -725,11 +727,11 @@ impl ResourceManager {
             if let Some(config) = configs.get(&tracker.resource_type) {
                 let should_cleanup = match &config.cleanup_strategy {
                     CleanupStrategy::Age { max_age } => {
-                        tracker.created_at.elapsed() > *max_age
+                        tracker.created_at.elapsed().unwrap_or(Duration::ZERO) > *max_age
                     }
                     CleanupStrategy::Immediate => true,
                     CleanupStrategy::Delayed { delay } => {
-                        tracker.last_accessed.elapsed() > *delay
+                        tracker.last_accessed.elapsed().unwrap_or(Duration::ZERO) > *delay
                     }
                     _ => false, // Other strategies handled elsewhere
                 };

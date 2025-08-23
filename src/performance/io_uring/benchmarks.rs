@@ -238,24 +238,24 @@ impl IoBenchmarkSuite {
     }
     
     fn generate_operations(&self, config: &BenchmarkConfig) -> Vec<BenchmarkOp> {
-        use rand::{thread_rng, Rng};
+        use rand::Rng;
         
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let mut operations = Vec::with_capacity(config.num_operations);
         let max_offset = config.file_size - config.io_size as u64;
         
         for _ in 0..config.num_operations {
-            let offset = if rng.gen::<f64>() < config.sequential_ratio {
+            let offset = if rng.random::<f64>() < config.sequential_ratio {
                 // Sequential access
                 let base = (operations.len() as u64 * config.io_size as u64) % max_offset;
                 base
             } else {
                 // Random access - align to block boundary
-                let random_offset = rng.gen_range(0..max_offset);
+                let random_offset = rng.random_range(0..max_offset);
                 (random_offset / 4096) * 4096 // 4KB aligned
             };
             
-            let op = if rng.gen::<f64>() < config.write_ratio {
+            let op = if rng.random::<f64>() < config.write_ratio {
                 BenchmarkOp::Write {
                     offset,
                     size: config.io_size,

@@ -166,14 +166,42 @@ impl<T> ValidationResult<T> {
     pub fn unwrap(self) -> T {
         match self {
             ValidationResult::Valid(value) => value,
-            ValidationResult::Invalid(violations) => panic!(
-                "Called unwrap on Invalid ValidationResult: {:?}",
-                violations
-            ),
-            ValidationResult::Error(error) => panic!("Called unwrap on Error ValidationResult: {:?}", error),
+            ValidationResult::Invalid(violations) => {
+                tracing::error!(
+                    "Called unwrap on Invalid ValidationResult: {:?}",
+                    violations
+                );
+                std::panic!(
+                    "Called unwrap on Invalid ValidationResult with {} violations. Use unwrap_or, expect, or handle errors explicitly.",
+                    violations.len()
+                )
+            },
+            ValidationResult::Error(error) => {
+                tracing::error!("Called unwrap on Error ValidationResult: {:?}", error);
+                std::panic!(
+                    "Called unwrap on Error ValidationResult: {}. Use unwrap_or, expect, or handle errors explicitly.",
+                    error
+                )
+            },
         }
     }
 
+    /// Safe alternative to unwrap that returns a Result
+    pub fn into_result(self) -> crate::core::error::Result<T>
+    where
+        T: std::fmt::Debug,
+    {
+        match self {
+            ValidationResult::Valid(value) => Ok(value),
+            ValidationResult::Invalid(violations) => Err(crate::core::error::Error::ValidationFailed(
+                format!("Validation failed with {} violations: {:?}", violations.len(), violations)
+            )),
+            ValidationResult::Error(error) => Err(crate::core::error::Error::ValidationFailed(
+                format!("Validation error: {}", error)
+            )),
+        }
+    }
+    
     pub fn unwrap_or(self, default: T) -> T {
         match self {
             ValidationResult::Valid(value) => value,

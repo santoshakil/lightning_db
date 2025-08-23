@@ -4,7 +4,6 @@
 //! performance across different data types, sizes, and system conditions.
 
 use super::{CompressionAlgorithm, CompressionAlgorithmTrait, CompressionLevel, DataType};
-use super::algorithms::{LZ4Compression, SnappyCompression};
 use crate::core::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

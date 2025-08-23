@@ -13,7 +13,6 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 pub struct SecureDatabase<T> {

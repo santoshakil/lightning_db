@@ -1,0 +1,136 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lightning-db-config
+  namespace: lightning-db
+  labels:
+    app.kubernetes.io/name: lightning-db
+    app.kubernetes.io/component: config
+data:
+  lightning_db.toml: |
+    [database]
+    data_dir = "/app/data"
+    max_memory = "1GB"
+    cache_size = "256MB"
+    
+    [storage]
+    page_size = 4096
+    max_file_size = "1GB"
+    sync_writes = true
+    
+    [performance]
+    read_threads = 4
+    write_threads = 2
+    compaction_threads = 2
+    
+    [monitoring]
+    metrics_enabled = true
+    metrics_port = 9090
+    health_check_port = 8080
+    
+    [logging]
+    level = "info"
+    format = "json"
+    
+    [security]
+    enable_tls = true
+    cert_file = "/app/certs/tls.crt"
+    key_file = "/app/certs/tls.key"
+    
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    
+    rule_files:
+      - "/etc/prometheus/rules/*.yml"
+    
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+              - alertmanager:9093
+    
+    scrape_configs:
+      - job_name: 'lightning-db'
+        static_configs:
+          - targets: ['lightning-db-service:9090']
+        scrape_interval: 10s
+        metrics_path: /metrics
+        
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - lightning-db
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lightning-db-scripts
+  namespace: lightning-db
+  labels:
+    app.kubernetes.io/name: lightning-db
+    app.kubernetes.io/component: scripts
+data:
+  backup.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    BACKUP_DIR="/app/backups"
+    DATA_DIR="/app/data"
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    
+    mkdir -p "$BACKUP_DIR"
+    
+    echo "Starting backup at $(date)"
+    tar -czf "$BACKUP_DIR/lightning_db_backup_$TIMESTAMP.tar.gz" -C "$DATA_DIR" .
+    
+    # Keep only last 7 backups
+    find "$BACKUP_DIR" -name "lightning_db_backup_*.tar.gz" -mtime +7 -delete
+    
+    echo "Backup completed: lightning_db_backup_$TIMESTAMP.tar.gz"
+    
+  restore.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    if [ $# -ne 1 ]; then
+        echo "Usage: $0 <backup_file>"
+        exit 1
+    fi
+    
+    BACKUP_FILE="$1"
+    DATA_DIR="/app/data"
+    
+    if [ ! -f "$BACKUP_FILE" ]; then
+        echo "Backup file not found: $BACKUP_FILE"
+        exit 1
+    fi
+    
+    echo "Restoring from backup: $BACKUP_FILE"
+    rm -rf "$DATA_DIR"/*
+    tar -xzf "$BACKUP_FILE" -C "$DATA_DIR"
+    
+    echo "Restore completed successfully"
+    
+  health_check.sh: |
+    #!/bin/bash
+    
+    # Check if Lightning DB is responding
+    if curl -f -s http://localhost:8080/health > /dev/null; then
+        echo "Lightning DB is healthy"
+        exit 0
+    else
+        echo "Lightning DB health check failed"
+        exit 1
+    fi

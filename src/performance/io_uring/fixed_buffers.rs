@@ -441,6 +441,15 @@ pub struct BufferRegistration {
 impl BufferRegistration {
     pub fn new(mut io: Box<dyn ZeroCopyIo>, manager: Arc<FixedBufferManager>) -> Result<Self> {
         let pointers = manager.get_buffer_pointers();
+        // SAFETY: Creating slices from buffer manager pointers
+        // Invariants:
+        // 1. Pointers come from valid AlignedBuffer allocations
+        // 2. Length values match actual buffer capacities
+        // 3. Buffers remain valid during registration
+        // Guarantees:
+        // - Slices are valid for registration duration
+        // - No mutable aliasing during registration
+        // RISK: MEDIUM - Depends on buffer manager validity
         let buffers: Vec<&[u8]> = pointers
             .iter()
             .map(|&(ptr, len)| unsafe { std::slice::from_raw_parts(ptr as *const u8, len) })

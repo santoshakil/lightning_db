@@ -138,6 +138,12 @@ pub struct IoUringImpl {
     fixed_files: Vec<RawFd>,
 }
 
+// SAFETY: IoUringImpl is safe to send/sync when:
+// 1. All ring memory is properly allocated and owned
+// 2. Ring operations use atomic synchronization
+// 3. File descriptors are managed through kernel interface
+// 4. Stats are protected by mutex
+// RISK: HIGH - Incorrect ring memory management could cause corruption
 unsafe impl Send for IoUringImpl {}
 unsafe impl Sync for IoUringImpl {}
 
@@ -151,6 +157,11 @@ struct SubmissionQueue {
     array: *mut u32,
 }
 
+// SAFETY: SubmissionQueue is safe to send/sync when:
+// 1. All pointers point to properly mapped ring memory
+// 2. Atomic operations ensure thread-safe access
+// 3. Ring mask and entries are immutable after creation
+// RISK: HIGH - Raw pointer access without bounds checking
 unsafe impl Send for SubmissionQueue {}
 unsafe impl Sync for SubmissionQueue {}
 
@@ -163,6 +174,11 @@ struct CompletionQueue {
     cqes: *mut IoUringCqe,
 }
 
+// SAFETY: CompletionQueue is safe to send/sync when:
+// 1. All pointers point to properly mapped ring memory
+// 2. Producer-consumer pattern with proper ordering
+// 3. Kernel updates tail, user updates head atomically
+// RISK: HIGH - Data races possible with improper atomic ordering
 unsafe impl Send for CompletionQueue {}
 unsafe impl Sync for CompletionQueue {}
 
@@ -219,6 +235,14 @@ impl IoUringImpl {
                 params.cq_off.cqes + params.cq_entries * std::mem::size_of::<IoUringCqe>() as u32;
             let sqe_size = params.sq_entries * std::mem::size_of::<IoUringSqe>() as u32;
 
+            // SAFETY: Allocating zeroed memory for io_uring rings
+            // Invariants:
+            // 1. Sizes calculated based on kernel parameters
+            // 2. calloc provides zeroed memory (important for ring initialization)
+            // 3. Memory will be properly freed in Drop implementation
+            // Guarantees:
+            // - Returns null on allocation failure (checked below)
+            // - Memory is zero-initialized for proper ring semantics
             let sq_ring_mem = unsafe { libc::calloc(1, sq_ring_size as usize) as *mut u8 };
             let cq_ring_mem = unsafe { libc::calloc(1, cq_ring_size as usize) as *mut u8 };
             let sqe_mem = unsafe { libc::calloc(1, sqe_size as usize) as *mut IoUringSqe };
@@ -231,6 +255,15 @@ impl IoUringImpl {
             }
 
             // Initialize submission queue pointers
+            // SAFETY: Creating pointers into allocated ring memory
+            // Invariants:
+            // 1. sq_ring_mem is non-null (checked above)
+            // 2. Offsets from params are within allocated bounds
+            // 3. Memory layout matches kernel io_uring ABI
+            // 4. Atomic types ensure proper synchronization
+            // Guarantees:
+            // - Pointers valid for lifetime of IoUringImpl
+            // - Proper alignment for atomic operations
             let sq_ring = unsafe {
                 SubmissionQueue {
                     head: sq_ring_mem.add(params.sq_off.head as usize) as *const AtomicU32,
@@ -244,6 +277,15 @@ impl IoUringImpl {
             };
 
             // Initialize completion queue pointers
+            // SAFETY: Creating pointers into allocated ring memory
+            // Invariants:
+            // 1. cq_ring_mem is non-null (checked above)
+            // 2. Offsets from params are within allocated bounds
+            // 3. Memory layout matches kernel io_uring ABI
+            // 4. Head is mutable, tail is read-only (kernel updates tail)
+            // Guarantees:
+            // - Pointers valid for lifetime of IoUringImpl
+            // - Correct mutability for producer-consumer pattern
             let cq_ring = unsafe {
                 CompletionQueue {
                     head: cq_ring_mem.add(params.cq_off.head as usize) as *mut AtomicU32,
@@ -271,6 +313,16 @@ impl IoUringImpl {
     }
 
     fn get_sqe(&mut self) -> Option<&mut IoUringSqe> {
+        // SAFETY: Accessing io_uring submission queue entry
+        // Invariants:
+        // 1. sq_ring pointers are valid (initialized in new())
+        // 2. Atomic operations ensure proper synchronization
+        // 3. Ring mask ensures index stays within bounds
+        // 4. Exclusive access via &mut self
+        // Guarantees:
+        // - SQE is zero-initialized before use
+        // - No data races due to single producer model
+        // - Index wrapping handled by ring_mask
         unsafe {
             let head = (*self.sq_ring.head).load(Ordering::Acquire);
             let tail = (*self.sq_ring.tail).load(Ordering::Relaxed);
@@ -291,6 +343,16 @@ impl IoUringImpl {
     }
 
     fn submit_sqe(&mut self, sqe_idx: u32) {
+        // SAFETY: Submitting entry to io_uring submission queue
+        // Invariants:
+        // 1. sq_ring pointers are valid
+        // 2. Index is masked to stay within array bounds
+        // 3. Memory barrier ensures kernel sees complete entry
+        // 4. Tail update is atomic and ordered
+        // Guarantees:
+        // - Entry visible to kernel after tail update
+        // - No torn writes due to atomic operations
+        // - Release semantics ensure proper ordering
         unsafe {
             let tail = (*self.sq_ring.tail).load(Ordering::Relaxed);
             let idx = (tail & self.sq_ring.ring_mask) as usize;
@@ -304,6 +366,16 @@ impl IoUringImpl {
     }
 
     fn reap_cqe(&mut self) -> Option<CompletionEntry> {
+        // SAFETY: Reading from io_uring completion queue
+        // Invariants:
+        // 1. cq_ring pointers are valid
+        // 2. Kernel updates tail, we update head
+        // 3. Acquire ordering ensures we see kernel's writes
+        // 4. Ring mask keeps index within bounds
+        // Guarantees:
+        // - Read complete entry before advancing head
+        // - No data races with kernel producer
+        // - Memory barrier ensures proper visibility
         unsafe {
             let head = (*self.cq_ring.head).load(Ordering::Relaxed);
             let tail = (*self.cq_ring.tail).load(Ordering::Acquire);
@@ -426,6 +498,12 @@ impl ZeroCopyIo for IoUringImpl {
         }
 
         // Submit the SQE
+        // SAFETY: Reading tail pointer for submission
+        // Invariants:
+        // 1. sq_ring.tail is valid atomic pointer
+        // 2. Relaxed ordering sufficient for local read
+        // Guarantees:
+        // - Gets current tail position for submission
         let tail = unsafe { (*self.sq_ring.tail).load(Ordering::Relaxed) };
         self.submit_sqe(tail);
 

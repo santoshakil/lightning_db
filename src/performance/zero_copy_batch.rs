@@ -109,6 +109,15 @@ impl ZeroCopyWriteBatch {
             
             // Key length and data
             self.buffer.extend_from_slice(&(entry.key_len as u32).to_le_bytes());
+            // SAFETY: Creating slice from zero-copy key pointer
+            // Invariants:
+            // 1. key_ptr is valid NonNull pointer from caller
+            // 2. key_len matches actual key size
+            // 3. Key data remains valid during serialization
+            // 4. Caller ensures no concurrent modification
+            // Guarantees:
+            // - Key data copied to buffer
+            // - No use-after-free as data copied immediately
             unsafe {
                 let key_slice = std::slice::from_raw_parts(entry.key_ptr.as_ptr(), entry.key_len);
                 self.buffer.extend_from_slice(key_slice);
@@ -117,6 +126,15 @@ impl ZeroCopyWriteBatch {
             // Value (if present)
             if let Some(value_ptr) = entry.value_ptr {
                 self.buffer.extend_from_slice(&(entry.value_len as u32).to_le_bytes());
+                // SAFETY: Creating slice from zero-copy value pointer
+                // Invariants:
+                // 1. value_ptr is valid NonNull pointer from caller
+                // 2. value_len matches actual value size
+                // 3. Value data remains valid during serialization
+                // 4. Caller ensures no concurrent modification
+                // Guarantees:
+                // - Value data copied to buffer
+                // - Safe serialization without lifetime issues
                 unsafe {
                     let value_slice = std::slice::from_raw_parts(value_ptr.as_ptr(), entry.value_len);
                     self.buffer.extend_from_slice(value_slice);
@@ -135,6 +153,16 @@ impl ZeroCopyWriteBatch {
         F: FnMut(OperationType, &[u8], Option<&[u8]>) -> Result<()>,
     {
         for entry in &self.operations {
+            // SAFETY: Creating slices for zero-copy execution
+            // Invariants:
+            // 1. All pointers in operations are valid
+            // 2. Lengths match actual data sizes
+            // 3. Data remains valid during execution
+            // 4. Executor receives borrowed slices only
+            // Guarantees:
+            // - Safe read-only access to data
+            // - No ownership transfer
+            // - Lifetime limited to executor call
             unsafe {
                 let key = std::slice::from_raw_parts(entry.key_ptr.as_ptr(), entry.key_len);
                 let value = entry.value_ptr.map(|ptr| {
@@ -428,6 +456,14 @@ mod tests {
         let value1 = b"value1";
         let key2 = b"key2";
 
+        // SAFETY: Test with static byte slices
+        // Invariants:
+        // 1. Static strings have 'static lifetime
+        // 2. Slices remain valid for entire test
+        // 3. No concurrent access in test
+        // Guarantees:
+        // - Safe test of zero-copy operations
+        // - Valid pointers throughout test
         unsafe {
             batch.put_zero_copy(key1, value1).unwrap();
             batch.delete_zero_copy(key2).unwrap();
@@ -464,6 +500,14 @@ mod tests {
         let key = b"test_key";
         let value = b"test_value";
 
+        // SAFETY: Test with static byte slices
+        // Invariants:
+        // 1. Static test data remains valid
+        // 2. Single-threaded test environment
+        // 3. No data races possible
+        // Guarantees:
+        // - Test validates batching behavior
+        // - Safe operation with test data
         unsafe {
             let should_flush = batcher.put(key, value).unwrap();
             assert!(!should_flush); // Should not flush for small batch
@@ -504,6 +548,14 @@ mod tests {
         let key = b"test_key";
         let value = b"test_value";
 
+        // SAFETY: Test thread-local operations
+        // Invariants:
+        // 1. Thread-local storage properly initialized
+        // 2. Static test data valid for test duration
+        // 3. No cross-thread access in test
+        // Guarantees:
+        // - Safe test of thread-local batching
+        // - Proper cleanup at test end
         unsafe {
             let should_flush = thread_local_put(key, value).unwrap();
             assert!(!should_flush);

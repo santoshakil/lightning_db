@@ -2,7 +2,7 @@ use crate::security::{SecurityError, SecurityResult};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 pub struct NetworkSecurityManager {
     connection_tracker: Arc<RwLock<ConnectionTracker>>,

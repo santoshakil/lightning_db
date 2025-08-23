@@ -1,0 +1,552 @@
+{
+  "version": "1.0.0",
+  "created_at": "2024-01-01T00:00:00Z",
+  "description": "Lightning DB Performance Baselines - Expected performance targets for regression detection",
+  "environment": {
+    "os": "linux",
+    "architecture": "x86_64",
+    "cpu_cores": 8,
+    "memory_gb": 16,
+    "rust_version": "1.70.0",
+    "compiler_flags": "-C target-cpu=native -C opt-level=3"
+  },
+  "baselines": {
+    "sequential_reads": {
+      "benchmark_name": "sequential_reads",
+      "timestamp": 1704067200,
+      "thread_count": 1,
+      "value_size": 1024,
+      "dataset_size": 1000000,
+      "cache_size": 1073741824,
+      "compression_enabled": false,
+      "operations_completed": 20400000,
+      "duration": {
+        "secs": 1,
+        "nanos": 0
+      },
+      "ops_per_sec": 20400000.0,
+      "avg_latency": {
+        "secs": 0,
+        "nanos": 49
+      },
+      "p50_latency": {
+        "secs": 0,
+        "nanos": 45
+      },
+      "p95_latency": {
+        "secs": 0,
+        "nanos": 89
+      },
+      "p99_latency": {
+        "secs": 0,
+        "nanos": 156
+      },
+      "memory_before": {
+        "timestamp": 1704067200,
+        "rss_bytes": 67108864,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 33554432,
+        "cpu_usage_percent": 0.0,
+        "io_read_bytes": 0,
+        "io_write_bytes": 0,
+        "page_faults": 0,
+        "context_switches": 0,
+        "open_file_descriptors": 10
+      },
+      "memory_after": {
+        "timestamp": 1704067261,
+        "rss_bytes": 1073741824,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 536870912,
+        "cpu_usage_percent": 85.0,
+        "io_read_bytes": 1048576000,
+        "io_write_bytes": 0,
+        "page_faults": 1250,
+        "context_switches": 50000,
+        "open_file_descriptors": 15
+      },
+      "peak_memory_usage": 1073741824,
+      "cpu_usage_percent": 85.0,
+      "io_read_bytes": 1048576000,
+      "io_write_bytes": 0,
+      "cache_hit_rate": 95.0,
+      "error_count": 0,
+      "timeout_count": 0,
+      "regression_detected": false,
+      "regression_percent": 0.0,
+      "statistical_significance": 0.0
+    },
+    "random_reads": {
+      "benchmark_name": "random_reads",
+      "timestamp": 1704067200,
+      "thread_count": 1,
+      "value_size": 1024,
+      "dataset_size": 1000000,
+      "cache_size": 1073741824,
+      "compression_enabled": false,
+      "operations_completed": 15000000,
+      "duration": {
+        "secs": 1,
+        "nanos": 0
+      },
+      "ops_per_sec": 15000000.0,
+      "avg_latency": {
+        "secs": 0,
+        "nanos": 67
+      },
+      "p50_latency": {
+        "secs": 0,
+        "nanos": 62
+      },
+      "p95_latency": {
+        "secs": 0,
+        "nanos": 124
+      },
+      "p99_latency": {
+        "secs": 0,
+        "nanos": 198
+      },
+      "memory_before": {
+        "timestamp": 1704067200,
+        "rss_bytes": 67108864,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 33554432,
+        "cpu_usage_percent": 0.0,
+        "io_read_bytes": 0,
+        "io_write_bytes": 0,
+        "page_faults": 0,
+        "context_switches": 0,
+        "open_file_descriptors": 10
+      },
+      "memory_after": {
+        "timestamp": 1704067261,
+        "rss_bytes": 1073741824,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 536870912,
+        "cpu_usage_percent": 82.0,
+        "io_read_bytes": 1572864000,
+        "io_write_bytes": 0,
+        "page_faults": 2100,
+        "context_switches": 75000,
+        "open_file_descriptors": 15
+      },
+      "peak_memory_usage": 1073741824,
+      "cpu_usage_percent": 82.0,
+      "io_read_bytes": 1572864000,
+      "io_write_bytes": 0,
+      "cache_hit_rate": 70.0,
+      "error_count": 0,
+      "timeout_count": 0,
+      "regression_detected": false,
+      "regression_percent": 0.0,
+      "statistical_significance": 0.0
+    },
+    "sequential_writes": {
+      "benchmark_name": "sequential_writes",
+      "timestamp": 1704067200,
+      "thread_count": 1,
+      "value_size": 1024,
+      "dataset_size": 0,
+      "cache_size": 1073741824,
+      "compression_enabled": false,
+      "operations_completed": 1140000,
+      "duration": {
+        "secs": 1,
+        "nanos": 0
+      },
+      "ops_per_sec": 1140000.0,
+      "avg_latency": {
+        "secs": 0,
+        "nanos": 877
+      },
+      "p50_latency": {
+        "secs": 0,
+        "nanos": 820
+      },
+      "p95_latency": {
+        "secs": 0,
+        "nanos": 1240
+      },
+      "p99_latency": {
+        "secs": 0,
+        "nanos": 1680
+      },
+      "memory_before": {
+        "timestamp": 1704067200,
+        "rss_bytes": 67108864,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 33554432,
+        "cpu_usage_percent": 0.0,
+        "io_read_bytes": 0,
+        "io_write_bytes": 0,
+        "page_faults": 0,
+        "context_switches": 0,
+        "open_file_descriptors": 10
+      },
+      "memory_after": {
+        "timestamp": 1704067261,
+        "rss_bytes": 536870912,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 268435456,
+        "cpu_usage_percent": 65.0,
+        "io_read_bytes": 0,
+        "io_write_bytes": 1168326656,
+        "page_faults": 800,
+        "context_switches": 25000,
+        "open_file_descriptors": 20
+      },
+      "peak_memory_usage": 536870912,
+      "cpu_usage_percent": 65.0,
+      "io_read_bytes": 0,
+      "io_write_bytes": 1168326656,
+      "cache_hit_rate": 0.0,
+      "error_count": 0,
+      "timeout_count": 0,
+      "regression_detected": false,
+      "regression_percent": 0.0,
+      "statistical_significance": 0.0
+    },
+    "random_writes": {
+      "benchmark_name": "random_writes",
+      "timestamp": 1704067200,
+      "thread_count": 1,
+      "value_size": 1024,
+      "dataset_size": 0,
+      "cache_size": 1073741824,
+      "compression_enabled": false,
+      "operations_completed": 800000,
+      "duration": {
+        "secs": 1,
+        "nanos": 0
+      },
+      "ops_per_sec": 800000.0,
+      "avg_latency": {
+        "secs": 0,
+        "nanos": 1250
+      },
+      "p50_latency": {
+        "secs": 0,
+        "nanos": 1180
+      },
+      "p95_latency": {
+        "secs": 0,
+        "nanos": 1850
+      },
+      "p99_latency": {
+        "secs": 0,
+        "nanos": 2400
+      },
+      "memory_before": {
+        "timestamp": 1704067200,
+        "rss_bytes": 67108864,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 33554432,
+        "cpu_usage_percent": 0.0,
+        "io_read_bytes": 0,
+        "io_write_bytes": 0,
+        "page_faults": 0,
+        "context_switches": 0,
+        "open_file_descriptors": 10
+      },
+      "memory_after": {
+        "timestamp": 1704067261,
+        "rss_bytes": 536870912,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 268435456,
+        "cpu_usage_percent": 70.0,
+        "io_read_bytes": 0,
+        "io_write_bytes": 819200000,
+        "page_faults": 1200,
+        "context_switches": 40000,
+        "open_file_descriptors": 20
+      },
+      "peak_memory_usage": 536870912,
+      "cpu_usage_percent": 70.0,
+      "io_read_bytes": 0,
+      "io_write_bytes": 819200000,
+      "cache_hit_rate": 0.0,
+      "error_count": 0,
+      "timeout_count": 0,
+      "regression_detected": false,
+      "regression_percent": 0.0,
+      "statistical_significance": 0.0
+    },
+    "mixed_workload": {
+      "benchmark_name": "mixed_workload",
+      "timestamp": 1704067200,
+      "thread_count": 1,
+      "value_size": 1024,
+      "dataset_size": 100000,
+      "cache_size": 1073741824,
+      "compression_enabled": false,
+      "operations_completed": 885000,
+      "duration": {
+        "secs": 1,
+        "nanos": 0
+      },
+      "ops_per_sec": 885000.0,
+      "avg_latency": {
+        "secs": 0,
+        "nanos": 1130
+      },
+      "p50_latency": {
+        "secs": 0,
+        "nanos": 980
+      },
+      "p95_latency": {
+        "secs": 0,
+        "nanos": 1850
+      },
+      "p99_latency": {
+        "secs": 0,
+        "nanos": 2650
+      },
+      "memory_before": {
+        "timestamp": 1704067200,
+        "rss_bytes": 67108864,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 33554432,
+        "cpu_usage_percent": 0.0,
+        "io_read_bytes": 0,
+        "io_write_bytes": 0,
+        "page_faults": 0,
+        "context_switches": 0,
+        "open_file_descriptors": 10
+      },
+      "memory_after": {
+        "timestamp": 1704067261,
+        "rss_bytes": 805306368,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 402653184,
+        "cpu_usage_percent": 75.0,
+        "io_read_bytes": 629145600,
+        "io_write_bytes": 180355072,
+        "page_faults": 1500,
+        "context_switches": 35000,
+        "open_file_descriptors": 18
+      },
+      "peak_memory_usage": 805306368,
+      "cpu_usage_percent": 75.0,
+      "io_read_bytes": 629145600,
+      "io_write_bytes": 180355072,
+      "cache_hit_rate": 60.0,
+      "error_count": 0,
+      "timeout_count": 0,
+      "regression_detected": false,
+      "regression_percent": 0.0,
+      "statistical_significance": 0.0
+    },
+    "transaction_throughput": {
+      "benchmark_name": "transaction_throughput",
+      "timestamp": 1704067200,
+      "thread_count": 1,
+      "value_size": 256,
+      "dataset_size": 0,
+      "cache_size": 1073741824,
+      "compression_enabled": false,
+      "operations_completed": 412371,
+      "duration": {
+        "secs": 1,
+        "nanos": 0
+      },
+      "ops_per_sec": 412371.0,
+      "avg_latency": {
+        "secs": 0,
+        "nanos": 2425
+      },
+      "p50_latency": {
+        "secs": 0,
+        "nanos": 2200
+      },
+      "p95_latency": {
+        "secs": 0,
+        "nanos": 3800
+      },
+      "p99_latency": {
+        "secs": 0,
+        "nanos": 5200
+      },
+      "memory_before": {
+        "timestamp": 1704067200,
+        "rss_bytes": 67108864,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 33554432,
+        "cpu_usage_percent": 0.0,
+        "io_read_bytes": 0,
+        "io_write_bytes": 0,
+        "page_faults": 0,
+        "context_switches": 0,
+        "open_file_descriptors": 10
+      },
+      "memory_after": {
+        "timestamp": 1704067261,
+        "rss_bytes": 268435456,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 134217728,
+        "cpu_usage_percent": 60.0,
+        "io_read_bytes": 0,
+        "io_write_bytes": 105566976,
+        "page_faults": 600,
+        "context_switches": 20000,
+        "open_file_descriptors": 15
+      },
+      "peak_memory_usage": 268435456,
+      "cpu_usage_percent": 60.0,
+      "io_read_bytes": 0,
+      "io_write_bytes": 105566976,
+      "cache_hit_rate": 0.0,
+      "error_count": 0,
+      "timeout_count": 0,
+      "regression_detected": false,
+      "regression_percent": 0.0,
+      "statistical_significance": 0.0
+    },
+    "concurrent_operations": {
+      "benchmark_name": "concurrent_operations",
+      "timestamp": 1704067200,
+      "thread_count": 8,
+      "value_size": 512,
+      "dataset_size": 10000,
+      "cache_size": 1073741824,
+      "compression_enabled": false,
+      "operations_completed": 1400000,
+      "duration": {
+        "secs": 1,
+        "nanos": 0
+      },
+      "ops_per_sec": 1400000.0,
+      "avg_latency": {
+        "secs": 0,
+        "nanos": 5714
+      },
+      "p50_latency": {
+        "secs": 0,
+        "nanos": 4800
+      },
+      "p95_latency": {
+        "secs": 0,
+        "nanos": 12000
+      },
+      "p99_latency": {
+        "secs": 0,
+        "nanos": 18500
+      },
+      "memory_before": {
+        "timestamp": 1704067200,
+        "rss_bytes": 67108864,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 33554432,
+        "cpu_usage_percent": 0.0,
+        "io_read_bytes": 0,
+        "io_write_bytes": 0,
+        "page_faults": 0,
+        "context_switches": 0,
+        "open_file_descriptors": 10
+      },
+      "memory_after": {
+        "timestamp": 1704067261,
+        "rss_bytes": 536870912,
+        "vms_bytes": 2684354560,
+        "heap_bytes": 268435456,
+        "cpu_usage_percent": 650.0,
+        "io_read_bytes": 350000000,
+        "io_write_bytes": 366000000,
+        "page_faults": 2500,
+        "context_switches": 150000,
+        "open_file_descriptors": 25
+      },
+      "peak_memory_usage": 536870912,
+      "cpu_usage_percent": 650.0,
+      "io_read_bytes": 350000000,
+      "io_write_bytes": 366000000,
+      "cache_hit_rate": 45.0,
+      "error_count": 0,
+      "timeout_count": 0,
+      "regression_detected": false,
+      "regression_percent": 0.0,
+      "statistical_significance": 0.0
+    },
+    "cache_performance": {
+      "benchmark_name": "cache_performance",
+      "timestamp": 1704067200,
+      "thread_count": 1,
+      "value_size": 1024,
+      "dataset_size": 1000,
+      "cache_size": 134217728,
+      "compression_enabled": false,
+      "operations_completed": 25000000,
+      "duration": {
+        "secs": 1,
+        "nanos": 0
+      },
+      "ops_per_sec": 25000000.0,
+      "avg_latency": {
+        "secs": 0,
+        "nanos": 40
+      },
+      "p50_latency": {
+        "secs": 0,
+        "nanos": 38
+      },
+      "p95_latency": {
+        "secs": 0,
+        "nanos": 65
+      },
+      "p99_latency": {
+        "secs": 0,
+        "nanos": 98
+      },
+      "memory_before": {
+        "timestamp": 1704067200,
+        "rss_bytes": 67108864,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 33554432,
+        "cpu_usage_percent": 0.0,
+        "io_read_bytes": 0,
+        "io_write_bytes": 0,
+        "page_faults": 0,
+        "context_switches": 0,
+        "open_file_descriptors": 10
+      },
+      "memory_after": {
+        "timestamp": 1704067261,
+        "rss_bytes": 201326592,
+        "vms_bytes": 2147483648,
+        "heap_bytes": 134217728,
+        "cpu_usage_percent": 95.0,
+        "io_read_bytes": 1024000,
+        "io_write_bytes": 1024000,
+        "page_faults": 100,
+        "context_switches": 1000,
+        "open_file_descriptors": 12
+      },
+      "peak_memory_usage": 201326592,
+      "cpu_usage_percent": 95.0,
+      "io_read_bytes": 1024000,
+      "io_write_bytes": 1024000,
+      "cache_hit_rate": 99.9,
+      "error_count": 0,
+      "timeout_count": 0,
+      "regression_detected": false,
+      "regression_percent": 0.0,
+      "statistical_significance": 0.0
+    }
+  },
+  "thresholds": {
+    "regression_warning_percent": 5.0,
+    "regression_error_percent": 15.0,
+    "regression_critical_percent": 30.0,
+    "statistical_significance_level": 0.05,
+    "min_samples_for_analysis": 5,
+    "max_coefficient_of_variation": 0.2
+  },
+  "metadata": {
+    "generator": "Lightning DB Regression Suite",
+    "generator_version": "1.0.0",
+    "format_version": "1.0.0",
+    "last_updated": "2024-01-01T00:00:00Z",
+    "update_frequency": "weekly",
+    "retention_days": 90,
+    "notes": "These baselines represent expected performance under typical development hardware conditions. Actual performance may vary based on hardware specifications, system load, and configuration parameters."
+  }
+}

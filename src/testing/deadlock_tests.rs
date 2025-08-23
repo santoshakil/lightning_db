@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod deadlock_detection_tests {
-    use super::super::*;
-    use crate::core::transaction::{UnifiedTransactionManager, UnifiedVersionStore};
+    
+    use crate::core::transaction::UnifiedTransactionManager;
     use std::sync::{Arc, Barrier};
     use std::thread;
     use std::time::{Duration, Instant};
