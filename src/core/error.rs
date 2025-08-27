@@ -315,6 +315,21 @@ pub enum Error {
 
     #[error("Deadlock detected: {0}")]
     Deadlock(String),
+    
+    #[error("Deadlock detected")]
+    DeadlockDetected,
+    
+    #[error("Write conflict: {0}")]
+    WriteConflict(String),
+    
+    #[error("Serialization conflict: {0}")]
+    SerializationConflict(String),
+    
+    #[error("Compression error: {0}")]
+    CompressionError(String),
+    
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
 
     #[error("Transaction retry required: {0}")]
     TransactionRetry(String),
@@ -325,6 +340,25 @@ pub enum Error {
     // Distributed transaction errors
     #[error("Transaction failed: {0}")]
     TransactionFailed(String),
+    
+    // Additional errors for time-series and other features
+    #[error("Key already exists")]
+    KeyAlreadyExists,
+    
+    #[error("Channel closed")]
+    ChannelClosed,
+    
+    #[error("System shutting down")]
+    SystemShuttingDown,
+    
+    #[error("Buffer full")]
+    BufferFull,
+    
+    #[error("Task join error")]
+    TaskJoinError,
+    
+    #[error("Data corruption detected")]
+    Corruption,
 
     // === CRASH RECOVERY ERROR HIERARCHY ===
     
