@@ -74,6 +74,9 @@ regex = "1.10"
 base64 = "0.22"
 uuid = { version = "1.11", features = ["v4"] }
 crossbeam-channel = "0.5"
+flate2 = "1.0"
+warp = "0.3"
+libc = "0.2"
 
 # Encryption dependencies
 aes-gcm = "0.10"

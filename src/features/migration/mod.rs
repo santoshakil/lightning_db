@@ -17,6 +17,9 @@ pub mod history;
 pub mod templates;
 pub mod cli;
 pub mod progress;
+pub mod engine;
+pub mod implementations;
+pub mod batch_processor;
 
 pub use schema::*;
 pub use runner::*;
