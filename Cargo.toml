@@ -45,6 +45,7 @@ async-trait = "0.1"
 prometheus = "0.14"
 lazy_static = "1.5"
 once_cell = "1.19"
+petgraph = "0.6"
 rand = "0.9"
 rand_core = "0.6"
 rand_chacha = "0.3"
@@ -72,7 +73,7 @@ fastrand = "2.1"
 # Core dependencies only
 regex = "1.10"
 base64 = "0.22"
-uuid = { version = "1.11", features = ["v4"] }
+uuid = { version = "1.11", features = ["v4", "serde"] }
 crossbeam-channel = "0.5"
 flate2 = "1.0"
 warp = "0.3"

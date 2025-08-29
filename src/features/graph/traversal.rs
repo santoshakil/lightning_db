@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::collections::VecDeque;
-use crate::error::Result;
+use crate::core::error::Result;
 
 pub struct Traversal {
     steps: Vec<TraversalStep>,

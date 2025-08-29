@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet, BTreeMap};
 use tokio::sync::{RwLock, Mutex, mpsc};
 use bytes::Bytes;
 use serde::{Serialize, Deserialize};
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 use dashmap::DashMap;
 use async_trait::async_trait;
 
@@ -39,7 +39,7 @@ pub struct RecoveryManager {
     checkpoint_manager: Arc<CheckpointManager>,
     aries_recovery: Arc<ARIESRecovery>,
     shadow_paging: Arc<ShadowPagingRecovery>,
-    storage: Arc<dyn crate::core::page_manager::PageManagerAsync>,
+    storage: Arc<dyn crate::core::storage::PageManagerAsync>,
     metrics: Arc<RecoveryMetrics>,
 }
 
@@ -210,7 +210,7 @@ impl RecoveryManager {
     pub fn new(
         strategy: RecoveryStrategy,
         transaction_log: Arc<super::transaction_log::TransactionLog>,
-        storage: Arc<dyn crate::core::page_manager::PageManagerAsync>,
+        storage: Arc<dyn crate::core::storage::PageManagerAsync>,
     ) -> Self {
         Self {
             strategy,
@@ -546,12 +546,11 @@ impl RecoveryManager {
             .map(|entry| (*entry.key(), entry.value().clone()))
             .collect();
         
-        checkpoints.iter()
+        Ok(checkpoints.iter()
             .filter(|(_, cp)| cp.completed)
             .map(|(lsn, _)| *lsn)
             .max()
-            .unwrap_or(0)
-            .into()
+            .unwrap_or(0))
     }
 
     async fn shadow_recover(&self) -> Result<RecoveryResult> {

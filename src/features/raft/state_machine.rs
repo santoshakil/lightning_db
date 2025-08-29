@@ -23,7 +23,7 @@ pub struct Command {
 
 impl Command {
     pub fn serialize(&self) -> Result<Vec<u8>, Error> {
-        bincode::serialize(self)
+        bincode::encode_to_vec(self)
             .map_err(|e| Error::Serialization(e.to_string()))
     }
 
@@ -235,7 +235,7 @@ impl StateMachine for KeyValueStateMachine {
             last_timestamp: *self.last_applied_timestamp.read(),
         };
         
-        bincode::serialize(&snapshot)
+        bincode::encode_to_vec(&snapshot)
             .map_err(|e| Error::Serialization(e.to_string()))
     }
 

@@ -36,3 +36,5 @@ pub mod search;
 pub mod geospatial;
 pub mod ml;
 pub mod security;
+pub mod federation;
+pub mod performance_tuning;

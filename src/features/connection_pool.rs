@@ -388,7 +388,7 @@ impl ConnectionPool {
         let permit = self.inner.semaphore
             .acquire()
             .await
-            .map_err(|_| Error::ResourceExhausted("Connection pool exhausted".to_string()))?;
+            .map_err(|_| Error::ResourceExhausted { resource: "Connection pool exhausted".to_string() })?;
         
         let wait_time = start.elapsed();
         self.inner.total_wait_time.fetch_add(
@@ -424,15 +424,17 @@ impl ConnectionPool {
             in_use.push(id);
             id
         } else {
-            return Err(Error::ResourceExhausted("No connections available".to_string()));
+            return Err(Error::ResourceExhausted { resource: "No connections available".to_string() });
         };
         
         // Find the connection
-        let connections = self.inner.connections.read();
-        let conn = connections.iter()
-            .find(|c| c.id == conn_id)
-            .ok_or_else(|| Error::Internal("Connection not found".to_string()))?
-            .clone();
+        let conn = {
+            let connections = self.inner.connections.read();
+            connections.iter()
+                .find(|c| c.id == conn_id)
+                .ok_or_else(|| Error::Internal("Connection not found".to_string()))?
+                .clone()
+        };
         
         Ok(ConnectionGuard {
             connection: conn,

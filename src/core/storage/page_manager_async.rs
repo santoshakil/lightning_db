@@ -2,13 +2,16 @@
 //!
 //! Provides async methods for page operations needed by integrity validation.
 
-use super::{Page, PageId, PageManager};
+use super::{Page, PageId, PageManager, page::PAGE_SIZE};
 use crate::core::error::Result;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use async_trait::async_trait;
+use bytes::Bytes;
 
 /// Async trait for PageManager operations
-pub trait PageManagerAsync {
+#[async_trait]
+pub trait PageManagerAsync: Send + Sync {
     /// Load a page asynchronously
     async fn load_page(&self, page_id: u64) -> Result<Page>;
 
@@ -23,9 +26,19 @@ pub trait PageManagerAsync {
 
     /// Get all allocated page IDs
     async fn get_all_allocated_pages(&self) -> Result<Vec<u64>>;
+
+    /// Read raw page data
+    async fn read_page(&self, key: Vec<u8>) -> Result<Vec<u8>>;
+
+    /// Write raw page data
+    async fn write_page(&self, key: Vec<u8>, data: Vec<u8>) -> Result<()>;
+
+    /// Delete a page
+    async fn delete_page(&self, key: Vec<u8>) -> Result<()>;
 }
 
 /// Implementation of async methods for `Arc<RwLock<PageManager>>`
+#[async_trait]
 impl PageManagerAsync for Arc<RwLock<PageManager>> {
     async fn load_page(&self, page_id: u64) -> Result<Page> {
         // Convert u64 to u32 (PageId)
@@ -64,5 +77,53 @@ impl PageManagerAsync for Arc<RwLock<PageManager>> {
         }
 
         Ok(pages)
+    }
+
+    async fn read_page(&self, key: Vec<u8>) -> Result<Vec<u8>> {
+        // Convert key to page_id if possible, or use a default implementation
+        if key.len() >= 8 {
+            let page_id = u64::from_le_bytes(key[..8].try_into().unwrap());
+            let page = self.load_page(page_id).await?;
+            Ok(page.data().to_vec())
+        } else {
+            Err(crate::core::error::Error::InvalidArgument(
+                "Invalid key for page read".to_string()
+            ))
+        }
+    }
+
+    async fn write_page(&self, key: Vec<u8>, data: Vec<u8>) -> Result<()> {
+        // Convert key to page_id if possible, or use a default implementation
+        if key.len() >= 8 {
+            let page_id = u64::from_le_bytes(key[..8].try_into().unwrap()) as PageId;
+            let mut page = Page::new(page_id);
+            // Copy data to page (handling size mismatch)
+            let data_len = data.len().min(PAGE_SIZE);
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    data.as_ptr(),
+                    Arc::get_mut(&mut page.data).unwrap().as_mut_ptr(),
+                    data_len,
+                );
+            }
+            page.dirty = true;
+            self.save_page(&page).await
+        } else {
+            Err(crate::core::error::Error::InvalidArgument(
+                "Invalid key for page write".to_string()
+            ))
+        }
+    }
+
+    async fn delete_page(&self, key: Vec<u8>) -> Result<()> {
+        // Convert key to page_id if possible
+        if key.len() >= 8 {
+            let page_id = u64::from_le_bytes(key[..8].try_into().unwrap());
+            self.free_page(page_id).await
+        } else {
+            Err(crate::core::error::Error::InvalidArgument(
+                "Invalid key for page delete".to_string()
+            ))
+        }
     }
 }

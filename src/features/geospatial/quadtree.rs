@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::error::Result;
+use crate::core::error::Result;
 
 pub struct QuadTree {
     root: Arc<RwLock<QuadNode>>,

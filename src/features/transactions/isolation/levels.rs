@@ -1,7 +1,8 @@
 use std::fmt;
+use serde::{Serialize, Deserialize};
 
 /// SQL standard transaction isolation levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum IsolationLevel {
     /// Lowest isolation level - allows dirty reads, non-repeatable reads, and phantom reads
     ReadUncommitted,

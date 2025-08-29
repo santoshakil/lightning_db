@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque, BTreeMap};
 use tokio::sync::{RwLock, Mutex, mpsc, broadcast};
 use bytes::Bytes;
 use serde::{Serialize, Deserialize};
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 use dashmap::DashMap;
 use async_trait::async_trait;
 
@@ -207,7 +207,7 @@ trait CheckpointStore: Send + Sync {
 }
 
 struct SnapshotReader {
-    storage: Arc<dyn crate::core::page_manager::PageManagerAsync>,
+    storage: Arc<dyn crate::core::storage::PageManagerAsync>,
     batch_size: usize,
     parallel_readers: usize,
 }
@@ -505,7 +505,7 @@ struct CDCMetrics {
 impl CDCEngine {
     pub fn new(
         config: CDCConfig,
-        storage: Arc<dyn crate::core::page_manager::PageManagerAsync>,
+        storage: Arc<dyn crate::core::storage::PageManagerAsync>,
     ) -> Self {
         let checkpoint_store = Arc::new(InMemoryCheckpointStore::new());
         

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use bytes::Bytes;
 use serde::{Serialize, Deserialize};
-use crate::error::Result;
+use crate::core::error::Result;
 
 #[derive(Debug, Clone)]
 pub struct BinlogReader {

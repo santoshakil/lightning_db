@@ -289,7 +289,7 @@ fn key_to_page_id(key: &[u8]) -> u64 {
 }
 
 fn serialize_metadata(metadata: &VectorMetadata) -> Result<Vec<u8>, Error> {
-    bincode::serialize(metadata)
+    bincode::encode_to_vec(metadata)
         .map_err(|e| Error::Serialization(e.to_string()))
 }
 
@@ -331,7 +331,7 @@ fn deserialize_vector(data: &[u8]) -> Result<Vec<f32>, Error> {
 }
 
 fn serialize_index_entry(entry: &IndexEntry) -> Result<Vec<u8>, Error> {
-    bincode::serialize(entry)
+    bincode::encode_to_vec(entry)
         .map_err(|e| Error::Serialization(e.to_string()))
 }
 

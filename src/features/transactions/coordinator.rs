@@ -214,7 +214,7 @@ trait Participant: Send + Sync {
 }
 
 struct ConnectionPool {
-    connections: Arc<DashMap<String, Connection>>,
+    connections: Arc<DashMap<String, Arc<Connection>>>,
     max_connections: usize,
     connection_timeout: Duration,
 }
@@ -368,17 +368,57 @@ impl TransactionCoordinator {
     pub async fn new(node_id: String, config: TransactionConfig) -> Result<Self, Error> {
         let (event_tx, _) = broadcast::channel(1024);
         
+        // Create a shared storage instance for transaction log
+        // Use a mock page manager for now - in production, this would be passed in
+        struct MockPageManager;
+        
+        #[async_trait::async_trait]
+        impl crate::core::storage::PageManagerAsync for MockPageManager {
+            async fn load_page(&self, _page_id: u64) -> Result<crate::core::storage::Page, Error> {
+                unimplemented!("Mock implementation")
+            }
+            async fn save_page(&self, _page: &crate::core::storage::Page) -> Result<(), Error> {
+                unimplemented!("Mock implementation")  
+            }
+            async fn is_page_allocated(&self, _page_id: u64) -> Result<bool, Error> {
+                Ok(false)
+            }
+            async fn free_page(&self, _page_id: u64) -> Result<(), Error> {
+                Ok(())
+            }
+            async fn get_all_allocated_pages(&self) -> Result<Vec<u64>, Error> {
+                Ok(vec![])
+            }
+            async fn read_page(&self, _key: Vec<u8>) -> Result<Vec<u8>, Error> {
+                Ok(vec![])
+            }
+            async fn write_page(&self, _key: Vec<u8>, _data: Vec<u8>) -> Result<(), Error> {
+                Ok(())
+            }
+            async fn delete_page(&self, _key: Vec<u8>) -> Result<(), Error> {
+                Ok(())
+            }
+        }
+        
+        let storage: Arc<dyn crate::core::storage::PageManagerAsync> = Arc::new(MockPageManager);
+        
+        let log_config = super::transaction_log::LogConfig::default();
         let transaction_log = Arc::new(
-            super::transaction_log::TransactionLog::new("/tmp/tx_log").await?
+            super::transaction_log::TransactionLog::new(storage.clone(), log_config)
         );
         
         let deadlock_detector = Arc::new(
-            super::deadlock::DeadlockDetector::new(config.deadlock_detection_interval)
+            super::deadlock::DeadlockDetector::new(
+                node_id.clone(),
+                config.deadlock_detection_interval
+            )
         );
         
         let recovery_manager = Arc::new(
             super::recovery::RecoveryManager::new(
-                super::recovery::RecoveryStrategy::Automatic
+                super::recovery::RecoveryStrategy::ARIES,
+                transaction_log.clone(),
+                storage.clone()
             )
         );
         
@@ -417,25 +457,27 @@ impl TransactionCoordinator {
         participants: Vec<String>,
     ) -> Result<TransactionId, Error> {
         let active_count = self.metrics.active_transactions.load(Ordering::Relaxed);
-        if active_count >= self.config.max_concurrent_transactions {
-            return Err(Error::ResourceExhausted("Too many concurrent transactions".to_string()));
+        if active_count >= self.config.max_concurrent_transactions as u64 {
+            return Err(Error::ResourceExhausted { resource: "Too many concurrent transactions".to_string() });
         }
         
         let tx_id = TransactionId::new();
         let read_timestamp = self.timestamp_oracle.next_timestamp();
         
+        let participant_infos: Vec<ParticipantInfo> = participants.iter().map(|p| ParticipantInfo {
+            id: p.clone(),
+            address: p.clone(),
+            state: super::participant::ParticipantState::Initial,
+            vote: None,
+            last_contact: SystemTime::now(),
+            retry_count: 0,
+        }).collect();
+        
         let transaction = Transaction {
             id: tx_id,
             state: TransactionState::Active,
             isolation_level,
-            participants: participants.into_iter().map(|p| ParticipantInfo {
-                id: p.clone(),
-                address: p,
-                state: super::participant::ParticipantState::Active,
-                vote: None,
-                last_contact: SystemTime::now(),
-                retry_count: 0,
-            }).collect(),
+            participants: participant_infos,
             operations: Vec::new(),
             start_time: SystemTime::now(),
             prepare_time: None,
@@ -449,7 +491,7 @@ impl TransactionCoordinator {
         self.transactions.insert(tx_id, Arc::new(RwLock::new(transaction)));
         self.active_transactions.write().insert(tx_id);
         
-        self.transaction_log.log_begin(tx_id, read_timestamp).await?;
+        self.transaction_log.log_begin(tx_id, isolation_level, participants).await?;
         
         self.metrics.total_transactions.fetch_add(1, Ordering::Relaxed);
         self.metrics.active_transactions.fetch_add(1, Ordering::Relaxed);
@@ -457,7 +499,7 @@ impl TransactionCoordinator {
         let _ = self.event_bus.send(TransactionEvent::Started(tx_id));
         
         if self.config.enable_deadlock_detection {
-            self.deadlock_detector.add_transaction(tx_id);
+            self.deadlock_detector.add_transaction(tx_id, 0).await.ok();
         }
         
         Ok(tx_id)
@@ -485,7 +527,15 @@ impl TransactionCoordinator {
         
         drop(transaction);
         
-        self.transaction_log.log_prepare(tx_id, prepare_timestamp).await?;
+        // Log prepare for each participant
+        for participant in &participants {
+            self.transaction_log.log_prepare(
+                tx_id, 
+                participant.id.clone(), 
+                super::participant::VoteDecision::Commit,
+                vec![]
+            ).await?;
+        }
         
         let prepare_start = Instant::now();
         let mut votes = Vec::new();
@@ -563,7 +613,7 @@ impl TransactionCoordinator {
             }
         }
         
-        Err(last_error.unwrap_or_else(|| Error::Timeout))
+        Err(last_error.unwrap_or_else(|| Error::Timeout("Consensus timeout".to_string())))
     }
 
     pub async fn commit(&self, tx_id: TransactionId) -> Result<(), Error> {
@@ -588,7 +638,8 @@ impl TransactionCoordinator {
         drop(transaction);
         
         self.decision_log.log_decision(tx_id, DecisionType::Commit).await?;
-        self.transaction_log.log_commit(tx_id, commit_timestamp).await?;
+        let participants_committed: Vec<String> = participants.iter().map(|p| p.id.clone()).collect();
+        self.transaction_log.log_commit(tx_id, commit_timestamp, participants_committed).await?;
         
         let commit_start = Instant::now();
         
@@ -653,7 +704,7 @@ impl TransactionCoordinator {
             
             Err(error)
         } else {
-            Err(Error::Timeout)
+            Err(Error::Timeout("Participant response timeout".to_string()))
         }
     }
 
@@ -675,7 +726,8 @@ impl TransactionCoordinator {
         drop(transaction);
         
         self.decision_log.log_decision(tx_id, DecisionType::Abort).await?;
-        self.transaction_log.log_abort(tx_id).await?;
+        let participants_aborted: Vec<String> = participants.iter().map(|p| p.id.clone()).collect();
+        self.transaction_log.log_abort(tx_id, "Transaction aborted".to_string(), participants_aborted).await?;
         
         for operation in operations.iter().rev() {
             if let Some(undo_entry) = self.create_undo_entry(operation) {
@@ -759,14 +811,17 @@ impl TransactionCoordinator {
         
         if self.config.enable_deadlock_detection {
             if let Some(key) = Self::extract_key(&operation) {
-                self.deadlock_detector.add_lock(tx_id, key.clone()).await;
+                let key_str = String::from_utf8_lossy(&key).to_string();
+                let _ = self.deadlock_detector.add_lock(tx_id, key_str).await;
                 
-                if let Some(victim) = self.deadlock_detector.detect_deadlock().await {
+                if let Ok(Some(victim)) = self.deadlock_detector.detect_deadlock().await {
                     self.metrics.deadlocks_detected.fetch_add(1, Ordering::Relaxed);
                     
-                    let _ = self.event_bus.send(TransactionEvent::DeadlockDetected { victim });
+                    let _ = self.event_bus.send(TransactionEvent::DeadlockDetected { 
+                        victim: victim.txn_id 
+                    });
                     
-                    if victim == tx_id {
+                    if victim.txn_id == tx_id {
                         return Err(Error::DeadlockVictim);
                     }
                 }
@@ -1000,10 +1055,11 @@ impl ConnectionPool {
     }
 
     async fn get_connection(&self, address: &str) -> Result<Arc<Connection>, Error> {
-        if let Some(conn) = self.connections.get(address) {
+        if let Some(conn_ref) = self.connections.get(address) {
+            let conn = Arc::clone(&*conn_ref);
             if !conn.in_use.load(Ordering::Acquire) {
                 conn.in_use.store(true, Ordering::Release);
-                return Ok(conn.clone());
+                return Ok(conn);
             }
         }
         

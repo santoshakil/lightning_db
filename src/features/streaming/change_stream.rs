@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use serde::{Serialize, Deserialize};
-use crate::error::Result;
+use crate::core::error::Result;
 use dashmap::DashMap;
 
 #[derive(Debug, Clone)]

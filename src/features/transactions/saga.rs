@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use std::collections::{HashMap, VecDeque};
 use tokio::sync::{RwLock, Mutex, mpsc};
 use serde::{Serialize, Deserialize};
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 use dashmap::DashMap;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
@@ -285,7 +285,7 @@ struct SagaEvent {
     event_id: u64,
     saga_id: String,
     event_type: SagaEventType,
-    timestamp: Instant,
+    timestamp: u64,
     payload: serde_json::Value,
 }
 
@@ -669,7 +669,10 @@ impl SagaCoordinator {
             event_id,
             saga_id: self.saga_id.clone(),
             event_type,
-            timestamp: Instant::now(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             payload,
         };
         

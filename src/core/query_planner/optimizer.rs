@@ -5,9 +5,9 @@ use super::planner::{QueryPlan, PlanNode, Predicate, Expression, JoinNode, Filte
 use super::statistics::TableStatistics;
 use super::cost_model::CostModel;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct QueryOptimizer {
-    rules: Vec<Box<dyn OptimizationRule>>,
+    rules: Vec<Arc<dyn OptimizationRule>>,
     cost_model: Arc<CostModel>,
     config: OptimizerConfig,
 }
@@ -39,33 +39,41 @@ impl Default for OptimizerConfig {
     }
 }
 
-pub trait OptimizationRule: Send + Sync {
+pub trait OptimizationRule: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &str;
     fn apply(&self, plan: QueryPlan, stats: &TableStatistics) -> Result<QueryPlan, Error>;
     fn is_applicable(&self, plan: &QueryPlan) -> bool;
 }
 
+#[derive(Debug)]
 struct PredicatePushdown;
+#[derive(Debug)]
 struct ProjectionPushdown;
+#[derive(Debug)]
 struct JoinReordering;
+#[derive(Debug)]
 struct ConstantFolding;
+#[derive(Debug)]
 struct CommonSubexpressionElimination;
+#[derive(Debug)]
 struct MaterializedViewRewrite;
+#[derive(Debug)]
 struct IndexSelection;
+#[derive(Debug)]
 struct PartitionPruning;
 
 impl QueryOptimizer {
     pub fn new() -> Self {
-        let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::new();
+        let mut rules: Vec<Arc<dyn OptimizationRule>> = Vec::new();
         
-        rules.push(Box::new(PredicatePushdown));
-        rules.push(Box::new(ProjectionPushdown));
-        rules.push(Box::new(JoinReordering));
-        rules.push(Box::new(ConstantFolding));
-        rules.push(Box::new(CommonSubexpressionElimination));
-        rules.push(Box::new(MaterializedViewRewrite));
-        rules.push(Box::new(IndexSelection));
-        rules.push(Box::new(PartitionPruning));
+        rules.push(Arc::new(PredicatePushdown));
+        rules.push(Arc::new(ProjectionPushdown));
+        rules.push(Arc::new(JoinReordering));
+        rules.push(Arc::new(ConstantFolding));
+        rules.push(Arc::new(CommonSubexpressionElimination));
+        rules.push(Arc::new(MaterializedViewRewrite));
+        rules.push(Arc::new(IndexSelection));
+        rules.push(Arc::new(PartitionPruning));
         
         Self {
             rules,
@@ -147,7 +155,7 @@ impl PredicatePushdown {
         }
     }
 
-    fn pushdown_predicates(&self, node: Arc<PlanNode>) -> Result<Arc<PlanNode>, Error> {
+    fn pushdown_predicates(&self, node: Box<PlanNode>) -> Result<Box<PlanNode>, Error> {
         match node.as_ref() {
             PlanNode::Filter(filter) => {
                 match filter.input.as_ref() {
@@ -156,7 +164,7 @@ impl PredicatePushdown {
                             self.split_join_predicates(&filter.predicate, join)?;
                         
                         let new_left = if !left_preds.is_empty() {
-                            Arc::new(PlanNode::Filter(FilterNode {
+                            Box::new(PlanNode::Filter(FilterNode {
                                 input: join.left.clone(),
                                 predicate: self.combine_predicates(left_preds),
                                 selectivity: 0.5,
@@ -168,7 +176,7 @@ impl PredicatePushdown {
                         };
                         
                         let new_right = if !right_preds.is_empty() {
-                            Arc::new(PlanNode::Filter(FilterNode {
+                            Box::new(PlanNode::Filter(FilterNode {
                                 input: join.right.clone(),
                                 predicate: self.combine_predicates(right_preds),
                                 selectivity: 0.5,
@@ -179,14 +187,14 @@ impl PredicatePushdown {
                             join.right.clone()
                         };
                         
-                        let new_join = Arc::new(PlanNode::Join(JoinNode {
+                        let new_join = Box::new(PlanNode::Join(JoinNode {
                             left: new_left,
                             right: new_right,
                             ..join.clone()
                         }));
                         
                         if !join_preds.is_empty() {
-                            Ok(Arc::new(PlanNode::Filter(FilterNode {
+                            Ok(Box::new(PlanNode::Filter(FilterNode {
                                 input: new_join,
                                 predicate: self.combine_predicates(join_preds),
                                 ..filter.clone()
@@ -300,7 +308,7 @@ impl JoinReordering {
         Ok(joins)
     }
 
-    fn build_join_tree(&self, joins: Vec<JoinInfo>) -> Result<Arc<PlanNode>, Error> {
+    fn build_join_tree(&self, joins: Vec<JoinInfo>) -> Result<Box<PlanNode>, Error> {
         Err(Error::NotImplemented("Join tree building".to_string()))
     }
 }
@@ -338,7 +346,7 @@ impl ConstantFolding {
         false
     }
 
-    fn fold_constants(&self, node: Arc<PlanNode>) -> Result<Arc<PlanNode>, Error> {
+    fn fold_constants(&self, node: Box<PlanNode>) -> Result<Box<PlanNode>, Error> {
         Ok(node)
     }
 }
@@ -414,7 +422,7 @@ impl IndexSelection {
         }
     }
 
-    fn select_indexes(&self, node: Arc<PlanNode>, _stats: &TableStatistics) -> Result<Arc<PlanNode>, Error> {
+    fn select_indexes(&self, node: Box<PlanNode>, _stats: &TableStatistics) -> Result<Box<PlanNode>, Error> {
         Ok(node)
     }
 }
