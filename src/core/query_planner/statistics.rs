@@ -329,7 +329,7 @@ impl Histogram {
 
     fn find_bucket_index(value: &[u8], boundaries: &[Vec<u8>]) -> usize {
         for (i, boundary) in boundaries.iter().enumerate() {
-            if value <= boundary {
+            if value <= boundary.as_slice() {
                 return i;
             }
         }

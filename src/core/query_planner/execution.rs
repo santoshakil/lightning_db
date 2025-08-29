@@ -202,7 +202,7 @@ impl QueryExecutor {
         self.plan_to_operator(plan.root)
     }
 
-    fn plan_to_operator(&self, node: Arc<PlanNode>) -> Result<Arc<dyn PhysicalOperator>, Error> {
+    fn plan_to_operator(&self, node: Box<PlanNode>) -> Result<Arc<dyn PhysicalOperator>, Error> {
         match node.as_ref() {
             PlanNode::Scan(scan) => {
                 Ok(Arc::new(ScanOperator {

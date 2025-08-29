@@ -10,7 +10,7 @@ use petgraph::algo::tarjan_scc;
 use petgraph::Direction;
 use petgraph::visit::EdgeRef;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct DeadlockVictim {
     pub txn_id: super::TransactionId,
     pub priority: i32,
@@ -19,7 +19,7 @@ pub struct DeadlockVictim {
     pub locks_held: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct WaitForGraph {
     graph: DiGraph<WaitNode, WaitEdge>,
     node_map: HashMap<super::TransactionId, NodeIndex>,
@@ -427,9 +427,10 @@ impl DeadlockDetector {
         let interval = self.detection_interval;
         let metrics = self.metrics.clone();
         let victim_selector = self.victim_selector.clone();
-        let mut shutdown_rx = self.shutdown_rx.lock().await;
+        let shutdown_rx = self.shutdown_rx.clone();
         
         tokio::spawn(async move {
+            let mut shutdown_rx = shutdown_rx.lock().await;
             let mut ticker = tokio::time::interval(interval);
             
             loop {

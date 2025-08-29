@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque, BTreeSet};
 use std::sync::Arc;
 use crate::core::error::Error;
 use super::planner::{JoinNode, JoinType, JoinStrategy, JoinCondition, PlanNode, CostEstimate};
@@ -170,10 +170,10 @@ impl JoinOptimizer {
             return self.optimize_with_greedy(&graph, stats);
         }
         
-        let mut dp: HashMap<HashSet<usize>, DPEntry> = HashMap::new();
+        let mut dp: HashMap<BTreeSet<usize>, DPEntry> = HashMap::new();
         
         for node in &graph.nodes {
-            let mut set = HashSet::new();
+            let mut set = BTreeSet::new();
             set.insert(node.id);
             
             dp.insert(set, DPEntry {
@@ -228,7 +228,7 @@ impl JoinOptimizer {
             }
         }
         
-        let all_nodes: HashSet<_> = (0..n).collect();
+        let all_nodes: BTreeSet<_> = (0..n).collect();
         dp.get(&all_nodes)
             .map(|entry| entry.order.clone())
             .ok_or(Error::InvalidOperation { reason: "Failed to find optimal join order".to_string() })
@@ -259,7 +259,7 @@ impl JoinOptimizer {
     }
 
     fn optimize_with_greedy(&self, graph: &JoinGraph, _stats: &TableStatistics) -> Result<JoinOrder, Error> {
-        let mut joined = HashSet::new();
+        let mut joined = BTreeSet::new();
         let mut result = None;
         
         let start_node = graph.nodes.iter()
@@ -415,7 +415,7 @@ impl JoinOptimizer {
         let mut best_fitness = f64::MAX;
         
         for _ in 0..TOURNAMENT_SIZE {
-            let idx = rand::random::<usize>() % population.len();
+            let idx = (rand::random::<u32>() as usize) % population.len();
             if fitness[idx] < best_fitness {
                 best_fitness = fitness[idx];
                 best = Some(idx);
@@ -526,14 +526,14 @@ impl JoinOptimizer {
         &self,
         left_rows: usize,
         right_rows: usize,
-        _left_set: &HashSet<usize>,
-        _right_set: &HashSet<usize>,
+        _left_set: &BTreeSet<usize>,
+        _right_set: &BTreeSet<usize>,
         _graph: &JoinGraph,
     ) -> usize {
         ((left_rows as f64 * right_rows as f64) * 0.1) as usize
     }
 
-    fn can_join(&self, set1: &HashSet<usize>, set2: &HashSet<usize>, graph: &JoinGraph) -> bool {
+    fn can_join(&self, set1: &BTreeSet<usize>, set2: &BTreeSet<usize>, graph: &JoinGraph) -> bool {
         for &node1 in set1 {
             for &node2 in set2 {
                 if graph.adjacency_list.get(&node1)
@@ -546,7 +546,7 @@ impl JoinOptimizer {
         false
     }
 
-    fn can_join_with_set(&self, node: &usize, set: &HashSet<usize>, graph: &JoinGraph) -> bool {
+    fn can_join_with_set(&self, node: &usize, set: &BTreeSet<usize>, graph: &JoinGraph) -> bool {
         graph.adjacency_list.get(node)
             .map(|adj| adj.iter().any(|n| set.contains(n)))
             .unwrap_or(false)
@@ -554,8 +554,8 @@ impl JoinOptimizer {
 
     fn get_best_join_strategy(
         &self,
-        _left: &HashSet<usize>,
-        _right: &HashSet<usize>,
+        _left: &BTreeSet<usize>,
+        _right: &BTreeSet<usize>,
         _graph: &JoinGraph,
         _stats: &TableStatistics,
     ) -> JoinStrategy {
@@ -607,9 +607,9 @@ impl JoinOptimizer {
         result
     }
 
-    fn generate_subsets(&self, n: usize, size: usize) -> Vec<HashSet<usize>> {
+    fn generate_subsets(&self, n: usize, size: usize) -> Vec<BTreeSet<usize>> {
         let mut result = Vec::new();
-        let mut subset = HashSet::new();
+        let mut subset = BTreeSet::new();
         
         self.generate_subsets_recursive(0, n, size, &mut subset, &mut result);
         
@@ -621,8 +621,8 @@ impl JoinOptimizer {
         start: usize,
         n: usize,
         remaining: usize,
-        current: &mut HashSet<usize>,
-        result: &mut Vec<HashSet<usize>>,
+        current: &mut BTreeSet<usize>,
+        result: &mut Vec<BTreeSet<usize>>,
     ) {
         if remaining == 0 {
             result.push(current.clone());
@@ -636,13 +636,13 @@ impl JoinOptimizer {
         }
     }
 
-    fn generate_splits(&self, set: &HashSet<usize>) -> Vec<(HashSet<usize>, HashSet<usize>)> {
+    fn generate_splits(&self, set: &BTreeSet<usize>) -> Vec<(BTreeSet<usize>, BTreeSet<usize>)> {
         let mut result = Vec::new();
         let items: Vec<_> = set.iter().cloned().collect();
         
         for i in 1..(1 << (items.len() - 1)) {
-            let mut s1 = HashSet::new();
-            let mut s2 = HashSet::new();
+            let mut s1 = BTreeSet::new();
+            let mut s2 = BTreeSet::new();
             
             for (j, &item) in items.iter().enumerate() {
                 if (i >> j) & 1 == 1 {

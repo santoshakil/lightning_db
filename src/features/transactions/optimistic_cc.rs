@@ -242,6 +242,7 @@ struct ReadSetTracker {
     read_dependencies: Arc<RwLock<HashMap<String, HashSet<super::TransactionId>>>>,
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct TrackedRead {
     key: String,
     version: u64,
@@ -690,7 +691,8 @@ impl OptimisticController {
                         readers: HashSet::new(),
                     });
                 
-                let new_version = version_chain.latest_version + 1;
+                let latest_version = version_chain.latest_version;
+                let new_version = latest_version + 1;
                 
                 version_chain.versions.insert(
                     commit_timestamp,
@@ -699,7 +701,7 @@ impl OptimisticController {
                         value: write.value,
                         timestamp: commit_timestamp,
                         txn_id,
-                        prev_version: Some(version_chain.latest_version),
+                        prev_version: Some(latest_version),
                         deleted: write.operation == WriteOperation::Delete,
                     },
                 );
