@@ -101,10 +101,10 @@ impl IndexSelector {
 
     pub fn select_indexes(
         &self,
-        node: Arc<PlanNode>,
+        node: Box<PlanNode>,
         stats: &TableStatistics,
         hints: &[IndexHint],
-    ) -> Result<Arc<PlanNode>, Error> {
+    ) -> Result<Box<PlanNode>, Error> {
         match node.as_ref() {
             PlanNode::Scan(scan) => {
                 let access_paths = self.generate_access_paths(scan, stats, hints)?;
@@ -136,7 +136,7 @@ impl IndexSelector {
                     }
                 } else {
                     let optimized_input = self.select_indexes(filter.input.clone(), stats, hints)?;
-                    Ok(Arc::new(PlanNode::Filter(FilterNode {
+                    Ok(Box::new(PlanNode::Filter(FilterNode {
                         input: optimized_input,
                         ..filter.clone()
                     })))
@@ -473,7 +473,7 @@ impl IndexSelector {
     }
 
     fn create_index_scan_node(&self, path: IndexAccessPath, scan: &ScanNode) -> Result<Arc<PlanNode>, Error> {
-        Ok(Arc::new(PlanNode::Index(super::planner::IndexNode {
+        Ok(Box::new(PlanNode::Index(super::planner::IndexNode {
             table_name: scan.table_name.clone(),
             index_name: path.index.name.clone(),
             columns: scan.columns.clone(),

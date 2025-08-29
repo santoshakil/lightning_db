@@ -64,13 +64,13 @@ pub enum LogData {
     },
     Undo {
         operation: UndoOperation,
-        before_image: Option<Bytes>,
-        after_image: Option<Bytes>,
+        before_image: Option<Vec<u8>>,
+        after_image: Option<Vec<u8>>,
     },
     Redo {
         operation: RedoOperation,
         page_id: u64,
-        data: Bytes,
+        data: Vec<u8>,
     },
     Compensation {
         compensated_lsn: u64,
