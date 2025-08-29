@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::core::error::Error;
 use super::planner::{PlanNode, CostEstimate, ScanType, JoinStrategy};
-use super::statistics::{TableStatistics, ColumnStatistics};
+use super::statistics::TableStatistics;
 
 const CPU_TUPLE_COST: f64 = 0.01;
 const SEQ_PAGE_COST: f64 = 1.0;

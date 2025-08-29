@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::collections::{HashSet, HashMap};
 use crate::core::error::Error;
 use super::planner::{QueryPlan, PlanNode, Predicate, Expression, JoinNode, FilterNode};
 use super::statistics::TableStatistics;

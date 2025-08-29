@@ -1,8 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::collections::{HashMap, HashSet};
-use tokio::sync::{RwLock, Mutex, mpsc};
-use bytes::Bytes;
+use tokio::sync::RwLock;
 use serde::{Serialize, Deserialize};
 use crate::core::error::{Error, Result};
 use dashmap::DashMap;
@@ -581,10 +580,7 @@ impl ParticipantProtocol for Participant {
                 locks_held: locked_keys.clone(),
                 conflict_info: None,
             },
-            prepared_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            prepared_at: Instant::now(),
             coordinator_id: request.coordinator_id.clone(),
             timeout_at: Instant::now() + self.info.timeout,
         };
@@ -595,7 +591,7 @@ impl ParticipantProtocol for Participant {
             request.txn_id,
             PreparedTransactionLog {
                 txn_id: request.txn_id,
-                coordinator_id: request.coordinator_id,
+                coordinator_id: request.coordinator_id.clone(),
                 prepare_request: request,
                 prepare_response: prepared_txn.prepare_response.clone(),
                 prepared_at: std::time::SystemTime::now()
@@ -652,13 +648,19 @@ impl ParticipantProtocol for Participant {
             
             Ok(CommitResponse {
                 committed: true,
-                commit_time: Instant::now(),
+                commit_time: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
                 error: None,
             })
         } else {
             Ok(CommitResponse {
                 committed: false,
-                commit_time: Instant::now(),
+                commit_time: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
                 error: Some("Transaction not in prepared state".to_string()),
             })
         }

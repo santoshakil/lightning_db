@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque, BTreeSet};
+use std::collections::{HashMap, BTreeSet};
 use std::sync::Arc;
 use crate::core::error::Error;
 use super::planner::{JoinNode, JoinType, JoinStrategy, JoinCondition, PlanNode, CostEstimate};
@@ -97,6 +97,7 @@ impl JoinOptimizer {
         };
 
         self.build_join_tree(optimal_order, &join_graph)
+            .map(|node| Arc::from(node))
     }
 
     fn build_join_graph(&self, joins: &[JoinNode], stats: &TableStatistics) -> Result<JoinGraph, Error> {
@@ -433,11 +434,11 @@ impl JoinOptimizer {
         Ok(order.clone())
     }
 
-    fn build_join_tree(&self, order: JoinOrder, graph: &JoinGraph) -> Result<Arc<PlanNode>, Error> {
+    fn build_join_tree(&self, order: JoinOrder, graph: &JoinGraph) -> Result<Box<PlanNode>, Error> {
         match order {
             JoinOrder::Single(node_id) => {
                 let node = &graph.nodes[node_id];
-                Ok(Arc::new(PlanNode::Scan(super::planner::ScanNode {
+                Ok(Box::new(PlanNode::Scan(super::planner::ScanNode {
                     table_name: node.table_name.clone(),
                     columns: Vec::new(),
                     predicate: None,
@@ -450,7 +451,7 @@ impl JoinOptimizer {
                 let left_tree = self.build_join_tree(*left, graph)?;
                 let right_tree = self.build_join_tree(*right, graph)?;
                 
-                Ok(Arc::new(PlanNode::Join(JoinNode {
+                Ok(Box::new(PlanNode::Join(JoinNode {
                     left: left_tree,
                     right: right_tree,
                     join_type: JoinType::Inner,
@@ -562,7 +563,7 @@ impl JoinOptimizer {
         JoinStrategy::HashJoin
     }
 
-    fn estimate_greedy_cost(&self, _joined: &HashSet<usize>, _next: usize, _graph: &JoinGraph) -> f64 {
+    fn estimate_greedy_cost(&self, _joined: &BTreeSet<usize>, _next: usize, _graph: &JoinGraph) -> f64 {
         1000.0
     }
 

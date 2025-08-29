@@ -1,4 +1,5 @@
 use lightning_db::features::migration::*;
+use lightning_db::features::migration::implementations::*;
 use std::collections::HashMap;
 use tempfile::tempdir;
 

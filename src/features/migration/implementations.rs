@@ -1,9 +1,9 @@
 use super::engine::*;
-use crate::Database;
 use async_trait::async_trait;
 use chrono::Utc;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -342,7 +342,7 @@ pub struct DataMigration {
     metadata: MigrationMetadata,
     source_format: DataFormat,
     target_format: DataFormat,
-    transformation_pipeline: Vec<Box<dyn DataTransformer>>,
+    transformation_pipeline: Arc<Vec<Box<dyn DataTransformer>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -379,12 +379,14 @@ impl DataMigration {
             },
             source_format,
             target_format,
-            transformation_pipeline: Vec::new(),
+            transformation_pipeline: Arc::new(Vec::new()),
         }
     }
     
     pub fn add_transformer(&mut self, transformer: Box<dyn DataTransformer>) {
-        self.transformation_pipeline.push(transformer);
+        Arc::get_mut(&mut self.transformation_pipeline)
+            .expect("Cannot modify pipeline while it's being used")
+            .push(transformer);
     }
 }
 
@@ -418,15 +420,17 @@ impl Migration for DataMigration {
         let transformer_handle = tokio::spawn({
             let pipeline = self.transformation_pipeline.clone();
             let metrics = context.metrics.clone();
+            let target_path = context.target_path.clone();
+            let progress = context.progress.clone();
             async move {
                 while let Some(mut batch) = rx.recv().await {
-                    for transformer in &pipeline {
+                    for transformer in pipeline.iter() {
                         batch = Self::transform_batch(batch, transformer.as_ref()).await?;
                         metrics.transformations_applied.fetch_add(1, Ordering::Relaxed);
                     }
                     
-                    Self::write_batch(batch, &context.target_path).await?;
-                    context.progress.increment_processed();
+                    Self::write_batch(batch, &target_path).await?;
+                    progress.increment_processed();
                 }
                 Ok::<(), MigrationError>(())
             }
@@ -574,8 +578,7 @@ impl DataTransformer for CompressionTransformer {
     async fn transform(&self, data: Vec<u8>) -> MigrationResult<Vec<u8>> {
         match self.algorithm {
             CompressionAlgorithm::Lz4 => {
-                lz4_flex::compress_prepend_size(&data)
-                    .map_err(|e| MigrationError::TransformationError(e.to_string()))
+                Ok(lz4_flex::compress_prepend_size(&data))
             }
             CompressionAlgorithm::Zstd => {
                 zstd::encode_all(&data[..], 3)
@@ -617,7 +620,7 @@ pub struct EncryptionTransformer {
 impl DataTransformer for EncryptionTransformer {
     async fn transform(&self, data: Vec<u8>) -> MigrationResult<Vec<u8>> {
         use aes_gcm::{
-            aead::{Aead, KeyInit, OsRng},
+            aead::{Aead, KeyInit},
             Aes256Gcm, Nonce,
         };
         
