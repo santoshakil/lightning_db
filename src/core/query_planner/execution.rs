@@ -1,13 +1,11 @@
 use std::sync::Arc;
 use std::collections::{HashMap, VecDeque};
-use std::pin::Pin;
 use std::future::Future;
 use parking_lot::RwLock;
 use tokio::sync::{mpsc, Semaphore};
-use futures::stream::{Stream, StreamExt};
+use futures::stream::StreamExt;
 use crate::core::error::Error;
 use super::planner::{QueryPlan, PlanNode, Value, Expression, Predicate};
-use bytes::Bytes;
 use async_trait::async_trait;
 
 const DEFAULT_BATCH_SIZE: usize = 1024;

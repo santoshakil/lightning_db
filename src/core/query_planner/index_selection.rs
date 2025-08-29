@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use crate::core::error::Error;
 use super::planner::{PlanNode, ScanNode, FilterNode, Predicate, Expression, CostEstimate};
@@ -472,7 +472,7 @@ impl IndexSelector {
         }
     }
 
-    fn create_index_scan_node(&self, path: IndexAccessPath, scan: &ScanNode) -> Result<Arc<PlanNode>, Error> {
+    fn create_index_scan_node(&self, path: IndexAccessPath, scan: &ScanNode) -> Result<Box<PlanNode>, Error> {
         Ok(Box::new(PlanNode::Index(super::planner::IndexNode {
             table_name: scan.table_name.clone(),
             index_name: path.index.name.clone(),

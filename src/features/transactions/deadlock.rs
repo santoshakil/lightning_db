@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use tokio::sync::{RwLock, Mutex, mpsc};
 use serde::{Serialize, Deserialize};
 use crate::core::error::{Error, Result};
@@ -150,7 +150,10 @@ impl DeadlockDetector {
             wait_graph: Arc::new(RwLock::new(WaitForGraph {
                 graph: DiGraph::new(),
                 node_map: HashMap::new(),
-                last_update: Instant::now(),
+                last_update: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
                 generation: 0,
             })),
             detection_interval,

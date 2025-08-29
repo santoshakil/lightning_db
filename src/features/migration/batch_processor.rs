@@ -1,14 +1,13 @@
 use super::engine::*;
-use crate::{Database, LightningDbConfig};
+use crate::Database;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
-use tokio::sync::{RwLock, Semaphore, mpsc, oneshot};
+use tokio::sync::{RwLock, Semaphore, oneshot};
 use tokio::task::JoinHandle;
-use async_trait::async_trait;
-use futures::stream::{self, StreamExt};
+use futures::stream::StreamExt;
 
 pub struct BatchMigrationProcessor {
     config: BatchProcessorConfig,
@@ -457,7 +456,7 @@ impl BatchMigrationProcessor {
     }
     
     async fn process_transform_batch(
-        mut data: Vec<u8>,
+        data: Vec<u8>,
         transformers: Vec<String>,
     ) -> MigrationResult<()> {
         Ok(())
@@ -505,7 +504,8 @@ impl BatchMigrationProcessor {
             * policy.exponential_base.powi(retry_count as i32 - 1);
         
         if policy.jitter {
-            delay *= 0.5 + rand::rng().random::<f64>() * 0.5;
+            use rand::Rng;
+            delay *= 0.5 + rand::thread_rng().gen::<f64>() * 0.5;
         }
         
         let delay_ms = delay.min(policy.max_delay.as_millis() as f64) as u64;

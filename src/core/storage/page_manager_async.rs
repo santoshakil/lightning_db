@@ -7,7 +7,6 @@ use crate::core::error::Result;
 use parking_lot::RwLock;
 use std::sync::Arc;
 use async_trait::async_trait;
-use bytes::Bytes;
 
 /// Async trait for PageManager operations
 #[async_trait]
