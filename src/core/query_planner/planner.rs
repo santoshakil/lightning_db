@@ -78,7 +78,7 @@ pub struct QueryPlanner {
     config: PlannerConfig,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlannerConfig {
     pub enable_cost_based_optimization: bool,
     pub enable_join_reordering: bool,
@@ -103,9 +103,9 @@ impl Default for PlannerConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryPlan {
-    pub root: Arc<PlanNode>,
+    pub root: Box<PlanNode>,
     pub estimated_cost: CostEstimate,
     pub estimated_rows: usize,
     pub required_memory: usize,
@@ -129,7 +129,8 @@ pub enum PlanNode {
     Exchange(ExchangeNode),
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanNode {
     pub table_name: String,
     pub columns: Vec<String>,
@@ -139,7 +140,7 @@ pub struct ScanNode {
     pub scan_type: ScanType,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ScanType {
     FullTable,
     Index,
@@ -147,27 +148,30 @@ pub enum ScanType {
     Bitmap,
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FilterNode {
-    pub input: Arc<PlanNode>,
+    pub input: Box<PlanNode>,
     pub predicate: Predicate,
     pub selectivity: f64,
     pub estimated_rows: usize,
     pub estimated_cost: CostEstimate,
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectNode {
-    pub input: Arc<PlanNode>,
+    pub input: Box<PlanNode>,
     pub expressions: Vec<Expression>,
     pub estimated_rows: usize,
     pub estimated_cost: CostEstimate,
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JoinNode {
-    pub left: Arc<PlanNode>,
-    pub right: Arc<PlanNode>,
+    pub left: Box<PlanNode>,
+    pub right: Box<PlanNode>,
     pub join_type: JoinType,
     pub join_condition: JoinCondition,
     pub strategy: JoinStrategy,
@@ -176,7 +180,7 @@ pub struct JoinNode {
 }
 
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum JoinStrategy {
     NestedLoop,
     HashJoin,
@@ -185,61 +189,66 @@ pub enum JoinStrategy {
     BroadcastJoin,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JoinCondition {
     pub left_keys: Vec<String>,
     pub right_keys: Vec<String>,
     pub additional_predicate: Option<Predicate>,
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AggregateNode {
-    pub input: Arc<PlanNode>,
+    pub input: Box<PlanNode>,
     pub group_by: Vec<Expression>,
     pub aggregates: Vec<AggregateFunction>,
     pub estimated_rows: usize,
     pub estimated_cost: CostEstimate,
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SortNode {
-    pub input: Arc<PlanNode>,
+    pub input: Box<PlanNode>,
     pub order_by: Vec<OrderByExpr>,
     pub limit: Option<usize>,
     pub estimated_rows: usize,
     pub estimated_cost: CostEstimate,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderByExpr {
     pub expression: Expression,
     pub descending: bool,
     pub nulls_first: bool,
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LimitNode {
-    pub input: Arc<PlanNode>,
+    pub input: Box<PlanNode>,
     pub limit: usize,
     pub offset: Option<usize>,
     pub estimated_cost: CostEstimate,
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnionNode {
-    pub inputs: Vec<Arc<PlanNode>>,
+    pub inputs: Vec<Box<PlanNode>>,
     pub union_type: UnionType,
     pub estimated_rows: usize,
     pub estimated_cost: CostEstimate,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum UnionType {
     All,
     Distinct,
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexNode {
     pub table_name: String,
     pub index_name: String,
@@ -249,7 +258,8 @@ pub struct IndexNode {
     pub estimated_cost: CostEstimate,
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MaterializedViewNode {
     pub view_name: String,
     pub columns: Vec<String>,
@@ -258,18 +268,20 @@ pub struct MaterializedViewNode {
     pub estimated_cost: CostEstimate,
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HashAggregateNode {
-    pub input: Arc<PlanNode>,
+    pub input: Box<PlanNode>,
     pub group_by: Vec<Expression>,
     pub aggregates: Vec<AggregateFunction>,
     pub estimated_groups: usize,
     pub estimated_cost: CostEstimate,
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowFunctionNode {
-    pub input: Arc<PlanNode>,
+    pub input: Box<PlanNode>,
     pub partition_by: Vec<Expression>,
     pub order_by: Vec<OrderByExpr>,
     pub functions: Vec<WindowFunction>,
@@ -277,15 +289,16 @@ pub struct WindowFunctionNode {
     pub estimated_cost: CostEstimate,
 }
 
-#[derive(Debug, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExchangeNode {
-    pub input: Arc<PlanNode>,
+    pub input: Box<PlanNode>,
     pub exchange_type: ExchangeType,
     pub partition_keys: Vec<Expression>,
     pub estimated_cost: CostEstimate,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ExchangeType {
     Gather,
     Repartition,
@@ -293,7 +306,7 @@ pub enum ExchangeType {
     RoundRobin,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Predicate {
     Equals(Expression, Expression),
     NotEquals(Expression, Expression),
@@ -311,7 +324,7 @@ pub enum Predicate {
     Not(Box<Predicate>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Expression {
     Column(String),
     Literal(Value),
@@ -323,13 +336,13 @@ pub enum Expression {
     Subquery(Box<QueryPlan>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CaseWhen {
     pub condition: Predicate,
     pub result: Expression,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum BinaryOperator {
     Add,
     Subtract,
@@ -342,14 +355,14 @@ pub enum BinaryOperator {
     BitwiseXor,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum UnaryOperator {
     Not,
     Negate,
     BitwiseNot,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AggregateFunction {
     Count(Option<Expression>),
     Sum(Expression),
@@ -362,7 +375,7 @@ pub enum AggregateFunction {
     Percentile(Expression, f64),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WindowFunction {
     RowNumber,
     Rank,
@@ -376,7 +389,7 @@ pub enum WindowFunction {
     NthValue(Expression, i32),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Value {
     Null,
     Bool(bool),
@@ -388,7 +401,7 @@ pub enum Value {
     Timestamp(i64),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum DataType {
     Bool,
     Int8,
@@ -404,7 +417,7 @@ pub enum DataType {
     Decimal(u8, u8),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct CostEstimate {
     pub cpu_cost: f64,
     pub io_cost: f64,
@@ -513,10 +526,11 @@ impl QueryPlanner {
             query.joins.push(JoinClause {
                 join_type: join.join_type.clone(),
                 table: join.right_table.clone(),
-                condition: JoinCondition::On(Predicate::Equals(
-                    Expression::Column(join.left_field.clone()),
-                    Expression::Column(join.right_field.clone()),
-                )),
+                condition: JoinCondition {
+                    left_keys: vec![join.left_field.clone()],
+                    right_keys: vec![join.right_field.clone()],
+                    additional_predicate: None,
+                },
             });
         }
         
@@ -534,19 +548,19 @@ impl QueryPlanner {
                 QueryCondition::Equals { field, value } => {
                     Predicate::Equals(
                         Expression::Column(field.clone()),
-                        Expression::Literal(value.clone()),
+                        Expression::Literal(Value::Binary(value.clone())),
                     )
                 },
                 QueryCondition::GreaterThan { field, value } => {
                     Predicate::GreaterThan(
                         Expression::Column(field.clone()),
-                        Expression::Literal(value.clone()),
+                        Expression::Literal(Value::Binary(value.clone())),
                     )
                 },
                 QueryCondition::LessThan { field, value } => {
                     Predicate::LessThan(
                         Expression::Column(field.clone()),
-                        Expression::Literal(value.clone()),
+                        Expression::Literal(Value::Binary(value.clone())),
                     )
                 },
                 _ => continue,
@@ -600,7 +614,7 @@ impl QueryPlanner {
         });
         
         Ok(QueryPlan {
-            root: Arc::new(scan_node),
+            root: Box::new(scan_node),
             estimated_cost: CostEstimate::new(100.0, 1000.0, 0.0, 100.0),
             estimated_rows: 1000000,
             required_memory: 1024 * 1024,
@@ -621,7 +635,7 @@ impl QueryPlanner {
         });
         
         Ok(QueryPlan {
-            root: Arc::new(filter_node),
+            root: Box::new(filter_node),
             estimated_cost: input.estimated_cost.scale(selectivity),
             estimated_rows,
             required_memory: input.required_memory,
@@ -651,7 +665,7 @@ impl QueryPlanner {
         });
         
         Ok(QueryPlan {
-            root: Arc::new(agg_node),
+            root: Box::new(agg_node),
             estimated_cost: input.estimated_cost.add(&CostEstimate::new(
                 input.estimated_rows as f64 * 0.1,
                 0.0,
@@ -681,7 +695,7 @@ impl QueryPlanner {
         });
         
         Ok(QueryPlan {
-            root: Arc::new(sort_node),
+            root: Box::new(sort_node),
             estimated_cost: input.estimated_cost.add(&sort_cost),
             estimated_rows: input.estimated_rows,
             required_memory: input.estimated_rows * 100,
@@ -703,7 +717,7 @@ impl QueryPlanner {
         });
         
         Ok(QueryPlan {
-            root: Arc::new(limit_node),
+            root: Box::new(limit_node),
             estimated_cost: input.estimated_cost,
             estimated_rows: limit.min(input.estimated_rows),
             required_memory: limit * 100,
@@ -730,7 +744,7 @@ impl QueryPlanner {
         });
         
         Ok(QueryPlan {
-            root: Arc::new(exchange_node),
+            root: Box::new(exchange_node),
             estimated_cost: plan.estimated_cost.scale(1.0 / parallel_degree as f64),
             estimated_rows: plan.estimated_rows,
             required_memory: plan.required_memory,
@@ -784,7 +798,7 @@ impl QueryPlanner {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Query {
     pub select_columns: Vec<String>,
     pub from_table: String,
@@ -798,7 +812,7 @@ pub struct Query {
     pub aggregates: Vec<AggregateFunction>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JoinClause {
     pub join_type: JoinType,
     pub table: String,

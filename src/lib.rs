@@ -499,7 +499,9 @@ impl Database {
         let index_manager = Arc::new(IndexManager::new(page_manager_wrapper.clone()));
 
         // Initialize query planner
-        let query_planner = Arc::new(RwLock::new(query_planner::QueryPlanner::new()));
+        let query_planner = Arc::new(RwLock::new(query_planner::QueryPlanner::new(
+            query_planner::planner::PlannerConfig::default()
+        )));
 
         // Create write buffer for B+Tree if LSM is disabled
         let btree_arc = Arc::new(RwLock::new(btree));
@@ -867,7 +869,9 @@ impl Database {
             let index_manager = Arc::new(IndexManager::new(page_manager_wrapper.clone()));
 
             // Initialize query planner
-            let query_planner = Arc::new(RwLock::new(query_planner::QueryPlanner::new()));
+            let query_planner = Arc::new(RwLock::new(query_planner::QueryPlanner::new(
+            query_planner::planner::PlannerConfig::default()
+        )));
 
             // Create write buffer for B+Tree if LSM is disabled
             let btree_arc = Arc::new(RwLock::new(btree));
@@ -2574,8 +2578,10 @@ impl Database {
         let query_spec = query_planner::QuerySpec {
             conditions,
             joins,
+            projections: Vec::new(),
+            order_by: Vec::new(),
             limit: None,
-            order_by: None,
+            offset: None,
         };
 
         let plan = self.plan_query_advanced(&query_spec)?;
@@ -2655,8 +2661,10 @@ impl Database {
         let query_spec = query_planner::QuerySpec {
             conditions: query_conditions,
             joins: Vec::new(),
+            projections: Vec::new(),
+            order_by: Vec::new(),
             limit: None,
-            order_by: None,
+            offset: None,
         };
 
         let planner = self.query_planner.read();

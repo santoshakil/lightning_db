@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::collections::{HashMap, HashSet, VecDeque, BinaryHeap};
-use crate::error::Result;
+use crate::core::error::Result;
 
 pub trait GraphAlgorithm {
     type Input;

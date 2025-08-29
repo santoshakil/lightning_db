@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::collections::HashMap;
-use crate::error::Result;
+use crate::core::error::Result;
 use dashmap::DashMap;
 
 pub struct GraphStorage {

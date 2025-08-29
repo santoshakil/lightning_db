@@ -538,6 +538,26 @@ pub enum Error {
     /// Backup errors
     #[error("Backup error: {0}")]
     Backup(String),
+
+    /// Invalid state error
+    #[error("Invalid state: {0}")]
+    InvalidState(String),
+
+    /// Commit failed error
+    #[error("Commit failed: {0}")]
+    CommitFailed(String),
+
+    /// Deadlock victim error
+    #[error("Transaction selected as deadlock victim")]
+    DeadlockVictim,
+
+    /// Connection pool exhausted
+    #[error("Connection pool exhausted")]
+    ConnectionPoolExhausted,
+
+    /// Custom error
+    #[error("Custom error: {0}")]
+    Custom(String),
 }
 
 /// Database-specific error types for migration system

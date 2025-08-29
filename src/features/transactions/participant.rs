@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::{RwLock, Mutex, mpsc};
 use bytes::Bytes;
 use serde::{Serialize, Deserialize};
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 use dashmap::DashMap;
 use async_trait::async_trait;
 
@@ -50,7 +50,7 @@ pub struct PrepareRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrepareResponse {
     pub vote: VoteDecision,
-    pub prepared_at: Instant,
+    pub prepared_at: u64,
     pub undo_log: Option<Vec<UndoRecord>>,
     pub locks_held: Vec<String>,
     pub conflict_info: Option<ConflictInfo>,
@@ -66,7 +66,7 @@ pub struct CommitRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitResponse {
     pub committed: bool,
-    pub commit_time: Instant,
+    pub commit_time: u64,
     pub error: Option<String>,
 }
 
@@ -74,7 +74,7 @@ pub struct CommitResponse {
 pub struct Operation {
     pub op_type: OperationType,
     pub key: String,
-    pub value: Option<Bytes>,
+    pub value: Option<Vec<u8>>,
     pub condition: Option<Condition>,
     pub metadata: HashMap<String, String>,
 }
@@ -92,7 +92,7 @@ pub enum OperationType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Condition {
     pub condition_type: ConditionType,
-    pub expected_value: Option<Bytes>,
+    pub expected_value: Option<Vec<u8>>,
     pub version: Option<u64>,
 }
 
@@ -108,8 +108,8 @@ pub enum ConditionType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UndoRecord {
     pub key: String,
-    pub old_value: Option<Bytes>,
-    pub new_value: Option<Bytes>,
+    pub old_value: Option<Vec<u8>>,
+    pub new_value: Option<Vec<u8>>,
     pub operation: OperationType,
     pub timestamp: u64,
 }
@@ -150,7 +150,7 @@ pub struct Participant {
     prepared_txns: Arc<DashMap<super::TransactionId, PreparedTransaction>>,
     lock_manager: Arc<LockManager>,
     undo_log: Arc<UndoLog>,
-    storage: Arc<dyn crate::core::page_manager::PageManagerAsync>,
+    storage: Arc<dyn crate::core::storage::PageManagerAsync>,
     isolation_manager: Arc<super::isolation::IsolationManager>,
     metrics: Arc<ParticipantMetrics>,
     recovery_log: Arc<RecoveryLog>,
@@ -167,6 +167,7 @@ struct ParticipantTransaction {
     commit_time: Option<Instant>,
 }
 
+#[derive(Clone)]
 struct PreparedTransaction {
     txn_id: super::TransactionId,
     prepare_request: PrepareRequest,
@@ -208,7 +209,7 @@ struct LockRequest {
 
 struct UndoLog {
     log: Arc<DashMap<super::TransactionId, Vec<UndoRecord>>>,
-    persistent_log: Arc<dyn crate::core::page_manager::PageManagerAsync>,
+    persistent_log: Arc<dyn crate::core::storage::PageManagerAsync>,
     checkpoint_interval: Duration,
     last_checkpoint: Arc<RwLock<Instant>>,
 }
@@ -216,7 +217,7 @@ struct UndoLog {
 struct RecoveryLog {
     prepared_txns: Arc<DashMap<super::TransactionId, PreparedTransactionLog>>,
     decision_log: Arc<DashMap<super::TransactionId, DecisionLog>>,
-    storage: Arc<dyn crate::core::page_manager::PageManagerAsync>,
+    storage: Arc<dyn crate::core::storage::PageManagerAsync>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -250,7 +251,7 @@ struct ParticipantMetrics {
 impl Participant {
     pub fn new(
         info: ParticipantInfo,
-        storage: Arc<dyn crate::core::page_manager::PageManagerAsync>,
+        storage: Arc<dyn crate::core::storage::PageManagerAsync>,
         isolation_manager: Arc<super::isolation::IsolationManager>,
     ) -> Self {
         let deadlock_detector = Arc::new(super::deadlock::DeadlockDetector::new(
@@ -367,7 +368,7 @@ impl Participant {
                     
                     UndoRecord {
                         key: op.key.clone(),
-                        old_value: old_value.map(Bytes::from),
+                        old_value: old_value,
                         new_value: op.value.clone(),
                         operation: op.op_type,
                         timestamp: std::time::SystemTime::now()
@@ -386,7 +387,7 @@ impl Participant {
                     
                     UndoRecord {
                         key: op.key.clone(),
-                        old_value: Some(Bytes::from(old_value)),
+                        old_value: Some(old_value),
                         new_value: op.value.clone(),
                         operation: op.op_type,
                         timestamp: std::time::SystemTime::now()
@@ -402,7 +403,7 @@ impl Participant {
                     
                     UndoRecord {
                         key: op.key.clone(),
-                        old_value: Some(Bytes::from(old_value)),
+                        old_value: Some(old_value),
                         new_value: None,
                         operation: op.op_type,
                         timestamp: std::time::SystemTime::now()
@@ -534,7 +535,10 @@ impl ParticipantProtocol for Participant {
                 self.metrics.active_txns.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 return Ok(PrepareResponse {
                     vote: VoteDecision::Abort,
-                    prepared_at: Instant::now(),
+                    prepared_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
                     undo_log: None,
                     locks_held: Vec::new(),
                     conflict_info: Some(ConflictInfo {
@@ -553,7 +557,10 @@ impl ParticipantProtocol for Participant {
                 self.metrics.active_txns.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 return Ok(PrepareResponse {
                     vote: VoteDecision::Abort,
-                    prepared_at: Instant::now(),
+                    prepared_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
                     undo_log: None,
                     locks_held: Vec::new(),
                     conflict_info: None,
@@ -566,12 +573,18 @@ impl ParticipantProtocol for Participant {
             prepare_request: request.clone(),
             prepare_response: PrepareResponse {
                 vote: VoteDecision::Commit,
-                prepared_at: Instant::now(),
+                prepared_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
                 undo_log: Some(undo_records.clone()),
                 locks_held: locked_keys.clone(),
                 conflict_info: None,
             },
-            prepared_at: Instant::now(),
+            prepared_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             coordinator_id: request.coordinator_id.clone(),
             timeout_at: Instant::now() + self.info.timeout,
         };

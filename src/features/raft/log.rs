@@ -337,7 +337,7 @@ impl DiskLogStore {
     }
 
     async fn write_entry(&self, segment: &mut LogSegment, entry: &LogEntry) -> Result<(), Error> {
-        let data = bincode::serialize(entry)
+        let data = bincode::encode_to_vec(entry)
             .map_err(|e| Error::Serialization(e.to_string()))?;
         
         let size_bytes = (data.len() as u64).to_le_bytes();

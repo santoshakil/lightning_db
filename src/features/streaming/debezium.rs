@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use tokio::sync::{RwLock, mpsc};
 use bytes::Bytes;
 use serde::{Serialize, Deserialize};
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 use dashmap::DashMap;
 use async_trait::async_trait;
 

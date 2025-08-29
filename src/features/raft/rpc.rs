@@ -151,7 +151,7 @@ impl TcpRaftRpc {
     async fn send_message(&self, target: NodeId, message: RpcMessage) -> Result<RpcMessage, Error> {
         let mut stream = self.get_connection(target).await?;
         
-        let data = bincode::serialize(&message)
+        let data = bincode::encode_to_vec(&message)
             .map_err(|e| Error::Serialization(e.to_string()))?;
         
         let size = (data.len() as u32).to_le_bytes();

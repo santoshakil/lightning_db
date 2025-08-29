@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
 use serde::{Serialize, Deserialize};
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 use dashmap::DashMap;
 
 pub struct SpatialIndex {

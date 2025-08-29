@@ -1,0 +1,22 @@
+pub mod engine;
+pub mod query_router;
+pub mod schema_mapper;
+pub mod data_sources;
+pub mod query_optimizer;
+pub mod result_merger;
+pub mod metadata_manager;
+pub mod pushdown;
+pub mod cache;
+pub mod connector_manager;
+pub mod distributed_planner;
+pub mod execution_coordinator;
+
+pub use engine::FederationEngine;
+pub use query_router::QueryRouter;
+pub use schema_mapper::SchemaMapper;
+pub use data_sources::{DataSource, DataSourceType};
+pub use query_optimizer::FederatedOptimizer;
+pub use result_merger::ResultMerger;
+pub use metadata_manager::MetadataManager;
+pub use pushdown::QueryPushdown;
+pub use cache::FederationCache;

@@ -469,7 +469,7 @@ impl DistributedCache {
     }
     
     async fn send_to_node(&self, node: &NodeId, msg: CacheMessage) -> Result<()> {
-        let serialized = bincode::serialize(&msg)
+        let serialized = bincode::encode_to_vec(&msg)
             .map_err(|e| Error::Generic(format!("Serialization failed: {}", e)))?;
         
         let mut stream = TcpStream::connect(&node.addr).await

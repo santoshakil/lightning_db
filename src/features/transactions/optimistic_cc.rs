@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet, BTreeMap};
 use tokio::sync::{RwLock, Mutex};
 use bytes::Bytes;
 use serde::{Serialize, Deserialize};
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 use dashmap::DashMap;
 use async_trait::async_trait;
 
@@ -565,6 +565,7 @@ impl OptimisticController {
             },
         );
         
+        let mut new_edges = Vec::new();
         for (other_txn, other_node) in &conflict_graph.nodes {
             if *other_txn == txn_id {
                 continue;
@@ -572,7 +573,7 @@ impl OptimisticController {
             
             for key in &write_set {
                 if other_node.read_set.contains(key) {
-                    conflict_graph.edges.push(ConflictEdge {
+                    new_edges.push(ConflictEdge {
                         from: txn_id,
                         to: *other_txn,
                         conflict_type: ConflictType::WriteRead,
@@ -582,7 +583,7 @@ impl OptimisticController {
             
             for key in &read_set {
                 if other_node.write_set.contains(key) {
-                    conflict_graph.edges.push(ConflictEdge {
+                    new_edges.push(ConflictEdge {
                         from: *other_txn,
                         to: txn_id,
                         conflict_type: ConflictType::ReadWrite,
@@ -592,7 +593,7 @@ impl OptimisticController {
             
             for key in &write_set {
                 if other_node.write_set.contains(key) {
-                    conflict_graph.edges.push(ConflictEdge {
+                    new_edges.push(ConflictEdge {
                         from: txn_id,
                         to: *other_txn,
                         conflict_type: ConflictType::WriteWrite,
@@ -600,6 +601,7 @@ impl OptimisticController {
                 }
             }
         }
+        conflict_graph.edges.extend(new_edges);
         
         if self.has_cycle(&conflict_graph) {
             Ok(ValidationResult::Invalid)

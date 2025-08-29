@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::error::Result;
+use crate::core::error::Result;
 
 pub struct CypherParser {
     lexer: Lexer,

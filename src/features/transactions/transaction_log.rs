@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use tokio::sync::{RwLock, Mutex, mpsc};
 use bytes::{Bytes, BytesMut, BufMut};
 use serde::{Serialize, Deserialize};
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 use dashmap::DashMap;
 use async_trait::async_trait;
 use crc32fast::Hasher;
@@ -110,7 +110,7 @@ pub enum CompensationType {
 }
 
 pub struct TransactionLog {
-    storage: Arc<dyn crate::core::page_manager::PageManagerAsync>,
+    storage: Arc<dyn crate::core::storage::PageManagerAsync>,
     active_segment: Arc<RwLock<LogSegment>>,
     segments: Arc<DashMap<u64, LogSegment>>,
     lsn_generator: Arc<LsnGenerator>,
@@ -120,13 +120,14 @@ pub struct TransactionLog {
     metrics: Arc<LogMetrics>,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 struct LogSegment {
     segment_id: u64,
     start_lsn: u64,
     end_lsn: Option<u64>,
     entries: Vec<LogEntry>,
     size: usize,
-    created_at: Instant,
+    created_at: u64,
     closed: bool,
     path: String,
 }
@@ -194,7 +195,7 @@ struct LogMetrics {
 
 impl TransactionLog {
     pub fn new(
-        storage: Arc<dyn crate::core::page_manager::PageManagerAsync>,
+        storage: Arc<dyn crate::core::storage::PageManagerAsync>,
         config: LogConfig,
     ) -> Self {
         let lsn_generator = Arc::new(LsnGenerator {
@@ -209,7 +210,10 @@ impl TransactionLog {
             end_lsn: None,
             entries: Vec::new(),
             size: 0,
-            created_at: Instant::now(),
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             closed: false,
             path: format!("{}/segment_0000.log", config.log_path),
         };
@@ -315,10 +319,10 @@ impl TransactionLog {
         let mut hasher = Hasher::new();
         
         hasher.update(&entry.lsn.to_le_bytes());
-        hasher.update(&bincode::serialize(&entry.txn_id).unwrap());
-        hasher.update(&bincode::serialize(&entry.log_type).unwrap());
+        hasher.update(&serde_json::to_vec(&entry.txn_id).unwrap());
+        hasher.update(&serde_json::to_vec(&entry.log_type).unwrap());
         hasher.update(&entry.timestamp.to_le_bytes());
-        hasher.update(&bincode::serialize(&entry.data).unwrap());
+        hasher.update(&serde_json::to_vec(&entry.data).unwrap());
         
         if let Some(prev_lsn) = entry.prev_lsn {
             hasher.update(&prev_lsn.to_le_bytes());
@@ -346,7 +350,7 @@ impl TransactionLog {
             segment.entries.push(entry.clone());
             segment.size += std::mem::size_of::<LogEntry>();
             
-            if let Some(state) = self.checkpoint_manager.active_transactions.get_mut(&entry.txn_id) {
+            if let Some(mut state) = self.checkpoint_manager.active_transactions.get_mut(&entry.txn_id) {
                 state.last_lsn = entry.lsn;
                 if state.first_lsn == 0 {
                     state.first_lsn = entry.lsn;
@@ -376,7 +380,7 @@ impl TransactionLog {
         flush_buffer.size = 0;
         flush_buffer.dirty = false;
         
-        let serialized = bincode::serialize(&segment.entries).unwrap();
+        let serialized = serde_json::to_vec(&segment.entries).unwrap();
         self.storage.write_page(
             segment.path.as_bytes().to_vec(),
             serialized,
@@ -401,7 +405,7 @@ impl TransactionLog {
         current.end_lsn = Some(current_lsn);
         current.closed = true;
         
-        let old_segment = current.clone();
+        let old_segment = (*current).clone();
         self.segments.insert(old_segment.segment_id, old_segment);
         
         let new_segment_id = current.segment_id + 1;
@@ -411,7 +415,10 @@ impl TransactionLog {
             end_lsn: None,
             entries: Vec::new(),
             size: 0,
-            created_at: Instant::now(),
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             closed: false,
             path: format!("logs/segment_{:04}.log", new_segment_id),
         };
@@ -621,11 +628,11 @@ impl TransactionLog {
                 );
                 
                 let data = if self.archiver.compression_enabled {
-                    let serialized = bincode::serialize(&segment).unwrap();
+                    let serialized = serde_json::to_vec(&segment).unwrap();
                     let compressed = lz4_flex::compress_prepend_size(&serialized);
                     compressed
                 } else {
-                    bincode::serialize(&segment).unwrap()
+                    serde_json::to_vec(&segment).unwrap()
                 };
                 
                 self.storage.write_page(archive_path.as_bytes().to_vec(), data).await?;
@@ -636,6 +643,145 @@ impl TransactionLog {
         
         *self.archiver.last_archive.write().await = Instant::now();
         
+        Ok(())
+    }
+
+    pub async fn log_begin(&self, txn_id: super::TransactionId, isolation_level: super::isolation::IsolationLevel, participants: Vec<String>) -> Result<u64> {
+        let lsn = self.lsn_generator.current_lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let entry = LogEntry {
+            lsn,
+            txn_id,
+            log_type: LogType::Begin,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            data: LogData::Begin {
+                isolation_level,
+                read_timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                participants,
+            },
+            prev_lsn: None,
+            checksum: 0,
+        };
+        
+        let mut hasher = Hasher::new();
+        hasher.update(&serde_json::to_vec(&entry.data).unwrap());
+        let mut entry = entry;
+        entry.checksum = hasher.finalize();
+        
+        self.append_entry(entry).await?;
+        Ok(lsn)
+    }
+
+    pub async fn log_prepare(&self, txn_id: super::TransactionId, participant_id: String, vote: super::participant::VoteDecision, locks: Vec<String>) -> Result<u64> {
+        let lsn = self.lsn_generator.current_lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let entry = LogEntry {
+            lsn,
+            txn_id,
+            log_type: LogType::Prepare,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            data: LogData::Prepare {
+                participant_id,
+                vote,
+                locks,
+            },
+            prev_lsn: self.find_last_lsn_for_txn(txn_id).await,
+            checksum: 0,
+        };
+        
+        let mut hasher = Hasher::new();
+        hasher.update(&serde_json::to_vec(&entry.data).unwrap());
+        let mut entry = entry;
+        entry.checksum = hasher.finalize();
+        
+        self.append_entry(entry).await?;
+        Ok(lsn)
+    }
+
+    pub async fn log_commit(&self, txn_id: super::TransactionId, commit_timestamp: u64, participants_committed: Vec<String>) -> Result<u64> {
+        let lsn = self.lsn_generator.current_lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let entry = LogEntry {
+            lsn,
+            txn_id,
+            log_type: LogType::Commit,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            data: LogData::Commit {
+                commit_timestamp,
+                participants_committed,
+            },
+            prev_lsn: self.find_last_lsn_for_txn(txn_id).await,
+            checksum: 0,
+        };
+        
+        let mut hasher = Hasher::new();
+        hasher.update(&serde_json::to_vec(&entry.data).unwrap());
+        let mut entry = entry;
+        entry.checksum = hasher.finalize();
+        
+        self.append_entry(entry).await?;
+        Ok(lsn)
+    }
+
+    pub async fn log_abort(&self, txn_id: super::TransactionId, reason: String, participants_aborted: Vec<String>) -> Result<u64> {
+        let lsn = self.lsn_generator.current_lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let entry = LogEntry {
+            lsn,
+            txn_id,
+            log_type: LogType::Abort,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            data: LogData::Abort {
+                reason,
+                participants_aborted,
+            },
+            prev_lsn: self.find_last_lsn_for_txn(txn_id).await,
+            checksum: 0,
+        };
+        
+        let mut hasher = Hasher::new();
+        hasher.update(&serde_json::to_vec(&entry.data).unwrap());
+        let mut entry = entry;
+        entry.checksum = hasher.finalize();
+        
+        self.append_entry(entry).await?;
+        Ok(lsn)
+    }
+
+    async fn find_last_lsn_for_txn(&self, txn_id: super::TransactionId) -> Option<u64> {
+        if let Some(state) = self.checkpoint_manager.active_transactions.get(&txn_id) {
+            return Some(state.last_lsn);
+        }
+        None
+    }
+
+    async fn append_entry(&self, entry: LogEntry) -> Result<()> {
+        // Update checkpoint manager
+        self.checkpoint_manager.active_transactions.entry(entry.txn_id)
+            .or_insert(TransactionLogState {
+                txn_id: entry.txn_id,
+                first_lsn: entry.lsn,
+                last_lsn: entry.lsn,
+                undo_chain: Vec::new(),
+                state: super::TransactionState::Active,
+            })
+            .last_lsn = entry.lsn;
+
+        // Add to write buffer
+        let mut write_buffer = self.buffer_pool.write_buffer.write().await;
+        write_buffer.entries.push_back(entry.clone());
+        write_buffer.size += std::mem::size_of::<LogEntry>();
+        write_buffer.dirty = true;
+
+        // Check if we need to flush
+        if write_buffer.size >= self.buffer_pool.buffer_size {
+            drop(write_buffer);
+            self.flush().await?;
+        }
+
+        // Update metrics
+        self.metrics.total_entries.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.metrics.total_bytes.fetch_add(
+            std::mem::size_of::<LogEntry>() as u64,
+            std::sync::atomic::Ordering::Relaxed
+        );
+
         Ok(())
     }
 }

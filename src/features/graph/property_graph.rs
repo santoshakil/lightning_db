@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::collections::{HashMap, HashSet};
 use serde::{Serialize, Deserialize};
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 use dashmap::DashMap;
 
 #[derive(Debug, Clone)]

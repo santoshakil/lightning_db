@@ -55,7 +55,7 @@ impl FileStorage {
 #[async_trait]
 impl RaftStorage for FileStorage {
     async fn save_state(&self, state: PersistentState) -> Result<(), Error> {
-        let data = bincode::serialize(&state)
+        let data = bincode::encode_to_vec(&state)
             .map_err(|e| Error::Serialization(e.to_string()))?;
         
         let temp_path = self.state_path().with_extension("tmp");
@@ -99,7 +99,7 @@ impl RaftStorage for FileStorage {
 
     async fn save_snapshot(&self, snapshot: Snapshot) -> Result<(), Error> {
         let index = snapshot.metadata.last_included_index;
-        let data = bincode::serialize(&snapshot)
+        let data = bincode::encode_to_vec(&snapshot)
             .map_err(|e| Error::Serialization(e.to_string()))?;
         
         let snapshot_path = self.snapshot_path(index);
