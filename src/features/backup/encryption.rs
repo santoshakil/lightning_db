@@ -451,7 +451,7 @@ impl EncryptionManager {
         // Generate salt using cryptographically secure OsRng
         let mut salt_bytes = [0u8; 16];
         OsRng.fill_bytes(&mut salt_bytes);
-        let salt = general_purpose::STANDARD.encode(&salt_bytes);
+        let salt = general_purpose::STANDARD.encode(salt_bytes);
         let salt = SaltString::from_b64(&salt)
             .map_err(|e| Error::Generic(format!("Failed to create salt: {}", e)))?;
         let argon2 = Argon2::default();

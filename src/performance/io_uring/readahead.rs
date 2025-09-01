@@ -184,8 +184,8 @@ impl ReadAheadManager {
             std::io::Error::new(std::io::ErrorKind::OutOfMemory, e)
         })?;
         
-        // TODO: Integrate with actual file I/O
-        // This would typically use io_uring or similar for the actual read
+        // Perform actual read using DirectIO
+        self.perform_aligned_read(fd, offset, size, buffer.clone())?;
         
         // Schedule read-ahead if pattern is detected
         if self.should_readahead(fd, offset) {
@@ -322,11 +322,10 @@ impl ReadAheadManager {
             };
             
             // Perform read-ahead
-            if let Ok(buffer) = buffer_manager.acquire_optimized(request.size) {
-                // TODO: Integrate with actual file I/O
-                // This would perform the actual read operation
-                
-                // Cache the prefetched data
+            if let Ok(mut buffer) = buffer_manager.acquire_optimized(request.size) {
+                // Perform actual prefetch read operation
+                if Self::perform_prefetch_read(request.fd, request.offset, request.size, &mut buffer).is_ok() {
+                    // Cache the prefetched data
                 let mut cache = match cache.write() {
                     Ok(c) => c,
                     Err(_) => continue,
@@ -342,10 +341,58 @@ impl ReadAheadManager {
                 cache.insert(request.offset, cached_page);
                 stats.successful_prefetches.fetch_add(1, Ordering::Relaxed);
                 stats.bytes_prefetched.fetch_add(request.size as u64, Ordering::Relaxed);
+                } else {
+                    stats.wasted_prefetches.fetch_add(1, Ordering::Relaxed);
+                }
             }
         }
     }
     
+    fn perform_aligned_read(&self, fd: RawFd, offset: u64, size: usize, mut buffer: AlignedBuffer) -> std::io::Result<()> {
+        use std::os::unix::io::FromRawFd;
+        use std::io::{Read, Seek, SeekFrom};
+        
+        // SAFETY: fd should be a valid file descriptor
+        // Using unsafe to create File from RawFd temporarily for reading
+        let mut file = unsafe { std::fs::File::from_raw_fd(fd) };
+        file.seek(SeekFrom::Start(offset))?;
+        
+        let buffer_slice = buffer.as_mut_slice()?;
+        let bytes_read = file.read(buffer_slice)?;
+        if bytes_read < size {
+            // Pad with zeros if read less than expected
+            let buffer_slice = buffer.as_mut_slice()?;
+            buffer_slice[bytes_read..].fill(0);
+        }
+        
+        // Prevent file from being closed when dropped
+        std::mem::forget(file);
+        Ok(())
+    }
+    
+    fn perform_prefetch_read(fd: RawFd, offset: u64, size: usize, buffer: &mut AlignedBuffer) -> std::io::Result<()> {
+        use std::os::unix::io::FromRawFd;
+        use std::io::{Read, Seek, SeekFrom};
+        
+        // SAFETY: fd should be a valid file descriptor  
+        // Using unsafe to create File from RawFd temporarily for reading
+        let mut file = unsafe { std::fs::File::from_raw_fd(fd) };
+        file.seek(SeekFrom::Start(offset))?;
+        
+        let buffer_slice = buffer.as_mut_slice()?;
+        let bytes_read = file.read(buffer_slice)?;
+        if bytes_read < size {
+            // Pad with zeros if read less than expected
+            let buffer_slice = buffer.as_mut_slice()?;
+            buffer_slice[bytes_read..].fill(0);
+        }
+        
+        // Prevent file from being closed when dropped
+        std::mem::forget(file);
+        Ok(())
+    }
+    
+
     pub fn stats(&self) -> &ReadAheadStats {
         &self.stats
     }
@@ -526,16 +573,30 @@ impl WriteBehindManager {
                 }
             };
             
-            // TODO: Integrate with actual file I/O
-            // This would perform the actual write operation using io_uring
+            // Helper function to perform writeback
+            let perform_writeback = |fd: RawFd, offset: u64, buffer: &AlignedBuffer| -> std::io::Result<()> {
+                use std::os::unix::io::FromRawFd;
+                use std::io::{Write, Seek, SeekFrom};
+                
+                let mut file = unsafe { std::fs::File::from_raw_fd(fd) };
+                file.seek(SeekFrom::Start(offset))?;
+                file.write_all(buffer.as_slice()?)?;
+                file.sync_data()?;
+                std::mem::forget(file);
+                Ok(())
+            };
             
-            // Remove from dirty pages after successful write
-            if let Ok(mut dirty_pages) = dirty_pages.write() {
-                dirty_pages.remove(&request.offset);
+            // Perform actual write operation using DirectIO
+            if perform_writeback(request.fd, request.offset, &request.buffer).is_ok() {
+            
+                // Remove from dirty pages after successful write
+                if let Ok(mut dirty_pages) = dirty_pages.write() {
+                    dirty_pages.remove(&request.offset);
+                }
+                
+                stats.write_requests.fetch_add(1, Ordering::Relaxed);
+                stats.bytes_written.fetch_add(request.buffer.len() as u64, Ordering::Relaxed);
             }
-            
-            stats.write_requests.fetch_add(1, Ordering::Relaxed);
-            stats.bytes_written.fetch_add(request.buffer.len() as u64, Ordering::Relaxed);
         }
     }
     

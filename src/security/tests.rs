@@ -12,7 +12,7 @@ use std::time::Duration;
 
 #[tokio::test]
 async fn test_comprehensive_security_integration() {
-    let config = SecurityConfig::default();
+    let _config = SecurityConfig::default();
     
     // Test authentication
     let auth_manager = AuthenticationManager::new(
@@ -21,7 +21,7 @@ async fn test_comprehensive_security_integration() {
     );
     
     let roles = [RoleId("reader".to_string())].into_iter().collect();
-    let user_id = auth_manager.create_user(
+    let _user_id = auth_manager.create_user(
         "testuser".to_string(),
         "securepassword123".to_string(),
         roles,

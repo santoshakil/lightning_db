@@ -343,6 +343,7 @@ impl<T> SecureDatabase<T> {
     }
 }
 
+#[allow(async_fn_in_trait)]
 pub trait DatabaseOperations {
     type Error: std::fmt::Display;
 
@@ -382,6 +383,7 @@ impl SecureOperationContext {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use tokio::sync::RwLock;
 
     struct MockDatabase {
         data: Arc<RwLock<HashMap<Vec<u8>, Vec<u8>>>>,

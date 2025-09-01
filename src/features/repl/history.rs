@@ -720,8 +720,7 @@ mod tests {
 
     #[test]
     fn test_deduplication() {
-        let mut config = HistoryConfig::default();
-        config.enable_deduplication = true;
+        let config = HistoryConfig { enable_deduplication: true, ..Default::default() };
 
         let mut manager = HistoryManager::with_config(100, None, config).unwrap();
 

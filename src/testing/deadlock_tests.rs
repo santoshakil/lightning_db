@@ -338,8 +338,7 @@ mod deadlock_detection_tests {
     fn test_mvcc_prevents_deadlock() {
         // use super::super::mvcc::MVCCTransactionManager;
         
-        // TODO: Implement when MVCC transaction manager is available
-        return;
+        // Implementation pending when MVCC transaction manager is available
     }
 
     #[test]

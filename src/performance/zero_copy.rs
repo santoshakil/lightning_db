@@ -51,7 +51,7 @@ impl Deref for ZeroCopyPage<'_> {
 /// Extension trait for zero-copy operations
 pub trait ZeroCopyExt {
     /// Get a page without copying the data
-    fn get_page_zero_copy(&self, page_id: u32) -> Result<ZeroCopyPage>;
+    fn get_page_zero_copy(&self, page_id: u32) -> Result<ZeroCopyPage<'_>>;
 }
 
 // We'll implement this for PageManagerWrapper later

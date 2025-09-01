@@ -607,7 +607,7 @@ impl IncrementalBackupManager {
 
             // Handle remaining data
             if chunk_start < bytes_read {
-                let chunk_data = &buffer[chunk_start as usize..bytes_read];
+                let chunk_data = &buffer[chunk_start..bytes_read];
                 let chunk = self.create_chunk_from_data(chunk_data)?;
                 chunks.push(chunk);
             }
@@ -650,22 +650,22 @@ impl IncrementalBackupManager {
         let modulus = 1_000_000_007u64;
 
         // Initialize rolling hash for first window
-        for i in 0..window_size {
-            rolling_hash = (rolling_hash * base + data[i] as u64) % modulus;
+        for &b in data.iter().take(window_size) {
+            rolling_hash = (rolling_hash * base + b as u64) % modulus;
         }
 
         // Look for chunk boundaries
-        for i in window_size..data.len() {
-            // Update rolling hash
-            let old_char = data[i - window_size] as u64;
-            let new_char = data[i] as u64;
+        for (i, window) in data.windows(window_size + 1).enumerate() {
+            // Update rolling hash using a sliding window
+            let old_char = window[0] as u64;
+            let new_char = window[window_size] as u64;
             let base_power = self.mod_pow(base, window_size as u64 - 1, modulus);
 
             rolling_hash = (rolling_hash + modulus - (old_char * base_power) % modulus) % modulus;
             rolling_hash = (rolling_hash * base + new_char) % modulus;
 
             // Check if this is a chunk boundary (low bits of hash are zero)
-            if rolling_hash & 0xFFF == 0 && i >= self.config.min_chunk_size_bytes {
+            if rolling_hash & 0xFFF == 0 && i + window_size >= self.config.min_chunk_size_bytes {
                 boundaries.push(i);
             }
         }

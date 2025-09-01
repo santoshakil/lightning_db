@@ -201,7 +201,7 @@ impl CostModel {
         let sort_cpu = rows as f64 * (rows as f64).log2() * SORT_COST_FACTOR;
         let memory = rows as f64 * 100.0 * self.config.memory_cost;
         
-        let spill_io = if rows > 1000000 {
+        let spill_io = if rows > 1_000_000 {
             rows as f64 * 0.01
         } else {
             0.0
@@ -242,7 +242,7 @@ impl CostModel {
         Ok(input_cost.add(&CostEstimate::new(hash_build + agg_compute, 0.0, 0.0, memory)))
     }
 
-    fn estimate_rows(&self, node: &PlanNode, stats: &TableStatistics) -> Result<usize, Error> {
+    fn estimate_rows(&self, node: &PlanNode, _stats: &TableStatistics) -> Result<usize, Error> {
         match node {
             PlanNode::Scan(scan) => Ok(scan.estimated_rows),
             PlanNode::Filter(filter) => Ok(filter.estimated_rows),

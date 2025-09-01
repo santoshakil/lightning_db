@@ -200,10 +200,7 @@ impl MemorySafetyChecker {
         if let Ok(mut regions) = self.allocated_regions.lock() {
             if !regions.remove(&(ptr as usize)) {
                 SECURITY_STATS.record_double_free_detection();
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Double-free detected: {:p}", ptr),
-                ));
+                return Err(Error::other(format!("Double-free detected: {:p}", ptr)));
             }
         }
         Ok(())
@@ -221,10 +218,7 @@ impl MemorySafetyChecker {
         if let Ok(regions) = self.allocated_regions.lock() {
             if !regions.contains(&(ptr as usize)) {
                 SECURITY_STATS.record_use_after_free_detection();
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Use-after-free detected in {}: {:p}", operation, ptr),
-                ));
+                return Err(Error::other(format!("Use-after-free detected in {}: {:p}", operation, ptr)));
             }
         }
 
@@ -234,7 +228,7 @@ impl MemorySafetyChecker {
 
 /// Thread-safe global memory checker
 pub static MEMORY_CHECKER: std::sync::LazyLock<MemorySafetyChecker> = 
-    std::sync::LazyLock::new(|| MemorySafetyChecker::new());
+    std::sync::LazyLock::new(MemorySafetyChecker::new);
 
 /// Security-enhanced macros for common operations
 #[macro_export]

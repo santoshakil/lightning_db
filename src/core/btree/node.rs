@@ -250,7 +250,7 @@ impl BTreeNode {
             match key.cmp(&entry.key) {
                 std::cmp::Ordering::Equal => return (true, i),
                 std::cmp::Ordering::Less => return (false, i),
-                std::cmp::Ordering::Greater => continue,
+                std::cmp::Ordering::Greater => {},
             }
         }
         (false, self.entries.len())

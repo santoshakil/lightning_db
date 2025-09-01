@@ -571,7 +571,7 @@ impl MigrationGenerator {
         
         content.push_str(&format!("-- Reversible: {}\n", migration.metadata.reversible));
         content.push_str(&format!("-- Checksum: {}\n", migration.metadata.checksum));
-        content.push_str("\n");
+        content.push('\n');
         
         content.push_str(&migration.up_script);
         

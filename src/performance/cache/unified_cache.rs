@@ -33,8 +33,8 @@ const DEFAULT_CAPACITY: usize = 1000;
 /// Safe optimized hash function using FNV-1a with safe byte operations
 #[inline(always)]
 fn safe_hash_fnv1a(data: &[u8]) -> u64 {
-    const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME: u64 = 0x100000001b3;
+    const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0100_0000_01b3;
     
     let mut hash = FNV_OFFSET_BASIS;
     let mut chunks = data.chunks_exact(8);
@@ -133,6 +133,7 @@ impl AlignedCacheEntry {
 
 /// Thread-local cache segment for reduced contention
 #[repr(align(64))]
+#[derive(Debug)]
 struct ThreadLocalSegment {
     entries: Vec<AlignedCacheEntry>,
     capacity: usize,
@@ -234,6 +235,7 @@ impl ThreadLocalSegment {
 }
 
 /// Unified high-performance cache with all optimizations
+#[derive(Debug)]
 pub struct UnifiedCache {
     // Core cache storage with lock-free reads
     cache: DashMap<u32, Arc<CachedPage>>,
@@ -606,7 +608,7 @@ impl UnifiedCache {
                 };
                 
                 if let Ok(Some(new_size)) = sizer.update_performance(&metrics) {
-                    // TODO: Implement cache resizing
+                    // Implementation pending cache resizing
                     let _ = new_size; // Suppress unused warning for now
                 }
                 

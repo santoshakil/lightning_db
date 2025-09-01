@@ -315,8 +315,8 @@ impl ProgressReporter {
     pub fn format_detailed_report(progress: &MigrationProgress) -> String {
         let mut report = String::new();
         
-        report.push_str(&format!("Migration Progress Report\n"));
-        report.push_str(&format!("========================\n\n"));
+        report.push_str("Migration Progress Report\n");
+        report.push_str("========================\n\n");
         
         report.push_str(&format!("Overall Progress: {}%\n", progress.progress_percentage));
         report.push_str(&format!("Completed: {}/{}\n", progress.completed_migrations, progress.total_migrations));

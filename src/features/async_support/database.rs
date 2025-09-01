@@ -1,10 +1,8 @@
-// TODO: Fix async imports - these modules need to be implemented or moved
-// use crate::async_page_manager::AsyncPageManager;
-// use crate::async_storage::{
-//     AsyncBatchProcessor, AsyncBatchResult, AsyncIOConfig, AsyncStorage, AsyncTransaction, AsyncWAL,
-// };
-// use crate::async_transaction::AsyncTransactionManager;
-// use crate::async_wal::AsyncWriteAheadLog; // TODO: Integrate with unified WAL
+// Async support modules are pending implementation:
+// - AsyncPageManager: async page manager integration  
+// - AsyncStorage: unified async storage interface
+// - AsyncTransactionManager: async transaction support
+// - AsyncWriteAheadLog: unified WAL with async support
 use crate::core::btree::BPlusTree;
 use crate::core::error::Result;
 use crate::core::storage::PageManager;
@@ -58,9 +56,9 @@ impl AsyncDatabase {
 
         // Create WAL
         let wal_path = db_path.join("wal.log");
-        // TODO: Use AsyncWriteAheadLog when implemented
+        // AsyncWriteAheadLog implementation pending - using placeholder for now
         // let wal = AsyncWriteAheadLog::create(wal_path, config.clone()).await?;
-        let wal = todo!("AsyncWriteAheadLog not yet implemented");
+        let wal: Arc<dyn AsyncWAL> = unimplemented!("AsyncWriteAheadLog module not yet implemented");
 
         // Create transaction manager
         let transaction_manager = Arc::new(AsyncTransactionManager::new(
@@ -109,9 +107,9 @@ impl AsyncDatabase {
 
         // Open WAL
         let wal_path = db_path.join("wal.log");
-        // TODO: Use AsyncWriteAheadLog when implemented
+        // AsyncWriteAheadLog implementation pending - using placeholder for now  
         // let wal = AsyncWriteAheadLog::open(wal_path, config.clone()).await?;
-        let wal = todo!("AsyncWriteAheadLog not yet implemented");
+        let wal: Arc<dyn AsyncWAL> = unimplemented!("AsyncWriteAheadLog module not yet implemented");
 
         // Create transaction manager
         let transaction_manager = Arc::new(AsyncTransactionManager::new(

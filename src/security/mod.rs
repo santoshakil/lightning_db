@@ -5,8 +5,10 @@ pub mod input_validation;
 pub mod monitoring;
 pub mod network;
 pub mod rate_limiting;
+pub mod rate_limiter;
 pub mod resource_protection;
 pub mod secure_database;
+pub mod timing_attack_tests;
 
 #[cfg(test)]
 mod tests;

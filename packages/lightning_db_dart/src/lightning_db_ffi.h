@@ -33,6 +33,24 @@ typedef uint64_t IteratorHandle;
 #include <stdint.h>
 #include <stdlib.h>
 
+/**
+ * Maximum allowed buffer size for FFI operations (100MB)
+ * This prevents memory exhaustion attacks and ensures reasonable memory usage
+ */
+#define MAX_FFI_BUFFER_SIZE ((100 * 1024) * 1024)
+
+/**
+ * Maximum allowed string length (1MB)
+ * Prevents extremely large string attacks while allowing reasonable paths
+ */
+#define MAX_FFI_STRING_LENGTH (1024 * 1024)
+
+/**
+ * Maximum allowed cache size (1GB)
+ * Prevents memory exhaustion through excessive cache allocation
+ */
+#define MAX_CACHE_SIZE ((1024 * 1024) * 1024)
+
 typedef enum CompressionType {
   CompressionTypeNone = 0,
   CompressionTypeZstd = 1,
@@ -56,6 +74,16 @@ typedef enum ErrorCode {
   ErrorCodeIoError = 7,
   ErrorCodeCorruptedData = 8,
   ErrorCodeOutOfMemory = 9,
+  ErrorCodeBufferOverflow = 10,
+  ErrorCodeInvalidPointer = 11,
+  ErrorCodeInvalidAlignment = 12,
+  ErrorCodeInvalidUtf8 = 13,
+  ErrorCodeIntegerOverflow = 14,
+  ErrorCodeBufferTooLarge = 15,
+  ErrorCodeStringTooLong = 16,
+  ErrorCodeInvalidHandle = 17,
+  ErrorCodeSecurityViolation = 18,
+  ErrorCodePanicPrevented = 19,
   ErrorCodeUnknown = 999,
 } ErrorCode;
 
@@ -117,28 +145,32 @@ FFI_PLUGIN_EXPORT  int32_t lightning_db_get_last_error_buffer(char *buffer, uint
 FFI_PLUGIN_EXPORT  void lightning_db_clear_error(void);
 
 /**
- * Create a new Lightning DB database
+ * Create a new Lightning DB database with comprehensive security validation
  *
  * # Safety
  * - path must be a valid null-terminated UTF-8 string
+ * - out_handle must be a valid pointer to u64
  * - Returns 0 on success with handle stored in out_handle, error code on failure
  */
 FFI_PLUGIN_EXPORT  int32_t lightning_db_create(const char *path, uint64_t *out_handle);
 
 /**
- * Open an existing Lightning DB database
+ * Open an existing Lightning DB database with comprehensive validation
  *
  * # Safety
  * - path must be a valid null-terminated UTF-8 string
+ * - out_handle must be a valid pointer to u64
  * - Returns 0 on success with handle stored in out_handle, error code on failure
  */
 FFI_PLUGIN_EXPORT  int32_t lightning_db_open(const char *path, uint64_t *out_handle);
 
 /**
- * Create a database with custom configuration
+ * Create a database with custom configuration and comprehensive validation
  *
  * # Safety
  * - path must be a valid null-terminated UTF-8 string
+ * - out_handle must be a valid pointer to u64
+ * - All numeric parameters are now validated
  * - Returns 0 on success with handle stored in out_handle, error code on failure
  */
 FFI_PLUGIN_EXPORT 
@@ -158,11 +190,12 @@ int32_t lightning_db_create_with_config(const char *path,
 FFI_PLUGIN_EXPORT  int32_t lightning_db_close(uint64_t handle);
 
 /**
- * Put a key-value pair into the database
+ * Put a key-value pair into the database with comprehensive validation
  *
  * # Safety
  * - key must be valid for key_len bytes
  * - value must be valid for value_len bytes
+ * - All parameters are now comprehensively validated
  */
 FFI_PLUGIN_EXPORT 
 int32_t lightning_db_put(uint64_t handle,
@@ -172,11 +205,12 @@ int32_t lightning_db_put(uint64_t handle,
                          uintptr_t value_len);
 
 /**
- * Get a value from the database
+ * Get a value from the database with comprehensive validation
  *
  * # Safety
  * - key must be valid for key_len bytes
  * - The returned ByteResult must be freed using lightning_db_free_bytes
+ * - All parameters are now comprehensively validated
  */
 FFI_PLUGIN_EXPORT 
 struct ByteResult lightning_db_get(uint64_t handle,
@@ -196,7 +230,7 @@ int32_t lightning_db_delete(uint64_t handle,
                             uintptr_t key_len);
 
 /**
- * Sync the database to disk
+ * Sync the database to disk with validation
  *
  * # Safety
  * - The handle must be valid
@@ -204,7 +238,7 @@ int32_t lightning_db_delete(uint64_t handle,
 FFI_PLUGIN_EXPORT  int32_t lightning_db_sync(uint64_t handle);
 
 /**
- * Checkpoint the database
+ * Checkpoint the database with validation
  *
  * # Safety
  * - The handle must be valid
@@ -212,11 +246,12 @@ FFI_PLUGIN_EXPORT  int32_t lightning_db_sync(uint64_t handle);
 FFI_PLUGIN_EXPORT  int32_t lightning_db_checkpoint(uint64_t handle);
 
 /**
- * Put with consistency level
+ * Put with consistency level and comprehensive validation
  *
  * # Safety
  * - key must be valid for key_len bytes
  * - value must be valid for value_len bytes
+ * - All parameters are now comprehensively validated
  */
 FFI_PLUGIN_EXPORT 
 int32_t lightning_db_put_with_consistency(uint64_t handle,
@@ -355,7 +390,7 @@ int32_t lightning_db_delete_tx(uint64_t tx_handle,
 FFI_PLUGIN_EXPORT  void lightning_db_free_string(char *ptr);
 
 /**
- * Free bytes allocated by this library
+ * Free bytes allocated by this library with validation
  *
  * # Safety
  * - The pointer must have been allocated by this library with the given length

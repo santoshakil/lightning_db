@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity)]
 //! Object pooling for frequently allocated structures
 
 use bytes::Bytes;
@@ -39,7 +40,7 @@ impl<T> ObjectPool<T> {
         }
     }
 
-    pub fn get(&self) -> PoolGuard<T> {
+    pub fn get(&self) -> PoolGuard<'_, T> {
         let object = {
             let mut pool = self.pool.lock();
             pool.pop_front().unwrap_or_else(|| (self.factory)())
@@ -146,7 +147,7 @@ impl<T: PooledObject> TypedPool<T> {
         }
     }
 
-    pub fn get(&self) -> PoolGuard<T> {
+    pub fn get(&self) -> PoolGuard<'_, T> {
         self.inner.get()
     }
 
@@ -273,7 +274,7 @@ mod tests {
 
         drop(obj1);
 
-        let obj2 = pool.get();
+        let _obj2 = pool.get();
         // Object should be reused but not necessarily reset
         assert_eq!(pool.len(), 0); // Should be taken from pool
     }

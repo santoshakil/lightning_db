@@ -1,4 +1,5 @@
-use metrics::{counter, gauge, histogram, Counter, Gauge, Histogram, Recorder};
+use metrics::{counter, gauge, histogram, Counter, Gauge, Histogram};
+#[cfg(feature = "metrics-export")]
 use metrics_exporter_prometheus::PrometheusBuilder;
 use parking_lot::{RwLock, Mutex};
 use std::collections::HashMap;
@@ -108,9 +109,7 @@ impl DatabaseMetrics {
         }
     }
     
-    pub fn record_operation(&self, operation: &str, duration: Duration, success: bool) {
-        let _labels = vec![("operation", operation.to_string())];
-        
+    pub fn record_operation(&self, _operation: &str, duration: Duration, success: bool) {
         self.operations_total.increment(1);
         self.operations_duration.record(duration.as_secs_f64());
         
@@ -354,8 +353,11 @@ impl MetricsExporter {
     }
     
     pub fn start_prometheus_exporter(&self, _port: u16) -> Result<tokio::task::JoinHandle<()>, Box<dyn std::error::Error>> {
-        let builder = PrometheusBuilder::new();
-        builder.install()?;
+        #[cfg(feature = "metrics-export")]
+        {
+            let builder = PrometheusBuilder::new();
+            builder.install()?;
+        }
         
         let shutdown = self.shutdown.clone();
         

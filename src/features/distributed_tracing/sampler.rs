@@ -444,7 +444,7 @@ mod tests {
         }
 
         // Should be approximately 500 with some variance
-        assert!(sampled >= 400 && sampled <= 600);
+        assert!((400..=600).contains(&sampled));
     }
 
     #[test]

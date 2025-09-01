@@ -165,12 +165,46 @@ impl FixedBufferManager {
         })
     }
 
-    /// Get buffer pointers for io_uring registration
-    pub fn get_buffer_pointers(&self) -> Vec<(*mut u8, usize)> {
-        self.slots
-            .iter()
-            .map(|slot| (slot.buffer.as_ptr() as *mut u8, slot.size))
-            .collect()
+    /// Get buffer pointers for io_uring registration with validation
+    pub fn get_buffer_pointers(&self) -> Result<Vec<(*mut u8, usize)>> {
+        use crate::performance::io_uring::security_validation::*;
+        
+        let mut pointers = Vec::with_capacity(self.slots.len());
+        
+        for slot in &self.slots {
+            // Validate buffer lifetime
+            if let Err(e) = slot.buffer.validate_lifetime() {
+                SECURITY_STATS.record_buffer_validation(false);
+                return Err(e);
+            }
+            
+            let ptr = slot.buffer.as_ptr() as *mut u8;
+            
+            // Additional pointer validation
+            if ptr.is_null() {
+                SECURITY_STATS.record_buffer_validation(false);
+                return Err(Error::new(ErrorKind::InvalidInput, "Null buffer pointer detected"));
+            }
+            
+            if slot.size == 0 {
+                SECURITY_STATS.record_buffer_validation(false);
+                return Err(Error::new(ErrorKind::InvalidInput, "Zero-size buffer detected"));
+            }
+            
+            // Check for address overflow
+            if (ptr as usize).checked_add(slot.size).is_none() {
+                SECURITY_STATS.record_bounds_check(false);
+                return Err(Error::new(ErrorKind::InvalidInput, "Buffer address overflow"));
+            }
+            
+            debug_assert!(!ptr.is_null(), "Buffer pointer should not be null");
+            debug_assert!(slot.size > 0, "Buffer size should be greater than zero");
+            
+            pointers.push((ptr, slot.size));
+        }
+        
+        SECURITY_STATS.record_buffer_validation(true);
+        Ok(pointers)
     }
 
     /// Allocate a fixed buffer of at least the specified size
@@ -289,11 +323,43 @@ impl FixedBufferManager {
 
         self.stats.compactions.fetch_add(1, Ordering::Relaxed);
 
-        // TODO: Implement actual compaction
-        // This would involve:
-        // 1. Identifying contiguous free regions
-        // 2. Moving in-use buffers to consolidate free space
-        // 3. Updating the io_uring registration
+        // Implement buffer compaction using slots instead of allocations
+        // 1. Identify contiguous free regions
+        let mut free_regions = Vec::new();
+        let mut current_free_start = None;
+        let mut current_free_len = 0;
+        
+        for (idx, slot) in self.slots.iter().enumerate() {
+            let is_in_use = slot.in_use.load(Ordering::Relaxed);
+            if is_in_use {
+                if let Some(start) = current_free_start {
+                    free_regions.push((start, current_free_len));
+                    current_free_start = None;
+                    current_free_len = 0;
+                }
+            } else {
+                if current_free_start.is_none() {
+                    current_free_start = Some(idx);
+                }
+                current_free_len += 1;
+            }
+        }
+        
+        // Add final free region if it exists
+        if let Some(start) = current_free_start {
+            free_regions.push((start, current_free_len));
+        }
+        
+        // 2. For simplicity, just update free slots tracking
+        // More sophisticated compaction would require copying buffer contents
+        let mut free_slots = self.free_slots.lock().unwrap();
+        free_slots.clear();
+        
+        for (idx, slot) in self.slots.iter().enumerate() {
+            if !slot.in_use.load(Ordering::Relaxed) {
+                free_slots.push(idx as u32);
+            }
+        }
 
         Ok(())
     }
@@ -440,21 +506,39 @@ pub struct BufferRegistration {
 
 impl BufferRegistration {
     pub fn new(mut io: Box<dyn ZeroCopyIo>, manager: Arc<FixedBufferManager>) -> Result<Self> {
-        let pointers = manager.get_buffer_pointers();
-        // SAFETY: Creating slices from buffer manager pointers
+        use crate::performance::io_uring::security_validation::*;
+        
+        let pointers = manager.get_buffer_pointers()?;
+        
+        // SAFETY: Creating slices from validated buffer manager pointers
         // Invariants:
-        // 1. Pointers come from valid AlignedBuffer allocations
+        // 1. Pointers validated by get_buffer_pointers (non-null, valid size)
         // 2. Length values match actual buffer capacities
-        // 3. Buffers remain valid during registration
+        // 3. Buffers remain valid during registration (lifetime validated)
+        // 4. No address overflow (checked in get_buffer_pointers)
         // Guarantees:
         // - Slices are valid for registration duration
         // - No mutable aliasing during registration
-        // RISK: MEDIUM - Depends on buffer manager validity
-        let buffers: Vec<&[u8]> = pointers
+        // - Comprehensive validation performed
+        // RISK: LOW - Validation performed by get_buffer_pointers
+        let buffers: Result<Vec<&[u8]>> = pointers
             .iter()
-            .map(|&(ptr, len)| unsafe { std::slice::from_raw_parts(ptr as *const u8, len) })
+            .map(|&(ptr, len)| {
+                // Additional validation before creating slice
+                BufferSecurityValidator::validate_buffer_comprehensive(
+                    ptr as *const u8,
+                    len,
+                    std::mem::align_of::<u8>(),
+                    "buffer_registration"
+                )?;
+                
+                // SAFETY: Comprehensive validation performed above
+                // RISK: LOW - Full validation with security checks
+                Ok(unsafe { std::slice::from_raw_parts(ptr as *const u8, len) })
+            })
             .collect();
-
+        
+        let buffers = buffers?;
         io.register_buffers(&buffers)?;
 
         Ok(Self {

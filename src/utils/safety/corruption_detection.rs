@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity)]
 //! Data Corruption Detection and Self-Healing
 //!
 //! This module provides mechanisms to detect data corruption and

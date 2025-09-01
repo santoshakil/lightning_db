@@ -71,7 +71,7 @@ pub struct AutoRepair {
 }
 
 #[derive(Debug, Default, Clone)]
-struct RepairStats {
+pub(crate) struct RepairStats {
     total_repairs_attempted: u64,
     successful_repairs: u64,
     failed_repairs: u64,
@@ -463,7 +463,7 @@ impl AutoRepair {
         *self.enabled.read().await
     }
 
-    pub async fn get_repair_stats(&self) -> RepairStats {
+    pub(crate) async fn get_repair_stats(&self) -> RepairStats {
         self.repair_stats.lock().await.clone()
     }
 

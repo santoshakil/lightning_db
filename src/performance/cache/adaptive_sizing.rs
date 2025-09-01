@@ -295,6 +295,7 @@ impl CacheAllocation {
 }
 
 /// Adaptive cache sizing engine
+#[derive(Debug)]
 pub struct AdaptiveCacheSizer {
     config: AdaptiveSizingConfig,
     current_size: AtomicUsize,
@@ -326,6 +327,7 @@ pub struct AdaptiveCacheSizer {
 }
 
 /// Working set size estimation
+#[derive(Debug)]
 struct WorkingSetEstimator {
     access_frequency: HashMap<u64, u32>,
     temporal_windows: VecDeque<HashSet<u64>>,
@@ -408,6 +410,7 @@ impl WorkingSetEstimator {
 }
 
 /// Performance prediction for cache size changes
+#[derive(Debug)]
 struct PerformancePredictor {
     size_performance_history: VecDeque<(usize, f64)>, // (size, hit_rate)
     max_history: usize,
@@ -465,7 +468,7 @@ impl PerformancePredictor {
         self.last_prediction = Some(predicted);
 
         // Clamp to reasonable range
-        predicted.max(0.0).min(1.0)
+        predicted.clamp(0.0, 1.0)
     }
 
     fn get_confidence(&self) -> f64 {
@@ -513,7 +516,7 @@ impl PerformancePredictor {
                 let a = (n * size_hit_sum - size_sum * hit_rate_sum) / denominator;
                 let b = (hit_rate_sum - a * size_sum) / n;
 
-                (a * (*size as f64) + b).max(0.0).min(1.0)
+                (a * (*size as f64) + b).clamp(0.0, 1.0)
             })
             .collect();
 
@@ -528,7 +531,7 @@ impl PerformancePredictor {
             return 1.0;
         }
 
-        (1.0 - ss_res / ss_tot).max(0.0).min(1.0)
+        (1.0 - ss_res / ss_tot).clamp(0.0, 1.0)
     }
 }
 
@@ -760,7 +763,7 @@ impl AdaptiveCacheSizer {
 
     fn calculate_initial_cache_size(&self, hw_info: &HardwareInfo) -> usize {
         // Use 25% of available memory by default, within configured limits
-        let recommended = (hw_info.total_memory_mb as usize * 1024 * 1024) / 4;
+        let recommended = (hw_info.total_memory_mb * 1024 * 1024) / 4;
         recommended
             .max(self.config.min_cache_size)
             .min(self.config.max_cache_size)
@@ -898,10 +901,8 @@ impl AdaptiveCacheSizer {
         let recent_hit_rates: Vec<f64> = history.iter().rev().take(5).map(|m| m.hit_rate).collect();
         
         // Use SIMD-optimized mean calculation
-        let average_hit_rate = simd_mean_f64(&recent_hit_rates);
-
         // Convert hit rate to locality score
-        average_hit_rate
+        simd_mean_f64(&recent_hit_rates)
     }
 
     fn estimate_scan_intensity(&self) -> f64 {
@@ -1010,7 +1011,7 @@ impl CacheWarmer {
 
     pub fn start_warming(&self, _working_set: &[u64]) {
         if self.is_warming.swap(true, Ordering::Relaxed) {
-            return; // Already warming
+            // Already warming
         }
 
         // Implementation would warm cache with priority pages

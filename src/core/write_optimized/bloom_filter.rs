@@ -20,7 +20,7 @@ pub struct BloomFilter {
 impl BloomFilter {
     /// Create a new bloom filter
     pub fn new(num_bits: usize, num_hashes: usize) -> Self {
-        let byte_size = (num_bits + 7) / 8;
+        let byte_size = num_bits.div_ceil(8);
         Self {
             bits: vec![0; byte_size],
             num_bits,
@@ -172,9 +172,7 @@ impl CountingBloomFilter {
     pub fn add(&mut self, key: &[u8]) {
         for i in 0..self.num_hashes {
             let index = self.hash(key, i) % self.num_counters;
-            if self.counters[index] < 255 {
-                self.counters[index] += 1;
-            }
+            self.counters[index] = self.counters[index].saturating_add(1);
         }
         self.num_elements += 1;
     }
@@ -262,8 +260,7 @@ impl ScalableBloomFilter {
             false_positive_rate * 0.5, // Tighter bound for first filter
         );
 
-        let mut filters = Vec::new();
-        filters.push(BloomFilter::new(num_bits, num_hashes));
+        let filters = vec![BloomFilter::new(num_bits, num_hashes)];
 
         Self {
             filters,

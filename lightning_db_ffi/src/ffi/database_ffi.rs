@@ -2,8 +2,10 @@
 
 use crate::error::{clear_last_error, set_last_error};
 use crate::handle_registry::HandleRegistry;
+use crate::panic_guard::{ffi_guard_int, ffi_guard_bytes, ResourceGuard};
 use crate::utils::{bytes_to_vec, c_str_to_string, ByteResult};
-use crate::{ffi_try, CompressionType, ConsistencyLevel, ErrorCode, WalSyncMode};
+use crate::validation::{validate_database_operation, validate_cache_size, ValidationResult};
+use crate::{ffi_try, ffi_try_safe, CompressionType, ConsistencyLevel, ErrorCode, WalSyncMode};
 use lightning_db::{Database, LightningDbConfig};
 use std::os::raw::c_char;
 use std::path::Path;
@@ -12,74 +14,105 @@ lazy_static::lazy_static! {
     pub(crate) static ref DATABASE_REGISTRY: HandleRegistry<Database> = HandleRegistry::new();
 }
 
-/// Create a new Lightning DB database
+/// Create a new Lightning DB database with comprehensive security validation
 ///
 /// # Safety
 /// - path must be a valid null-terminated UTF-8 string
+/// - out_handle must be a valid pointer to u64
 /// - Returns 0 on success with handle stored in out_handle, error code on failure
 #[no_mangle]
 pub unsafe extern "C" fn lightning_db_create(path: *const c_char, out_handle: *mut u64) -> i32 {
-    if path.is_null() || out_handle.is_null() {
-        set_last_error(
-            ErrorCode::InvalidArgument,
-            "Null pointer provided".to_string(),
+    ffi_guard_int("lightning_db_create", || {
+        // Validate output handle pointer
+        match crate::validation::validate_mut_pointer(out_handle, "out_handle") {
+            ValidationResult::Invalid(code, msg) => {
+                set_last_error(code, msg);
+                return Err(code);
+            }
+            ValidationResult::Valid(_) => {}
+        }
+
+        // Validate and convert path string
+        let path_str = match unsafe { c_str_to_string(path) } {
+            Ok(s) => s,
+            Err(e) => {
+                set_last_error(ErrorCode::InvalidUtf8, format!("Invalid path: {}", e));
+                return Err(ErrorCode::InvalidUtf8);
+            }
+        };
+
+        // Create resource cleanup guard
+        let mut cleanup_guard = ResourceGuard::new(|| {
+            // Any cleanup needed if creation fails
+        });
+
+        // Create database
+        let db = ffi_try_safe!(
+            Database::create(Path::new(&path_str), LightningDbConfig::default()),
+            "database_create"
         );
-        return ErrorCode::InvalidArgument as i32;
-    }
+        
+        let handle = DATABASE_REGISTRY.insert(db);
 
-    let path_str =
-        ffi_try!(unsafe { c_str_to_string(path) }.map_err(|e| { lightning_db::Error::Generic(e) }));
+        // Safely write to output handle
+        unsafe {
+            *out_handle = handle;
+        }
 
-    let db = ffi_try!(Database::create(
-        Path::new(&path_str),
-        LightningDbConfig::default()
-    ));
-    let handle = DATABASE_REGISTRY.insert(db);
-
-    unsafe {
-        *out_handle = handle;
-    }
-
-    clear_last_error();
-    0
+        // Success - disarm cleanup guard
+        cleanup_guard.disarm();
+        Ok(())
+    })
 }
 
-/// Open an existing Lightning DB database
+/// Open an existing Lightning DB database with comprehensive validation
 ///
 /// # Safety
 /// - path must be a valid null-terminated UTF-8 string
+/// - out_handle must be a valid pointer to u64
 /// - Returns 0 on success with handle stored in out_handle, error code on failure
 #[no_mangle]
 pub unsafe extern "C" fn lightning_db_open(path: *const c_char, out_handle: *mut u64) -> i32 {
-    if path.is_null() || out_handle.is_null() {
-        set_last_error(
-            ErrorCode::InvalidArgument,
-            "Null pointer provided".to_string(),
+    ffi_guard_int("lightning_db_open", || {
+        // Validate output handle pointer
+        match crate::validation::validate_mut_pointer(out_handle, "out_handle") {
+            ValidationResult::Invalid(code, msg) => {
+                set_last_error(code, msg);
+                return Err(code);
+            }
+            ValidationResult::Valid(_) => {}
+        }
+
+        // Validate and convert path string
+        let path_str = match unsafe { c_str_to_string(path) } {
+            Ok(s) => s,
+            Err(e) => {
+                set_last_error(ErrorCode::InvalidUtf8, format!("Invalid path: {}", e));
+                return Err(ErrorCode::InvalidUtf8);
+            }
+        };
+
+        let db = ffi_try_safe!(
+            Database::open(Path::new(&path_str), LightningDbConfig::default()),
+            "database_open"
         );
-        return ErrorCode::InvalidArgument as i32;
-    }
+        
+        let handle = DATABASE_REGISTRY.insert(db);
 
-    let path_str =
-        ffi_try!(unsafe { c_str_to_string(path) }.map_err(|e| { lightning_db::Error::Generic(e) }));
+        unsafe {
+            *out_handle = handle;
+        }
 
-    let db = ffi_try!(Database::open(
-        Path::new(&path_str),
-        LightningDbConfig::default()
-    ));
-    let handle = DATABASE_REGISTRY.insert(db);
-
-    unsafe {
-        *out_handle = handle;
-    }
-
-    clear_last_error();
-    0
+        Ok(())
+    })
 }
 
-/// Create a database with custom configuration
+/// Create a database with custom configuration and comprehensive validation
 ///
 /// # Safety
 /// - path must be a valid null-terminated UTF-8 string
+/// - out_handle must be a valid pointer to u64
+/// - All numeric parameters are now validated
 /// - Returns 0 on success with handle stored in out_handle, error code on failure
 #[no_mangle]
 pub unsafe extern "C" fn lightning_db_create_with_config(
@@ -89,43 +122,79 @@ pub unsafe extern "C" fn lightning_db_create_with_config(
     wal_sync_mode: WalSyncMode,
     out_handle: *mut u64,
 ) -> i32 {
-    if path.is_null() || out_handle.is_null() {
-        set_last_error(
-            ErrorCode::InvalidArgument,
-            "Null pointer provided".to_string(),
-        );
-        return ErrorCode::InvalidArgument as i32;
-    }
+    ffi_guard_int("lightning_db_create_with_config", || {
+        // Validate output handle pointer
+        match crate::validation::validate_mut_pointer(out_handle, "out_handle") {
+            ValidationResult::Invalid(code, msg) => {
+                set_last_error(code, msg);
+                return Err(code);
+            }
+            ValidationResult::Valid(_) => {}
+        }
 
-    let path_str =
-        ffi_try!(unsafe { c_str_to_string(path) }.map_err(|e| { lightning_db::Error::Generic(e) }));
+        // Validate cache size
+        match validate_cache_size(cache_size) {
+            ValidationResult::Invalid(code, msg) => {
+                set_last_error(code, msg);
+                return Err(code);
+            }
+            ValidationResult::Valid(_) => {}
+        }
 
-    let config = LightningDbConfig {
-        cache_size,
-        compression_enabled: compression_type != CompressionType::None,
-        compression_type: match compression_type {
-            CompressionType::None => 0,
-            CompressionType::Zstd => 1,
-            CompressionType::Lz4 => 2,
-            CompressionType::Snappy => 3,
-        },
-        wal_sync_mode: match wal_sync_mode {
-            WalSyncMode::Sync => lightning_db::WalSyncMode::Sync,
-            WalSyncMode::Periodic => lightning_db::WalSyncMode::Periodic { interval_ms: 1000 },
-            WalSyncMode::Async => lightning_db::WalSyncMode::Async,
-        },
-        ..Default::default()
-    };
+        // Validate and convert path string
+        let path_str = match unsafe { c_str_to_string(path) } {
+            Ok(s) => s,
+            Err(e) => {
+                set_last_error(ErrorCode::InvalidUtf8, format!("Invalid path: {}", e));
+                return Err(ErrorCode::InvalidUtf8);
+            }
+        };
 
-    let db = ffi_try!(Database::create(Path::new(&path_str), config));
-    let handle = DATABASE_REGISTRY.insert(db);
+        // Validate enum values are in acceptable ranges
+        let compression_val = compression_type as i32;
+        if compression_val < 0 || compression_val > 3 {
+            set_last_error(
+                ErrorCode::InvalidArgument,
+                format!("Invalid compression type: {}", compression_val)
+            );
+            return Err(ErrorCode::InvalidArgument);
+        }
 
-    unsafe {
-        *out_handle = handle;
-    }
+        let wal_mode_val = wal_sync_mode as i32;
+        if wal_mode_val < 0 || wal_mode_val > 2 {
+            set_last_error(
+                ErrorCode::InvalidArgument,
+                format!("Invalid WAL sync mode: {}", wal_mode_val)
+            );
+            return Err(ErrorCode::InvalidArgument);
+        }
 
-    clear_last_error();
-    0
+        let config = LightningDbConfig {
+            cache_size,
+            compression_enabled: compression_type != CompressionType::None,
+            compression_type: match compression_type {
+                CompressionType::None => 0,
+                CompressionType::Zstd => 1,
+                CompressionType::Lz4 => 2,
+                CompressionType::Snappy => 3,
+            },
+            wal_sync_mode: match wal_sync_mode {
+                WalSyncMode::Sync => lightning_db::WalSyncMode::Sync,
+                WalSyncMode::Periodic => lightning_db::WalSyncMode::Periodic { interval_ms: 1000 },
+                WalSyncMode::Async => lightning_db::WalSyncMode::Async,
+            },
+            ..Default::default()
+        };
+
+        let db = ffi_try_safe!(Database::create(Path::new(&path_str), config), "database_create_with_config");
+        let handle = DATABASE_REGISTRY.insert(db);
+
+        unsafe {
+            *out_handle = handle;
+        }
+
+        Ok(())
+    })
 }
 
 /// Close a database and free its resources
@@ -152,11 +221,12 @@ pub extern "C" fn lightning_db_close(handle: u64) -> i32 {
     }
 }
 
-/// Put a key-value pair into the database
+/// Put a key-value pair into the database with comprehensive validation
 ///
 /// # Safety
 /// - key must be valid for key_len bytes
 /// - value must be valid for value_len bytes
+/// - All parameters are now comprehensively validated
 #[no_mangle]
 pub unsafe extern "C" fn lightning_db_put(
     handle: u64,
@@ -165,81 +235,97 @@ pub unsafe extern "C" fn lightning_db_put(
     value: *const u8,
     value_len: usize,
 ) -> i32 {
-    if key.is_null() || value.is_null() {
-        set_last_error(
-            ErrorCode::InvalidArgument,
-            "Null pointer provided".to_string(),
-        );
-        return ErrorCode::InvalidArgument as i32;
-    }
-
-    let db = match DATABASE_REGISTRY.get(handle) {
-        Some(db) => db,
-        None => {
-            set_last_error(
-                ErrorCode::DatabaseNotFound,
-                "Invalid database handle".to_string(),
-            );
-            return ErrorCode::DatabaseNotFound as i32;
+    ffi_guard_int("lightning_db_put", || {
+        // Comprehensive validation of all parameters
+        match validate_database_operation(handle, key, key_len, Some((value, value_len))) {
+            ValidationResult::Invalid(code, msg) => {
+                set_last_error(code, msg);
+                return Err(code);
+            }
+            ValidationResult::Valid(_) => {}
         }
-    };
 
-    let key_data = unsafe { bytes_to_vec(key, key_len) };
-    let value_data = unsafe { bytes_to_vec(value, value_len) };
+        let db = match DATABASE_REGISTRY.get(handle) {
+            Some(db) => db,
+            None => {
+                set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
+                return Err(ErrorCode::DatabaseNotFound);
+            }
+        };
 
-    ffi_try!(db.put(&key_data, &value_data));
+        // Convert buffers with validation
+        let key_data = unsafe { bytes_to_vec(key, key_len) };
+        let value_data = unsafe { bytes_to_vec(value, value_len) };
 
-    clear_last_error();
-    0
+        // Validate that conversion was successful (empty vectors indicate validation failure)
+        if key_data.is_empty() && key_len > 0 {
+            set_last_error(ErrorCode::BufferOverflow, "Key buffer validation failed".to_string());
+            return Err(ErrorCode::BufferOverflow);
+        }
+        
+        if value_data.is_empty() && value_len > 0 {
+            set_last_error(ErrorCode::BufferOverflow, "Value buffer validation failed".to_string());
+            return Err(ErrorCode::BufferOverflow);
+        }
+
+        ffi_try_safe!(db.put(&key_data, &value_data), "database_put");
+        Ok(())
+    })
 }
 
-/// Get a value from the database
+/// Get a value from the database with comprehensive validation
 ///
 /// # Safety
 /// - key must be valid for key_len bytes
 /// - The returned ByteResult must be freed using lightning_db_free_bytes
+/// - All parameters are now comprehensively validated
 #[no_mangle]
 pub unsafe extern "C" fn lightning_db_get(
     handle: u64,
     key: *const u8,
     key_len: usize,
 ) -> ByteResult {
-    if key.is_null() {
-        set_last_error(
-            ErrorCode::InvalidArgument,
-            "Null pointer provided".to_string(),
-        );
-        return ByteResult::error(ErrorCode::InvalidArgument as i32);
-    }
+    ffi_guard_bytes("lightning_db_get", || {
+        // Comprehensive validation of parameters
+        match validate_database_operation(handle, key, key_len, None) {
+            ValidationResult::Invalid(code, msg) => {
+                set_last_error(code, msg);
+                return Err(code);
+            }
+            ValidationResult::Valid(_) => {}
+        }
 
-    let db = match DATABASE_REGISTRY.get(handle) {
-        Some(db) => db,
-        None => {
-            set_last_error(
-                ErrorCode::DatabaseNotFound,
-                "Invalid database handle".to_string(),
-            );
-            return ByteResult::error(ErrorCode::DatabaseNotFound as i32);
-        }
-    };
+        let db = match DATABASE_REGISTRY.get(handle) {
+            Some(db) => db,
+            None => {
+                set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
+                return Err(ErrorCode::DatabaseNotFound);
+            }
+        };
 
-    let key_data = unsafe { bytes_to_vec(key, key_len) };
+        // Convert key with validation
+        let key_data = unsafe { bytes_to_vec(key, key_len) };
+        
+        // Validate that conversion was successful
+        if key_data.is_empty() && key_len > 0 {
+            set_last_error(ErrorCode::BufferOverflow, "Key buffer validation failed".to_string());
+            return Err(ErrorCode::BufferOverflow);
+        }
 
-    match db.get(&key_data) {
-        Ok(Some(value)) => {
-            clear_last_error();
-            ByteResult::success(value)
+        match db.get(&key_data) {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => {
+                set_last_error(ErrorCode::KeyNotFound, "Key not found".to_string());
+                Err(ErrorCode::KeyNotFound)
+            }
+            Err(e) => {
+                let code = crate::error::error_to_code(&e);
+                let sanitized_msg = crate::validation::sanitize_error_message(&format!("{}", e));
+                set_last_error(code, sanitized_msg);
+                Err(code)
+            }
         }
-        Ok(None) => {
-            set_last_error(ErrorCode::KeyNotFound, "Key not found".to_string());
-            ByteResult::error(ErrorCode::KeyNotFound as i32)
-        }
-        Err(e) => {
-            let code = crate::error::error_to_code(&e);
-            set_last_error(code, format!("{}", e));
-            ByteResult::error(code as i32)
-        }
-    }
+    })
 }
 
 /// Delete a key from the database
@@ -287,57 +373,52 @@ pub unsafe extern "C" fn lightning_db_delete(handle: u64, key: *const u8, key_le
     }
 }
 
-/// Sync the database to disk
+/// Sync the database to disk with validation
 ///
 /// # Safety
 /// - The handle must be valid
 #[no_mangle]
 pub extern "C" fn lightning_db_sync(handle: u64) -> i32 {
-    let db = match DATABASE_REGISTRY.get(handle) {
-        Some(db) => db,
-        None => {
-            set_last_error(
-                ErrorCode::DatabaseNotFound,
-                "Invalid database handle".to_string(),
-            );
-            return ErrorCode::DatabaseNotFound as i32;
-        }
-    };
+    ffi_guard_int("lightning_db_sync", || {
+        let db = match DATABASE_REGISTRY.get(handle) {
+            Some(db) => db,
+            None => {
+                set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
+                return Err(ErrorCode::DatabaseNotFound);
+            }
+        };
 
-    ffi_try!(db.sync());
-
-    clear_last_error();
-    0
+        ffi_try_safe!(db.sync(), "database_sync");
+        Ok(())
+    })
 }
 
-/// Checkpoint the database
+/// Checkpoint the database with validation
 ///
 /// # Safety
 /// - The handle must be valid
 #[no_mangle]
 pub extern "C" fn lightning_db_checkpoint(handle: u64) -> i32 {
-    let db = match DATABASE_REGISTRY.get(handle) {
-        Some(db) => db,
-        None => {
-            set_last_error(
-                ErrorCode::DatabaseNotFound,
-                "Invalid database handle".to_string(),
-            );
-            return ErrorCode::DatabaseNotFound as i32;
-        }
-    };
+    ffi_guard_int("lightning_db_checkpoint", || {
+        let db = match DATABASE_REGISTRY.get(handle) {
+            Some(db) => db,
+            None => {
+                set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
+                return Err(ErrorCode::DatabaseNotFound);
+            }
+        };
 
-    ffi_try!(db.checkpoint());
-
-    clear_last_error();
-    0
+        ffi_try_safe!(db.checkpoint(), "database_checkpoint");
+        Ok(())
+    })
 }
 
-/// Put with consistency level
+/// Put with consistency level and comprehensive validation
 ///
 /// # Safety
 /// - key must be valid for key_len bytes
 /// - value must be valid for value_len bytes
+/// - All parameters are now comprehensively validated
 #[no_mangle]
 pub unsafe extern "C" fn lightning_db_put_with_consistency(
     handle: u64,
@@ -347,37 +428,47 @@ pub unsafe extern "C" fn lightning_db_put_with_consistency(
     value_len: usize,
     consistency: ConsistencyLevel,
 ) -> i32 {
-    if key.is_null() || value.is_null() {
-        set_last_error(
-            ErrorCode::InvalidArgument,
-            "Null pointer provided".to_string(),
-        );
-        return ErrorCode::InvalidArgument as i32;
-    }
-
-    let db = match DATABASE_REGISTRY.get(handle) {
-        Some(db) => db,
-        None => {
-            set_last_error(
-                ErrorCode::DatabaseNotFound,
-                "Invalid database handle".to_string(),
-            );
-            return ErrorCode::DatabaseNotFound as i32;
+    ffi_guard_int("lightning_db_put_with_consistency", || {
+        // Comprehensive validation of all parameters
+        match validate_database_operation(handle, key, key_len, Some((value, value_len))) {
+            ValidationResult::Invalid(code, msg) => {
+                set_last_error(code, msg);
+                return Err(code);
+            }
+            ValidationResult::Valid(_) => {}
         }
-    };
 
-    let key_data = unsafe { bytes_to_vec(key, key_len) };
-    let value_data = unsafe { bytes_to_vec(value, value_len) };
+        let db = match DATABASE_REGISTRY.get(handle) {
+            Some(db) => db,
+            None => {
+                set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
+                return Err(ErrorCode::DatabaseNotFound);
+            }
+        };
 
-    let consistency_level = match consistency {
-        ConsistencyLevel::Eventual => lightning_db::ConsistencyLevel::Eventual,
-        ConsistencyLevel::Strong => lightning_db::ConsistencyLevel::Strong,
-    };
+        // Convert buffers with validation
+        let key_data = unsafe { bytes_to_vec(key, key_len) };
+        let value_data = unsafe { bytes_to_vec(value, value_len) };
 
-    ffi_try!(db.put_with_consistency(&key_data, &value_data, consistency_level));
+        // Validate that conversion was successful
+        if key_data.is_empty() && key_len > 0 {
+            set_last_error(ErrorCode::BufferOverflow, "Key buffer validation failed".to_string());
+            return Err(ErrorCode::BufferOverflow);
+        }
+        
+        if value_data.is_empty() && value_len > 0 {
+            set_last_error(ErrorCode::BufferOverflow, "Value buffer validation failed".to_string());
+            return Err(ErrorCode::BufferOverflow);
+        }
 
-    clear_last_error();
-    0
+        let consistency_level = match consistency {
+            ConsistencyLevel::Eventual => lightning_db::ConsistencyLevel::Eventual,
+            ConsistencyLevel::Strong => lightning_db::ConsistencyLevel::Strong,
+        };
+
+        ffi_try_safe!(db.put_with_consistency(&key_data, &value_data, consistency_level), "database_put_consistency");
+        Ok(())
+    })
 }
 
 /// Get with consistency level

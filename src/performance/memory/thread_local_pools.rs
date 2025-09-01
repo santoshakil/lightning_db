@@ -32,7 +32,7 @@ impl<T> ThreadLocalPool<T> {
         }
     }
 
-    pub fn get(&self) -> ThreadLocalGuard<T> {
+    pub fn get(&self) -> ThreadLocalGuard<'_, T> {
         let object = {
             let mut pool = self.pool.borrow_mut();
             pool.pop_front().unwrap_or_else(|| (self.factory)())
@@ -342,7 +342,7 @@ mod tests {
 
         drop(obj1);
 
-        let obj2 = pool.get();
+        let _obj2 = pool.get();
         // Object should be reused but not necessarily reset
         assert_eq!(pool.len(), 0); // Should be taken from pool
     }

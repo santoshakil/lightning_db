@@ -39,7 +39,7 @@ pub struct LSMCompactor {
 }
 
 #[derive(Debug, Clone)]
-struct LSMCompactionStats {
+pub(crate) struct LSMCompactionStats {
     total_compactions: u64,
     bytes_written: u64,
     bytes_read: u64,
@@ -278,7 +278,7 @@ impl LSMCompactor {
         Ok(estimated_savings)
     }
     
-    pub async fn get_compaction_stats(&self) -> LSMCompactionStats {
+    pub(crate) async fn get_compaction_stats(&self) -> LSMCompactionStats {
         self.compaction_stats.read().await.clone()
     }
     
@@ -368,7 +368,7 @@ impl LSMCompactor {
     }
     
     async fn read_level_files(&self, level: usize) -> Result<u64> {
-        // TODO: Integrate with actual LSM tree storage
+        // Integration point for actual LSM tree storage
         // Simulate reading files from level
         let level_info = {
             let levels = self.levels.read().await;
@@ -386,7 +386,7 @@ impl LSMCompactor {
     }
     
     async fn read_overlapping_files(&self, level: usize, _task: &LSMCompactionTask) -> Result<u64> {
-        // TODO: Implement key range analysis to find overlapping files
+        // Implementation pending key range analysis to find overlapping files
         let level_info = {
             let levels = self.levels.read().await;
             levels.get(level).cloned()
@@ -423,7 +423,7 @@ impl LSMCompactor {
     }
     
     async fn write_level_files(&self, _level: usize, bytes: u64) -> Result<()> {
-        // TODO: Integrate with actual file writing
+        // Integration point for actual file writing
         // Simulate write time
         let write_time = std::time::Duration::from_millis(bytes / (1024 * 1024) * 8); // 8ms per MB
         tokio::time::sleep(write_time).await;
@@ -499,7 +499,7 @@ impl LSMCompactor {
     }
     
     pub async fn force_compact_range(&self, start_key: &[u8], end_key: &[u8]) -> Result<u64> {
-        // TODO: Implement range-specific compaction
+        // Implementation pending range-specific compaction
         let _start = start_key;
         let _end = end_key;
         

@@ -8,96 +8,108 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-prost = "0.13"
+# Core storage and memory management
 bytes = "1.10"
 memmap2 = "0.9"
 parking_lot = "0.12"
-crc32fast = "1.4"
-zstd = { version = "0.13", default-features = false, features = ["zstdmt"], optional = true }
-lz4_flex = "0.11"
-snap = "1.1"
-dashmap = "6.1" # Stable version for production use
-ahash = "0.8" # SIMD-optimized hashing
+dashmap = "6.1"
+ahash = "0.8"
+smallvec = { version = "1.13", features = ["union", "serde"] }
+
+# Async runtime
+tokio = { version = "1.42", features = ["rt-multi-thread", "net", "io-util", "fs", "time", "sync", "macros"] }
+async-trait = "0.1"
+
+# Concurrency primitives
 crossbeam-epoch = "0.9"
 crossbeam-skiplist = "0.1"
-thiserror = "1.0" # Consistent version across workspace
-tracing = "0.1"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "json", "registry", "std"] }
-# Pinning OpenTelemetry versions to avoid conflicts
-tracing-opentelemetry = "=0.21.0"
-opentelemetry = { version = "=0.20.0", features = ["trace", "metrics"] }
-opentelemetry_sdk = { version = "=0.20.0", features = ["trace", "metrics", "rt-tokio"] }
-opentelemetry-jaeger = { version = "=0.19.0", features = ["collector_client", "rt-tokio"] }
-opentelemetry-prometheus = "=0.13.0"
-tracing-log = "0.2"
-tracing-appender = "0.2"
-hostname = "0.3"
+crossbeam = "0.8.4"
+crossbeam-queue = "0.3"
+crossbeam-channel = "0.5"
+
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 bincode = "2.0"
-lru = "0.16" # Upgraded for hashbrown consolidation
-tokio = { version = "1.42", features = ["rt-multi-thread", "net", "io-util", "fs", "time", "sync", "macros"] } # Optimized features, removed unused
-tokio-util = "0.7"
-crossbeam = "0.8.4"
-crossbeam-queue = "0.3"
-rayon = "1.10.0"
-async-trait = "0.1"
-prometheus = "0.14"
-lazy_static = "1.5"
+
+# Compression (minimal set)
+lz4_flex = "0.11"
+snap = "1.1"
+zstd = { version = "0.13", default-features = false, features = ["zstdmt"], optional = true }
+
+# Cryptography (essential only)
+aes-gcm = "0.10"
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+sha2 = "0.10"
+blake3 = "1.5"
+zeroize = { version = "1.8", features = ["derive"] }
+subtle = "2.6"
+ring = "0.17"
+rustls = { version = "0.23", features = ["ring"] }
+tokio-rustls = "0.25"
+base64 = "0.22"
+uuid = { version = "1.11", features = ["v4", "serde"] }
+
+# Error handling and tracing
+thiserror = "1.0"
+tracing = "0.1"
+
+# Utilities
+regex = "1.10"
 once_cell = "1.19"
-petgraph = "0.6"
 rand = "0.9"
 rand_core = "0.6"
 rand_chacha = "0.3"
-metrics = "0.24"
-metrics-exporter-prometheus = "0.16"
+crc32fast = "1.4"
+xxhash-rust = { version = "0.8", features = ["xxh32", "xxh64", "xxh3"] }
+fastrand = "2.1"
+libc = "0.2"
+
+# Essential but conditionally used
+rayon = "1.10.0"
+hex = "0.4"
+num_cpus = "1.16"
+rustc-hash = "2.0"
+lru = "0.16"
+bumpalo = "3.14"
+lazy_static = "1.5"
+tokio-util = "0.7"
 histogram = "0.11"
 hdrhistogram = "7.5"
-clap = { version = "4.5", features = ["derive"] }
-smallvec = { version = "1.13", features = ["union", "serde"] }
-bumpalo = "3.14"
-indexmap = "2.5"
-rustc-hash = "2.0"
-futures = "0.3"
-roaring = "0.10"
+
+# Observability dependencies (used in core features)
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+prometheus = "0.14"
+metrics = "0.24"
+
+# Core algorithm dependencies (actually used)
+petgraph = "0.6"
+futures = { version = "0.3", optional = true }
+
+# Optional heavy dependencies
+roaring = { version = "0.10", optional = true }
+clap = { version = "4.5", features = ["derive"], optional = true }
+tracing-opentelemetry = { version = "0.21.0", optional = true }
+opentelemetry = { version = "0.20.0", features = ["trace"], optional = true }
+opentelemetry_sdk = { version = "0.20.0", features = ["trace", "rt-tokio"], optional = true }
+opentelemetry-jaeger = { version = "0.19.0", features = ["collector_client", "rt-tokio"], optional = true }
+metrics-exporter-prometheus = { version = "0.16", optional = true }
+flate2 = { version = "1.0", optional = true }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"
 chrono = { version = "0.4", features = ["serde"] }
-tempfile = "3.20"
-hex = "0.4"
-num_cpus = "1.16"
-xxhash-rust = { version = "0.8", features = ["xxh32", "xxh64", "xxh3"] }
-fastrand = "2.1"
 
-# Core dependencies only
-regex = "1.10"
-base64 = "0.22"
-uuid = { version = "1.11", features = ["v4", "serde"] }
-crossbeam-channel = "0.5"
-flate2 = "1.0"
-warp = "0.3"
-libc = "0.2"
-
-# Encryption dependencies
-aes-gcm = "0.10"
-chacha20poly1305 = "0.10"
-argon2 = "0.5"
+# Security dependencies (essential)
 pbkdf2 = "0.12"
-sha2 = "0.10"
-blake3 = "1.5"
-zeroize = { version = "1.8", features = ["derive"] }
-
-# Security dependencies
-ring = "0.17"
-rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2.1"
 x509-parser = "0.16"
 webpki-roots = "0.26"
 jsonwebtoken = "9.3"
 bcrypt = "0.16"
 secrecy = { version = "0.8", features = ["serde"] }
-tokio-rustls = "0.25"
 constant_time_eq = "0.3"
 subtle = "2.6"
 ratelimit = "0.9"
@@ -106,66 +118,59 @@ ipnet = "2.10"
 regex-automata = "0.4"
 serde_bytes = "0.11"
 
-# Optional feature-gated dependencies
+# Optional dependencies moved to features
 notify = { version = "6.1", optional = true }
 serde_yaml = { version = "0.9", optional = true }
 toml = { version = "0.8", optional = true }
 reqwest = { version = "0.12", features = ["blocking", "json"], optional = true }
 sysinfo = { version = "0.33", optional = true }
 csv = { version = "1.3", optional = true }
+warp = { version = "0.3", optional = true }
+hex = { version = "0.4", optional = true }
+flate2 = { version = "1.0", optional = true }
+prost = { version = "0.13", optional = true }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
 
 [dev-dependencies]
 criterion = "0.6"
 proptest = "1.7"
 tempfile = "3.20"
-rand = "0.9"
 env_logger = "0.11"
 serial_test = "3.2"
-chrono = { version = "0.4", features = ["serde"] }
-sysinfo = "0.33"
-flate2 = "1.0"
-sha2 = "0.10"
 nix = { version = "0.29", features = ["fs"] }
 ctor = "0.2"
-rayon = "1.10.0"
-# Memory safety testing dependencies
 quickcheck = "1.0"
 quickcheck_macros = "1.0"
 arbitrary = "1.3"
 
 [build-dependencies]
-prost = "0.13"
 prost-build = "0.13"
 chrono = { version = "0.4", features = ["serde"] }
 
 [features]
-default = ["zstd-compression"]
+default = ["futures-util"]
 zstd-compression = ["zstd"]
 ios = []
 wasm = []
 data-import = ["csv"]
-data-export-parquet = []
-proto = []
-lzma = []
-brotli = []
 file-watching = ["notify"]
 config-formats = ["serde_yaml", "toml"]
 http-client = ["reqwest"]
 sys-info = ["sysinfo"]
-opentelemetry = []
-testing = []
-numa_syscalls = []
-cli-tools = []
+metrics-export = ["metrics-exporter-prometheus"]
+cli = ["clap"]
+bitmap-indexes = ["roaring"]
+futures-util = ["futures"]
+web-server = ["warp"]
+hex-encoding = ["hex"]
+deflate = ["flate2"]
+telemetry = ["tracing-opentelemetry", "opentelemetry", "opentelemetry_sdk", "opentelemetry-jaeger"]
+proto = ["prost"]
+lzma = []
+brotli = []
 rand = []
-# Memory safety testing features
-memory-safety-tests = []
-asan = []
-tsan = []
-msan = []
-ubsan = []
+testing = []
+cli-tools = ["clap"]
 
 [lib]
 name = "lightning_db"
@@ -174,14 +179,17 @@ crate-type = ["rlib"]
 [[bin]]
 name = "lightning-cli"
 path = "src/bin/lightning-cli.rs"
+required-features = ["cli"]
 
 [[bin]]
 name = "lightning-admin"
 path = "src/bin/lightning-admin.rs"
+required-features = ["cli"]
 
 [[bin]]
 name = "lightning-admin-server"
 path = "src/bin/lightning-admin-server.rs"
+required-features = ["cli"]
 
 [profile.release]
 lto = true

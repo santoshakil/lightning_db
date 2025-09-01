@@ -1,6 +1,6 @@
 use crate::security::{SecurityError, SecurityResult};
 use governor::{
-    clock::{Clock, DefaultClock},
+    clock::DefaultClock,
     middleware::NoOpMiddleware,
     state::{InMemoryState, NotKeyed, keyed::DashMapStateStore},
     Quota, RateLimiter,
@@ -256,7 +256,7 @@ impl RateLimitingManager {
         let detection_window = detector.detection_window;
         let threshold = detector.threshold;
         
-        let history = detector.request_history.entry(ip).or_insert_with(Vec::new);
+        let history = detector.request_history.entry(ip).or_default();
         history.push(now);
         history.retain(|&time| now.duration_since(time) <= detection_window);
         
@@ -294,6 +294,7 @@ impl RateLimitingManager {
     }
 }
 
+#[derive(Default)]
 pub struct RequestMetrics {
     pub total_requests: u64,
     pub blocked_requests: u64,
@@ -301,16 +302,7 @@ pub struct RequestMetrics {
     pub ddos_detections: u64,
 }
 
-impl Default for RequestMetrics {
-    fn default() -> Self {
-        Self {
-            total_requests: 0,
-            blocked_requests: 0,
-            rate_limited_requests: 0,
-            ddos_detections: 0,
-        }
-    }
-}
+// Default derived above
 
 #[cfg(test)]
 mod tests {

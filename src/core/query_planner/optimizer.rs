@@ -63,17 +63,16 @@ struct PartitionPruning;
 
 impl QueryOptimizer {
     pub fn new() -> Self {
-        let mut rules: Vec<Arc<dyn OptimizationRule>> = Vec::new();
-        
-        rules.push(Arc::new(PredicatePushdown));
-        rules.push(Arc::new(ProjectionPushdown));
-        rules.push(Arc::new(JoinReordering));
-        rules.push(Arc::new(ConstantFolding));
-        rules.push(Arc::new(CommonSubexpressionElimination));
-        rules.push(Arc::new(MaterializedViewRewrite));
-        rules.push(Arc::new(IndexSelection));
-        rules.push(Arc::new(PartitionPruning));
-        
+        let rules: Vec<Arc<dyn OptimizationRule>> = vec![
+            Arc::new(PredicatePushdown),
+            Arc::new(ProjectionPushdown),
+            Arc::new(JoinReordering),
+            Arc::new(ConstantFolding),
+            Arc::new(CommonSubexpressionElimination),
+            Arc::new(MaterializedViewRewrite),
+            Arc::new(IndexSelection),
+            Arc::new(PartitionPruning),
+        ];
         Self {
             rules,
             cost_model: Arc::new(CostModel::default()),
@@ -141,6 +140,7 @@ impl OptimizationRule for PredicatePushdown {
 }
 
 impl PredicatePushdown {
+    #[allow(clippy::only_used_in_recursion)]
     fn has_pushable_predicate(&self, node: &PlanNode) -> bool {
         match node {
             PlanNode::Filter(filter) => {
@@ -209,6 +209,7 @@ impl PredicatePushdown {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn split_join_predicates(
         &self,
         predicate: &Predicate,
@@ -262,6 +263,7 @@ impl OptimizationRule for JoinReordering {
 }
 
 impl JoinReordering {
+    #[allow(clippy::only_used_in_recursion)]
     fn count_joins(&self, node: &PlanNode) -> usize {
         match node {
             PlanNode::Join(join) => {
@@ -278,20 +280,16 @@ impl JoinReordering {
     }
 
     fn extract_joins_recursive(&self, node: &PlanNode, joins: &mut Vec<JoinInfo>) -> Result<(), Error> {
-        match node {
-            PlanNode::Join(join) => {
-                joins.push(JoinInfo {
-                    left_table: self.get_table_name(&join.left)?,
-                    right_table: self.get_table_name(&join.right)?,
-                    join_type: join.join_type,
-                    condition: join.join_condition.clone(),
-                    estimated_rows: join.estimated_rows,
-                });
-                
-                self.extract_joins_recursive(&join.left, joins)?;
-                self.extract_joins_recursive(&join.right, joins)?;
-            },
-            _ => {},
+        if let PlanNode::Join(join) = node {
+            joins.push(JoinInfo {
+                left_table: self.get_table_name(&join.left)?,
+                right_table: self.get_table_name(&join.right)?,
+                join_type: join.join_type,
+                condition: join.join_condition.clone(),
+                estimated_rows: join.estimated_rows,
+            });
+            self.extract_joins_recursive(&join.left, joins)?;
+            self.extract_joins_recursive(&join.right, joins)?;
         }
         Ok(())
     }
@@ -307,7 +305,7 @@ impl JoinReordering {
         Ok(joins)
     }
 
-    fn build_join_tree(&self, joins: Vec<JoinInfo>) -> Result<Box<PlanNode>, Error> {
+    fn build_join_tree(&self, _joins: Vec<JoinInfo>) -> Result<Box<PlanNode>, Error> {
         Err(Error::NotImplemented("Join tree building".to_string()))
     }
 }

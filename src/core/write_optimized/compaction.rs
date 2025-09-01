@@ -203,8 +203,9 @@ impl CompactionJob {
 }
 
 /// SSTable merger for compaction
+type IterItem = (SSTableIteratorWrapper, Option<(Vec<u8>, Vec<u8>)>);
 struct SSTableMerger {
-    iterators: Vec<(SSTableIteratorWrapper, Option<(Vec<u8>, Vec<u8>)>)>,
+    iterators: Vec<IterItem>,
     current_key: Option<Vec<u8>>,
 }
 
@@ -498,7 +499,7 @@ impl CompactionManager {
                                     }
                                 }
                             }
-                            Err(_) => continue, // Timeout, check running flag
+                            Err(_) => {}, // Timeout, check running flag
                         }
                     }
                 })?;

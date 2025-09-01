@@ -7,21 +7,24 @@ use tracing_subscriber::{
     layer::SubscriberExt,
     util::SubscriberInitExt,
     EnvFilter, Registry,
-    fmt::{self, time::SystemTime, writer::MakeWriter},
-    prelude::*,
+    fmt::{self, time::SystemTime, MakeWriter},
 };
 use tracing_appender::{non_blocking, rolling};
-use opentelemetry::{global, KeyValue};
-use opentelemetry_sdk::{
-    trace::{self, TracerProvider},
-    Resource,
-};
+#[cfg(feature = "telemetry")]
+use opentelemetry::global;
+#[cfg(feature = "telemetry")]
+use opentelemetry::KeyValue;
+#[cfg(feature = "telemetry")]
+use opentelemetry_sdk::{trace::{self, TracerProvider}, Resource};
+#[cfg(feature = "telemetry")]
+use tracing_opentelemetry;
 
 static LOGGER_INITIALIZED: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
 
 pub struct Logger {
     config: LoggingConfig,
     _guards: Vec<tracing_appender::non_blocking::WorkerGuard>,
+    #[cfg(feature = "telemetry")]
     tracer_provider: Option<TracerProvider>,
 }
 
@@ -32,6 +35,7 @@ impl Logger {
         let mut logger = Self {
             config,
             _guards: Vec::new(),
+            #[cfg(feature = "telemetry")]
             tracer_provider: None,
         };
         
@@ -76,7 +80,6 @@ impl Logger {
     fn create_console_layer(&self) -> Box<dyn tracing_subscriber::Layer<Registry> + Send + Sync> {
         match self.config.format {
             LogFormat::Json => Box::new(fmt::layer()
-                .json()
                 .with_timer(SystemTime)
                 .with_target(true)
                 .with_file(true)
@@ -129,7 +132,6 @@ impl Logger {
         let (non_blocking, guard) = non_blocking(file_appender);
         
         let layer = Box::new(fmt::layer()
-            .json()
             .with_writer(non_blocking)
             .with_timer(SystemTime)
             .with_target(true)
@@ -146,37 +148,60 @@ impl Logger {
         &mut self,
         jaeger_config: &crate::features::logging::config::JaegerConfig,
     ) -> Result<Box<dyn tracing_subscriber::Layer<Registry> + Send + Sync>, Box<dyn std::error::Error>> {
+        #[cfg(feature = "telemetry")]
         let mut resource_attrs = vec![
             KeyValue::new("service.name", self.config.telemetry.service_name.clone()),
             KeyValue::new("service.version", self.config.telemetry.service_version.clone()),
             KeyValue::new("environment", self.config.telemetry.environment.clone()),
         ];
         
+        #[cfg(feature = "telemetry")]
         for (key, value) in &self.config.telemetry.resource_attributes {
             resource_attrs.push(KeyValue::new(key.clone(), value.clone()));
         }
         
-        // Use new pipeline API instead of deprecated one
-        let tracer = opentelemetry_jaeger::new_collector_pipeline()
-            .with_service_name(&jaeger_config.service_name)
-            .with_endpoint(&jaeger_config.endpoint)
-            .with_trace_config(
-                trace::config().with_resource(Resource::new(resource_attrs))
-            )
-            .install_batch(opentelemetry_sdk::runtime::Tokio)?;
-            
-        self.tracer_provider = Some(tracer.provider().unwrap().clone());
+        #[cfg(not(feature = "telemetry"))]
+        let resource_attrs: Vec<(&str, String)> = vec![];
         
-        Ok(Box::new(tracing_opentelemetry::layer().with_tracer(tracer)))
+        // Use new pipeline API instead of deprecated one
+        #[cfg(feature = "telemetry")]
+        let tracer = {
+            opentelemetry_jaeger::new_collector_pipeline()
+                .with_service_name(&jaeger_config.service_name)
+                .with_endpoint(&jaeger_config.endpoint)
+                .with_trace_config(
+                    trace::config().with_resource(Resource::new(resource_attrs))
+                )
+                .install_batch(opentelemetry_sdk::runtime::Tokio)?
+        };
+        
+        #[cfg(not(feature = "telemetry"))]
+        let tracer = {
+            return Err("Telemetry feature not enabled".into());
+        };
+            
+        #[cfg(feature = "telemetry")]
+        {
+            self.tracer_provider = Some(tracer.provider().unwrap().clone());
+            Ok(Box::new(tracing_opentelemetry::layer().with_tracer(tracer)))
+        }
+        #[cfg(not(feature = "telemetry"))]
+        {
+            // Unreachable due to early return above, but needed for type checking
+            Err("Telemetry feature not enabled".into())
+        }
     }
 }
 
 impl Drop for Logger {
     fn drop(&mut self) {
-        if let Some(provider) = self.tracer_provider.take() {
-            let _ = provider.force_flush();
+        #[cfg(feature = "telemetry")]
+        {
+            if let Some(provider) = self.tracer_provider.take() {
+                let _ = provider.force_flush();
+            }
+            global::shutdown_tracer_provider();
         }
-        global::shutdown_tracer_provider();
     }
 }
 
@@ -213,7 +238,7 @@ where
 {
     type Writer = Self;
     
-    fn make_writer(&'_ self) -> Self::Writer {
+    fn make_writer(&'_ self) -> <RedactingWriter<W> as MakeWriter<'_>>::Writer {
         Self {
             inner: self.inner.clone(),
             redactor: self.redactor.clone(),
@@ -245,7 +270,7 @@ mod tests {
     #[test]
     fn test_redacting_writer() {
         let buffer = Arc::new(Mutex::new(Vec::<u8>::new()));
-        let writer = RedactingWriter::new(
+        let _writer = RedactingWriter::new(
             buffer.clone(),
             crate::features::logging::redaction::Redactor::new(vec!["secret".to_string()], "[REDACTED]".to_string()),
         );

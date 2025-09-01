@@ -1,3 +1,4 @@
+#![allow(ambiguous_glob_reexports)]
 pub mod config;
 pub mod logger;
 pub mod redaction;
@@ -123,7 +124,7 @@ pub fn get_logging_system() -> Arc<LoggingSystem> {
 #[macro_export]
 macro_rules! log_operation {
     ($level:expr, $op:expr, $key:expr, $duration:expr, $result:expr) => {
-        let system = crate::features::logging::get_logging_system();
+        let system = $crate::features::logging::get_logging_system();
         
         // Check sampling decision
         if system.sampler.should_sample($level, Some($op)) {
@@ -132,7 +133,7 @@ macro_rules! log_operation {
             system.histogram_collector.record($op, $duration);
             
             // Get current trace context
-            let context = crate::features::logging::context::get_current_context();
+            let context = $crate::features::logging::context::get_current_context();
             
             match $level {
                 tracing::Level::TRACE => tracing::trace!(
@@ -162,8 +163,8 @@ macro_rules! log_operation {
 #[macro_export]
 macro_rules! log_transaction {
     ($event:expr, $tx_id:expr, $duration:expr) => {
-        let system = crate::features::logging::get_logging_system();
-        let context = crate::features::logging::context::get_current_context();
+        let system = $crate::features::logging::get_logging_system();
+        let context = $crate::features::logging::context::get_current_context();
         
         match $event {
             "start" => system.metrics.record_transaction_start(),
@@ -186,8 +187,8 @@ macro_rules! log_transaction {
 #[macro_export]
 macro_rules! log_cache_event {
     ($event:expr, $key:expr, $hit:expr) => {
-        let system = crate::features::logging::get_logging_system();
-        let context = crate::features::logging::context::get_current_context();
+        let system = $crate::features::logging::get_logging_system();
+        let context = $crate::features::logging::context::get_current_context();
         
         system.metrics.record_cache_hit($hit);
         
@@ -207,7 +208,7 @@ macro_rules! log_cache_event {
 #[macro_export]
 macro_rules! log_compaction {
     ($level:expr, $files_before:expr, $files_after:expr, $duration:expr) => {
-        let context = crate::features::logging::context::get_current_context();
+        let context = $crate::features::logging::context::get_current_context();
         
         tracing::info!(
             level = $level,
@@ -224,7 +225,7 @@ macro_rules! log_compaction {
 #[macro_export]
 macro_rules! log_recovery {
     ($phase:expr, $progress:expr, $total:expr) => {
-        let context = crate::features::logging::context::get_current_context();
+        let context = $crate::features::logging::context::get_current_context();
         
         tracing::info!(
             phase = $phase,
@@ -242,10 +243,10 @@ macro_rules! log_recovery {
 #[macro_export]
 macro_rules! db_log {
     ($level:expr, $operation:expr, $($field:ident = $value:expr),* $(,)?) => {
-        let system = crate::features::logging::get_logging_system();
+        let system = $crate::features::logging::get_logging_system();
         
         if system.sampler.should_sample($level, Some($operation)) {
-            let context = crate::features::logging::context::get_current_context();
+            let context = $crate::features::logging::context::get_current_context();
             
             match $level {
                 tracing::Level::TRACE => tracing::trace!(
@@ -288,7 +289,7 @@ macro_rules! db_log {
 macro_rules! with_perf_monitoring {
     ($operation:expr, $code:block) => {
         {
-            let system = crate::features::logging::get_logging_system();
+            let system = $crate::features::logging::get_logging_system();
             let _token = system.performance_monitor.start_operation($operation);
             $code
         }

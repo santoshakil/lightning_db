@@ -1,6 +1,4 @@
 use crate::core::error::{Error, Result};
-// TODO: Fix transaction type imports - types may need to be defined locally
-// use crate::TransactionMetrics; // TODO: Fix import path
 use bytes::Bytes;
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
@@ -48,7 +46,7 @@ pub struct TransactionMetrics {
 pub struct UnifiedTransactionManager {
     // Core MVCC infrastructure
     next_tx_id: Arc<AtomicU64>,
-    next_timestamp: Arc<AtomicU64>,
+    pub next_timestamp: Arc<AtomicU64>,
     
     // Transaction tracking with high-performance concurrent collections
     active_transactions: Arc<DashMap<u64, Arc<RwLock<UnifiedTransaction>>>>,
@@ -217,9 +215,15 @@ impl UnifiedTransactionManager {
             });
         }
         
+        // CRITICAL FIX: Check for timestamp overflow BEFORE allocation
+        let current_ts = self.next_timestamp.load(Ordering::Acquire);
+        if current_ts >= u64::MAX - 1000 { // Reserve 1000 for safety
+            return Err(Error::TimestampOverflow);
+        }
+        
         // Atomically get transaction ID and read timestamp
         let tx_id = self.next_tx_id.fetch_add(1, Ordering::SeqCst);
-        let read_timestamp = self.next_timestamp.load(Ordering::Acquire);
+        let read_timestamp = self.next_timestamp.fetch_add(1, Ordering::SeqCst);
         
         // Create MVCC snapshot
         let snapshot = {
@@ -251,7 +255,7 @@ impl UnifiedTransactionManager {
         
         let tx_arc = Arc::new(RwLock::new(tx));
         self.active_transactions.insert(tx_id, tx_arc);
-        self.stats.active_transactions.fetch_add(1, Ordering::Relaxed);
+        self.stats.active_transactions.fetch_add(1, Ordering::Release);
         
         Ok(tx_id)
     }
@@ -280,7 +284,7 @@ impl UnifiedTransactionManager {
         
         let visible_value = {
             let visibility = self.visibility_tracker.read();
-            self.version_store.get_visible(key, &snapshot, &*visibility)?
+            self.version_store.get_visible(key, &snapshot, &visibility)?
         };
         
         // Record read operation
@@ -404,8 +408,8 @@ impl UnifiedTransactionManager {
         // Release locks and cleanup
         self.release_locks_safe(tx_id, &tx_data);
         self.active_transactions.remove(&tx_id);
-        self.stats.active_transactions.fetch_sub(1, Ordering::Relaxed);
-        self.stats.commit_count.fetch_add(1, Ordering::Relaxed);
+        self.stats.active_transactions.fetch_sub(1, Ordering::Release);
+        self.stats.commit_count.fetch_add(1, Ordering::Release);
         
         Ok(())
     }
@@ -445,8 +449,8 @@ impl UnifiedTransactionManager {
             }
         }
         
-        self.stats.active_transactions.fetch_sub(1, Ordering::Relaxed);
-        self.stats.abort_count.fetch_add(1, Ordering::Relaxed);
+        self.stats.active_transactions.fetch_sub(1, Ordering::Release);
+        self.stats.abort_count.fetch_add(1, Ordering::Release);
         
         Ok(())
     }
@@ -600,7 +604,7 @@ impl UnifiedTransactionManager {
     fn background_loop(&self) {
         debug!("Starting unified transaction manager background loop");
         
-        while self.shutdown.load(Ordering::Relaxed) == 0 {
+        while self.shutdown.load(Ordering::Acquire) == 0 {
             // Process batch commits
             self.process_batch_commits();
             
@@ -608,7 +612,7 @@ impl UnifiedTransactionManager {
             self.cleanup_expired_locks();
             
             // Garbage collection
-            if self.stats.gc_runs.load(Ordering::Relaxed) % 10 == 0 {
+            if self.stats.gc_runs.load(Ordering::Acquire) % 10 == 0 {
                 self.run_garbage_collection();
             }
             
@@ -638,12 +642,14 @@ impl UnifiedTransactionManager {
             return;
         }
         
-        // Get batch timestamp
-        let base_commit_ts = self.next_timestamp.fetch_add(batch.len() as u64, Ordering::SeqCst) + 1;
+        // CRITICAL FIX: Get consecutive timestamps without gaps
+        let base_commit_ts = self.next_timestamp.fetch_add(1, Ordering::SeqCst) + 1;
+        let mut next_ts = base_commit_ts;
         
         // Apply writes
-        for (i, (tx_id, tx_data)) in batch.iter().enumerate() {
-            let commit_ts = base_commit_ts + i as u64;
+        for (tx_id, tx_data) in batch.iter() {
+            let commit_ts = next_ts;
+            next_ts = self.next_timestamp.fetch_add(1, Ordering::SeqCst) + 1;
             
             for write_op in tx_data.write_set.values() {
                 self.version_store.put_version(
@@ -668,10 +674,11 @@ impl UnifiedTransactionManager {
         // Update visibility tracker
         {
             let mut visibility = self.visibility_tracker.write();
-            for (i, (tx_id, _)) in batch.iter().enumerate() {
-                let commit_ts = base_commit_ts + i as u64;
+            let mut batch_commit_ts = base_commit_ts;
+            for (tx_id, _) in batch.iter() {
                 visibility.active_transactions.remove(tx_id);
-                visibility.committed_transactions.insert(*tx_id, commit_ts);
+                visibility.committed_transactions.insert(*tx_id, batch_commit_ts);
+                batch_commit_ts += 1;
             }
             visibility.update_min_active_timestamp();
         }
@@ -707,7 +714,7 @@ impl UnifiedTransactionManager {
         });
     }
     
-    fn run_garbage_collection(&self) {
+    pub fn run_garbage_collection(&self) {
         let min_timestamp = {
             let visibility = self.visibility_tracker.read();
             visibility.min_active_timestamp
@@ -723,7 +730,7 @@ impl UnifiedTransactionManager {
     }
     
     pub fn shutdown(&self) {
-        self.shutdown.store(1, Ordering::Relaxed);
+        self.shutdown.store(1, Ordering::Release);
         
         if let Some(handle) = self.background_thread.lock().take() {
             let _ = handle.join();
@@ -999,7 +1006,7 @@ impl UnifiedVersionStore {
             
             // Ensure we keep at least min_versions_to_keep
             while versions.len() > min_versions_to_keep && 
-                  versions.last().map_or(false, |v| v.timestamp < before_timestamp) {
+                  versions.last().is_some_and(|v| v.timestamp < before_timestamp) {
                 versions.pop();
             }
             

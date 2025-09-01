@@ -223,16 +223,16 @@ impl LshIndex {
 impl LshTable {
     fn new(dimensions: usize, num_hash_functions: usize) -> Result<Self, Error> {
         use rand::Rng;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         
         let mut hash_functions = Vec::with_capacity(num_hash_functions);
         
         for _ in 0..num_hash_functions {
             let projection: Vec<f32> = (0..dimensions)
-                .map(|_| rng.gen_range(-1.0..1.0))
+                .map(|_| rng.random_range(-1.0..1.0))
                 .collect();
             
-            let bias = rng.gen_range(0.0..1.0);
+            let bias = rng.random_range(0.0..1.0);
             let bucket_width = 1.0;
             
             hash_functions.push(LshHashFunction {

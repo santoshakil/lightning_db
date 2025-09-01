@@ -115,7 +115,7 @@ impl VectorOps {
 
     fn power_iteration(matrix: &[Vec<f32>], n_components: usize) -> Result<Vec<Vec<f32>>, Error> {
         use rand::Rng;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         
         let dimensions = matrix.len();
         let mut components = Vec::new();
@@ -123,7 +123,7 @@ impl VectorOps {
         
         for _ in 0..n_components {
             let mut eigenvector: Vec<f32> = (0..dimensions)
-                .map(|_| rng.gen_range(-1.0..1.0))
+                .map(|_| rng.random_range(-1.0..1.0))
                 .collect();
             
             super::similarity::normalize(&mut eigenvector);
@@ -198,7 +198,7 @@ impl VectorOps {
         
         use rand::Rng;
         use rand_distr::{Distribution, Normal};
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let normal = Normal::new(0.0, 1.0 / (target_dimensions as f32).sqrt())
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
         

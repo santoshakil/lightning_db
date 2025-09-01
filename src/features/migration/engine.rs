@@ -72,6 +72,7 @@ impl MigrationVersion {
         })
     }
     
+    #[allow(clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
         if let Some(build) = &self.build {
             format!("{}.{}.{}.{}", self.major, self.minor, self.patch, build)

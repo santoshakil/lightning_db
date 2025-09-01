@@ -1,8 +1,8 @@
 use std::{
     collections::HashMap,
     path::Path,
-    process,
 };
+#[cfg(feature = "cli")]
 use clap::{Parser, Subcommand};
 use crate::core::error::{DatabaseResult, DatabaseError};
 use super::{
@@ -10,6 +10,7 @@ use super::{
     MigrationTemplateManager, MigrationGenerator, RollbackStrategy, RollbackManager,
 };
 
+#[cfg(feature = "cli")]
 #[derive(Parser)]
 #[command(name = "lightning-migrate")]
 #[command(about = "Lightning DB Migration Tool")]
@@ -34,6 +35,7 @@ pub struct MigrationCli {
     pub force: bool,
 }
 
+#[cfg(feature = "cli")]
 #[derive(Subcommand)]
 pub enum MigrationCommand {
     #[command(about = "Create a new migration")]
@@ -132,6 +134,7 @@ impl MigrationCliRunner {
         }
     }
     
+    #[cfg(feature = "cli")]
     pub fn run(&mut self, cli: MigrationCli) -> DatabaseResult<()> {
         let database_path = cli.database.as_deref().unwrap_or("./lightning.db");
         let migration_dir = cli.migration_dir.as_deref().unwrap_or("./migrations");
@@ -172,6 +175,13 @@ impl MigrationCliRunner {
                 self.generate_docs(database_path, output.as_deref(), format.as_deref())
             },
         }
+    }
+    
+    #[cfg(not(feature = "cli"))]
+    pub fn run(&mut self, _cli: ()) -> DatabaseResult<()> {
+        Err(DatabaseError::MigrationError(
+            "CLI feature not enabled".to_string()
+        ))
     }
     
     fn create_migration(
@@ -612,6 +622,7 @@ impl Default for MigrationCliRunner {
     }
 }
 
+#[cfg(feature = "cli")]
 pub fn run_cli() -> DatabaseResult<()> {
     let cli = MigrationCli::parse();
     let mut runner = MigrationCliRunner::new();
@@ -623,4 +634,11 @@ pub fn run_cli() -> DatabaseResult<()> {
             process::exit(1);
         }
     }
+}
+
+#[cfg(not(feature = "cli"))]
+pub fn run_cli() -> DatabaseResult<()> {
+    Err(DatabaseError::MigrationError(
+        "CLI feature not enabled".to_string()
+    ))
 }

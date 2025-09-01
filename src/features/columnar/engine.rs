@@ -255,11 +255,11 @@ impl ColumnarEngine {
             metadata: TableMetadata {
                 created_at: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
+                    .map_err(|_| Error::SystemTime)?
                     .as_secs(),
                 updated_at: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
+                    .map_err(|_| Error::SystemTime)?
                     .as_secs(),
                 row_count: 0,
                 partition_count: 0,
@@ -317,7 +317,7 @@ impl ColumnarEngine {
                 total_bytes: 0,
                 creation_time: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
+                    .map_err(|_| Error::SystemTime)?
                     .as_secs(),
             },
         };
@@ -359,7 +359,7 @@ impl ColumnarEngine {
             
             let chunk = ColumnChunk {
                 column_name,
-                chunk_id: rand::random(),
+                chunk_id: self.generate_chunk_id(),
                 data: compressed.clone(),
                 encoding: column_def.encoding.unwrap_or(EncodingType::Plain),
                 compression: column_def.compression.unwrap_or(CompressionType::None),
@@ -501,7 +501,8 @@ impl ColumnarEngine {
         columns: Vec<String>,
         predicate: Option<Predicate>,
     ) -> Result<QueryResult, Error> {
-        let _permit = self.query_semaphore.acquire().await.unwrap();
+        let _permit = self.query_semaphore.acquire().await
+            .map_err(|_| Error::ResourceExhausted)?;
         
         let table_entry = self.tables.get(table_name)
             .ok_or(Error::KeyNotFound)?;
@@ -711,6 +712,95 @@ impl ColumnarEngine {
             column_statistics: column_stats,
         })
     }
+
+    fn generate_chunk_id(&self) -> u64 {
+        static CHUNK_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+        CHUNK_ID_COUNTER.fetch_add(1, Ordering::SeqCst)
+    }
+
+    pub async fn compact_table(&self, table_name: &str) -> Result<(), Error> {
+        let table_entry = self.tables.get(table_name)
+            .ok_or(Error::KeyNotFound)?;
+        let mut table = table_entry.write();
+        
+        // Compact small partitions
+        let mut partitions_to_merge = Vec::new();
+        for (id, partition) in &table.partitions {
+            if partition.statistics.total_rows < self.config.column_chunk_size / 10 {
+                partitions_to_merge.push(*id);
+            }
+        }
+        
+        if partitions_to_merge.len() > 1 {
+            // Merge small partitions
+            self.merge_partitions(&mut table, partitions_to_merge).await?;
+        }
+        
+        Ok(())
+    }
+
+    async fn merge_partitions(
+        &self, 
+        table: &mut Table, 
+        partition_ids: Vec<u64>
+    ) -> Result<(), Error> {
+        // Implementation pending partition merging
+        Ok(())
+    }
+
+    pub async fn get_memory_usage(&self) -> Result<MemoryUsageStats, Error> {
+        let mut total_cache_bytes = 0;
+        for entry in self.cache.iter() {
+            total_cache_bytes += entry.value().compressed_size;
+        }
+
+        let mut total_table_bytes = 0;
+        let mut total_partitions = 0;
+        
+        for table_entry in self.tables.iter() {
+            let table = table_entry.value().read();
+            total_table_bytes += table.metadata.total_bytes;
+            total_partitions += table.metadata.partition_count;
+        }
+
+        Ok(MemoryUsageStats {
+            cache_bytes: total_cache_bytes,
+            table_bytes: total_table_bytes,
+            partition_count: total_partitions,
+            cache_entries: self.cache.len(),
+        })
+    }
+
+    pub fn validate_schema(&self, schema: &Schema) -> Result<(), Error> {
+        if schema.name.is_empty() {
+            return Err(Error::InvalidInput("Schema name cannot be empty".to_string()));
+        }
+
+        if schema.columns.is_empty() {
+            return Err(Error::InvalidInput("Schema must have at least one column".to_string()));
+        }
+
+        // Check for duplicate column names
+        let mut column_names = std::collections::HashSet::new();
+        for column in &schema.columns {
+            if !column_names.insert(&column.name) {
+                return Err(Error::InvalidInput(
+                    format!("Duplicate column name: {}", column.name)
+                ));
+            }
+        }
+
+        // Validate primary key columns exist
+        for pk_col in &schema.primary_key {
+            if !schema.columns.iter().any(|c| &c.name == pk_col) {
+                return Err(Error::InvalidInput(
+                    format!("Primary key column '{}' not found in schema", pk_col)
+                ));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -726,6 +816,14 @@ pub struct TableStatistics {
     pub partition_count: usize,
     pub total_bytes: usize,
     pub column_statistics: HashMap<String, ColumnStatistics>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MemoryUsageStats {
+    pub cache_bytes: usize,
+    pub table_bytes: usize,
+    pub partition_count: usize,
+    pub cache_entries: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]

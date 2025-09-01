@@ -162,7 +162,7 @@ pub fn run_comprehensive_benchmarks(c: &mut Criterion) {
     for scenario in scenarios {
         for &thread_count in &scenario.thread_counts {
             group.bench_with_input(
-                BenchmarkId::new(&scenario.name, thread_count),
+                BenchmarkId::new(scenario.name.clone(), thread_count),
                 &(&scenario, thread_count),
                 |b, &(scenario, threads)| {
                     b.iter_custom(|iters| {

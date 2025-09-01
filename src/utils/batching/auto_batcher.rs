@@ -114,7 +114,7 @@ struct BatcherStats {
 
 impl FastAutoBatcher {
     pub fn new(db: Arc<Database>, batch_size: usize, max_delay_ms: u64) -> Arc<Self> {
-        let optimized_batch_size = batch_size.max(DEFAULT_BATCH_SIZE).min(MAX_BATCH_SIZE);
+        let optimized_batch_size = batch_size.clamp(DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE);
         
         let inner = Arc::new(Mutex::new(BatcherInner {
             pending: VecDeque::with_capacity(optimized_batch_size * 2),

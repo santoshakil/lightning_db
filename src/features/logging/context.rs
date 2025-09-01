@@ -3,7 +3,9 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use uuid::Uuid;
 use tracing::{span, Span};
+#[cfg(feature = "telemetry")]
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+#[cfg(feature = "telemetry")]
 use opentelemetry::{Context as OtelContext, KeyValue};
 
 thread_local! {
@@ -166,6 +168,7 @@ impl TraceContext {
         headers
     }
     
+    #[cfg(feature = "telemetry")]
     pub fn to_span_attributes(&self) -> Vec<KeyValue> {
         let mut attributes = vec![
             KeyValue::new("trace.trace_id", self.trace_id.clone()),
@@ -196,6 +199,11 @@ impl TraceContext {
         }
         
         attributes
+    }
+    
+    #[cfg(not(feature = "telemetry"))]
+    pub fn to_span_attributes(&self) -> Vec<(&'static str, String)> {
+        vec![]
     }
     
     pub fn is_sampled(&self) -> bool {
@@ -307,13 +315,22 @@ impl TracedSpan {
         let span = span!(tracing::Level::INFO, "operation", operation_name = name);
         
         // Add context attributes to the span
+        #[cfg(feature = "telemetry")]
         for attribute in context.to_span_attributes() {
             span.record(attribute.key.as_str(), &tracing::field::display(&attribute.value));
         }
         
+        #[cfg(not(feature = "telemetry"))]
+        for (key, value) in context.to_span_attributes() {
+            span.record(key, &tracing::field::display(&value));
+        }
+        
         // Set OpenTelemetry context
-        let otel_context = OtelContext::current();
-        span.set_parent(otel_context);
+        #[cfg(feature = "telemetry")]
+        {
+            let otel_context = OtelContext::current();
+            span.set_parent(otel_context);
+        }
         
         Self { span, context }
     }
@@ -402,31 +419,31 @@ fn format_baggage(baggage: &HashMap<String, String>) -> String {
 #[macro_export]
 macro_rules! with_trace_context {
     ($context:expr, $code:block) => {
-        crate::features::logging::context::with_context($context, || $code)
+        $crate::features::logging::context::with_context($context, || $code)
     };
 }
 
 #[macro_export]
 macro_rules! current_trace_context {
     () => {
-        crate::features::logging::context::get_current_context()
+        $crate::features::logging::context::get_current_context()
     };
 }
 
 #[macro_export]
 macro_rules! traced_span {
     ($name:expr) => {
-        if let Some(context) = crate::features::logging::context::get_current_context() {
+        if let Some(context) = $crate::features::logging::context::get_current_context() {
             let child_context = context.child($name);
-            crate::features::logging::context::TracedSpan::new($name, child_context)
+            $crate::features::logging::context::TracedSpan::new($name, child_context)
         } else {
-            let context = crate::features::logging::context::TraceContext::new();
-            crate::features::logging::context::TracedSpan::new($name, context)
+            let context = $crate::features::logging::context::TraceContext::new();
+            $crate::features::logging::context::TracedSpan::new($name, context)
         }
     };
     
     ($name:expr, $context:expr) => {
-        crate::features::logging::context::TracedSpan::new($name, $context)
+        $crate::features::logging::context::TracedSpan::new($name, $context)
     };
 }
 

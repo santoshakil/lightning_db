@@ -368,7 +368,7 @@ impl SecurityMonitor {
             let window = detector.window;
             let threshold = detector.threshold;
             
-            let attempts = detector.failed_attempts.entry(ip).or_insert_with(VecDeque::new);
+            let attempts = detector.failed_attempts.entry(ip).or_default();
             attempts.push_back(now);
             
             attempts.retain(|&time| now.duration_since(time) <= window);

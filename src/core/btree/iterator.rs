@@ -501,18 +501,14 @@ impl<const BATCH_SIZE: usize> Iterator for BTreeLeafIterator<'_, BATCH_SIZE> {
             if self.forward {
                 // Forward iteration - completely safe for both stack and heap buffers
                 let entry = if self.use_stack_buffer {
-                    if let Some(stack_entry) = self.stack_buffer.get(self.current_position) {
-                        Some((stack_entry.0.clone(), stack_entry.1.clone()))
-                    } else {
-                        None
-                    }
+                    self.stack_buffer
+                        .get(self.current_position)
+                        .map(|stack_entry| (stack_entry.0.clone(), stack_entry.1.clone()))
+                } else if self.current_position < self.current_leaf_entries.len() {
+                    let entry = &self.current_leaf_entries[self.current_position];
+                    Some((entry.0.clone(), entry.1.clone()))
                 } else {
-                    if self.current_position < self.current_leaf_entries.len() {
-                        let entry = &self.current_leaf_entries[self.current_position];
-                        Some((entry.0.clone(), entry.1.clone()))
-                    } else {
-                        None
-                    }
+                    None
                 };
 
                 if let Some((key, value)) = entry {
@@ -520,16 +516,14 @@ impl<const BATCH_SIZE: usize> Iterator for BTreeLeafIterator<'_, BATCH_SIZE> {
                     if likely(self.is_key_in_bounds(&key)) {
                         self.current_position += 1;
                         return Some(Ok((key, value)));
-                    } else {
-                        return None;
                     }
-                } else {
-                    // Try to move to next leaf
-                    match self.move_to_next_leaf_optimized() {
-                        Ok(true) => continue,
-                        Ok(false) => return None,
-                        Err(e) => return Some(Err(e)),
-                    }
+                    return None;
+                }
+                // Try to move to next leaf
+                match self.move_to_next_leaf_optimized() {
+                    Ok(true) => {},
+                    Ok(false) => return None,
+                    Err(e) => return Some(Err(e)),
                 }
             } else {
                 // Backward iteration - optimized
@@ -551,14 +545,12 @@ impl<const BATCH_SIZE: usize> Iterator for BTreeLeafIterator<'_, BATCH_SIZE> {
                     // Check bounds
                     if likely(self.is_key_in_bounds(&key)) {
                         return Some(Ok((key, value)));
-                    } else {
-                        return None;
                     }
-                } else {
-                    // For now, we don't support moving to previous leaf
-                    // This would require maintaining left_sibling pointers
                     return None;
                 }
+                // For now, we don't support moving to previous leaf
+                // This would require maintaining left_sibling pointers
+                return None;
             }
         }
     }

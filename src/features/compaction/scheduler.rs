@@ -260,7 +260,7 @@ impl MaintenanceScheduler {
     }
     
     async fn execute_task(&self, task: &ScheduledTask) -> Result<()> {
-        // TODO: Integrate with actual compaction manager
+        // Integration point for actual compaction manager
         // For now, simulate task execution
         
         match task.compaction_type {

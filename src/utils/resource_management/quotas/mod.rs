@@ -613,7 +613,7 @@ impl QuotaManager {
         F: FnOnce(&mut QuotaStatistics),
     {
         let mut stats = self.stats.write().unwrap();
-        f(&mut *stats);
+        f(&mut stats);
     }
 }
 

@@ -523,7 +523,7 @@ impl QueryPlanner {
         
         for join in &spec.joins {
             query.joins.push(JoinClause {
-                join_type: join.join_type.clone(),
+                join_type: join.join_type,
                 table: join.right_table.clone(),
                 condition: JoinCondition {
                     left_keys: vec![join.left_field.clone()],
@@ -607,7 +607,7 @@ impl QueryPlanner {
             table_name: query.from_table.clone(),
             columns: query.select_columns.clone(),
             predicate: None,
-            estimated_rows: 1000000,
+            estimated_rows: 1_000_000,
             estimated_cost: CostEstimate::new(100.0, 1000.0, 0.0, 100.0),
             scan_type: ScanType::FullTable,
         });
@@ -615,7 +615,7 @@ impl QueryPlanner {
         Ok(QueryPlan {
             root: Box::new(scan_node),
             estimated_cost: CostEstimate::new(100.0, 1000.0, 0.0, 100.0),
-            estimated_rows: 1000000,
+            estimated_rows: 1_000_000,
             required_memory: 1024 * 1024,
             parallel_degree: 1,
         })
@@ -760,6 +760,7 @@ impl QueryPlanner {
         Ok(ideal_parallelism)
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn estimate_selectivity(&self, predicate: &Predicate) -> Result<f64, Error> {
         match predicate {
             Predicate::Equals(_, _) => Ok(0.1),

@@ -36,7 +36,7 @@ impl ChecksumValidator {
                 continue; // Skip null page
             }
 
-            if let Err(_) = self.validate_page(page_id).await {
+            if (self.validate_page(page_id).await).is_err() {
                 // Continue validation even if one page fails
                 continue;
             }
@@ -284,7 +284,7 @@ impl ChecksumValidator {
         let page = self.page_manager.load_page(page_id).await?;
 
         // Clone the data to make it mutable
-        let mut data = (*page.data).clone();
+        let mut data = *page.data;
 
         // Update header checksum
         let header_data = &data[8..32];

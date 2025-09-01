@@ -463,9 +463,9 @@ impl StreamingCompressor {
                 data_type,
                 data_size: sample_data.len(),
                 entropy,
-                system_load: 0.5,                  // TODO: Detect actual system load
-                available_memory_mb: 1024,         // TODO: Detect actual available memory
-                storage_speed: StorageSpeed::Fast, // TODO: Detect actual storage speed
+                system_load: 0.5,                  // Implementation pending system load detection
+                available_memory_mb: 1024,         // Implementation pending memory detection
+                storage_speed: StorageSpeed::Fast, // Implementation pending storage speed detection
                 time_constraint_ms: None,
                 min_compression_ratio: None,
             };

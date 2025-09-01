@@ -758,7 +758,7 @@ impl MultiIndexQuery {
         // Apply joins (simplified implementation)
         for join in &self.join_operations {
             let _join_results = join.execute(index_manager)?;
-            // TODO: Implement proper join result integration
+            // Join result integration requires query result merger implementation
         }
 
         // Apply limit

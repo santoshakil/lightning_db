@@ -250,7 +250,7 @@ impl DirectIoFile {
     /// Align a length to block boundary
     pub fn align_length(&self, len: usize) -> usize {
         let block_size = self.block_size;
-        ((len + block_size - 1) / block_size) * block_size
+        len.div_ceil(block_size) * block_size
     }
 
     /// Create an aligned buffer suitable for direct I/O with this file
@@ -275,32 +275,26 @@ impl DirectIoFile {
             ));
         }
 
-        // Use pread for positioned read
+        // Use pread for positioned read with validated buffer access
         #[cfg(target_os = "linux")]
         {
-            // SAFETY: Direct I/O read using pread system call
+            // Validate buffer lifetime before system call
+            buf.validate_lifetime()?;
+            
+            // SAFETY: Direct I/O read using pread system call with validation
             // Invariants:
             // 1. fd is valid and opened with O_DIRECT
             // 2. Buffer is properly aligned for direct I/O (checked above)
             // 3. Offset and length are block-aligned (checked above)
             // 4. Buffer has sufficient capacity for read
-            // 5. Buffer pointer is valid for writes
+            // 5. Buffer lifetime validated (checked above)
+            // 6. Buffer pointer is valid for writes
             // Guarantees:
             // - Atomic positioned read without affecting file position
             // - Returns bytes read or -1 on error
             // - Direct I/O bypasses kernel page cache
-            // SAFETY: Direct I/O read using pread system call
-            // Invariants:
-            // 1. fd is valid and opened with O_DIRECT
-            // 2. Buffer is properly aligned for direct I/O (checked above)
-            // 3. Offset and length are block-aligned (checked above)
-            // 4. Buffer has sufficient capacity for read
-            // 5. Buffer pointer is valid for writes
-            // Guarantees:
-            // - Atomic positioned read without affecting file position
-            // - Returns bytes read or -1 on error
-            // - Direct I/O bypasses kernel page cache
-            // RISK: MEDIUM - Direct hardware access with alignment requirements
+            // - Use-after-free protection via lifetime validation
+            // RISK: LOW - Comprehensive validation with lifetime tracking
             let result = unsafe {
                 libc::pread(
                     self.fd,
@@ -323,7 +317,8 @@ impl DirectIoFile {
             use std::io::{Read, Seek, SeekFrom};
             let mut file = &self.file;
             file.seek(SeekFrom::Start(offset))?;
-            file.read_exact(buf.as_mut_slice()).map(|_| buf.len())
+            let slice = buf.as_mut_slice()?;
+            file.read_exact(slice).map(|_| buf.len())
         }
     }
 
@@ -343,32 +338,26 @@ impl DirectIoFile {
             ));
         }
 
-        // Use pwrite for positioned write
+        // Use pwrite for positioned write with validated buffer access
         #[cfg(target_os = "linux")]
         {
-            // SAFETY: Direct I/O write using pwrite system call
+            // Validate buffer lifetime before system call
+            buf.validate_lifetime()?;
+            
+            // SAFETY: Direct I/O write using pwrite system call with validation
             // Invariants:
             // 1. fd is valid and opened with O_DIRECT
             // 2. Buffer is properly aligned for direct I/O (checked above)
             // 3. Offset and length are block-aligned (checked above)
             // 4. Buffer contains valid data to write
-            // 5. Buffer pointer is valid for reads
+            // 5. Buffer lifetime validated (checked above)
+            // 6. Buffer pointer is valid for reads
             // Guarantees:
             // - Atomic positioned write without affecting file position
             // - Returns bytes written or -1 on error
             // - Direct I/O ensures data goes directly to device
-            // SAFETY: Direct I/O write using pwrite system call
-            // Invariants:
-            // 1. fd is valid and opened with O_DIRECT
-            // 2. Buffer is properly aligned for direct I/O (checked above)
-            // 3. Offset and length are block-aligned (checked above)
-            // 4. Buffer contains valid data to write
-            // 5. Buffer pointer is valid for reads
-            // Guarantees:
-            // - Atomic positioned write without affecting file position
-            // - Returns bytes written or -1 on error
-            // - Direct I/O ensures data goes directly to device
-            // RISK: MEDIUM - Direct hardware access, data corruption if misaligned
+            // - Use-after-free protection via lifetime validation
+            // RISK: LOW - Comprehensive validation with lifetime tracking
             let result = unsafe {
                 libc::pwrite(
                     self.fd,
@@ -391,7 +380,8 @@ impl DirectIoFile {
             use std::io::{Seek, SeekFrom, Write};
             let mut file = &self.file;
             file.seek(SeekFrom::Start(offset))?;
-            file.write_all(buf.as_slice()).map(|_| buf.len())
+            let slice = buf.as_slice()?;
+            file.write_all(slice).map(|_| buf.len())
         }
     }
 

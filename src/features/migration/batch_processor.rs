@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Semaphore, oneshot};
 use tokio::task::JoinHandle;
-use futures::stream::StreamExt;
 
 pub struct BatchMigrationProcessor {
     config: BatchProcessorConfig,
@@ -416,7 +415,7 @@ impl BatchMigrationProcessor {
     
     async fn process_task(
         task: MigrationTask,
-        config: &BatchProcessorConfig,
+        _config: &BatchProcessorConfig,
     ) -> MigrationResult<()> {
         match task.task_type {
             TaskType::ReadBatch { path, offset, size } => {
@@ -456,8 +455,8 @@ impl BatchMigrationProcessor {
     }
     
     async fn process_transform_batch(
-        data: Vec<u8>,
-        transformers: Vec<String>,
+        _data: Vec<u8>,
+        _transformers: Vec<String>,
     ) -> MigrationResult<()> {
         Ok(())
     }
@@ -505,22 +504,23 @@ impl BatchMigrationProcessor {
         
         if policy.jitter {
             use rand::Rng;
-            delay *= 0.5 + rand::thread_rng().gen::<f64>() * 0.5;
+            let mut rng = rand::rng();
+            delay *= 0.5 + rng.random::<f64>() * 0.5;
         }
         
         let delay_ms = delay.min(policy.max_delay.as_millis() as f64) as u64;
         Duration::from_millis(delay_ms)
     }
     
-    async fn count_total_keys(&self, db: &Database) -> MigrationResult<u64> {
+    async fn count_total_keys(&self, _db: &Database) -> MigrationResult<u64> {
         Ok(1000000)
     }
     
     async fn read_batch(
         &self,
-        db: &Database,
-        start_key: &[u8],
-        batch_size: usize,
+        _db: &Database,
+        _start_key: &[u8],
+        _batch_size: usize,
     ) -> MigrationResult<Vec<(Vec<u8>, Vec<u8>)>> {
         Ok(Vec::new())
     }

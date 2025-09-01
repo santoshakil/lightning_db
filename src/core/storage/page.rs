@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use tracing;
 
 pub const PAGE_SIZE: usize = 4096;
-pub const MAGIC: u32 = 0x4C444200; // "LDB\0"
+pub const MAGIC: u32 = 0x4C44_4200; // "LDB\0"
 
 pub type PageId = u32;
 

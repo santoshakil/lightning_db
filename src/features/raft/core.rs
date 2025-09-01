@@ -559,7 +559,8 @@ impl RaftNode {
         }
         
         let (tx, rx) = oneshot::channel();
-        let entry_id = rand::thread_rng().gen();
+        let mut rng = rand::rng();
+        let entry_id = rng.random();
         
         let entry = LogEntry {
             id: entry_id,
@@ -584,7 +585,7 @@ impl RaftNode {
 
     async fn append_noop_entry(&self) {
         let entry = LogEntry {
-            id: rand::thread_rng().gen(),
+            id: rand::rng().random(),
             term: self.current_term.load(Ordering::Acquire),
             index: 0,
             entry_type: LogEntryType::Noop,
@@ -642,7 +643,8 @@ impl RaftNode {
     }
 
     fn reset_election_timer(&self) {
-        let timeout = rand::thread_rng().gen_range(MIN_ELECTION_TIMEOUT..MAX_ELECTION_TIMEOUT);
+        let mut rng = rand::rng();
+        let timeout = rng.random_range(MIN_ELECTION_TIMEOUT..MAX_ELECTION_TIMEOUT);
         *self.election_timer.lock() = Some(Instant::now() + timeout);
     }
 

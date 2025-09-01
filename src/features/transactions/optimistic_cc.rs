@@ -54,7 +54,7 @@ struct ValidationEngine {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ValidationStrategy {
+pub enum ValidationStrategy {
     Snapshot,
     Serialization,
     Range,
@@ -89,7 +89,7 @@ struct WriteItem {
 }
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
-enum WriteOperation {
+pub enum WriteOperation {
     Insert,
     Update,
     Delete,
@@ -609,7 +609,7 @@ impl OptimisticController {
         }
     }
 
-    async fn validate_range(&self, txn_id: super::TransactionId) -> Result<ValidationResult> {
+    async fn validate_range(&self, _txn_id: super::TransactionId) -> Result<ValidationResult> {
         Ok(ValidationResult::Valid)
     }
 
@@ -626,6 +626,7 @@ impl OptimisticController {
         false
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn has_cycle_util(
         &self,
         node: &super::TransactionId,

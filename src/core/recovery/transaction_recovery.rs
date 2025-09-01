@@ -241,7 +241,7 @@ impl TransactionRecoveryManager {
         let tx_info = {
             let transactions = self.transactions.read().await;
             transactions.get(&tx_id).cloned()
-                .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?
+                .ok_or(Error::TransactionNotFound { id: tx_id })?
         };
 
         // Apply all operations
@@ -325,7 +325,7 @@ impl TransactionRecoveryManager {
         {
             let transactions = self.transactions.read().await;
             let tx = transactions.get(&tx_id)
-                .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
+                .ok_or(Error::TransactionNotFound { id: tx_id })?;
             
             if tx.state != TransactionState::Active {
                 return Err(Error::TransactionInvalidState {

@@ -84,7 +84,7 @@ impl RepairTool {
         match self.page_manager.load_page(page_id).await {
             Ok(page) => {
                 // Clone the data to make it mutable
-                let mut data = (*page.data).clone();
+                let mut data = *page.data;
 
                 // Recalculate header checksum
                 let header_data = &data[8..32];

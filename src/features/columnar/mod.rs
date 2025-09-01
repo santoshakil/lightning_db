@@ -6,6 +6,9 @@ pub mod query;
 pub mod statistics;
 pub mod indexing;
 
+#[cfg(test)]
+mod tests;
+
 pub use engine::{ColumnarEngine, ColumnarConfig};
 pub use column::{Column, ColumnType, ColumnData};
 pub use compression::{ColumnCompression, CompressionStrategy};

@@ -1,6 +1,6 @@
 use crate::security::{SecurityError, SecurityResult};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
-use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::aead::Aead;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use argon2::password_hash::{rand_core::OsRng, SaltString};
 use blake3::{Hash, Hasher};
@@ -10,7 +10,8 @@ use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, Instant};
+use rand::{RngCore, thread_rng};
 
 const KEY_SIZE: usize = 32;
 const NONCE_SIZE: usize = 12;
@@ -173,22 +174,84 @@ impl CryptographicManager {
         Ok(argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok())
     }
 
+    pub async fn verify_password_constant_time(&self, password: &str, hash_opt: Option<&str>) -> SecurityResult<bool> {
+        let start = Instant::now();
+        let result = match hash_opt {
+            Some(hash) => {
+                let parsed_hash = PasswordHash::new(hash)
+                    .map_err(|e| SecurityError::CryptographicFailure(format!("Invalid password hash: {}", e)))?;
+                let argon2 = Argon2::default();
+                argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok()
+            }
+            None => {
+                let dummy_salt = SaltString::generate(&mut OsRng);
+                let argon2 = Argon2::default();
+                let _ = argon2.hash_password(password.as_bytes(), &dummy_salt);
+                false
+            }
+        };
+        
+        let min_duration = Duration::from_millis(100);
+        let elapsed = start.elapsed();
+        if elapsed < min_duration {
+            tokio::time::sleep(min_duration - elapsed).await;
+        }
+        
+        self.add_random_delay_async().await?;
+        Ok(result)
+    }
+
     pub fn secure_hash(&self, data: &[u8]) -> Hash {
         let mut hasher = Hasher::new();
         hasher.update(data);
         hasher.finalize()
     }
 
+    pub fn hash_with_pepper(&self, data: &[u8], pepper: &[u8]) -> Hash {
+        let mut hasher = Hasher::new();
+        hasher.update(data);
+        hasher.update(pepper);
+        hasher.finalize()
+    }
+
     pub fn secure_compare(&self, a: &[u8], b: &[u8]) -> bool {
-        if a.len() != b.len() {
-            return false;
-        }
+        use subtle::ConstantTimeEq;
+        a.ct_eq(b).into()
+    }
+
+    pub fn secure_compare_str(&self, a: &str, b: &str) -> bool {
+        self.secure_compare(a.as_bytes(), b.as_bytes())
+    }
+
+    pub fn add_random_delay(&self) -> SecurityResult<()> {
+        let delay_ms = thread_rng().next_u32() % 50 + 10;
+        std::thread::sleep(Duration::from_millis(delay_ms as u64));
+        Ok(())
+    }
+
+    pub async fn add_random_delay_async(&self) -> SecurityResult<()> {
+        let delay_ms = thread_rng().next_u32() % 50 + 10;
+        tokio::time::sleep(Duration::from_millis(delay_ms as u64)).await;
+        Ok(())
+    }
+
+    pub fn timing_safe_string_eq(&self, a: &str, b: &str) -> bool {
+        use subtle::ConstantTimeEq;
+        let a_bytes = a.as_bytes();
+        let b_bytes = b.as_bytes();
         
-        let mut result = 0u8;
-        for i in 0..a.len() {
-            result |= a[i] ^ b[i];
+        if a_bytes.len() != b_bytes.len() {
+            let max_len = a_bytes.len().max(b_bytes.len()).min(256);
+            let mut dummy_a = vec![0u8; max_len];
+            let mut dummy_b = vec![0u8; max_len];
+            
+            dummy_a[..a_bytes.len().min(max_len)].copy_from_slice(&a_bytes[..a_bytes.len().min(max_len)]);
+            dummy_b[..b_bytes.len().min(max_len)].copy_from_slice(&b_bytes[..b_bytes.len().min(max_len)]);
+            
+            dummy_a.ct_eq(&dummy_b).into() && false
+        } else {
+            a_bytes.ct_eq(b_bytes).into()
         }
-        result == 0
     }
 
     pub fn generate_secure_random(&self, size: usize) -> SecurityResult<Vec<u8>> {

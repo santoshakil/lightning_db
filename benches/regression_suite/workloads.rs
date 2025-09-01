@@ -1,6 +1,7 @@
 use lightning_db::Database;
 use rand::distributions::{Alphanumeric, Distribution, Uniform};
-use rand::{Rng, SeedableRng};
+use rand::Rng;
+use rand_core::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};

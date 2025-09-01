@@ -5,6 +5,7 @@
 
 #[cfg(test)]
 pub mod tests {
+    #![allow(clippy::result_large_err)]
     use crate::core::btree::{BPlusTree, MAX_KEYS_PER_NODE, MIN_KEYS_PER_NODE};
     use crate::core::error::Result;
     use crate::core::storage::{PageManager, PageManagerWrapper};

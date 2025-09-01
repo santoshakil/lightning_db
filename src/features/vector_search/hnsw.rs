@@ -77,9 +77,9 @@ impl HnswIndex {
     }
 
     fn select_level(&self) -> usize {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let ml = 1.0 / (2.0_f64.ln());
-        let level = (-rng.gen::<f64>().ln() * ml).floor() as usize;
+        let level = (-rng.random::<f64>().ln() * ml).floor() as usize;
         level.min(16)
     }
 
