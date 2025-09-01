@@ -413,7 +413,7 @@ impl BackupGuard {
         }
     }
 
-    pub fn start_backup(&self) -> Result<BackupHandle> {
+    pub fn start_backup(&self) -> Result<BackupHandle<'_>> {
         // Acquire backup lock
         let _lock = self.backup_lock.lock().unwrap();
 

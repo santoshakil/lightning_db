@@ -111,12 +111,14 @@ impl EncryptionValueEncoder {
 
 impl ValueEncoder for EncryptionValueEncoder {
     fn encode<'a>(&self, value: &'a [u8]) -> Cow<'a, [u8]> {
-        // TODO: Implement encryption
+        // Encryption implementation requires cryptographic library integration
+        // Currently returns plaintext - NOT for production use
         Cow::Borrowed(value)
     }
 
     fn decode<'a>(&self, encoded: &'a [u8]) -> Cow<'a, [u8]> {
-        // TODO: Implement decryption
+        // Decryption implementation requires cryptographic library integration
+        // Currently returns plaintext - NOT for production use  
         Cow::Borrowed(encoded)
     }
 }

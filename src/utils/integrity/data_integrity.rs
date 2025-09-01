@@ -252,7 +252,7 @@ impl ViolationTracker {
         self.critical_violation_count > 10 ||
         // Or if we're getting too many violations in a short time period
         (self.violations.len() > 100 && 
-         self.last_violation_time.map_or(false, |t| {
+         self.last_violation_time.is_some_and(|t| {
              chrono::Utc::now().signed_duration_since(t).num_minutes() < 5
          }))
     }

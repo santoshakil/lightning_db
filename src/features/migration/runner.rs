@@ -45,7 +45,7 @@ impl MigrationRunner {
             let entry = entry.map_err(|e| DatabaseError::IoError(e.to_string()))?;
             let path = entry.path();
             
-            if path.extension().map_or(false, |ext| ext == "sql") {
+            if path.extension().is_some_and(|ext| ext == "sql") {
                 self.load_migration_file(&path)?;
             }
         }

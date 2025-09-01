@@ -319,6 +319,12 @@ pub enum Error {
     #[error("Deadlock detected")]
     DeadlockDetected,
     
+    #[error("Deadlock victim selected for transaction")]
+    DeadlockVictim,
+    
+    #[error("Timestamp overflow - system must be restarted")]
+    TimestampOverflow,
+    
     #[error("Write conflict: {0}")]
     WriteConflict(String),
     
@@ -547,9 +553,6 @@ pub enum Error {
     #[error("Commit failed: {0}")]
     CommitFailed(String),
 
-    /// Deadlock victim error
-    #[error("Transaction selected as deadlock victim")]
-    DeadlockVictim,
 
     /// Connection pool exhausted
     #[error("Connection pool exhausted")]
@@ -582,6 +585,12 @@ pub enum Error {
     /// Custom error
     #[error("Custom error: {0}")]
     Custom(String),
+
+    #[error("Checkpoint not found: LSN {checkpoint_lsn} at path {path}")]
+    CheckpointNotFound { checkpoint_lsn: u64, path: String },
+
+    #[error("Checkpoint corrupted: LSN {checkpoint_lsn}, reason: {reason}")]
+    CheckpointCorrupted { checkpoint_lsn: u64, reason: String },
 }
 
 /// Database-specific error types for migration system
@@ -759,6 +768,7 @@ impl Error {
             Error::WriteConflict(_) => -38,
             Error::SerializationConflict(_) => -39,
             Error::DeadlockVictim => -40,
+            Error::TimestampOverflow => -999,
             Error::InvalidState(_) => -41,
             Error::CommitFailed(_) => -42,
             Error::PrepareTimeout => -43,
@@ -826,7 +836,6 @@ impl Error {
             Error::SnapshotNotFound(_) => -117,
             Error::LockTimeout(_) => -118,
             Error::LockConflict(_) => -119,
-            Error::Serialization(_) => -120,
             Error::Migration(_) => -121,
             Error::Backup(_) => -122,
             Error::TransactionRetry(_) => -123,
@@ -839,6 +848,8 @@ impl Error {
             Error::TaskJoinError => -130,
             Error::Corruption => -131,
             Error::Custom(_) => -132,
+            Error::CheckpointNotFound { .. } => -133,
+            Error::CheckpointCorrupted { .. } => -134,
         }
     }
 

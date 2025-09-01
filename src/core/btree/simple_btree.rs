@@ -166,7 +166,7 @@ mod tests {
 
         // Verify results are in range and sorted
         for (i, &(key, value)) in results.iter().enumerate() {
-            assert!(key >= 10 && key <= 30);
+            assert!((10..=30).contains(&key));
             assert_eq!(value, key * 10);
 
             if i > 0 {

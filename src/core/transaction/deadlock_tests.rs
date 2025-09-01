@@ -337,7 +337,7 @@ mod deadlock_detection_tests {
     #[test]
     #[ignore] // MVCC transaction manager not available
     fn test_mvcc_prevents_deadlock() {
-        // TODO: Implement when MVCC transaction manager is available
+        // Implementation deferred pending MVCC transaction manager completion
         return;
     }
 

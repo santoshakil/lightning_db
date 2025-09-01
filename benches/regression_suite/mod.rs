@@ -282,13 +282,16 @@ impl RegressionSuite {
             p99_latency: Duration::from_nanos(0),
             memory_before: snapshot_before,
             memory_after: snapshot_after,
+            peak_memory_usage: snapshot_after.rss_bytes.max(snapshot_before.rss_bytes),
             cpu_usage_percent: 0.0, // TODO: Implement CPU monitoring
             io_read_bytes: 0,
             io_write_bytes: 0,
             cache_hit_rate: 0.0,
             error_count: 0,
+            timeout_count: 0,
             regression_detected: false,
             regression_percent: 0.0,
+            statistical_significance: 0.0,
         })
     }
 

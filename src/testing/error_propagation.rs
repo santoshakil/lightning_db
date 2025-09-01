@@ -210,7 +210,7 @@ mod tests {
         let mut codes = std::collections::HashSet::new();
         for error in errors {
             let code = error.error_code();
-            assert!(code >= -83 && code <= -70, "Recovery error code {} out of expected range -83 to -70", code);
+            assert!((-83..=-70).contains(&code), "Recovery error code {} out of expected range -83 to -70", code);
             assert!(codes.insert(code), "Duplicate error code: {}", code);
         }
         

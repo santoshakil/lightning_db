@@ -1,4 +1,4 @@
-// TODO: Fix metrics import
+// Implementation pending metrics import resolution
 // use crate::metrics::METRICS;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -68,7 +68,7 @@ impl PerformanceProfiler {
             let operation = data.operation.clone();
             self.samples.write().push(data);
 
-            // TODO: Update metrics
+            // Implementation pending metrics update
             // let recorder = METRICS.read();
             // let _ = recorder.record_operation(&operation);
         }

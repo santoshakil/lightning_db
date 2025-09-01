@@ -766,6 +766,7 @@ impl Default for MemoryStatistics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::features::adaptive_compression::{LZ4Compression, SnappyCompression};
 
     #[test]
     fn test_benchmark_config() {

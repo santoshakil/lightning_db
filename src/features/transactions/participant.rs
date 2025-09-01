@@ -309,8 +309,7 @@ impl Participant {
             };
             
             if let Some(existing) = self.lock_manager.locks.get(&op.key) {
-                if existing.holder != txn_id {
-                    if !self.can_grant_lock(&existing, lock_type) {
+                if existing.holder != txn_id && !self.can_grant_lock(&existing, lock_type) {
                         self.metrics.lock_conflicts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         
                         for key in &locked_keys {
@@ -318,7 +317,6 @@ impl Participant {
                         }
                         
                         return Err(Error::Custom("Lock conflict detected".to_string()));
-                    }
                 }
             }
             
@@ -339,13 +337,11 @@ impl Participant {
     }
 
     fn can_grant_lock(&self, existing: &LockInfo, requested: LockType) -> bool {
-        match (existing.lock_type, requested) {
-            (LockType::Shared, LockType::Shared) => true,
-            (LockType::Shared, LockType::IntentShared) => true,
-            (LockType::IntentShared, LockType::Shared) => true,
-            (LockType::IntentShared, LockType::IntentShared) => true,
-            _ => false,
-        }
+        matches!((existing.lock_type, requested),
+            (LockType::Shared, LockType::Shared)
+            | (LockType::Shared, LockType::IntentShared)
+            | (LockType::IntentShared, LockType::Shared)
+            | (LockType::IntentShared, LockType::IntentShared))
     }
 
     async fn execute_operations(
@@ -367,7 +363,7 @@ impl Participant {
                     
                     UndoRecord {
                         key: op.key.clone(),
-                        old_value: old_value,
+                        old_value,
                         new_value: op.value.clone(),
                         operation: op.op_type,
                         timestamp: std::time::SystemTime::now()
@@ -530,7 +526,7 @@ impl ParticipantProtocol for Participant {
         
         let locked_keys = match self.acquire_locks(request.txn_id, &request.operations).await {
             Ok(keys) => keys,
-            Err(e) => {
+            Err(_e) => {
                 self.metrics.active_txns.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 return Ok(PrepareResponse {
                     vote: VoteDecision::Abort,
@@ -551,7 +547,7 @@ impl ParticipantProtocol for Participant {
         
         let undo_records = match self.execute_operations(request.txn_id, &request.operations).await {
             Ok(records) => records,
-            Err(e) => {
+            Err(_e) => {
                 self.release_locks(request.txn_id).await;
                 self.metrics.active_txns.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 return Ok(PrepareResponse {
@@ -617,7 +613,7 @@ impl ParticipantProtocol for Participant {
     async fn commit(&self, request: CommitRequest) -> Result<CommitResponse> {
         self.metrics.total_commits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         
-        if let Some((_, prepared)) = self.prepared_txns.remove(&request.txn_id) {
+        if let Some((_, _prepared)) = self.prepared_txns.remove(&request.txn_id) {
             self.undo_log.log.remove(&request.txn_id);
             
             self.release_locks(request.txn_id).await;

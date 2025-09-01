@@ -1,7 +1,6 @@
 use crate::security::{SecurityError, SecurityResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::Write;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -336,6 +335,12 @@ pub struct SecurityMetrics {
     security_violations: Arc<Mutex<u64>>,
     blocked_ips: Arc<Mutex<u64>>,
     rate_limit_violations: Arc<Mutex<u64>>,
+}
+
+impl Default for SecurityMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SecurityMetrics {

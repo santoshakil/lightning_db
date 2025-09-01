@@ -690,7 +690,7 @@ impl TraceExporter for NullExporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::features::distributed_tracing::{Span, TraceContext};
+    use crate::features::distributed_tracing::{Span, SpanStatus, TraceContext};
     use tempfile::NamedTempFile;
 
     #[test]

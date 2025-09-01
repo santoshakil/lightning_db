@@ -473,10 +473,7 @@ impl MemoryPool {
 
         // Allocate new block using recovery manager
         let _ptr = self.recovery_manager.try_allocate(self.block_size).await?;
-        let mut block = Vec::with_capacity(self.block_size);
-        unsafe {
-            block.set_len(self.block_size);
-        }
+        let block = vec![0u8; self.block_size];
 
         Ok(block)
     }

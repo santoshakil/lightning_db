@@ -406,38 +406,17 @@ fn generate_span_id() -> String {
     format!("{:016x}", rand::random::<u64>())
 }
 
-/// Global tracer instance
-static mut GLOBAL_TRACER: Option<Arc<Tracer>> = None;
-static TRACER_INIT: std::sync::Once = std::sync::Once::new();
+/// Global tracer instance (thread-safe, one-time init)
+static GLOBAL_TRACER: std::sync::OnceLock<Arc<Tracer>> = std::sync::OnceLock::new();
 
 /// Initialize global tracer
 pub fn init_tracer(tracer: Tracer) {
-    TRACER_INIT.call_once(|| {
-        // SAFETY: One-time initialization of global tracer
-        // Invariants:
-        // 1. call_once ensures single initialization
-        // 2. No concurrent writes after initialization
-        // 3. Arc provides thread-safe reference counting
-        // Guarantees:
-        // - Global tracer initialized exactly once
-        // - Thread-safe access via Arc
-        unsafe {
-            GLOBAL_TRACER = Some(Arc::new(tracer));
-        }
-    });
+    let _ = GLOBAL_TRACER.set(Arc::new(tracer));
 }
 
 /// Get global tracer
 pub fn global_tracer() -> Option<Arc<Tracer>> {
-    // SAFETY: Reading global tracer after initialization
-    // Invariants:
-    // 1. GLOBAL_TRACER is only written once via init_tracer
-    // 2. Arc provides thread-safe cloning
-    // 3. Read-only access after initialization
-    // Guarantees:
-    // - Safe read of global state
-    // - Arc clone is thread-safe
-    unsafe { GLOBAL_TRACER.as_ref().cloned() }
+    GLOBAL_TRACER.get().cloned()
 }
 
 /// Convenience macro for tracing function calls
@@ -581,6 +560,6 @@ mod tests {
         }
 
         // Should be approximately 50% with some variance
-        assert!(sampled >= 40 && sampled <= 60);
+        assert!((40..=60).contains(&sampled));
     }
 }

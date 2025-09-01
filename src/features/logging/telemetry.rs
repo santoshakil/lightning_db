@@ -1,7 +1,9 @@
+#[cfg(feature = "telemetry")]
 use opentelemetry::{
     trace::{TraceError, Tracer, TracerProvider, Span as OtelSpan},
     Context, KeyValue,
 };
+#[cfg(feature = "telemetry")]
 use opentelemetry_sdk::{
     trace::{self, TracerProvider as SdkTracerProvider},
     Resource,
@@ -11,6 +13,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tracing::Span;
+#[cfg(feature = "telemetry")]
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
 
@@ -78,6 +81,7 @@ impl TelemetryContext {
         }
     }
     
+    #[cfg(feature = "telemetry")]
     pub fn to_span_attributes(&self) -> Vec<KeyValue> {
         let mut attributes = vec![
             KeyValue::new("trace_id", self.trace_id.clone()),
@@ -107,8 +111,14 @@ impl TelemetryContext {
         
         attributes
     }
+    
+    #[cfg(not(feature = "telemetry"))]
+    pub fn to_span_attributes(&self) -> Vec<(&'static str, String)> {
+        vec![]
+    }
 }
 
+#[cfg(feature = "telemetry")]
 pub struct TelemetryManager {
     tracer_provider: Arc<SdkTracerProvider>,
     tracer: opentelemetry_sdk::trace::Tracer,
@@ -116,6 +126,13 @@ pub struct TelemetryManager {
     context_storage: Arc<parking_lot::RwLock<HashMap<String, TelemetryContext>>>,
 }
 
+#[cfg(not(feature = "telemetry"))]
+pub struct TelemetryManager {
+    span_processor: Arc<dyn SpanProcessor + Send + Sync>,
+    context_storage: Arc<parking_lot::RwLock<HashMap<String, TelemetryContext>>>,
+}
+
+#[cfg(feature = "telemetry")]
 impl TelemetryManager {
     pub fn new(
         service_name: &str,
@@ -152,7 +169,24 @@ impl TelemetryManager {
             context_storage: Arc::new(parking_lot::RwLock::new(HashMap::new())),
         })
     }
-    
+}
+
+#[cfg(not(feature = "telemetry"))]
+impl TelemetryManager {
+    pub fn new(
+        _service_name: &str,
+        _service_version: &str,
+        _endpoint: Option<&str>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self {
+            span_processor: Arc::new(DatabaseSpanProcessor::new()),
+            context_storage: Arc::new(parking_lot::RwLock::new(HashMap::new())),
+        })
+    }
+}
+
+impl TelemetryManager {
+    #[cfg(feature = "telemetry")]
     pub fn create_span(&self, name: &str, context: &TelemetryContext) -> DatabaseSpan {
         let mut builder = self.tracer.span_builder(name.to_string());
         
@@ -164,6 +198,11 @@ impl TelemetryManager {
         let span = builder.start(&self.tracer);
         
         DatabaseSpan::new(span, context.clone(), self.span_processor.clone())
+    }
+    
+    #[cfg(not(feature = "telemetry"))]
+    pub fn create_span(&self, _name: &str, context: &TelemetryContext) -> DatabaseSpan {
+        DatabaseSpan::new_mock(context.clone(), self.span_processor.clone())
     }
     
     pub fn create_child_span(&self, name: &str, parent_context: &TelemetryContext) -> DatabaseSpan {
@@ -197,18 +236,28 @@ impl TelemetryManager {
         }
         
         // Set OpenTelemetry context
-        let otel_context = Context::current();
-        span.set_parent(otel_context);
+        #[cfg(feature = "telemetry")]
+        {
+            let otel_context = Context::current();
+            span.set_parent(otel_context);
+        }
     }
     
+    #[cfg(feature = "telemetry")]
     pub fn shutdown(self) -> Result<(), TraceError> {
         let provider = Arc::try_unwrap(self.tracer_provider)
             .map_err(|_| TraceError::Other("Failed to unwrap tracer provider".into()))?;
         let _ = provider.force_flush();
         Ok(())
     }
+    
+    #[cfg(not(feature = "telemetry"))]
+    pub fn shutdown(self) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
 }
 
+#[cfg(feature = "telemetry")]
 pub struct DatabaseSpan {
     span: opentelemetry_sdk::trace::Span,
     context: TelemetryContext,
@@ -216,7 +265,15 @@ pub struct DatabaseSpan {
     start_time: SystemTime,
 }
 
+#[cfg(not(feature = "telemetry"))]
+pub struct DatabaseSpan {
+    context: TelemetryContext,
+    processor: Arc<dyn SpanProcessor + Send + Sync>,
+    start_time: SystemTime,
+}
+
 impl DatabaseSpan {
+    #[cfg(feature = "telemetry")]
     pub fn new(
         span: opentelemetry_sdk::trace::Span,
         context: TelemetryContext,
@@ -245,10 +302,44 @@ impl DatabaseSpan {
         }
     }
     
+    #[cfg(not(feature = "telemetry"))]
+    pub fn new_mock(
+        context: TelemetryContext,
+        processor: Arc<dyn SpanProcessor + Send + Sync>,
+    ) -> Self {
+        let span_data = DatabaseSpanData {
+            span_id: context.span_id.clone(),
+            trace_id: context.trace_id.clone(),
+            parent_span_id: context.parent_span_id.clone(),
+            operation_name: "unknown".to_string(),
+            start_time: SystemTime::now(),
+            end_time: None,
+            duration: None,
+            status: SpanStatus::Ok,
+            attributes: context.custom_attributes.clone(),
+            events: Vec::new(),
+        };
+        
+        processor.on_start(&span_data);
+        
+        Self {
+            context,
+            processor,
+            start_time: SystemTime::now(),
+        }
+    }
+    
+    #[cfg(feature = "telemetry")]
     pub fn set_attribute(&mut self, key: &str, value: &str) {
         self.span.set_attribute(KeyValue::new(key.to_string(), value.to_string()));
     }
     
+    #[cfg(not(feature = "telemetry"))]
+    pub fn set_attribute(&mut self, _key: &str, _value: &str) {
+        // No-op for non-telemetry builds
+    }
+    
+    #[cfg(feature = "telemetry")]
     pub fn add_event(&mut self, name: &str, attributes: Vec<(String, String)>) {
         let otel_attributes: Vec<KeyValue> = attributes
             .into_iter()
@@ -258,6 +349,12 @@ impl DatabaseSpan {
         self.span.add_event(name.to_string(), otel_attributes);
     }
     
+    #[cfg(not(feature = "telemetry"))]
+    pub fn add_event(&mut self, _name: &str, _attributes: Vec<(String, String)>) {
+        // No-op for non-telemetry builds
+    }
+    
+    #[cfg(feature = "telemetry")]
     pub fn set_status(&mut self, status: SpanStatus) {
         match status {
             SpanStatus::Ok => self.span.set_status(opentelemetry::trace::Status::Ok),
@@ -267,8 +364,19 @@ impl DatabaseSpan {
         }
     }
     
+    #[cfg(not(feature = "telemetry"))]
+    pub fn set_status(&mut self, _status: SpanStatus) {
+        // No-op for non-telemetry builds
+    }
+    
+    #[cfg(feature = "telemetry")]
     pub fn record_exception(&mut self, error: &dyn std::error::Error) {
         self.span.record_error(error);
+        self.set_status(SpanStatus::Error(error.to_string()));
+    }
+    
+    #[cfg(not(feature = "telemetry"))]
+    pub fn record_exception(&mut self, error: &dyn std::error::Error) {
         self.set_status(SpanStatus::Error(error.to_string()));
     }
     
@@ -289,6 +397,7 @@ impl DatabaseSpan {
         };
         
         self.processor.on_end(&span_data);
+        #[cfg(feature = "telemetry")]
         self.span.end();
     }
     

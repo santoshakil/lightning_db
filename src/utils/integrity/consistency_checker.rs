@@ -128,7 +128,7 @@ impl ConsistencyChecker {
 
         // Recurse to children if internal node
         if node.node_type == crate::core::btree::node::NodeType::Internal {
-            for (_i, &child_id) in node.children.iter().enumerate() {
+            for &child_id in node.children.iter() {
                 if child_id != 0 {
                     Box::pin(self.traverse_tree(child_id, Some(page_id), depth + 1, errors))
                         .await?;
@@ -221,12 +221,8 @@ impl ConsistencyChecker {
 
         // Find all leaf nodes
         let leaf_depths: HashSet<usize> = depth_map
-            .iter()
-            .filter_map(|(_page_id, depth)| {
-                // Check if this is a leaf by loading the page
-                // In production, we'd optimize this
-                Some(*depth)
-            })
+            .values()
+            .copied()
             .collect();
 
         // All leaves should be at the same depth
@@ -275,8 +271,9 @@ impl ConsistencyChecker {
     async fn validate_key_uniqueness(&self, errors: &mut Vec<ConsistencyError>) -> Result<()> {
         let mut all_keys = HashMap::new();
 
-        // Collect all keys from leaf nodes
-        for &page_id in self.visited_pages.read().iter() {
+        // Collect all keys from leaf nodes without holding the read lock across await
+        let page_ids: Vec<u32> = self.visited_pages.read().iter().copied().collect();
+        for page_id in page_ids {
             let page = self.page_manager.load_page(page_id as u64).await?;
             let node = BTreeNode::deserialize_from_page(&page)?;
 

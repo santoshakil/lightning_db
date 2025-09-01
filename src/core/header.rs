@@ -16,7 +16,7 @@ pub struct Header {
 }
 
 impl Header {
-    pub const MAGIC: u32 = 0x4C444231; // "LDB1"
+    pub const MAGIC: u32 = 0x4C44_4231; // "LDB1"
     pub const VERSION: u32 = 1;
 
     pub fn new(page_size: u32) -> Self {

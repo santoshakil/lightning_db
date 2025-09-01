@@ -351,13 +351,13 @@ impl IoScheduler {
         
         // Adaptive batch size based on queue depth and target latency
         let queue_depth = queue.len();
-        let adaptive_batch_size = if queue_depth > 100 {
+        let adaptive_batch_size = (if queue_depth > 100 {
             self.config.max_batch_size * 2  // Larger batches for high load
         } else if queue_depth < 10 {
             self.config.max_batch_size / 2  // Smaller batches for low load
         } else {
             self.config.max_batch_size
-        }.min(128).max(4);
+        }).clamp(4, 128);
         
         batch.reserve(adaptive_batch_size);
         
@@ -558,7 +558,7 @@ impl RequestBatcher {
     /// Check if batch should be submitted
     pub fn should_submit(&self) -> bool {
         self.requests.len() >= self.max_size
-            || (self.requests.len() > 0 && self.last_submit.elapsed() >= self.timeout)
+            || (!self.requests.is_empty() && self.last_submit.elapsed() >= self.timeout)
     }
 
     /// Take all requests and reset
@@ -570,6 +570,11 @@ impl RequestBatcher {
     /// Get current batch size
     pub fn len(&self) -> usize {
         self.requests.len()
+    }
+
+    /// Check if the batch is empty
+    pub fn is_empty(&self) -> bool {
+        self.requests.is_empty()
     }
 }
 
@@ -761,7 +766,7 @@ impl MultiQueueIoScheduler {
             }
             QueueSelectionStrategy::ThreadLocal => {
                 // Simple hash of thread ID
-                std::thread::current().id().as_u64().get() as usize % self.queues.len()
+                ThreadIdExt::as_u64(&std::thread::current().id()).get() as usize % self.queues.len()
             }
             QueueSelectionStrategy::Random => {
                 use std::collections::hash_map::DefaultHasher;
@@ -857,7 +862,7 @@ impl MultiQueueIoScheduler {
         AggregatedSchedulerStats {
             total_requests,
             total_merged_requests: total_merged,
-            total_dependency_waits: total_dependency_waits,
+            total_dependency_waits,
             total_batches,
             overall_avg_batch_size,
             total_deadline_misses,

@@ -1,6 +1,6 @@
 use crate::core::error::{Error, Result};
 use crate::utils::retry::RetryPolicy;
-use std::io::{ErrorKind, Read, Write};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

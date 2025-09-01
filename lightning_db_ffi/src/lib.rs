@@ -1,7 +1,9 @@
 pub mod error;
 pub mod ffi;
 pub mod handle_registry;
+pub mod panic_guard;
 pub mod utils;
+pub mod validation;
 
 // Re-export FFI functions
 pub use ffi::{database_ffi::*, error_ffi::*, iterator_ffi::*, transaction_ffi::*};
@@ -23,6 +25,17 @@ pub enum ErrorCode {
     IoError = 7,
     CorruptedData = 8,
     OutOfMemory = 9,
+    // Security-related error codes
+    BufferOverflow = 10,
+    InvalidPointer = 11,
+    InvalidAlignment = 12,
+    InvalidUtf8 = 13,
+    IntegerOverflow = 14,
+    BufferTooLarge = 15,
+    StringTooLong = 16,
+    InvalidHandle = 17,
+    SecurityViolation = 18,
+    PanicPrevented = 19,
     Unknown = 999,
 }
 

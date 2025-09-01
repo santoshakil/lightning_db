@@ -1,0 +1,2415 @@
+    Checking serde v1.0.219
+    Checking tokio v1.47.1
+    Checking core-foundation v0.9.4
+    Checking security-framework-sys v2.14.0
+    Checking cipher v0.4.4
+    Checking system-configuration-sys v0.6.0
+    Checking aws-lc-rs v1.13.3
+    Checking sha1 v0.10.6
+    Checking core-foundation v0.10.1
+   Compiling prost-build v0.13.5
+    Checking threadpool v1.8.1
+    Checking zstd-sys v2.0.15+zstd.1.5.7
+    Checking system-configuration v0.6.1
+    Checking security-framework v2.11.1
+    Checking rand_xoshiro v0.7.0
+    Checking security-framework v3.3.0
+    Checking rustls-webpki v0.102.8
+    Checking socket2 v0.5.10
+    Checking thrift v0.17.0
+    Checking rustls v0.22.4
+    Checking rustls-webpki v0.103.4
+    Checking native-tls v0.2.14
+    Checking metrics-util v0.19.1
+    Checking headers v0.3.9
+    Checking rustls v0.23.31
+    Checking rustls-native-certs v0.8.1
+    Checking zstd-safe v7.2.4
+    Checking ctr v0.9.2
+    Checking aes v0.8.4
+   Compiling lightning_db v0.1.0 (/Volumes/Data/Projects/ssss/lightning_db)
+    Checking chacha20 v0.9.1
+    Checking blowfish v0.9.1
+    Checking filetime v0.2.26
+    Checking fsevent-sys v4.1.0
+    Checking aes-gcm v0.10.3
+    Checking chacha20poly1305 v0.10.1
+    Checking notify v6.1.1
+    Checking bcrypt v0.16.0
+    Checking zstd v0.13.3
+    Checking sysinfo v0.33.1
+    Checking env_logger v0.11.8
+    Checking smallvec v1.15.1
+    Checking serde_json v1.0.143
+    Checking toml_datetime v0.6.11
+    Checking serde_spanned v0.6.9
+    Checking serde_urlencoded v0.7.1
+    Checking icu_normalizer v2.0.0
+    Checking parking_lot_core v0.9.11
+    Checking tracing-subscriber v0.3.20
+    Checking toml_edit v0.22.27
+    Checking parking_lot v0.12.4
+    Checking idna_adapter v1.2.1
+    Checking dashmap v5.5.3
+    Checking idna v1.1.0
+    Checking prometheus v0.14.0
+    Checking jsonwebtoken v9.3.1
+    Checking url v2.5.7
+    Checking governor v0.6.3
+    Checking ratelimit v0.9.1
+    Checking dashmap v6.1.0
+    Checking secrecy v0.8.0
+    Checking serde_yaml v0.9.34+deprecated
+    Checking tungstenite v0.21.0
+    Checking csv v1.3.1
+    Checking uuid v1.18.0
+    Checking chrono v0.4.41
+    Checking tracing-appender v0.2.3
+    Checking serde_bytes v0.11.17
+    Checking tokio-util v0.7.16
+    Checking tokio-stream v0.1.17
+    Checking tower v0.5.2
+    Checking tokio-native-tls v0.3.1
+    Checking tokio-tungstenite v0.21.0
+    Checking toml v0.8.23
+    Checking opentelemetry_sdk v0.20.0
+    Checking h2 v0.4.12
+    Checking h2 v0.3.27
+    Checking tokio-rustls v0.25.0
+    Checking tower-http v0.6.6
+    Checking tinytemplate v1.2.1
+    Checking tokio-rustls v0.26.2
+    Checking ciborium v0.2.2
+    Checking serial_test v3.2.0
+    Checking criterion v0.6.0
+    Checking opentelemetry v0.20.0
+    Checking opentelemetry-semantic-conventions v0.12.0
+    Checking tracing-opentelemetry v0.21.0
+    Checking opentelemetry-jaeger v0.19.0
+    Checking hyper v0.14.32
+    Checking hyper v1.7.0
+    Checking hyper-util v0.1.16
+    Checking hyper-rustls v0.27.7
+    Checking hyper-tls v0.6.0
+    Checking reqwest v0.12.23
+    Checking metrics-exporter-prometheus v0.16.2
+    Checking warp v0.3.7
+error[E0433]: failed to resolve: could not find `prost` in the list of imported crates
+ --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:2:36
+  |
+2 | #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+  |                                    ^^^^^ could not find `prost` in the list of imported crates
+
+error[E0433]: failed to resolve: could not find `prost` in the list of imported crates
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:20:30
+   |
+20 | #[derive(Clone, PartialEq, ::prost::Message)]
+   |                              ^^^^^ could not find `prost` in the list of imported crates
+
+error[E0433]: failed to resolve: could not find `prost` in the list of imported crates
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:31:36
+   |
+31 | #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+   |                                    ^^^^^ could not find `prost` in the list of imported crates
+
+error[E0433]: failed to resolve: could not find `prost` in the list of imported crates
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:53:70
+   |
+53 | #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+   |                                                                      ^^^^^ could not find `prost` in the list of imported crates
+
+error: cannot find attribute `prost` in this scope
+ --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:5:7
+  |
+5 |     #[prost(uint64, tag = "1")]
+  |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+ --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:8:7
+  |
+8 |     #[prost(uint64, tag = "2")]
+  |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:11:7
+   |
+11 |     #[prost(uint64, tag = "3")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:14:7
+   |
+14 |     #[prost(bool, tag = "4")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:17:7
+   |
+17 |     #[prost(enumeration = "CompressionType", tag = "5")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:22:7
+   |
+22 |     #[prost(bytes = "vec", tag = "1")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:24:7
+   |
+24 |     #[prost(bytes = "vec", tag = "2")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:26:7
+   |
+26 |     #[prost(uint64, tag = "3")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:28:7
+   |
+28 |     #[prost(uint64, tag = "4")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:34:7
+   |
+34 |     #[prost(uint32, tag = "1")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:37:7
+   |
+37 |     #[prost(uint32, tag = "2")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:40:7
+   |
+40 |     #[prost(uint32, tag = "3")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:43:7
+   |
+43 |     #[prost(uint32, tag = "4")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:45:7
+   |
+45 |     #[prost(uint32, tag = "5")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:47:7
+   |
+47 |     #[prost(uint32, tag = "6")]
+   |       ^^^^^
+
+error: cannot find attribute `prost` in this scope
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:50:7
+   |
+50 |     #[prost(uint64, tag = "7")]
+   |       ^^^^^
+
+error[E0433]: failed to resolve: could not find `prost` in the list of imported crates
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:23:16
+   |
+23 |     pub key: ::prost::alloc::vec::Vec<u8>,
+   |                ^^^^^ could not find `prost` in the list of imported crates
+   |
+help: consider importing this module
+  --> src/lib.rs:72:1
+   |
+72 + use std::vec;
+   |
+help: if you import `vec`, refer to it directly
+   |
+23 -     pub key: ::prost::alloc::vec::Vec<u8>,
+23 +     pub key: vec::Vec<u8>,
+   |
+
+error[E0433]: failed to resolve: could not find `prost` in the list of imported crates
+  --> /Volumes/Data/Projects/ssss/lightning_db/target/debug/build/lightning_db-ab6b5707a24ceedf/out/lightning_db.rs:25:18
+   |
+25 |     pub value: ::prost::alloc::vec::Vec<u8>,
+   |                  ^^^^^ could not find `prost` in the list of imported crates
+   |
+help: consider importing this module
+  --> src/lib.rs:72:1
+   |
+72 + use std::vec;
+   |
+help: if you import `vec`, refer to it directly
+   |
+25 -     pub value: ::prost::alloc::vec::Vec<u8>,
+25 +     pub value: vec::Vec<u8>,
+   |
+
+warning: this `continue` expression is redundant
+   --> src/core/btree/iterator.rs:525:37
+    |
+525 |                         Ok(true) => continue,
+    |                                     ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+    = note: `-W clippy::needless-continue` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::needless_continue)]`
+
+warning: redundant else block
+   --> src/core/btree/iterator.rs:530:14
+    |
+530 |               } else {
+    |  ______________^
+531 | |                 // Backward iteration - optimized
+532 | |                 if self.current_position > 0 {
+533 | |                     self.current_position -= 1;
+...   |
+558 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+    = note: `-W clippy::redundant-else` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::redundant_else)]`
+help: remove the `else` block and move the contents out
+    |
+530 ~             }
+531 +             // Backward iteration - optimized
+532 +             if self.current_position > 0 {
+533 +                 self.current_position -= 1;
+534 +                 let (key, value) = if self.use_stack_buffer {
+535 +                     // Safe backward iteration for stack buffer
+536 +                     if let Some(entry) = self.stack_buffer.get(self.current_position) {
+537 +                         (entry.0.clone(), entry.1.clone())
+538 +                     } else {
+539 +                         // This shouldn't happen given our bounds checking, but handle gracefully
+540 +                         return None;
+541 +                     }
+542 +                 } else {
+543 +                     let entry = &self.current_leaf_entries[self.current_position];
+544 +                     (entry.0.clone(), entry.1.clone())
+545 +                 };
+546 + 
+547 +                 // Check bounds
+548 +                 if likely(self.is_key_in_bounds(&key)) {
+549 +                     return Some(Ok((key, value)));
+550 +                 } else {
+551 +                     return None;
+552 +                 }
+553 +             } else {
+554 +                 // For now, we don't support moving to previous leaf
+555 +                 // This would require maintaining left_sibling pointers
+556 +                 return None;
+557 +             }
+    |
+
+warning: redundant else block
+   --> src/core/btree/iterator.rs:522:18
+    |
+522 |                   } else {
+    |  __________________^
+523 | |                     // Try to move to next leaf
+524 | |                     match self.move_to_next_leaf_optimized() {
+525 | |                         Ok(true) => continue,
+...   |
+529 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+    |
+522 ~                 }
+523 +                 // Try to move to next leaf
+524 +                 match self.move_to_next_leaf_optimized() {
+525 +                     Ok(true) => continue,
+526 +                     Ok(false) => return None,
+527 +                     Err(e) => return Some(Err(e)),
+528 +                 }
+    |
+
+warning: redundant else block
+   --> src/core/btree/iterator.rs:519:22
+    |
+519 |                       } else {
+    |  ______________________^
+520 | |                         return None;
+521 | |                     }
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+    |
+519 ~                     }
+520 +                     return None;
+    |
+
+warning: redundant else block
+   --> src/core/btree/iterator.rs:553:18
+    |
+553 |                   } else {
+    |  __________________^
+554 | |                     // For now, we don't support moving to previous leaf
+555 | |                     // This would require maintaining left_sibling pointers
+556 | |                     return None;
+557 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+    |
+553 ~                 }
+554 +                 // For now, we don't support moving to previous leaf
+555 +                 // This would require maintaining left_sibling pointers
+556 +                 return None;
+    |
+
+warning: redundant else block
+   --> src/core/btree/iterator.rs:550:22
+    |
+550 |                       } else {
+    |  ______________________^
+551 | |                         return None;
+552 | |                     }
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+    |
+550 ~                     }
+551 +                     return None;
+    |
+
+warning: this `continue` expression is redundant
+   --> src/core/btree/node.rs:253:48
+    |
+253 |                 std::cmp::Ordering::Greater => continue,
+    |                                                ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: this `continue` expression is redundant
+   --> src/core/btree/mod.rs:300:38
+    |
+300 |                 Ordering::Greater => continue,
+    |                                      ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: this `continue` expression is redundant
+   --> src/core/btree/mod.rs:327:38
+    |
+327 |                 Ordering::Greater => continue,
+    |                                      ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: long literal lacking separators
+  --> src/core/storage/page.rs:12:24
+   |
+12 | pub const MAGIC: u32 = 0x4C444200; // "LDB\0"
+   |                        ^^^^^^^^^^ help: consider: `0x4C44_4200`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+   = note: `-W clippy::unreadable-literal` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::unreadable_literal)]`
+
+warning: redundant else block
+   --> src/core/wal/recovery_fixes.rs:272:22
+    |
+272 |                       } else {
+    |  ______________________^
+273 | |                         // Fail-fast approach: never skip corrupted data
+274 | |                         let mut test_entry = entry.clone();
+275 | |                         test_entry.checksum = 0;
+...   |
+282 | |                         });
+283 | |                     }
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+    |
+272 ~                     }
+273 +                     // Fail-fast approach: never skip corrupted data
+274 +                     let mut test_entry = entry.clone();
+275 +                     test_entry.checksum = 0;
+276 +                     test_entry.calculate_checksum();
+277 +                     
+278 +                     return Err(crate::core::error::Error::WalChecksumMismatch {
+279 +                         offset,
+280 +                         expected: test_entry.checksum,
+281 +                         found: entry.checksum,
+282 +                     });
+    |
+
+warning: long literal lacking separators
+   --> src/core/wal/corruption_validator.rs:269:55
+    |
+269 |                 if key.len() > 65536 || value.len() > 16777216 {
+    |                                                       ^^^^^^^^ help: consider: `16_777_216`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+  --> src/core/wal/unified_wal.rs:15:24
+   |
+15 | const WAL_MAGIC: u32 = 0x57414C33; // "WAL3" - unified version
+   |                        ^^^^^^^^^^ help: consider: `0x5741_4C33`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+  --> src/core/wal/optimized_wal.rs:15:24
+   |
+15 | const WAL_MAGIC: u32 = 0x57414C34;
+   |                        ^^^^^^^^^^ help: consider: `0x5741_4C34`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+  --> src/core/wal/atomic_wal.rs:13:31
+   |
+13 | const ATOMIC_WAL_MAGIC: u32 = 0x57414C41; // "WALA" - Atomic WAL
+   |                               ^^^^^^^^^^ help: consider: `0x5741_4C41`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+  --> src/core/wal/checkpoint_manager.rs:24:24
+   |
+24 |     const MAGIC: u32 = 0x43484B50; // "CHKP"
+   |                        ^^^^^^^^^^ help: consider: `0x4348_4B50`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: this `continue` expression is redundant
+   --> src/core/wal/checkpoint_manager.rs:285:21
+    |
+285 |                     continue;
+    |                     ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: long literal lacking separators
+  --> src/core/header.rs:19:28
+   |
+19 |     pub const MAGIC: u32 = 0x4C444231; // "LDB1"
+   |                            ^^^^^^^^^^ help: consider: `0x4C44_4231`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+  --> src/core/lsm/sstable.rs:13:20
+   |
+13 | const MAGIC: u32 = 0x5354424C; // "STBL"
+   |                    ^^^^^^^^^^ help: consider: `0x5354_424C`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: this `continue` expression is redundant
+   --> src/core/lsm/sstable.rs:146:21
+    |
+146 |                     continue;
+    |                     ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: this `continue` expression is redundant
+   --> src/core/write_optimized/compaction.rs:502:39
+    |
+502 | ...                   Err(_) => continue, // Timeout, check running flag
+    |                                 ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: long literal lacking separators
+  --> src/core/write_optimized/sstable.rs:24:28
+   |
+24 | const SSTABLE_MAGIC: u32 = 0x53535442; // "SSTB"
+   |                            ^^^^^^^^^^ help: consider: `0x5353_5442`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: this `continue` expression is redundant
+   --> src/core/write_optimized/write_engine.rs:199:35
+    |
+199 |                         Err(_) => continue, // Timeout
+    |                                   ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: this `continue` expression is redundant
+   --> src/core/write_optimized/write_engine.rs:343:37
+    |
+343 |                         Ok(None) => continue,
+    |                                     ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: redundant else block
+   --> src/core/recovery/crash_recovery_manager.rs:295:22
+    |
+295 |                       } else {
+    |  ______________________^
+296 | |                         // Non-critical failure - attempt rollback
+297 | |                         warn!("Attempting rollback for failed stage: {}", stage.name());
+298 | |                         if let Err(rollback_error) = self.rollback_manager.rollback_stage(&self.state, stage) {
+...   |
+312 | |                         });
+313 | |                     }
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+    |
+295 ~                     }
+296 +                     // Non-critical failure - attempt rollback
+297 +                     warn!("Attempting rollback for failed stage: {}", stage.name());
+298 +                     if let Err(rollback_error) = self.rollback_manager.rollback_stage(&self.state, stage) {
+299 +                         error!("Rollback failed for stage '{}': {}", stage.name(), rollback_error);
+300 +                         return Err(Error::RecoveryRollbackFailed {
+301 +                             stage: stage.name().to_string(),
+302 +                             reason: rollback_error.to_string(),
+303 +                             manual_intervention_needed: true,
+304 +                         });
+305 +                     }
+306 + 
+307 +                     return Err(Error::PartialRecoveryFailure {
+308 +                         completed_stages: completed_stages.iter().map(|s| s.name().to_string()).collect(),
+309 +                         failed_stage: stage.name().to_string(),
+310 +                         cause: Box::new(error),
+311 +                         rollback_available: true,
+312 +                     });
+    |
+
+warning: binding's name is too similar to existing binding
+   --> src/core/recovery/crash_recovery_manager.rs:749:57
+    |
+749 |     pub fn rollback_stage(&self, state: &RecoveryState, stage: &RecoveryStage) -> Result<()> {
+    |                                                         ^^^^^
+    |
+note: existing binding defined here
+   --> src/core/recovery/crash_recovery_manager.rs:749:34
+    |
+749 |     pub fn rollback_stage(&self, state: &RecoveryState, stage: &RecoveryStage) -> Result<()> {
+    |                                  ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+    = note: `-W clippy::similar-names` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::similar_names)]`
+
+warning: unnested or-patterns
+   --> src/core/recovery/corruption_recovery.rs:567:53
+    |
+567 |                     if matches!(extension.to_str(), Some("db") | Some("dat") | Some("idx")) {
+    |                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unnested_or_patterns
+    = note: `-W clippy::unnested-or-patterns` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::unnested_or_patterns)]`
+help: nest the patterns
+    |
+567 -                     if matches!(extension.to_str(), Some("db") | Some("dat") | Some("idx")) {
+567 +                     if matches!(extension.to_str(), Some("db" | "dat" | "idx")) {
+    |
+
+warning: long literal lacking separators
+   --> src/core/query_planner/planner.rs:610:29
+    |
+610 |             estimated_rows: 1000000,
+    |                             ^^^^^^^ help: consider: `1_000_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/core/query_planner/planner.rs:618:29
+    |
+618 |             estimated_rows: 1000000,
+    |                             ^^^^^^^ help: consider: `1_000_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/core/query_planner/cost_model.rs:204:34
+    |
+204 |         let spill_io = if rows > 1000000 {
+    |                                  ^^^^^^^ help: consider: `1_000_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: redundant else block
+   --> src/core/query_planner/execution.rs:633:30
+    |
+633 |   ...                   } else {
+    |  ________________________^
+634 | | ...                       batch = Self::skip_rows(batch, to_skip);
+635 | | ...                       skipped = offset;
+636 | | ...                   }
+    | |_______________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+    |
+633 ~                             }
+634 +                             batch = Self::skip_rows(batch, to_skip);
+635 +                             skipped = offset;
+    |
+
+warning: long literal lacking separators
+   --> src/core/query_planner/statistics.rs:163:13
+    |
+163 |             1000000
+    |             ^^^^^^^ help: consider: `1_000_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/core/query_planner/statistics.rs:494:12
+    |
+494 |         Ok(1000000)
+    |            ^^^^^^^ help: consider: `1_000_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+ --> src/core/query_planner/join_optimizer.rs:8:38
+  |
+8 | const MAX_JOIN_PERMUTATIONS: usize = 100000;
+  |                                      ^^^^^^ help: consider: `100_000`
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/core/query_planner/join_optimizer.rs:481:24
+    |
+481 |             .unwrap_or(1000000)
+    |                        ^^^^^^^ help: consider: `1_000_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/core/query_planner/join_optimizer.rs:487:24
+    |
+487 |             .unwrap_or(100000000)
+    |                        ^^^^^^^^^ help: consider: `100_000_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+  --> src/performance/cache/unified_cache.rs:36:35
+   |
+36 |     const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+   |                                   ^^^^^^^^^^^^^^^^^^ help: consider: `0xcbf2_9ce4_8422_2325`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+  --> src/performance/cache/unified_cache.rs:37:28
+   |
+37 |     const FNV_PRIME: u64 = 0x100000001b3;
+   |                            ^^^^^^^^^^^^^ help: consider: `0x0100_0000_01b3`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/performance/cache/adaptive_sizing.rs:581:38
+    |
+581 |             cache_sizes: vec![32768, 262144, 8388608], // L1, L2, L3 defaults
+    |                                      ^^^^^^ help: consider: `262_144`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/performance/cache/adaptive_sizing.rs:581:46
+    |
+581 |             cache_sizes: vec![32768, 262144, 8388608], // L1, L2, L3 defaults
+    |                                              ^^^^^^^ help: consider: `8_388_608`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+    --> src/core/wal/unified_wal.rs:1157:26
+     |
+1157 |         entry.checksum = 0xdeadbeef;
+     |                          ^^^^^^^^^^ help: consider: `0xdead_beef`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/performance/cache/prewarming.rs:859:66
+    |
+859 |                 let normal_pages = self.generate_clustered_pages(100000, 10);
+    |                                                                  ^^^^^^ help: consider: `100_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/performance/cache/prewarming.rs:967:10
+    |
+967 |         (1000000..1000000 + size as u64).collect()
+    |          ^^^^^^^ help: consider: `1_000_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/performance/cache/prewarming.rs:967:19
+    |
+967 |         (1000000..1000000 + size as u64).collect()
+    |                   ^^^^^^^ help: consider: `1_000_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+    --> src/performance/cache/prewarming.rs:1009:49
+     |
+1009 |         (0..size).map(|_| rng.random::<u64>() % 1000000).collect()
+     |                                                 ^^^^^^^ help: consider: `1_000_000`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: unused import: `tempfile::tempdir`
+   --> src/core/wal/log_rotation.rs:524:9
+    |
+524 |     use tempfile::tempdir;
+    |         ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` on by default
+
+warning: long literal lacking separators
+   --> src/performance/optimizations/simd.rs:443:23
+    |
+443 |         let mut crc = 0xFFFFFFFFu32;
+    |                       ^^^^^^^^^^^^^ help: consider: `0xFFFF_FFFF_u32`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/performance/optimizations/simd.rs:448:40
+    |
+448 |                     crc = (crc >> 1) ^ 0xEDB88320;
+    |                                        ^^^^^^^^^^ help: consider: `0xEDB8_8320`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/performance/optimizations/simd.rs:465:38
+    |
+465 |             seed = seed.wrapping_mul(0x9e3779b97f4a7c15u64);
+    |                                      ^^^^^^^^^^^^^^^^^^^^^ help: consider: `0x9e37_79b9_7f4a_7c15_u64`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/performance/optimizations/mod.rs:198:42
+    |
+198 |                 hash = hash.wrapping_mul(0x9e3779b97f4a7c15u64);
+    |                                          ^^^^^^^^^^^^^^^^^^^^^ help: consider: `0x9e37_79b9_7f4a_7c15_u64`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: redundant else block
+  --> src/performance/lock_free/btree_wrapper.rs:75:22
+   |
+75 |                       } else {
+   |  ______________________^
+76 | |                         // Internal node - find child
+77 | |                         let mut child_index = 0;
+78 | |                         for (i, entry) in node.entries.iter().enumerate() {
+...  |
+93 | |                     }
+   | |_____________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+   |
+75 ~                     }
+76 +                     // Internal node - find child
+77 +                     let mut child_index = 0;
+78 +                     for (i, entry) in node.entries.iter().enumerate() {
+79 +                         if key < entry.key.as_slice() {
+80 +                             child_index = i;
+81 +                             break;
+82 +                         }
+83 +                         child_index = i + 1;
+84 +                     }
+85 + 
+86 +                     if child_index < node.children.len() {
+87 +                         current_page_id = node.children[child_index];
+88 +                         level -= 1;
+89 +                     } else {
+90 +                         // Fallback to locked path
+91 +                         break;
+92 +                     }
+   |
+
+warning: redundant else block
+   --> src/performance/lock_free/cache.rs:138:22
+    |
+138 |                       } else {
+    |  ______________________^
+139 | |                         // Give it another chance, decrement access count
+140 | |                         entry.accessed.fetch_sub(1, Ordering::Relaxed);
+141 | |                     }
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+    |
+138 ~                     }
+139 +                     // Give it another chance, decrement access count
+140 +                     entry.accessed.fetch_sub(1, Ordering::Relaxed);
+    |
+
+warning: long literal lacking separators
+ --> src/performance/lock_free/hot_path.rs:9:17
+  |
+9 |     let mut h = 0xcbf29ce484222325u64;
+  |                 ^^^^^^^^^^^^^^^^^^^^^ help: consider: `0xcbf2_9ce4_8422_2325_u64`
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+  --> src/performance/lock_free/hot_path.rs:12:28
+   |
+12 |         h = h.wrapping_mul(0x100000001b3u64);
+   |                            ^^^^^^^^^^^^^^^^ help: consider: `0x0100_0000_01b3_u64`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: this `continue` expression is redundant
+   --> src/performance/lock_free/hot_path.rs:439:31
+    |
+439 |                     Err(_) => continue,
+    |                               ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: this `continue` expression is redundant
+   --> src/performance/lock_free/hot_path.rs:460:31
+    |
+460 |                     Err(_) => continue,
+    |                               ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: redundant else block
+   --> src/performance/lock_free/hot_path.rs:441:14
+    |
+441 |               } else {
+    |  ______________^
+442 | |                 // Add to batch
+443 | |                 let owned = Owned::new(batch);
+...   |
+462 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+    |
+441 ~             }
+442 +             // Add to batch
+443 +             let owned = Owned::new(batch);
+444 + 
+445 +             match self.pending.compare_exchange(
+446 +                 current,
+447 +                 owned,
+448 +                 Ordering::Release,
+449 +                 Ordering::Acquire,
+450 +                 guard,
+451 +             ) {
+452 +                 Ok(_) => {
+453 +                     if !current.is_null() {
+454 +                         unsafe {
+455 +                             guard.defer_destroy(current);
+456 +                         }
+457 +                     }
+458 +                     return None;
+459 +                 }
+460 +                 Err(_) => continue,
+461 +             }
+    |
+
+warning: this `else` block is redundant
+  --> src/performance/lock_free/page_tracker.rs:72:24
+   |
+72 |                   } else {
+   |  ________________________^
+...  |
+77 | |                 }
+   | |_________________^
+   |
+   = help: consider dropping the `else` clause and merging the code that follows (in the loop) with the `if` block
+                           if self.allocated_pages.insert(page_id) {
+                               // Successfully inserted - this page is ours
+                               self.total_pages.fetch_add(1, Ordering::Relaxed);
+                               self.allocated_count.fetch_add(1, Ordering::Relaxed);
+                               
+                               // Update high water mark
+                               self.update_max_page_id(page_id);
+                               
+                               return PageAllocation {
+                                   page_id,
+                                   is_new: true,
+                               };
+                               // merged code follows:
+           
+                           }
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: redundant else block
+  --> src/performance/lock_free/page_tracker.rs:72:18
+   |
+72 |                   } else {
+   |  __________________^
+...  |
+77 | |                 }
+   | |_________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+   |
+72 ~                 }
+73 +                 // This should never happen with fetch_add, but if it does,
+74 +                 // it means there's a serious bug. Log and retry.
+75 +                 // In production, this would warrant an error log.
+76 +                 continue;
+   |
+
+warning: redundant else block
+   --> src/features/backup/incremental.rs:473:18
+    |
+473 |                   } else {
+    |  __________________^
+474 | |                     return Ok(Some(ChangeType::Metadata));
+475 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+    |
+473 ~                 }
+474 +                 return Ok(Some(ChangeType::Metadata));
+    |
+
+warning: binding's name is too similar to existing binding
+   --> src/core/recovery/enhanced_recovery.rs:564:13
+    |
+564 |         let pages = vec![(1, &page1), (2, &page2)];
+    |             ^^^^^
+    |
+note: existing binding defined here
+   --> src/core/recovery/enhanced_recovery.rs:562:13
+    |
+562 |         let page1 = Page::new(1);
+    |             ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+    = note: `-W clippy::similar-names` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::similar_names)]`
+
+warning: binding's name is too similar to existing binding
+   --> src/features/encryption/key_manager.rs:177:13
+    |
+177 |         let key = EncryptionKey {
+    |             ^^^
+    |
+note: existing binding defined here
+   --> src/features/encryption/key_manager.rs:165:13
+    |
+165 |         let kek = self
+    |             ^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/features/encryption/key_manager.rs:333:13
+    |
+333 |         let current_dek_id = *self.current_dek_id.read().map_err(|_| Error::Encryption("DEK ID lock poisoned".to_string()))?;
+    |             ^^^^^^^^^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/encryption/key_manager.rs:332:13
+    |
+332 |         let current_kek_id = *self.current_kek_id.read().map_err(|_| Error::Encryption("KEK ID lock poisoned".to_string()))?;
+    |             ^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/features/encryption/key_manager.rs:368:13
+    |
+368 |         let new_dek_id = self.generate_data_key()?;
+    |             ^^^^^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/encryption/key_manager.rs:365:13
+    |
+365 |         let new_kek_id = self.generate_kek()?;
+    |             ^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/features/encryption/key_manager.rs:371:13
+    |
+371 |         let old_dek_id = self.current_dek_id.read().ok().and_then(|guard| *guard).unwrap_or(0);
+    |             ^^^^^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/encryption/key_manager.rs:370:13
+    |
+370 |         let old_kek_id = self.current_kek_id.read().ok().and_then(|guard| *guard).unwrap_or(0);
+    |             ^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/core/recovery/crash_recovery_manager.rs:749:57
+    |
+749 |     pub fn rollback_stage(&self, state: &RecoveryState, stage: &RecoveryStage) -> Result<()> {
+    |                                                         ^^^^^
+    |
+note: existing binding defined here
+   --> src/core/recovery/crash_recovery_manager.rs:749:34
+    |
+749 |     pub fn rollback_stage(&self, state: &RecoveryState, stage: &RecoveryStage) -> Result<()> {
+    |                                  ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/core/recovery/crash_recovery_manager.rs:814:13
+    |
+814 |         let stage = RecoveryStage::Initialization;
+    |             ^^^^^
+    |
+note: existing binding defined here
+   --> src/core/recovery/crash_recovery_manager.rs:811:13
+    |
+811 |         let state = RecoveryState::new(Duration::from_secs(60));
+    |             ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: unused import: `Zeroize`
+  --> src/features/encryption/secure_crypto_provider.rs:19:15
+   |
+19 | use zeroize::{Zeroize, ZeroizeOnDrop};
+   |               ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `zeroize::ZeroizeOnDrop`
+  --> src/features/encryption/hsm_provider.rs:12:5
+   |
+12 | use zeroize::ZeroizeOnDrop;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Zeroize`
+  --> src/features/encryption/envelope_encryption.rs:18:15
+   |
+18 | use zeroize::{Zeroize, ZeroizeOnDrop};
+   |               ^^^^^^^
+
+warning: binding's name is too similar to existing binding
+   --> src/features/encryption/envelope_encryption.rs:305:13
+    |
+305 |         let key = SecureKey {
+    |             ^^^
+    |
+note: existing binding defined here
+   --> src/features/encryption/envelope_encryption.rs:279:62
+    |
+279 |     async fn decrypt_dek(&self, encrypted_dek: &EnvelopeDEK, kek: &EnvelopeKEK) -> Result<EphemeralDEK> {
+    |                                                              ^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/features/encryption/secure_page_encryptor.rs:411:57
+    |
+411 |     pub async fn rotate_keys(&self, new_dek: SecureKey, new_kek: EnvelopeKEK) -> Result<()> {
+    |                                                         ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/encryption/secure_page_encryptor.rs:411:37
+    |
+411 |     pub async fn rotate_keys(&self, new_dek: SecureKey, new_kek: EnvelopeKEK) -> Result<()> {
+    |                                     ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: long literal lacking separators
+   --> src/features/compression/mod.rs:215:54
+    |
+215 |         let uncompressed_score = data.len() as f64 * 0.000001; // Very small time for no compression
+    |                                                      ^^^^^^^^ help: consider: `0.000_001`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: binding's name is too similar to existing binding
+   --> src/features/adaptive_compression/benchmark.rs:492:13
+    |
+492 |         let time_s = time_ns / 1_000_000_000.0;
+    |             ^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/adaptive_compression/benchmark.rs:486:47
+    |
+486 |     fn calculate_throughput(data_size: usize, time_ns: f64) -> f64 {
+    |                                               ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: long literal lacking separators
+   --> src/features/adaptive_compression/benchmark.rs:738:49
+    |
+738 |             test_sizes: vec![1024, 8192, 65536, 1048576], // 1KB to 1MB
+    |                                                 ^^^^^^^ help: consider: `1_048_576`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/features/adaptive_compression/hardware_detection.rs:640:31
+    |
+640 |             random_read_iops: 500000,
+    |                               ^^^^^^ help: consider: `500_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/features/adaptive_compression/hardware_detection.rs:641:32
+    |
+641 |             random_write_iops: 400000,
+    |                                ^^^^^^ help: consider: `400_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/features/adaptive_compression/hardware_detection.rs:651:31
+    |
+651 |             random_read_iops: 100000,
+    |                               ^^^^^^ help: consider: `100_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: binding's name is too similar to existing binding
+   --> src/features/monitoring/performance_monitor.rs:828:13
+    |
+828 |         let xy_sum: f64 = values.iter().enumerate().map(|(i, &y)| i as f64 * y).sum();
+    |             ^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/monitoring/performance_monitor.rs:826:13
+    |
+826 |         let x_sum: f64 = (0..values.len()).map(|i| i as f64).sum();
+    |             ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/features/monitoring/performance_monitor.rs:829:13
+    |
+829 |         let x2_sum: f64 = (0..values.len()).map(|i| (i as f64).powi(2)).sum();
+    |             ^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/monitoring/performance_monitor.rs:826:13
+    |
+826 |         let x_sum: f64 = (0..values.len()).map(|i| i as f64).sum();
+    |             ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/performance/io_uring/io_scheduler.rs:642:13
+    |
+642 |         let merged = merger.try_merge(&req1, &req2);
+    |             ^^^^^^
+    |
+note: existing binding defined here
+   --> src/performance/io_uring/io_scheduler.rs:616:13
+    |
+616 |         let merger = RequestMerger::new(1024, 8192);
+    |             ^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/performance/io_uring/io_scheduler.rs:645:13
+    |
+645 |         let merged = merged.unwrap();
+    |             ^^^^^^
+    |
+note: existing binding defined here
+   --> src/performance/io_uring/io_scheduler.rs:616:13
+    |
+616 |         let merger = RequestMerger::new(1024, 8192);
+    |             ^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/features/monitoring/resource_tracker.rs:740:13
+    |
+740 |         let xy_sum: f64 = values.iter().enumerate().map(|(i, &y)| i as f64 * y).sum();
+    |             ^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/monitoring/resource_tracker.rs:738:13
+    |
+738 |         let x_sum: f64 = (0..values.len()).map(|i| i as f64).sum();
+    |             ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/features/monitoring/resource_tracker.rs:741:13
+    |
+741 |         let x2_sum: f64 = (0..values.len()).map(|i| (i as f64).powi(2)).sum();
+    |             ^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/monitoring/resource_tracker.rs:738:13
+    |
+738 |         let x_sum: f64 = (0..values.len()).map(|i| i as f64).sum();
+    |             ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: redundant else block
+   --> src/features/distributed_tracing/exporter.rs:577:22
+    |
+577 |                       } else {
+    |  ______________________^
+578 | |                         errors.push(e);
+579 | |                     }
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+    |
+577 ~                     }
+578 +                     errors.push(e);
+    |
+
+warning: long literal lacking separators
+   --> src/features/distributed_tracing/integration.rs:435:34
+    |
+435 |             "db.scan" => (10000, 100000),  // 10ms warn, 100ms error
+    |                                  ^^^^^^ help: consider: `100_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/features/distributed_tracing/integration.rs:436:35
+    |
+436 |             "db.batch" => (50000, 500000), // 50ms warn, 500ms error
+    |                                   ^^^^^^ help: consider: `500_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: unused import: `Zeroize`
+  --> src/features/encryption/secure_crypto_provider.rs:19:15
+   |
+19 | use zeroize::{Zeroize, ZeroizeOnDrop};
+   |               ^^^^^^^
+
+warning: long literal lacking separators
+   --> src/features/profiling/cpu_profiler.rs:274:26
+    |
+274 |                 address: 0x7fff8b2a1000,
+    |                          ^^^^^^^^^^^^^^ help: consider: `0x7fff_8b2a_1000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/features/profiling/cpu_profiler.rs:281:26
+    |
+281 |                 address: 0x7fff8b2a2000,
+    |                          ^^^^^^^^^^^^^^ help: consider: `0x7fff_8b2a_2000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/features/profiling/cpu_profiler.rs:288:26
+    |
+288 |                 address: 0x7fff8b2a3000,
+    |                          ^^^^^^^^^^^^^^ help: consider: `0x7fff_8b2a_3000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/profiling/flamegraph.rs:198:22
+    |
+198 |     writeln!(writer, r#"<defs>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    |                      ^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+    = note: `-W clippy::needless-raw-string-hashes` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::needless_raw_string_hashes)]`
+help: remove all the hashes around the string literal
+    |
+198 -     writeln!(writer, r#"<defs>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+198 +     writeln!(writer, r"<defs>").map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/profiling/flamegraph.rs:201:22
+    |
+201 |       writeln!(writer, r#"
+    |  ______________________^
+202 | |         .frame {{ stroke: white; stroke-width: 1; cursor: pointer; }}
+203 | |         .frame:hover {{ stroke: black; stroke-width: 2; }}
+204 | |         .frame-text {{ font-family: Verdana, sans-serif; font-size: {}px; fill: black; pointer-events: none; }}
+205 | |         .title {{ font-family: Verdana, sans-serif; font-size: 16px; font-weight: bold; fill: black; }}
+206 | |         .details {{ font-family: Verdana, sans-serif; font-size: 12px; fill: #666; }}
+207 | |     "#, font_size)
+    | |______^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+201 ~     writeln!(writer, r"
+202 |         .frame {{ stroke: white; stroke-width: 1; cursor: pointer; }}
+...
+206 |         .details {{ font-family: Verdana, sans-serif; font-size: 12px; fill: #666; }}
+207 ~     ", font_size)
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/profiling/flamegraph.rs:209:22
+    |
+209 |     writeln!(writer, r#"</style>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    |                      ^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+209 -     writeln!(writer, r#"</style>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+209 +     writeln!(writer, r"</style>").map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/profiling/flamegraph.rs:210:22
+    |
+210 |     writeln!(writer, r#"</defs>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    |                      ^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+210 -     writeln!(writer, r#"</defs>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+210 +     writeln!(writer, r"</defs>").map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/profiling/flamegraph.rs:244:22
+    |
+244 |     writeln!(writer, r#"</svg>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    |                      ^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+244 -     writeln!(writer, r#"</svg>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+244 +     writeln!(writer, r"</svg>").map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/profiling/flamegraph.rs:296:22
+    |
+296 |     writeln!(writer, r#"</rect>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    |                      ^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+296 -     writeln!(writer, r#"</rect>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+296 +     writeln!(writer, r"</rect>").map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/compression/adaptive_compression.rs:609:24
+    |
+609 |         let xml_data = br#"<root><item>test</item></root>"#;
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+    = note: `-W clippy::needless-raw-string-hashes` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::needless_raw_string_hashes)]`
+help: remove all the hashes around the byte string literal
+    |
+609 -         let xml_data = br#"<root><item>test</item></root>"#;
+609 +         let xml_data = br"<root><item>test</item></root>";
+    |
+
+warning: long literal lacking separators
+   --> src/features/profiling/io_profiler.rs:419:34
+    |
+419 |             fastrand::u64(65536..1048576)
+    |                                  ^^^^^^^ help: consider: `1_048_576`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/features/profiling/io_profiler.rs:422:27
+    |
+422 |             fastrand::u64(1048576..16777216)
+    |                           ^^^^^^^ help: consider: `1_048_576`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/features/profiling/io_profiler.rs:422:36
+    |
+422 |             fastrand::u64(1048576..16777216)
+    |                                    ^^^^^^^^ help: consider: `16_777_216`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/features/adaptive_compression/benchmark.rs:795:69
+    |
+795 |         let throughput = CompressionBenchmark::calculate_throughput(1048576, 1_000_000_000.0); // 1MB in 1 second
+    |                                                                     ^^^^^^^ help: consider: `1_048_576`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/features/profiling/memory_profiler.rs:368:34
+    |
+368 |             fastrand::u64(65536..1048576)
+    |                                  ^^^^^^^ help: consider: `1_048_576`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/features/profiling/memory_profiler.rs:371:27
+    |
+371 |             fastrand::u64(1048576..16777216)
+    |                           ^^^^^^^ help: consider: `1_048_576`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: long literal lacking separators
+   --> src/features/profiling/memory_profiler.rs:371:36
+    |
+371 |             fastrand::u64(1048576..16777216)
+    |                                    ^^^^^^^^ help: consider: `16_777_216`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: binding's name is too similar to existing binding
+   --> src/features/profiling/metrics_collector.rs:511:13
+    |
+511 |         let sum_xy: f64 = values.iter().enumerate().map(|(i, &y)| i as f64 * y).sum();
+    |             ^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/profiling/metrics_collector.rs:510:13
+    |
+510 |         let sum_y: f64 = values.iter().sum();
+    |             ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: unnested or-patterns
+   --> src/features/profiling/metrics_collector.rs:622:21
+    |
+622 | /                     (TrendDirection::Increasing, "cpu_usage")
+623 | |                     | (TrendDirection::Increasing, "memory_usage")
+624 | |                     | (TrendDirection::Increasing, "io_error_rate") => {
+    | |___________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unnested_or_patterns
+help: nest the patterns
+    |
+622 -                     (TrendDirection::Increasing, "cpu_usage")
+623 -                     | (TrendDirection::Increasing, "memory_usage")
+624 -                     | (TrendDirection::Increasing, "io_error_rate") => {
+622 +                     (TrendDirection::Increasing, "cpu_usage" | "memory_usage" | "io_error_rate") => {
+    |
+
+warning: unnested or-patterns
+   --> src/features/profiling/metrics_collector.rs:635:21
+    |
+635 | /                     (TrendDirection::Decreasing, "performance_score")
+636 | |                     | (TrendDirection::Decreasing, "cache_hit_rate") => {
+    | |____________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unnested_or_patterns
+help: nest the patterns
+    |
+635 -                     (TrendDirection::Decreasing, "performance_score")
+636 -                     | (TrendDirection::Decreasing, "cache_hit_rate") => {
+635 +                     (TrendDirection::Decreasing, "performance_score" | "cache_hit_rate") => {
+    |
+
+warning: binding's name is too similar to existing binding
+   --> src/features/compaction/space_manager.rs:259:29
+    |
+259 |                     let mut regions = self.regions.write().await;
+    |                             ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/compaction/space_manager.rs:233:14
+    |
+233 |         let (region1, region2) = {
+    |              ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/features/compaction/space_manager.rs:267:25
+    |
+267 |                 let mut regions = self.regions.write().await;
+    |                         ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/compaction/space_manager.rs:233:14
+    |
+233 |         let (region1, region2) = {
+    |              ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: `#[ignore]` without reason
+   --> src/features/monitoring/mod.rs:298:5
+    |
+298 |     #[ignore] // Ignored due to lazy_static race conditions in parallel test execution
+    |     ^^^^^^^^^
+    |
+    = help: add a reason with `= ".."`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#ignore_without_reason
+    = note: `-W clippy::ignore-without-reason` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::ignore_without_reason)]`
+
+warning: `#[ignore]` without reason
+   --> src/features/monitoring/mod.rs:311:5
+    |
+311 |     #[ignore] // Ignored due to lazy_static race conditions in parallel test execution
+    |     ^^^^^^^^^
+    |
+    = help: add a reason with `= ".."`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#ignore_without_reason
+
+warning: binding's name is too similar to existing binding
+   --> src/features/compaction/stats.rs:153:21
+    |
+153 |             let mut stats = self.stats.write().await;
+    |                     ^^^^^
+    |
+note: existing binding defined here
+   --> src/features/compaction/stats.rs:149:9
+    |
+149 |         state: CompactionState,
+    |         ^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: `#[ignore]` without reason
+   --> src/features/monitoring/mod.rs:330:5
+    |
+330 |     #[ignore] // Ignored due to lazy_static race conditions in parallel test execution
+    |     ^^^^^^^^^
+    |
+    = help: add a reason with `= ".."`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#ignore_without_reason
+
+warning: long literal lacking separators
+   --> src/features/integrity/detector.rs:341:30
+    |
+341 |             if entry_count > 100000 {
+    |                              ^^^^^^ help: consider: `100_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: this `continue` expression is redundant
+   --> src/features/integrity/recovery.rs:170:29
+    |
+170 |                 Ok(None) => continue, // Page not found in this backup
+    |                             ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: this `continue` expression is redundant
+   --> src/features/integrity/recovery.rs:171:27
+    |
+171 |                 Err(_) => continue,   // Backup corrupted or inaccessible
+    |                           ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: this `continue` expression is redundant
+   --> src/features/integrity/recovery.rs:212:29
+    |
+212 |                 Ok(None) => continue, // Page not available from this replica
+    |                             ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: this `continue` expression is redundant
+   --> src/features/integrity/recovery.rs:213:27
+    |
+213 |                 Err(_) => continue,   // Replica unreachable or error
+    |                           ^^^^^^^^
+    |
+    = help: consider dropping the `continue` expression
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: binding's name is too similar to existing binding
+   --> src/features/distributed_tracing/exporter.rs:711:13
+    |
+711 |         let content = std::fs::read_to_string(temp_file.path())?;
+    |             ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/distributed_tracing/exporter.rs:704:13
+    |
+704 |         let context = TraceContext::new_root();
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/features/distributed_tracing/sampler.rs:439:17
+    |
+439 |         let mut sampled = 0;
+    |                 ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/distributed_tracing/sampler.rs:436:13
+    |
+436 |         let sampler = ProbabilitySampler::new(0.5);
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/features/distributed_tracing/sampler.rs:455:17
+    |
+455 |         let mut sampled = 0;
+    |                 ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/distributed_tracing/sampler.rs:452:13
+    |
+452 |         let sampler = RateLimitingSampler::new(5);
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: long literal lacking separators
+   --> src/features/integrity/report.rs:385:25
+    |
+385 |             total_size: 4096000, // Would be calculated
+    |                         ^^^^^^^ help: consider: `4_096_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: binding's name is too similar to existing binding
+   --> src/features/distributed_tracing/mod.rs:555:17
+    |
+555 |         let mut sampled = 0;
+    |                 ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/features/distributed_tracing/mod.rs:552:13
+    |
+552 |         let sampler = RateLimitingSampler::new(0.5);
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: long literal lacking separators
+    --> src/features/repl/formatter.rs:1047:43
+     |
+1047 |         assert_eq!(formatter.format_bytes(1048576), "1.0 MB");
+     |                                           ^^^^^^^ help: consider: `1_048_576`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: unnested or-patterns
+   --> src/features/transactions/participant.rs:341:13
+    |
+341 | /             (LockType::Shared, LockType::Shared)
+342 | |             | (LockType::Shared, LockType::IntentShared)
+343 | |             | (LockType::IntentShared, LockType::Shared)
+344 | |             | (LockType::IntentShared, LockType::IntentShared))
+    | |______________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unnested_or_patterns
+help: nest the patterns
+    |
+341 ~             (LockType::Shared | LockType::IntentShared, LockType::Shared) |
+342 ~ (LockType::Shared | LockType::IntentShared, LockType::IntentShared))
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/profiling/flamegraph.rs:198:22
+    |
+198 |     writeln!(writer, r#"<defs>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    |                      ^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+198 -     writeln!(writer, r#"<defs>"#).map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+198 +     writeln!(writer, r"<defs>").map_err(|e| super::ProfilingError::IoError(e.to_string()))?;
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/migration/templates.rs:303:26
+    |
+303 |               up_template: r#"-- +migrate Up
+    |  __________________________^
+304 | | CREATE TABLE {{table_name}} (
+305 | |     id INTEGER PRIMARY KEY{{auto_increment}},
+306 | |     {{columns}}
+307 | |     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+308 | |     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+309 | | );"#.to_string(),
+    | |____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+303 ~             up_template: r"-- +migrate Up
+304 | CREATE TABLE {{table_name}} (
+...
+308 |     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+309 ~ );".to_string(),
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/migration/templates.rs:310:33
+    |
+310 |               down_template: Some(r#"-- +migrate Down
+    |  _________________________________^
+311 | | DROP TABLE IF EXISTS {{table_name}};"#.to_string()),
+    | |______________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+310 ~             down_template: Some(r"-- +migrate Down
+311 ~ DROP TABLE IF EXISTS {{table_name}};".to_string()),
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/migration/templates.rs:347:26
+    |
+347 |               up_template: r#"-- +migrate Up
+    |  __________________________^
+348 | | ALTER TABLE {{table_name}} ADD COLUMN {{column_name}} {{data_type}}{{not_null}}{{default_value}};"#.to_string(),
+    | |___________________________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+347 ~             up_template: r"-- +migrate Up
+348 ~ ALTER TABLE {{table_name}} ADD COLUMN {{column_name}} {{data_type}}{{not_null}}{{default_value}};".to_string(),
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/migration/templates.rs:349:33
+    |
+349 |               down_template: Some(r#"-- +migrate Down
+    |  _________________________________^
+350 | | ALTER TABLE {{table_name}} DROP COLUMN {{column_name}};"#.to_string()),
+    | |_________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+349 ~             down_template: Some(r"-- +migrate Down
+350 ~ ALTER TABLE {{table_name}} DROP COLUMN {{column_name}};".to_string()),
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/migration/templates.rs:400:26
+    |
+400 |               up_template: r#"-- +migrate Up
+    |  __________________________^
+401 | | ALTER TABLE {{table_name}} DROP COLUMN {{column_name}};"#.to_string(),
+    | |_________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+400 ~             up_template: r"-- +migrate Up
+401 ~ ALTER TABLE {{table_name}} DROP COLUMN {{column_name}};".to_string(),
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/migration/templates.rs:430:26
+    |
+430 |               up_template: r#"-- +migrate Up
+    |  __________________________^
+431 | | CREATE{{unique}} INDEX {{index_name}} ON {{table_name}} ({{columns}});"#.to_string(),
+    | |________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+430 ~             up_template: r"-- +migrate Up
+431 ~ CREATE{{unique}} INDEX {{index_name}} ON {{table_name}} ({{columns}});".to_string(),
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/migration/templates.rs:432:33
+    |
+432 |               down_template: Some(r#"-- +migrate Down
+    |  _________________________________^
+433 | | DROP INDEX IF EXISTS {{index_name}};"#.to_string()),
+    | |______________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+432 ~             down_template: Some(r"-- +migrate Down
+433 ~ DROP INDEX IF EXISTS {{index_name}};".to_string()),
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/migration/templates.rs:476:26
+    |
+476 |               up_template: r#"-- +migrate Up
+    |  __________________________^
+477 | | {{migration_sql}}"#.to_string(),
+    | |___________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+476 ~             up_template: r"-- +migrate Up
+477 ~ {{migration_sql}}".to_string(),
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/migration/templates.rs:478:33
+    |
+478 |               down_template: Some(r#"-- +migrate Down
+    |  _________________________________^
+479 | | {{rollback_sql}}"#.to_string()),
+    | |__________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+478 ~             down_template: Some(r"-- +migrate Down
+479 ~ {{rollback_sql}}".to_string()),
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/migration/templates.rs:508:26
+    |
+508 |               up_template: r#"-- +migrate Up
+    |  __________________________^
+509 | | {{up_sql}}"#.to_string(),
+    | |____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+508 ~             up_template: r"-- +migrate Up
+509 ~ {{up_sql}}".to_string(),
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> src/features/migration/templates.rs:510:33
+    |
+510 |               down_template: Some(r#"-- +migrate Down
+    |  _________________________________^
+511 | | {{down_sql}}"#.to_string()),
+    | |______________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+510 ~             down_template: Some(r"-- +migrate Down
+511 ~ {{down_sql}}".to_string()),
+    |
+
+warning: long literal lacking separators
+   --> src/features/migration/batch_processor.rs:516:12
+    |
+516 |         Ok(1000000)
+    |            ^^^^^^^ help: consider: `1_000_000`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: this `continue` expression is redundant
+  --> src/utils/integrity/checksum_validator.rs:41:17
+   |
+41 |                 continue;
+   |                 ^^^^^^^^
+   |
+   = help: consider dropping the `continue` expression
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_continue
+
+warning: long literal lacking separators
+  --> src/utils/integrity/page_scanner.rs:12:33
+   |
+12 | const LIGHTNING_DB_MAGIC: u32 = 0x4C444242; // "LDBB"
+   |                                 ^^^^^^^^^^ help: consider: `0x4C44_4242`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: binding's name is too similar to existing binding
+   --> src/utils/memory_tracker.rs:582:56
+    |
+582 |     fn update_allocation_site_stats(&self, site: &str, size: u64, is_allocation: bool) {
+    |                                                        ^^^^
+    |
+note: existing binding defined here
+   --> src/utils/memory_tracker.rs:582:44
+    |
+582 |     fn update_allocation_site_stats(&self, site: &str, size: u64, is_allocation: bool) {
+    |                                            ^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: unused import: `thread_rng`
+  --> src/security/access_control.rs:10:12
+   |
+10 | use rand::{thread_rng, Rng};
+   |            ^^^^^^^^^^
+
+warning: redundant else block
+   --> src/security/access_control.rs:248:14
+    |
+248 |               } else {
+    |  ______________^
+249 | |                 user.locked_until = None;
+250 | |                 user.failed_login_attempts = 0;
+251 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+    |
+248 ~             }
+249 +             user.locked_until = None;
+250 +             user.failed_login_attempts = 0;
+    |
+
+warning: unused imports: `DateTime` and `Utc`
+ --> src/security/rate_limiter.rs:6:14
+  |
+6 | use chrono::{DateTime, Utc};
+  |              ^^^^^^^^  ^^^
+
+warning: redundant else block
+  --> src/security/rate_limiter.rs:78:14
+   |
+78 |               } else {
+   |  ______________^
+79 | |                 entry.locked_until = None;
+80 | |                 entry.count = 0;
+81 | |                 entry.first_attempt = now;
+82 | |             }
+   | |_____________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_else
+help: remove the `else` block and move the contents out
+   |
+78 ~             }
+79 +             entry.locked_until = None;
+80 +             entry.count = 0;
+81 +             entry.first_attempt = now;
+   |
+
+warning: unused import: `SecurityError`
+  --> src/security/timing_attack_tests.rs:1:23
+   |
+1  | use crate::security::{SecurityError, SecurityResult};
+   |                       ^^^^^^^^^^^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/security/mod.rs:11:1
+   |
+11 | pub mod timing_attack_tests;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RateLimitConfig` and `TimingAttackRateLimiter`
+  --> src/security/timing_attack_tests.rs:4:54
+   |
+4  | use crate::security::rate_limiter::{AuthRateLimiter, TimingAttackRateLimiter, RateLimitConfig};
+   |                                                      ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/security/mod.rs:11:1
+   |
+11 | pub mod timing_attack_tests;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> src/security/timing_attack_tests.rs:5:5
+   |
+5  | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/security/mod.rs:11:1
+   |
+11 | pub mod timing_attack_tests;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Rng` and `thread_rng`
+  --> src/security/timing_attack_tests.rs:8:12
+   |
+8  | use rand::{thread_rng, Rng};
+   |            ^^^^^^^^^^  ^^^
+   |
+help: if this is a test module, consider adding a `#[cfg(test)]` to the containing module
+  --> src/security/mod.rs:11:1
+   |
+11 | pub mod timing_attack_tests;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: binding's name is too similar to existing binding
+   --> src/utils/serialization/key_encoder.rs:311:13
+    |
+311 |         let encoded = encoder.encode(key);
+    |             ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/utils/serialization/key_encoder.rs:308:13
+    |
+308 |         let encoder = IdentityKeyEncoder;
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/utils/serialization/key_encoder.rs:329:13
+    |
+329 |         let encoded = encoder.encode(b"user:1234");
+    |             ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/utils/serialization/key_encoder.rs:326:13
+    |
+326 |         let encoder = PrefixKeyEncoder::from_keys(&keys);
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/utils/serialization/key_encoder.rs:336:13
+    |
+336 |         let encoded = encoder.encode(b"other:key");
+    |             ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/utils/serialization/key_encoder.rs:326:13
+    |
+326 |         let encoder = PrefixKeyEncoder::from_keys(&keys);
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/utils/serialization/key_encoder.rs:348:13
+    |
+348 |         let encoded = encoder.encode_u64(127);
+    |             ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/utils/serialization/key_encoder.rs:345:13
+    |
+345 |         let encoder = VarIntKeyEncoder;
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/utils/serialization/key_encoder.rs:352:13
+    |
+352 |         let encoded = encoder.encode_u64(300);
+    |             ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/utils/serialization/key_encoder.rs:345:13
+    |
+345 |         let encoder = VarIntKeyEncoder;
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/utils/serialization/key_encoder.rs:372:13
+    |
+372 |         let encoded = encoder.encode_parts(&parts);
+    |             ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/utils/serialization/key_encoder.rs:368:13
+    |
+368 |         let encoder = CompositeKeyEncoder::new(b':');
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/utils/serialization/key_encoder.rs:381:13
+    |
+381 |         let encoded = encoder.encode_parts(&parts);
+    |             ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/utils/serialization/key_encoder.rs:368:13
+    |
+368 |         let encoder = CompositeKeyEncoder::new(b':');
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/utils/serialization/value_encoder.rs:135:13
+    |
+135 |         let encoded = encoder.encode(value);
+    |             ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/utils/serialization/value_encoder.rs:132:13
+    |
+132 |         let encoder = IdentityValueEncoder;
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/utils/serialization/value_encoder.rs:148:13
+    |
+148 |         let encoded = encoder.encode(small_value);
+    |             ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/utils/serialization/value_encoder.rs:144:13
+    |
+144 |         let encoder = CompressionValueEncoder::new(CompressionType::Lz4, 10);
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: binding's name is too similar to existing binding
+   --> src/utils/serialization/value_encoder.rs:153:13
+    |
+153 |         let encoded = encoder.encode(large_value);
+    |             ^^^^^^^
+    |
+note: existing binding defined here
+   --> src/utils/serialization/value_encoder.rs:144:13
+    |
+144 |         let encoder = CompressionValueEncoder::new(CompressionType::Lz4, 10);
+    |             ^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#similar_names
+
+warning: long literal lacking separators
+   --> src/utils/integrity/page_scanner.rs:362:40
+    |
+362 |         assert_eq!(LIGHTNING_DB_MAGIC, 0x4C444242);
+    |                                        ^^^^^^^^^^ help: consider: `0x4C44_4242`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#unreadable_literal
+
+warning: `#[ignore]` without reason
+   --> src/testing/deadlock_tests.rs:337:5
+    |
+337 |     #[ignore] // MVCC transaction manager not available yet
+    |     ^^^^^^^^^
+    |
+    = help: add a reason with `= ".."`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#ignore_without_reason
+
+warning: unused import: `SecurityError`
+ --> src/security/timing_attack_tests.rs:1:23
+  |
+1 | use crate::security::{SecurityError, SecurityResult};
+  |                       ^^^^^^^^^^^^^
+
+warning: unused imports: `RateLimitConfig` and `TimingAttackRateLimiter`
+ --> src/security/timing_attack_tests.rs:4:54
+  |
+4 | use crate::security::rate_limiter::{AuthRateLimiter, TimingAttackRateLimiter, RateLimitConfig};
+  |                                                      ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> src/security/timing_attack_tests.rs:5:5
+  |
+5 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Rng` and `thread_rng`
+ --> src/security/timing_attack_tests.rs:8:12
+  |
+8 | use rand::{thread_rng, Rng};
+  |            ^^^^^^^^^^  ^^^
+
+warning: use of deprecated function `rand::thread_rng`: Renamed to `rng`
+  --> src/security/access_control.rs:10:12
+   |
+10 | use rand::{thread_rng, Rng};
+   |            ^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `rand::thread_rng`: Renamed to `rng`
+   --> src/security/access_control.rs:310:20
+    |
+310 |         use rand::{thread_rng, Rng};
+    |                    ^^^^^^^^^^
+
+warning: use of deprecated function `rand::thread_rng`: Renamed to `rng`
+   --> src/security/access_control.rs:312:50
+    |
+312 |         let random_extra = Duration::from_millis(thread_rng().gen_range(10..50));
+    |                                                  ^^^^^^^^^^
+
+warning: use of deprecated function `rand::thread_rng`: Renamed to `rng`
+  --> src/security/crypto.rs:15:21
+   |
+15 | use rand::{RngCore, thread_rng};
+   |                     ^^^^^^^^^^
+
+warning: use of deprecated function `rand::thread_rng`: Renamed to `rng`
+   --> src/security/crypto.rs:228:24
+    |
+228 |         let delay_ms = thread_rng().next_u32() % 50 + 10;
+    |                        ^^^^^^^^^^
+
+warning: use of deprecated function `rand::thread_rng`: Renamed to `rng`
+   --> src/security/crypto.rs:234:24
+    |
+234 |         let delay_ms = thread_rng().next_u32() % 50 + 10;
+    |                        ^^^^^^^^^^
+
+warning: use of deprecated function `rand::thread_rng`: Renamed to `rng`
+ --> src/security/timing_attack_tests.rs:8:12
+  |
+8 | use rand::{thread_rng, Rng};
+  |            ^^^^^^^^^^
+
+warning: unused variable: `secret`
+   --> src/security/timing_attack_tests.rs:255:13
+    |
+255 |         let secret = "JBSWY3DPEHPK3PXP";
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_secret`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: use of deprecated method `rand::Rng::gen_range`: Renamed to `random_range`
+   --> src/security/access_control.rs:312:63
+    |
+312 |         let random_extra = Duration::from_millis(thread_rng().gen_range(10..50));
+    |                                                               ^^^^^^^^^
+
+warning: unused import: `Rng`
+  --> src/security/access_control.rs:10:24
+   |
+10 | use rand::{thread_rng, Rng};
+   |                        ^^^
+
+warning: unused import: `subtle::ConstantTimeEq`
+  --> src/security/crypto.rs:14:5
+   |
+14 | use subtle::ConstantTimeEq;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src/core/btree/delete.rs:338:13
+    |
+338 |         let mut parent_page = self.page_manager.get_page(parent_page_id)?;
+    |             ----^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: unused variable: `handle`
+   --> src/features/encryption/hsm_provider.rs:287:29
+    |
+287 |     async fn encrypt(&self, handle: &HSMKeyHandle, plaintext: &[u8], aad: Option<&[u8]>) -> Result<HSMEncryptResult> {
+    |                             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_handle`
+
+warning: unused variable: `handle`
+   --> src/features/encryption/hsm_provider.rs:305:29
+    |
+305 |     async fn decrypt(&self, handle: &HSMKeyHandle, encrypted: &HSMEncryptResult) -> Result<Vec<u8>> {
+    |                             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_handle`
+
+warning: unused variable: `handle`
+   --> src/features/encryption/hsm_provider.rs:313:26
+    |
+313 |     async fn sign(&self, handle: &HSMKeyHandle, data: &[u8], algorithm: SigningAlgorithm) -> Result<Vec<u8>> {
+    |                          ^^^^^^ help: if this is intentional, prefix it with an underscore: `_handle`
+
+warning: unused variable: `data`
+   --> src/features/encryption/hsm_provider.rs:313:49
+    |
+313 |     async fn sign(&self, handle: &HSMKeyHandle, data: &[u8], algorithm: SigningAlgorithm) -> Result<Vec<u8>> {
+    |                                                 ^^^^ help: if this is intentional, prefix it with an underscore: `_data`
+
+warning: unused variable: `handle`
+   --> src/features/encryption/hsm_provider.rs:328:28
+    |
+328 |     async fn verify(&self, handle: &HSMKeyHandle, data: &[u8], signature: &[u8], algorithm: SigningAlgorithm) -> Result<bool> {
+    |                            ^^^^^^ help: if this is intentional, prefix it with an underscore: `_handle`
+
+warning: unused variable: `data`
+   --> src/features/encryption/hsm_provider.rs:328:51
+    |
+328 |     async fn verify(&self, handle: &HSMKeyHandle, data: &[u8], signature: &[u8], algorithm: SigningAlgorithm) -> Result<bool> {
+    |                                                   ^^^^ help: if this is intentional, prefix it with an underscore: `_data`
+
+warning: unused variable: `signature`
+   --> src/features/encryption/hsm_provider.rs:328:64
+    |
+328 |     async fn verify(&self, handle: &HSMKeyHandle, data: &[u8], signature: &[u8], algorithm: SigningAlgorithm) -> Result<bool> {
+    |                                                                ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_signature`
+
+warning: unused variable: `algorithm`
+   --> src/features/encryption/hsm_provider.rs:328:82
+    |
+328 |     async fn verify(&self, handle: &HSMKeyHandle, data: &[u8], signature: &[u8], algorithm: SigningAlgorithm) -> Result<bool> {
+    |                                                                                  ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_algorithm`
+
+warning: unused variable: `handle`
+   --> src/features/encryption/hsm_provider.rs:336:33
+    |
+336 |     async fn destroy_key(&self, handle: &HSMKeyHandle) -> Result<()> {
+    |                                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_handle`
+
+error[E0502]: cannot borrow `encrypted` as immutable because it is also borrowed as mutable
+   --> src/features/encryption/secure_page_encryptor.rs:494:23
+    |
+494 |             encrypted[encrypted.len() - 10] ^= 0xFF;
+    |             ----------^^^^^^^^^------------
+    |             |        ||
+    |             |        |immutable borrow occurs here
+    |             |        mutable borrow later used here
+    |             mutable borrow occurs here
+    |
+help: try adding a local storing this...
+   --> src/features/encryption/secure_page_encryptor.rs:494:23
+    |
+494 |             encrypted[encrypted.len() - 10] ^= 0xFF;
+    |                       ^^^^^^^^^^^^^^^
+help: ...and then using that local here
+   --> src/features/encryption/secure_page_encryptor.rs:494:22
+    |
+494 |             encrypted[encrypted.len() - 10] ^= 0xFF;
+    |                      ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `found_user`
+   --> src/security/access_control.rs:214:23
+    |
+214 |         let (user_id, found_user) = {
+    |                       ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_found_user`
+
+warning: variable does not need to be mutable
+   --> src/security/access_control.rs:256:17
+    |
+256 |             let mut dummy_hash = "$2b$12$dummy.hash.for.constant.time.comparison.purposes.only".to_string();
+    |                 ----^^^^^^^^^^
+    |                 |
+    |                 help: remove this `mut`
+
+warning: unused variable: `username`
+   --> src/security/access_control.rs:301:45
+    |
+301 |     fn authenticate_nonexistent_user(&self, username: &str, password: &str, start_time: Instant) -> SecurityResult<String> {
+    |                                             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_username`
+
+For more information about this error, try `rustc --explain E0433`.
+warning: `lightning_db` (lib) generated 155 warnings
+error: could not compile `lightning_db` (lib) due to 22 previous errors; 155 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+Some errors have detailed explanations: E0433, E0502.
+For more information about an error, try `rustc --explain E0433`.
+warning: `lightning_db` (lib test) generated 183 warnings (148 duplicates)
+error: could not compile `lightning_db` (lib test) due to 23 previous errors; 183 warnings emitted

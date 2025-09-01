@@ -11,6 +11,8 @@ use sha2::{Sha256, Sha512, Digest};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
+use subtle::ConstantTimeEq;
+use crate::security::crypto::CryptographicManager;
 
 pub struct AuthenticationManager {
     providers: Arc<DashMap<String, Arc<dyn AuthProvider>>>,
@@ -659,6 +661,8 @@ impl AuthenticationManager {
     pub async fn authenticate(&self, credentials: &Credentials) -> Result<AuthResult> {
         let start = Instant::now();
         self.metrics.total_auth_attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        
+        let min_auth_duration = Duration::from_millis(200);
 
         // Check IP whitelist if configured
         if let Some(ref whitelist) = self.security_config.ip_whitelist {
@@ -687,8 +691,15 @@ impl AuthenticationManager {
             _ => Err(Error::Custom("Authentication method not supported".to_string())),
         };
 
-        let elapsed = start.elapsed().as_millis() as u64;
-        self.metrics.avg_auth_time_ms.store(elapsed, std::sync::atomic::Ordering::Relaxed);
+        let elapsed = start.elapsed();
+        if elapsed < min_auth_duration {
+            let remaining = min_auth_duration - elapsed;
+            let jitter = Duration::from_millis(rand::random::<u64>() % 50);
+            tokio::time::sleep(remaining + jitter).await;
+        }
+        
+        let total_elapsed = start.elapsed().as_millis() as u64;
+        self.metrics.avg_auth_time_ms.store(total_elapsed, std::sync::atomic::Ordering::Relaxed);
 
         match result {
             Ok(auth_result) => {
@@ -708,13 +719,27 @@ impl AuthenticationManager {
 
     async fn authenticate_password(&self, credentials: &Credentials) -> Result<AuthResult> {
         if let Credentials::Password { username, password } = credentials {
-            // Look up user
-            let user_id = self.user_store.username_index
-                .get(username)
-                .map(|id| id.clone());
-
-            if let Some(user_id) = user_id {
-                if let Some(user) = self.user_store.users.get(&user_id) {
+            let start_time = Instant::now();
+            
+            let (user_id, user_exists) = {
+                let user_id = self.user_store.username_index
+                    .get(username)
+                    .map(|id| id.clone());
+                (user_id.clone(), user_id.is_some())
+            };
+            
+            if user_exists {
+                self.authenticate_existing_user_password(&user_id.unwrap(), password, start_time).await
+            } else {
+                self.authenticate_nonexistent_user_password(username, password, start_time).await
+            }
+        } else {
+            Err(Error::Custom("Invalid credentials type".to_string()))
+        }
+    }
+    
+    async fn authenticate_existing_user_password(&self, user_id: String, password: &str, start_time: Instant) -> Result<AuthResult> {
+        if let Some(user) = self.user_store.users.get(&user_id) {
                     // Check account status
                     match user.status {
                         UserStatus::Locked => {
@@ -744,60 +769,88 @@ impl AuthenticationManager {
                         _ => {}
                     }
 
-                    // Verify password
-                    if let Some(ref hash) = user.password_hash {
-                        let password_valid = self.verify_password(password, hash, &user.salt).await?;
+                    let password_valid = if let Some(ref hash) = user.password_hash {
+                        self.verify_password_constant_time(password, hash, &user.salt).await?
+                    } else {
+                        self.dummy_verify_password(password).await?;
+                        false
+                    };
                         
-                        if password_valid {
-                            // Check if MFA is required
-                            let requires_mfa = user.mfa_enabled || self.security_config.mfa_required;
-                            
-                            // Create session if not requiring MFA
-                            let (session_token, refresh_token) = if !requires_mfa {
-                                self.create_session(&user_id).await?
-                            } else {
-                                (None, None)
-                            };
+                    let result = if password_valid {
+                        let requires_mfa = user.mfa_enabled || self.security_config.mfa_required;
+                        
+                        let (session_token, refresh_token) = if !requires_mfa {
+                            self.create_session(&user_id).await?
+                        } else {
+                            (None, None)
+                        };
 
-                            return Ok(AuthResult {
-                                success: true,
-                                user_id: Some(user_id.clone()),
-                                identity: Some(Identity {
-                                    user_id: user_id.clone(),
-                                    username: user.username.clone(),
-                                    email: user.email.clone(),
-                                    groups: user.groups.clone(),
-                                    roles: user.roles.clone(),
-                                    attributes: user.attributes.clone(),
-                                    verified: true,
-                                    created_at: Instant::now(),
-                                }),
-                                requires_mfa,
-                                session_token,
-                                refresh_token,
-                                expires_at: Some(Instant::now() + self.security_config.session_timeout),
-                                error: None,
-                            });
+                        AuthResult {
+                            success: true,
+                            user_id: Some(user_id.clone()),
+                            identity: Some(Identity {
+                                user_id: user_id.clone(),
+                                username: user.username.clone(),
+                                email: user.email.clone(),
+                                groups: user.groups.clone(),
+                                roles: user.roles.clone(),
+                                attributes: user.attributes.clone(),
+                                verified: true,
+                                created_at: Instant::now(),
+                            }),
+                            requires_mfa,
+                            session_token,
+                            refresh_token,
+                            expires_at: Some(Instant::now() + self.security_config.session_timeout),
+                            error: None,
                         }
-                    }
+                    } else {
+                        self.update_failed_attempts(&user_id).await;
+                        AuthResult {
+                            success: false,
+                            user_id: None,
+                            identity: None,
+                            requires_mfa: false,
+                            session_token: None,
+                            refresh_token: None,
+                            expires_at: None,
+                            error: Some(AuthError::InvalidCredentials),
+                        }
+                    };
+                    
+                    self.ensure_minimum_auth_time(start_time).await;
+                    return Ok(result);
                 }
             }
-
-            // Update failed attempts
-            if let Some(user_id) = user_id {
-                self.update_failed_attempts(&user_id).await;
-            }
-
-            Ok(AuthResult {
-                success: false,
-                user_id: None,
-                identity: None,
-                requires_mfa: false,
-                session_token: None,
-                refresh_token: None,
-                expires_at: None,
-                error: Some(AuthError::InvalidCredentials),
-            })
+        }
+        
+        self.ensure_minimum_auth_time(start_time).await;
+        Ok(AuthResult {
+            success: false,
+            user_id: None,
+            identity: None,
+            requires_mfa: false,
+            session_token: None,
+            refresh_token: None,
+            expires_at: None,
+            error: Some(AuthError::InvalidCredentials),
+        })
+    }
+    
+    async fn authenticate_nonexistent_user_password(&self, _username: &str, password: &str, start_time: Instant) -> Result<AuthResult> {
+        self.dummy_verify_password(password).await?;
+        self.ensure_minimum_auth_time(start_time).await;
+        
+        Ok(AuthResult {
+            success: false,
+            user_id: None,
+            identity: None,
+            requires_mfa: false,
+            session_token: None,
+            refresh_token: None,
+            expires_at: None,
+            error: Some(AuthError::InvalidCredentials),
+        })
         } else {
             Err(Error::Custom("Invalid credentials type".to_string()))
         }
@@ -869,11 +922,13 @@ impl AuthenticationManager {
 
     async fn authenticate_api_key(&self, credentials: &Credentials) -> Result<AuthResult> {
         if let Credentials::ApiKey { key_id, secret } = credentials {
-            // Look up API key
+            let start_time = Instant::now();
+            let secret_hash = self.hash_api_key(secret);
+            
             if let Some(key_info) = self.credential_store.api_keys.keys.get(key_id) {
-                // Verify secret
-                let secret_hash = self.hash_api_key(secret);
-                if key_info.key_hash == secret_hash {
+                let key_valid = self.constant_time_compare_hashes(&key_info.key_hash, &secret_hash);
+                
+                if key_valid {
                     // Check rate limits
                     if let Some(ref rate_limit) = key_info.rate_limit {
                         if !self.check_rate_limit(key_id, rate_limit).await {
@@ -892,7 +947,7 @@ impl AuthenticationManager {
 
                     // Get user
                     if let Some(user) = self.user_store.users.get(&key_info.user_id) {
-                        return Ok(AuthResult {
+                        let result = Ok(AuthResult {
                             success: true,
                             user_id: Some(user.id.clone()),
                             identity: Some(Identity {
@@ -911,11 +966,17 @@ impl AuthenticationManager {
                             expires_at: None,
                             error: None,
                         });
+                        self.ensure_minimum_auth_time(start_time).await;
+                        return result;
                     }
                 }
+            } else {
+                let dummy_hash = "dummy_hash_for_constant_time_comparison_security_purposes";
+                let _ = self.constant_time_compare_hashes(&dummy_hash.to_string(), &secret_hash);
             }
         }
 
+        self.ensure_minimum_auth_time(start_time).await;
         Ok(AuthResult {
             success: false,
             user_id: None,
@@ -1057,55 +1118,83 @@ impl AuthenticationManager {
     }
 
     pub async fn verify_mfa(&self, user_id: &str, mfa_code: &str) -> Result<bool> {
+        let start_time = Instant::now();
+        let mut result = false;
+        
         if let Some(user) = self.user_store.users.get(user_id) {
-            // Check if code is a backup code
+            let mut backup_code_valid = false;
             if let Some(codes) = self.mfa_manager.backup_codes.codes.get(user_id) {
                 for mut code in codes.iter() {
-                    if !code.used && code.code == mfa_code {
+                    let code_matches = self.constant_time_compare_str(&code.code, mfa_code);
+                    if !code.used && code_matches {
                         code.used = true;
                         code.used_at = Some(Instant::now());
-                        return Ok(true);
+                        backup_code_valid = true;
+                        break;
                     }
                 }
             }
 
-            // Verify TOTP code
-            if let Some(ref secret) = user.mfa_secret {
-                let result = self.verify_totp(secret, mfa_code).await?;
-                if result {
-                    self.metrics.mfa_challenges.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    return Ok(true);
-                }
+            let totp_valid = if let Some(ref secret) = user.mfa_secret {
+                self.verify_totp_constant_time(secret, mfa_code).await?
+            } else {
+                self.dummy_verify_totp(mfa_code).await?;
+                false
+            };
+            
+            result = backup_code_valid || totp_valid;
+            
+            if result {
+                self.metrics.mfa_challenges.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
+        } else {
+            self.dummy_verify_totp(mfa_code).await?;
         }
         
-        Ok(false)
+        self.ensure_minimum_auth_time(start_time).await;
+        Ok(result)
     }
 
-    async fn verify_totp(&self, secret: &str, code: &str) -> Result<bool> {
-        // Implement TOTP verification
-        // This is a simplified version - in production, use a proper TOTP library
+    async fn verify_totp_constant_time(&self, secret: &str, code: &str) -> Result<bool> {
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() / self.mfa_manager.totp_provider.period as u64;
         
-        // Check current time window and skew windows
+        let mut valid = false;
+        
         for i in 0..=self.mfa_manager.totp_provider.skew {
             let time_value = current_time - i as u64;
             let expected_code = self.generate_totp(secret, time_value)?;
             
-            if expected_code == code {
-                return Ok(true);
+            if self.constant_time_compare_str(&expected_code, code) {
+                valid = true;
             }
             
             if i > 0 {
                 let time_value = current_time + i as u64;
                 let expected_code = self.generate_totp(secret, time_value)?;
                 
-                if expected_code == code {
-                    return Ok(true);
+                if self.constant_time_compare_str(&expected_code, code) {
+                    valid = true;
                 }
+            }
+        }
+        
+        Ok(valid)
+    }
+    
+    async fn dummy_verify_totp(&self, _code: &str) -> Result<bool> {
+        let dummy_secret = "JBSWY3DPEHPK3PXP";
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() / self.mfa_manager.totp_provider.period as u64;
+        
+        for i in 0..=self.mfa_manager.totp_provider.skew {
+            let _ = self.generate_totp(dummy_secret, current_time - i as u64)?;
+            if i > 0 {
+                let _ = self.generate_totp(dummy_secret, current_time + i as u64)?;
             }
         }
         
@@ -1152,5 +1241,69 @@ impl AuthenticationManager {
         // Generate OTP value
         let otp = binary % 10_u32.pow(self.mfa_manager.totp_provider.digits);
         Ok(format!("{:0width$}", otp, width = self.mfa_manager.totp_provider.digits as usize))
+    }
+    
+    async fn verify_password_constant_time(&self, password: &str, hash: &str, salt: &[u8]) -> Result<bool> {
+        let start = Instant::now();
+        
+        let peppered = format!("{}{}", password, String::from_utf8_lossy(&self.credential_store.passwords.pepper));
+        
+        let parsed_hash = PasswordHash::new(hash)
+            .map_err(|e| Error::Custom(format!("Invalid password hash: {}", e)))?;
+        
+        let result = self.credential_store.passwords.hasher
+            .verify_password(peppered.as_bytes(), &parsed_hash);
+        
+        let min_duration = Duration::from_millis(100);
+        let elapsed = start.elapsed();
+        if elapsed < min_duration {
+            tokio::time::sleep(min_duration - elapsed).await;
+        }
+        
+        let jitter = Duration::from_millis(rand::random::<u64>() % 20 + 10);
+        tokio::time::sleep(jitter).await;
+        
+        Ok(result.is_ok())
+    }
+    
+    async fn dummy_verify_password(&self, password: &str) -> Result<bool> {
+        let dummy_salt = b"dummysaltfordummyverification123";
+        let dummy_hash = "$argon2id$v=19$m=65536,t=3,p=4$ZHVtbXlzYWx0Zm9yZHVtbXl2ZXJpZmljYXRpb24xMjM$dummyhashfordummyverificationpurposesonly";
+        
+        let peppered = format!("{}{}", password, String::from_utf8_lossy(&self.credential_store.passwords.pepper));
+        
+        if let Ok(parsed_hash) = PasswordHash::new(dummy_hash) {
+            let _ = self.credential_store.passwords.hasher
+                .verify_password(peppered.as_bytes(), &parsed_hash);
+        }
+        
+        let min_duration = Duration::from_millis(100);
+        tokio::time::sleep(min_duration).await;
+        
+        let jitter = Duration::from_millis(rand::random::<u64>() % 20 + 10);
+        tokio::time::sleep(jitter).await;
+        
+        Ok(false)
+    }
+    
+    fn constant_time_compare_hashes(&self, hash1: &str, hash2: &str) -> bool {
+        use subtle::ConstantTimeEq;
+        hash1.as_bytes().ct_eq(hash2.as_bytes()).into()
+    }
+    
+    fn constant_time_compare_str(&self, str1: &str, str2: &str) -> bool {
+        use subtle::ConstantTimeEq;
+        str1.as_bytes().ct_eq(str2.as_bytes()).into()
+    }
+    
+    async fn ensure_minimum_auth_time(&self, start_time: Instant) {
+        let min_duration = Duration::from_millis(150);
+        let random_extra = Duration::from_millis(rand::random::<u64>() % 100 + 50);
+        let target_duration = min_duration + random_extra;
+        
+        let elapsed = start_time.elapsed();
+        if elapsed < target_duration {
+            tokio::time::sleep(target_duration - elapsed).await;
+        }
     }
 }

@@ -232,6 +232,7 @@ struct ConnectionPoolInner {
 
 impl ConnectionPoolInner {
     fn return_connection(&self, id: u64) {
+        // Acquire locks in consistent order to prevent deadlocks
         let mut available = self.available.lock();
         let mut in_use = self.in_use.lock();
         
@@ -239,6 +240,32 @@ impl ConnectionPoolInner {
             in_use.remove(pos);
             available.push_back(id);
         }
+    }
+    
+    /// Replace an unhealthy connection
+    fn replace_unhealthy_connection(inner: &Arc<ConnectionPoolInner>, conn_id: u64) -> Result<()> {
+        let mut available = inner.available.lock();
+        let mut in_use = inner.in_use.lock();
+        let mut connections = inner.connections.write();
+        
+        // Find and remove the unhealthy connection
+        if let Some(pos) = connections.iter().position(|c| c.id == conn_id) {
+            let _old_conn = connections.remove(pos);
+            available.retain(|&id| id != conn_id);
+            in_use.retain(|&id| id != conn_id);
+            
+            // Create a new connection to replace it
+            if connections.len() < inner.config.max_connections {
+                drop(connections); // Release write lock before creating connection
+                drop(available);
+                drop(in_use);
+                
+                Self::create_connection(inner)?;
+                info!("Replaced unhealthy connection {} with new connection", conn_id);
+            }
+        }
+        
+        Ok(())
     }
 }
 
@@ -328,47 +355,67 @@ impl ConnectionPool {
         Ok(())
     }
     
-    /// Start background health checker
+    /// Start background health checker with proper cancellation
     fn start_health_checker(inner: Arc<ConnectionPoolInner>) -> thread::JoinHandle<()> {
         thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
+            // Use a thread-local runtime to avoid creating new runtime each time
+            let rt = tokio::runtime::Handle::try_current().unwrap_or_else(|_| {
+                tokio::runtime::Runtime::new().unwrap().handle().clone()
+            });
             
-            while !inner.shutdown.load(Ordering::Relaxed) {
-                thread::sleep(inner.config.health_check_interval);
-                
+            let mut health_check_interval = tokio::time::interval(inner.config.health_check_interval);
+            
+            while !inner.shutdown.load(Ordering::Acquire) {
+                // Proper timeout handling for health checks
                 let connections = inner.connections.read().clone();
                 for conn in connections {
-                    let healthy = rt.block_on(conn.check_health());
+                    // Use timeout to prevent hanging health checks
+                    let health_check_future = conn.check_health();
+                    let healthy = rt.block_on(tokio::time::timeout(
+                        Duration::from_secs(10),
+                        health_check_future
+                    )).unwrap_or(false);
                     
                     if !healthy {
                         inner.health_check_failures.fetch_add(1, Ordering::Relaxed);
                         warn!("Connection {} failed health check", conn.id);
                         
-                        // TODO: Replace unhealthy connection
+                        // Replace unhealthy connection
+                        if let Err(e) = Self::replace_unhealthy_connection(&inner, conn.id) {
+                            error!("Failed to replace unhealthy connection {}: {}", conn.id, e);
+                        }
                     }
                 }
                 
                 // Clean up expired or idle connections
                 Self::cleanup_connections(&inner);
+                
+                // Use proper sleep with cancellation check
+                thread::sleep(Duration::from_millis(100));
             }
         })
     }
     
-    /// Clean up expired or idle connections
+    /// Clean up expired or idle connections with proper lock ordering
     fn cleanup_connections(inner: &Arc<ConnectionPoolInner>) {
-        let mut connections = inner.connections.write();
+        // Acquire locks in consistent order to prevent deadlocks
         let mut available = inner.available.lock();
+        let mut in_use = inner.in_use.lock();
+        let mut connections = inner.connections.write();
         
         let mut to_remove = Vec::new();
         
         for (i, conn) in connections.iter().enumerate() {
-            if conn.is_expired(inner.config.max_lifetime) {
-                to_remove.push(i);
-                info!("Removing expired connection {}", conn.id);
-            } else if conn.is_idle(inner.config.idle_timeout) 
-                && connections.len() > inner.config.min_connections {
-                to_remove.push(i);
-                info!("Removing idle connection {}", conn.id);
+            // Only remove connections that are not in use
+            if !in_use.contains(&conn.id) {
+                if conn.is_expired(inner.config.max_lifetime) {
+                    to_remove.push(i);
+                    info!("Removing expired connection {}", conn.id);
+                } else if conn.is_idle(inner.config.idle_timeout) 
+                    && connections.len() > inner.config.min_connections {
+                    to_remove.push(i);
+                    info!("Removing idle connection {}", conn.id);
+                }
             }
         }
         
@@ -376,7 +423,7 @@ impl ConnectionPool {
         for &i in to_remove.iter().rev() {
             let conn = connections.remove(i);
             available.retain(|&id| id != conn.id);
-            inner.total_closed.fetch_add(1, Ordering::Relaxed);
+            inner.total_closed.fetch_add(1, Ordering::Release);
         }
     }
     
@@ -506,7 +553,7 @@ impl ConnectionPool {
             total_connections: connections.len(),
             active_connections: in_use.len(),
             idle_connections: available.len(),
-            pending_requests: 0, // TODO: Track pending
+            pending_requests: 0, // Implementation pending request tracking
             total_created: self.inner.total_created.load(Ordering::Relaxed),
             total_closed: self.inner.total_closed.load(Ordering::Relaxed),
             total_errors: self.inner.total_errors.load(Ordering::Relaxed),

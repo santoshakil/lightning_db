@@ -556,7 +556,7 @@ impl RecoveryManager {
         let directory = self.shadow_paging.shadow_directory.read().await;
         
         let mut recovered_pages = 0;
-        for (_, mapping) in &directory.page_mappings {
+        for mapping in directory.page_mappings.values() {
             if mapping.version < directory.current_version {
                 recovered_pages += 1;
             }

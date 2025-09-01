@@ -26,7 +26,7 @@ impl ArenaPool {
 
     pub fn get_arena(&self) -> Bump {
         let mut pools = self.pools.lock();
-        pools.pop_front().unwrap_or_else(|| Bump::new())
+        pools.pop_front().unwrap_or_else(Bump::new)
     }
 
     pub fn return_arena(&self, mut arena: Bump) {
@@ -144,19 +144,19 @@ impl BatchContext {
         &self.arena
     }
 
-    pub fn alloc_vec<T>(&self) -> ArenaVec<T> {
+    pub fn alloc_vec<T>(&self) -> ArenaVec<'_, T> {
         ArenaVec::new_in(&self.arena)
     }
 
-    pub fn alloc_vec_with_capacity<T>(&self, capacity: usize) -> ArenaVec<T> {
+    pub fn alloc_vec_with_capacity<T>(&self, capacity: usize) -> ArenaVec<'_, T> {
         ArenaVec::with_capacity_in(&self.arena, capacity)
     }
 
-    pub fn alloc_string(&self) -> ArenaString {
+    pub fn alloc_string(&self) -> ArenaString<'_> {
         ArenaString::new_in(&self.arena)
     }
 
-    pub fn alloc_string_with_capacity(&self, capacity: usize) -> ArenaString {
+    pub fn alloc_string_with_capacity(&self, capacity: usize) -> ArenaString<'_> {
         ArenaString::with_capacity_in(&self.arena, capacity)
     }
 
@@ -194,7 +194,7 @@ where
     THREAD_ARENA.with(|arena_cell| {
         let mut arena = arena_cell.borrow_mut();
         arena.reset();
-        f(&*arena)
+        f(&arena)
     })
 }
 

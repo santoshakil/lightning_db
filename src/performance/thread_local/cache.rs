@@ -82,8 +82,7 @@ struct AlignedBuffer {
 
 impl AlignedBuffer {
     fn new(capacity: usize) -> Self {
-        let mut data = Vec::with_capacity(capacity);
-        data.resize(capacity, 0);
+        let data = vec![0; capacity];
         Self {
             data,
             capacity,
@@ -114,13 +113,13 @@ thread_local! {
     static VALUE_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(4096));
 
     // Thread-local compression buffer pool with aligned buffers
-    static COMPRESSION_BUFFERS: RefCell<Vec<Vec<u8>>> = RefCell::new(Vec::new());
+    static COMPRESSION_BUFFERS: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
 
     // Thread-local deque pool for various uses
-    static DEQUE_POOL: RefCell<Vec<VecDeque<u8>>> = RefCell::new(Vec::new());
+    static DEQUE_POOL: RefCell<Vec<VecDeque<u8>>> = const { RefCell::new(Vec::new()) };
 
     // Thread-local compression engine cache
-    static COMPRESSION_ENGINE_CACHE: RefCell<Option<Arc<AdaptiveCompressionEngine>>> = RefCell::new(None);
+    static COMPRESSION_ENGINE_CACHE: RefCell<Option<Arc<AdaptiveCompressionEngine>>> = const { RefCell::new(None) };
     
     // Thread-local SIMD computation buffer
     static SIMD_WORK_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(1024));

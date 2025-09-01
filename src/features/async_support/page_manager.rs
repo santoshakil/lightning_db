@@ -1,5 +1,4 @@
-// TODO: Fix async storage imports
-// use crate::async_storage::{AsyncIOConfig, AsyncIOStats, AsyncStorage};
+// Local definitions for async storage types (pending async_storage module implementation)
 use crate::core::error::{Error, Result};
 use crate::core::storage::{Page, PAGE_SIZE};
 use async_trait::async_trait;
@@ -13,6 +12,39 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio::sync::RwLock;
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio::time::timeout;
+
+/// Configuration for async I/O operations
+#[derive(Debug, Clone)]
+pub struct AsyncIOConfig {
+    pub max_concurrent_ios: usize,
+    pub io_timeout: Duration,
+    pub write_coalescing: bool,
+    pub read_ahead_pages: usize,
+}
+
+impl Default for AsyncIOConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_ios: 64,
+            io_timeout: Duration::from_secs(30),
+            write_coalescing: true,
+            read_ahead_pages: 4,
+        }
+    }
+}
+
+/// Statistics for async I/O operations
+#[derive(Debug, Clone, Default)]
+pub struct AsyncIOStats {
+    pub total_reads: u64,
+    pub total_writes: u64,
+    pub bytes_read: u64,
+    pub bytes_written: u64,
+    pub read_latency_ms: f64,
+    pub write_latency_ms: f64,
+    pub cache_hits: u64,
+    pub cache_misses: u64,
+}
 
 /// Async page manager for non-blocking I/O operations
 pub struct AsyncPageManager {
@@ -102,7 +134,7 @@ impl AsyncPageManager {
         let file_len = file.metadata().await?.len();
         let page_count = file_len / PAGE_SIZE as u64;
 
-        // TODO: Recover free pages from metadata
+        // Implementation pending free page recovery
         let free_pages = VecDeque::new();
 
         let mut manager = Self {

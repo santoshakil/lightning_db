@@ -873,10 +873,7 @@ mod tests {
     #[test]
     fn test_resource_value_extraction() {
         let tracker = ResourceTracker::new();
-        let mut usage = ResourceUsage::default();
-        usage.cpu_usage_percent = 75.0;
-        usage.memory_usage_percent = 60.0;
-        usage.load_average = 2.5;
+        let usage = ResourceUsage { cpu_usage_percent: 75.0, memory_usage_percent: 60.0, load_average: 2.5, ..Default::default() };
 
         assert_eq!(
             tracker.get_resource_value(&usage, "cpu_usage_percent"),
@@ -895,10 +892,7 @@ mod tests {
         let tracker = ResourceTracker::new();
 
         // Set up a usage scenario that should trigger alerts
-        let mut usage = ResourceUsage::default();
-        usage.cpu_usage_percent = 90.0; // Above critical threshold
-        usage.memory_usage_percent = 85.0; // At warning threshold
-        usage.load_average = 2.0; // Below warning threshold
+        let usage = ResourceUsage { cpu_usage_percent: 90.0, memory_usage_percent: 85.0, load_average: 2.0, ..Default::default() }; // Above critical threshold
 
         {
             let mut current = tracker.current_usage.write().unwrap();

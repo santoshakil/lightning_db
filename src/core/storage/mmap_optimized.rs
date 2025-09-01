@@ -210,7 +210,7 @@ impl OptimizedMmapManager {
             // Align region to huge page boundary
             let huge_page_size = self.config.huge_page_size;
             let aligned_offset = (offset / huge_page_size as u64) * huge_page_size as u64;
-            let aligned_size = ((region_size + huge_page_size - 1) / huge_page_size) * huge_page_size;
+            let aligned_size = (region_size + huge_page_size - 1).div_ceil(huge_page_size) * huge_page_size;
             
             mmap_options
                 .offset(aligned_offset)
@@ -228,17 +228,10 @@ impl OptimizedMmapManager {
         // - OS manages page fault handling and synchronization
         // - map_mut() ensures exclusive access to mapped region
         let mmap = unsafe {
-            if self.config.enable_huge_pages {
-                mmap_options
-                    .offset(offset)
-                    .len(region_size)
-                    .map_mut(&*file)?
-            } else {
-                mmap_options
-                    .offset(offset)
-                    .len(region_size)
-                    .map_mut(&*file)?
-            }
+            mmap_options
+                .offset(offset)
+                .len(region_size)
+                .map_mut(&*file)?
         };
         
         // Apply huge pages hint on Linux

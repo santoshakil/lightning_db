@@ -155,8 +155,13 @@ impl CompressionAlgorithmTrait for ZstdCompression {
             CompressionLevel::Maximum => 19,
         };
 
-        zstd::encode_all(data, compression_level)
-            .map_err(|e| Error::Compression(format!("Zstd compression failed: {}", e)))
+        #[cfg(feature = "zstd-compression")]
+        {
+            zstd::encode_all(data, compression_level)
+                .map_err(|e| Error::Compression(format!("Zstd compression failed: {}", e)))
+        }
+        #[cfg(not(feature = "zstd-compression"))]
+        Err(Error::Compression("ZSTD compression not available".to_string()))
     }
 
     fn decompress(&self, compressed_data: &[u8]) -> Result<Vec<u8>> {
@@ -164,8 +169,13 @@ impl CompressionAlgorithmTrait for ZstdCompression {
             return Ok(Vec::new());
         }
 
-        zstd::decode_all(compressed_data)
-            .map_err(|e| Error::Compression(format!("Zstd decompression failed: {}", e)))
+        #[cfg(feature = "zstd-compression")]
+        {
+            zstd::decode_all(compressed_data)
+                .map_err(|e| Error::Compression(format!("Zstd decompression failed: {}", e)))
+        }
+        #[cfg(not(feature = "zstd-compression"))]
+        Err(Error::Compression("ZSTD compression not available".to_string()))
     }
 
     fn name(&self) -> &'static str {
@@ -368,7 +378,7 @@ impl CompressionAlgorithmTrait for HardwareAcceleratedCompression {
     fn compress(&self, data: &[u8], level: CompressionLevel) -> Result<Vec<u8>> {
         // Check for hardware acceleration capabilities
         if self.hardware.has_compression_acceleration() {
-            // TODO: Implement actual hardware acceleration
+            // Implementation pending actual hardware acceleration
             // For now, fall back to software implementation
         }
 
@@ -378,7 +388,7 @@ impl CompressionAlgorithmTrait for HardwareAcceleratedCompression {
 
     fn decompress(&self, compressed_data: &[u8]) -> Result<Vec<u8>> {
         if self.hardware.has_compression_acceleration() {
-            // TODO: Implement actual hardware acceleration
+            // Implementation pending actual hardware acceleration
         }
 
         self.fallback.decompress(compressed_data)
@@ -444,7 +454,7 @@ impl CompressionAlgorithmFactory {
 
     /// Get available algorithms
     pub fn available_algorithms() -> Vec<CompressionAlgorithm> {
-        let algorithms = vec![
+        let mut algorithms = vec![
             CompressionAlgorithm::None,
             CompressionAlgorithm::LZ4,
             CompressionAlgorithm::Zstd,

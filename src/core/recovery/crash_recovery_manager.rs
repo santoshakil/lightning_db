@@ -292,25 +292,24 @@ impl CrashRecoveryManager {
                             cause: Box::new(error),
                             rollback_available: false,
                         });
-                    } else {
-                        // Non-critical failure - attempt rollback
-                        warn!("Attempting rollback for failed stage: {}", stage.name());
-                        if let Err(rollback_error) = self.rollback_manager.rollback_stage(&self.state, stage) {
-                            error!("Rollback failed for stage '{}': {}", stage.name(), rollback_error);
-                            return Err(Error::RecoveryRollbackFailed {
-                                stage: stage.name().to_string(),
-                                reason: rollback_error.to_string(),
-                                manual_intervention_needed: true,
-                            });
-                        }
-
-                        return Err(Error::PartialRecoveryFailure {
-                            completed_stages: completed_stages.iter().map(|s| s.name().to_string()).collect(),
-                            failed_stage: stage.name().to_string(),
-                            cause: Box::new(error),
-                            rollback_available: true,
+                    }
+                    // Non-critical failure - attempt rollback
+                    warn!("Attempting rollback for failed stage: {}", stage.name());
+                    if let Err(rollback_error) = self.rollback_manager.rollback_stage(&self.state, stage) {
+                        error!("Rollback failed for stage '{}': {}", stage.name(), rollback_error);
+                        return Err(Error::RecoveryRollbackFailed {
+                            stage: stage.name().to_string(),
+                            reason: rollback_error.to_string(),
+                            manual_intervention_needed: true,
                         });
                     }
+
+                    return Err(Error::PartialRecoveryFailure {
+                        completed_stages: completed_stages.iter().map(|s| s.name().to_string()).collect(),
+                        failed_stage: stage.name().to_string(),
+                        cause: Box::new(error),
+                        rollback_available: true,
+                    });
                 }
             }
 
@@ -665,11 +664,7 @@ impl RecoveryLockManager {
     }
 
     pub fn get_lock_holder(&self) -> Option<String> {
-        if let Ok(content) = std::fs::read_to_string(&self.lock_file) {
-            Some(content)
-        } else {
-            None
-        }
+        std::fs::read_to_string(&self.lock_file).ok()
     }
 }
 

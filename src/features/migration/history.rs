@@ -524,6 +524,7 @@ pub struct HistoryReport {
 }
 
 impl HistoryReport {
+    #[allow(clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
         let mut report = String::new();
         

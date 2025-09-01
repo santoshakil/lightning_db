@@ -10,6 +10,9 @@ use uuid::Uuid;
 use sha2::{Digest, Sha256};
 use ring::rand::{SecureRandom, SystemRandom};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use subtle::ConstantTimeEq;
+use rand::{thread_rng, Rng};
+use std::time::Instant;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum SessionState {
@@ -402,10 +405,12 @@ impl SessionManager {
     }
 
     pub async fn validate_session(&self, token: &str) -> Result<Option<Session>> {
+        let start_time = Instant::now();
         self.metrics.record_validation_attempt().await;
         
-        let session_id = self.sessions.lookup_by_token(token).await?;
+        let session_id = self.sessions.lookup_by_token_constant_time(token).await?;
         if session_id.is_none() {
+            self.ensure_minimum_validation_time(start_time).await;
             self.metrics.record_validation_failure().await;
             return Ok(None);
         }
@@ -420,15 +425,18 @@ impl SessionManager {
         let validation_result = self.session_validator.validate(&session).await?;
         if !validation_result.valid {
             self.handle_validation_failure(&mut session, validation_result).await?;
+            self.ensure_minimum_validation_time(start_time).await;
             return Ok(None);
         }
         
         if session.state != SessionState::Active {
+            self.ensure_minimum_validation_time(start_time).await;
             return Ok(None);
         }
         
         if session.expires_at < Utc::now() {
             self.expire_session(&mut session).await?;
+            self.ensure_minimum_validation_time(start_time).await;
             return Ok(None);
         }
         
@@ -436,6 +444,7 @@ impl SessionManager {
         if idle_duration > session.security_context.restrictions.max_idle_time {
             session.state = SessionState::Idle;
             self.sessions.update_session(session.clone()).await?;
+            self.ensure_minimum_validation_time(start_time).await;
             return Ok(None);
         }
         
@@ -449,6 +458,7 @@ impl SessionManager {
             session.expires_at = Utc::now() + self.config.session_timeout;
         }
         
+        self.ensure_minimum_validation_time(start_time).await;
         Ok(Some(session))
     }
 
@@ -628,6 +638,17 @@ impl SessionManager {
         }
         Ok(distribution)
     }
+    
+    async fn ensure_minimum_validation_time(&self, start_time: Instant) {
+        let min_duration = std::time::Duration::from_millis(50);
+        let random_extra = std::time::Duration::from_millis(thread_rng().gen_range(10..30));
+        let target_duration = min_duration + random_extra;
+        
+        let elapsed = start_time.elapsed();
+        if elapsed < target_duration {
+            tokio::time::sleep(target_duration - elapsed).await;
+        }
+    }
 }
 
 impl SessionStore {
@@ -669,6 +690,20 @@ impl SessionStore {
 
     async fn lookup_by_token(&self, token: &str) -> Result<Option<Uuid>> {
         Ok(self.token_index.get(token).map(|id| *id))
+    }
+    
+    async fn lookup_by_token_constant_time(&self, token: &str) -> Result<Option<Uuid>> {
+        let mut result = None;
+        let token_bytes = token.as_bytes();
+        
+        for entry in self.token_index.iter() {
+            let stored_token_bytes = entry.key().as_bytes();
+            if token_bytes.ct_eq(stored_token_bytes).into() {
+                result = Some(*entry.value());
+            }
+        }
+        
+        Ok(result)
     }
 
     async fn update_token_index(&self, old_token: &str, new_token: &str, session_id: Uuid) -> Result<()> {

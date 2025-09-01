@@ -429,7 +429,7 @@ fn cmd_scan(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
         }
         let (key, value) = item?;
         let key_str = String::from_utf8_lossy(&key);
-        let value_str = match String::from_utf8(value.clone()) {
+        let value_str = match String::from_utf8(value.to_vec()) {
             Ok(s) => s,
             Err(_) => format!("<binary: {}>", hex::encode(&value)),
         };

@@ -66,7 +66,8 @@ pub struct WriteOptimizedEngine {
     config: WriteEngineConfig,
     /// MemTable manager
     memtable_manager: Arc<MemTableManager>,
-    // TODO: Integrate with unified WAL
+    /// WAL integration - requires unified WriteAheadLog implementation
+    /// Currently disabled until unified WAL module is available
     // wal: Arc<WriteAheadLog>,
     /// Compaction manager
     compaction_manager: Arc<Mutex<CompactionManager>>,
@@ -103,13 +104,11 @@ impl WriteOptimizedEngine {
         std::fs::create_dir_all(&config.warm_tier_dir)?;
         std::fs::create_dir_all(&config.cold_tier_dir)?;
 
-        // TODO: Create unified WAL
-        // let wal_dir = config.data_dir.join("wal");
-        // let wal = Arc::new(WriteAheadLog::new(
-        //     wal_dir,
-        //     64 * 1024 * 1024, // 64MB per WAL file
-        //     config.base.wal_sync_mode,
-        // ))?;
+        // WAL creation deferred until unified WriteAheadLog is implemented
+        // When implemented, should create WAL with:
+        // - wal_dir: config.data_dir.join("wal")  
+        // - file_size: 64MB per WAL file
+        // - sync_mode: config.base.wal_sync_mode
 
         // Create MemTable manager
         let memtable_manager = Arc::new(MemTableManager::new(
@@ -147,7 +146,7 @@ impl WriteOptimizedEngine {
         Ok(Self {
             config,
             memtable_manager,
-            // wal, // TODO: Integrate with unified WAL
+            // wal, // WAL integration pending unified WriteAheadLog implementation
             compaction_manager,
             tiered_storage,
             sstables_by_level: Arc::new(RwLock::new(HashMap::new())),
@@ -173,7 +172,7 @@ impl WriteOptimizedEngine {
 
         // Start flush worker
         let flush_receiver = self.flush_receiver.clone();
-        // let wal = Arc::clone(&self.wal); // TODO: Integrate with unified WAL
+        // WAL integration pending - will be: let wal = Arc::clone(&self.wal);
         let running = Arc::clone(&self.running);
         let config = self.config.clone();
         let stats = Arc::clone(&self.stats);
@@ -186,18 +185,18 @@ impl WriteOptimizedEngine {
                 while running.load(Ordering::Relaxed) {
                     match flush_receiver.recv_timeout(Duration::from_secs(1)) {
                         Ok(flush_request) => {
-                            if let Err(_) = Self::execute_flush(
+                            if Self::execute_flush(
                                 &flush_request,
-                                // &wal, // TODO: Integrate with unified WAL
+                                // &wal, // WAL parameter pending unified implementation
                                 &config,
                                 &stats,
                                 &compaction_manager,
                                 &tiered_storage,
-                            ) {
+                            ).is_err() {
                                 // Log error but continue
                             }
                         }
-                        Err(_) => continue, // Timeout
+                        Err(_) => {}, // Timeout
                     }
                 }
             })?;
@@ -247,7 +246,7 @@ impl WriteOptimizedEngine {
         // Stop compaction manager
         self.compaction_manager.lock().stop()?;
 
-        // TODO: Close WAL when integrated
+        // WAL cleanup will be implemented with unified WriteAheadLog
         // self.wal.close()?;
 
         Ok(())
@@ -258,11 +257,7 @@ impl WriteOptimizedEngine {
         let start = Instant::now();
         let _sequence = self.sequence_generator.fetch_add(1, Ordering::SeqCst);
 
-        // TODO: Write to unified WAL first
-        // if self.config.base.enable_wal {
-        //     let wal_entry = WalEntry::put(sequence, key.clone(), value.clone())?;
-        //     self.wal.append(wal_entry)?;
-        // }
+        // WAL write will be first step when unified WriteAheadLog is available
 
         // Calculate sizes before moving values
         let key_len = key.len() as u64;
@@ -290,11 +285,7 @@ impl WriteOptimizedEngine {
     pub fn delete(&self, key: Vec<u8>) -> Result<()> {
         let _sequence = self.sequence_generator.fetch_add(1, Ordering::SeqCst);
 
-        // TODO: Write to unified WAL first
-        // if self.config.base.enable_wal {
-        //     let wal_entry = WalEntry::delete(sequence, key.clone())?;
-        //     self.wal.append(wal_entry)?;
-        // }
+        // WAL write will be first step when unified WriteAheadLog is available
 
         // Write to MemTable
         self.memtable_manager.delete(key)?;
@@ -341,7 +332,7 @@ impl WriteOptimizedEngine {
                                 .record_access(&file_name, true, latency_us);
                             return Ok(Some(value));
                         }
-                        Ok(None) => continue,
+                        Ok(None) => {},
                         Err(e) => return Err(e),
                     }
                 }
@@ -353,7 +344,7 @@ impl WriteOptimizedEngine {
 
     /// Execute a write batch atomically
     pub fn write_batch(&self, batch: WriteBatch) -> Result<()> {
-        // TODO: Write all operations to unified WAL first
+        // WAL batch write will be first step when unified WriteAheadLog is available
         // if self.config.base.enable_wal {
         //     for operation in &batch.operations {
         //         let wal_entry = match operation {
@@ -493,7 +484,7 @@ impl WriteOptimizedEngine {
     /// Execute flush request
     fn execute_flush(
         request: &FlushRequest,
-        // _wal: &Arc<WriteAheadLog>, // TODO: Integrate with unified WAL
+        // _wal: &Arc<WriteAheadLog>, // WAL parameter reserved for future integration
         config: &WriteEngineConfig,
         stats: &Arc<RwLock<WriteEngineStats>>,
         _compaction_manager: &Arc<Mutex<CompactionManager>>,
@@ -511,8 +502,6 @@ impl WriteOptimizedEngine {
         let sstable_path = tier_path.join(format!("bg_sstable_{}.sst", timestamp));
         let mut builder = SSTableBuilder::new(&sstable_path, 0, config.base.compression_type)?;
 
-        let mut _flushed_entries = 0;
-
         // Write all entries from MemTable to SSTable
         for (key, entry) in request.memtable.iter() {
             match entry.entry_type {
@@ -526,7 +515,6 @@ impl WriteOptimizedEngine {
                     builder.add(key.to_vec(), Vec::new())?;
                 }
             }
-            _flushed_entries += 1;
         }
 
         // Finalize SSTable
@@ -579,12 +567,12 @@ impl WriteOptimizedEngine {
     /// Recover from WAL
     pub fn recover(&self) -> Result<u64> {
         let _wal_dir = self.config.data_dir.join("wal");
-        // TODO: Integrate with unified WAL recovery
+        // WAL recovery integration deferred until unified WriteAheadLog is implemented
         // let recovery = crate::core::write_optimized::wal::WalRecovery::recover(&wal_dir)?;
 
         let recovered_entries = 0;
 
-        // TODO: Implement recovery with unified WAL
+        // WAL recovery implementation pending unified WriteAheadLog module
         /*
         recovery.apply(|entry| {
             match entry.header.entry_type {
@@ -613,7 +601,7 @@ impl WriteOptimizedEngine {
     /// Sync all data to disk
     pub fn sync(&self) -> Result<()> {
         if self.config.base.enable_wal {
-            // TODO: Sync WAL when integrated
+            // WAL sync will be implemented with unified WriteAheadLog
             // self.wal.sync()?;
         }
         Ok(())

@@ -32,32 +32,35 @@ impl LockMode {
     pub fn is_compatible_with(self, other: LockMode) -> bool {
         use LockMode::*;
         match (self, other) {
-            // IS is compatible with everything except X
-            (IntentionShared, Exclusive) | (Exclusive, IntentionShared) => false,
-            (IntentionShared, _) | (_, IntentionShared) => true,
-            
-            // IE is compatible with IS and IE only
-            (IntentionExclusive, Shared) | (Shared, IntentionExclusive) => false,
-            (IntentionExclusive, Exclusive) | (Exclusive, IntentionExclusive) => false,
-            (IntentionExclusive, Update) | (Update, IntentionExclusive) => false,
-            (IntentionExclusive, SharedIntentionExclusive) | (SharedIntentionExclusive, IntentionExclusive) => false,
-            (IntentionExclusive, IntentionExclusive) => true,
-            
-            // S is compatible with S, IS, and SIX
-            (Shared, Shared) | (Shared, SharedIntentionExclusive) | (SharedIntentionExclusive, Shared) => true,
-            (Shared, _) | (_, Shared) => false,
-            
-            // SIX is compatible with IS and S only
-            (SharedIntentionExclusive, SharedIntentionExclusive) => false,
-            (SharedIntentionExclusive, _) | (_, SharedIntentionExclusive) => false,
-            
-            // U is compatible with IS and S only
-            (Update, Update) => false,
-            (Update, Exclusive) | (Exclusive, Update) => false,
-            (Update, _) | (_, Update) => true,
-            
-            // X is compatible with nothing
+            // Exclusive: incompatible with everything (including itself)
             (Exclusive, _) | (_, Exclusive) => false,
+
+            // Intention Shared (IS)
+            (IntentionShared, IntentionShared) => true,
+            (IntentionShared, IntentionExclusive) | (IntentionExclusive, IntentionShared) => true,
+            (IntentionShared, Shared) | (Shared, IntentionShared) => true,
+            (IntentionShared, SharedIntentionExclusive)
+            | (SharedIntentionExclusive, IntentionShared) => true,
+            (IntentionShared, Update) | (Update, IntentionShared) => true,
+
+            // Intention Exclusive (IX)
+            (IntentionExclusive, IntentionExclusive) => true,
+            (IntentionExclusive, Shared) | (Shared, IntentionExclusive) => false,
+            (IntentionExclusive, SharedIntentionExclusive)
+            | (SharedIntentionExclusive, IntentionExclusive) => false,
+            (IntentionExclusive, Update) | (Update, IntentionExclusive) => false,
+
+            // Shared (S)
+            (Shared, Shared) => true,
+            (Shared, SharedIntentionExclusive) | (SharedIntentionExclusive, Shared) => false,
+            (Shared, Update) | (Update, Shared) => true,
+
+            // Shared Intention Exclusive (SIX)
+            (SharedIntentionExclusive, SharedIntentionExclusive) => false,
+            (SharedIntentionExclusive, Update) | (Update, SharedIntentionExclusive) => false,
+
+            // Update (U)
+            (Update, Update) => false,
         }
     }
 

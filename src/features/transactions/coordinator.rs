@@ -507,8 +507,9 @@ impl TransactionCoordinator {
 
     pub async fn prepare(&self, tx_id: TransactionId) -> Result<bool, Error> {
         let tx = self.transactions.get(&tx_id)
-            .ok_or_else(|| Error::NotFound("Transaction not found".to_string()))?;
+            .ok_or(Error::NotFound("Transaction not found".to_string()))?;
         
+        #[allow(clippy::await_holding_lock)]
         let mut transaction = tx.write();
         
         if transaction.state != TransactionState::Active {
@@ -558,6 +559,7 @@ impl TransactionCoordinator {
         let prepare_duration = prepare_start.elapsed().as_millis() as u64;
         self.metrics.prepare_phase_duration_ms.fetch_add(prepare_duration, Ordering::Relaxed);
         
+        #[allow(clippy::await_holding_lock)]
         let mut transaction = tx.write();
         
         if all_prepared {
@@ -590,7 +592,7 @@ impl TransactionCoordinator {
         tx_id: TransactionId,
         participant_id: &str,
         operations: Vec<Operation>,
-        prepare_timestamp: u64,
+        _prepare_timestamp: u64,
     ) -> Result<super::participant::VoteDecision, Error> {
         let participant = self.participant_manager.get_participant(participant_id).await?;
         
@@ -616,10 +618,12 @@ impl TransactionCoordinator {
         Err(last_error.unwrap_or_else(|| Error::Timeout("Consensus timeout".to_string())))
     }
 
+    #[allow(clippy::await_holding_lock, clippy::manual_map)]
     pub async fn commit(&self, tx_id: TransactionId) -> Result<(), Error> {
         let tx = self.transactions.get(&tx_id)
             .ok_or_else(|| Error::NotFound("Transaction not found".to_string()))?;
         
+        #[allow(clippy::await_holding_lock)]
         let mut transaction = tx.write();
         
         if transaction.state != TransactionState::Prepared {
@@ -654,6 +658,7 @@ impl TransactionCoordinator {
         let commit_duration = commit_start.elapsed().as_millis() as u64;
         self.metrics.commit_phase_duration_ms.fetch_add(commit_duration, Ordering::Relaxed);
         
+        #[allow(clippy::await_holding_lock)]
         let mut transaction = tx.write();
         
         if all_committed {
@@ -712,6 +717,7 @@ impl TransactionCoordinator {
         let tx = self.transactions.get(&tx_id)
             .ok_or_else(|| Error::NotFound("Transaction not found".to_string()))?;
         
+        #[allow(clippy::await_holding_lock)]
         let mut transaction = tx.write();
         
         if matches!(transaction.state, TransactionState::Committed | TransactionState::Aborted) {
@@ -741,6 +747,7 @@ impl TransactionCoordinator {
         
         let _ = futures::future::join_all(abort_futures).await;
         
+        #[allow(clippy::await_holding_lock)]
         let mut transaction = tx.write();
         transaction.state = TransactionState::Aborted;
         
@@ -781,19 +788,15 @@ impl TransactionCoordinator {
                 })
             },
             Operation::Delete { key, previous } => {
-                if let Some(prev) = previous {
-                    Some(UndoEntry {
-                        operation: operation.clone(),
-                        inverse_operation: Operation::Write {
-                            key: key.clone(),
-                            value: prev.clone(),
-                            previous: None,
-                        },
-                        timestamp: self.timestamp_oracle.current(),
-                    })
-                } else {
-                    None
-                }
+                previous.as_ref().map(|prev| UndoEntry {
+                    operation: operation.clone(),
+                    inverse_operation: Operation::Write {
+                        key: key.clone(),
+                        value: prev.clone(),
+                        previous: None,
+                    },
+                    timestamp: self.timestamp_oracle.current(),
+                })
             },
             _ => None,
         }
@@ -803,6 +806,7 @@ impl TransactionCoordinator {
         let tx = self.transactions.get(&tx_id)
             .ok_or_else(|| Error::NotFound("Transaction not found".to_string()))?;
         
+        #[allow(clippy::await_holding_lock)]
         let mut transaction = tx.write();
         
         if transaction.state != TransactionState::Active {
@@ -848,6 +852,7 @@ impl TransactionCoordinator {
         let tx = self.transactions.get(&tx_id)
             .ok_or_else(|| Error::NotFound("Transaction not found".to_string()))?;
         
+        #[allow(clippy::await_holding_lock)]
         let transaction = tx.read();
         let state = transaction.state;
         let participants = transaction.participants.clone();
@@ -941,8 +946,9 @@ impl TransactionCoordinator {
     pub async fn shutdown(&self) {
         self.shutdown.store(true, Ordering::Release);
         
-        for tx_id in self.active_transactions.read().iter() {
-            let _ = self.abort(*tx_id).await;
+        let to_abort: Vec<_> = self.active_transactions.read().iter().copied().collect();
+        for tx_id in to_abort {
+            let _ = self.abort(tx_id).await;
         }
     }
 }
@@ -1010,6 +1016,7 @@ impl Participant for RemoteParticipant {
         Ok(response.vote)
     }
 
+    #[allow(clippy::await_holding_lock)]
     async fn commit(&self, tx_id: TransactionId) -> Result<(), Error> {
         let request = CommitRequest {
             transaction_id: tx_id,
@@ -1040,7 +1047,7 @@ impl Participant for RemoteParticipant {
         Ok(response.state)
     }
 
-    async fn recover(&self, tx_id: TransactionId) -> Result<(), Error> {
+    async fn recover(&self, _tx_id: TransactionId) -> Result<(), Error> {
         Ok(())
     }
 }

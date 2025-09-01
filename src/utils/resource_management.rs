@@ -1,3 +1,4 @@
+#![allow(ambiguous_glob_reexports)]
 // Combined resource management functionality
 
 pub mod limits;

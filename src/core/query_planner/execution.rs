@@ -3,7 +3,6 @@ use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use parking_lot::RwLock;
 use tokio::sync::{mpsc, Semaphore};
-use futures::stream::StreamExt;
 use crate::core::error::Error;
 use super::planner::{QueryPlan, PlanNode, Value, Expression, Predicate};
 use async_trait::async_trait;
@@ -200,6 +199,7 @@ impl QueryExecutor {
         self.plan_to_operator(plan.root)
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn plan_to_operator(&self, node: Box<PlanNode>) -> Result<Arc<dyn PhysicalOperator>, Error> {
         match node.as_ref() {
             PlanNode::Scan(scan) => {
@@ -263,7 +263,7 @@ impl QueryExecutor {
                 }))
             },
             _ => Err(Error::UnsupportedFeature {
-                feature: format!("Plan node type"),
+                feature: "Plan node type".to_string(),
             }),
         }
     }
@@ -281,7 +281,7 @@ impl PhysicalOperator for ScanOperator {
     async fn execute(&self, context: &ExecutionContext) -> Result<RecordBatchStream, Error> {
         let (sender, receiver) = mpsc::channel(PIPELINE_BUFFER_SIZE);
         
-        let table_name = self.table_name.clone();
+        let _table_name = self.table_name.clone();
         let columns = self.columns.clone();
         let batch_size = context.batch_size;
         
@@ -346,10 +346,8 @@ impl PhysicalOperator for FilterOperator {
                 match batch {
                     Ok(batch) => {
                         let filtered = Self::filter_batch(batch, &predicate);
-                        if filtered.row_count > 0 {
-                            if sender.send(Ok(filtered)).await.is_err() {
-                                break;
-                            }
+                        if filtered.row_count > 0 && sender.send(Ok(filtered)).await.is_err() {
+                            break;
                         }
                     },
                     Err(e) => {
@@ -414,10 +412,8 @@ impl PhysicalOperator for HashJoinOperator {
                             &right_keys,
                             join_type,
                         );
-                        if joined.row_count > 0 {
-                            if sender.send(Ok(joined)).await.is_err() {
-                                break;
-                            }
+                        if joined.row_count > 0 && sender.send(Ok(joined)).await.is_err() {
+                            break;
                         }
                     },
                     Err(e) => {
@@ -634,10 +630,9 @@ impl PhysicalOperator for LimitOperator {
                             if to_skip >= batch.row_count {
                                 skipped += batch.row_count;
                                 continue;
-                            } else {
-                                batch = Self::skip_rows(batch, to_skip);
-                                skipped = offset;
                             }
+                            batch = Self::skip_rows(batch, to_skip);
+                            skipped = offset;
                         }
                         
                         if taken >= limit {
@@ -704,7 +699,7 @@ impl MemoryManager {
         }
     }
 
-    fn allocate(&self, operator: &str, size: usize) -> Result<MemoryAllocation, Error> {
+    fn allocate(&self, operator: &str, size: usize) -> Result<MemoryAllocation<'_>, Error> {
         let mut used = self.used_memory.write();
         
         if *used + size > self.total_memory {

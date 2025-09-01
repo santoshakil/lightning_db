@@ -41,7 +41,7 @@ impl PageScanner {
                 continue; // Skip null page
             }
 
-            if let Err(_) = self.scan_page(page_id).await {
+            if (self.scan_page(page_id).await).is_err() {
                 // Continue scanning even if one page fails
                 continue;
             }
@@ -154,7 +154,7 @@ impl PageScanner {
                     description: format!("Unknown page type: {}", type_byte),
                     severity: ErrorSeverity::Critical,
                 });
-                return false;
+                false
             }
         }
     }

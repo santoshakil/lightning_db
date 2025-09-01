@@ -192,7 +192,7 @@ impl SchemaMigration {
             }
         }
         
-        for (table_name, _) in &old.tables {
+        for table_name in old.tables.keys() {
             if !new.tables.contains_key(table_name) {
                 transformations.push(SchemaTransformation::DropTable(table_name.clone()));
             }
@@ -204,7 +204,7 @@ impl SchemaMigration {
             }
         }
         
-        for (index_name, _) in &old.indexes {
+        for index_name in old.indexes.keys() {
             if !new.indexes.contains_key(index_name) {
                 transformations.push(SchemaTransformation::DropIndex(index_name.clone()));
             }
@@ -259,7 +259,7 @@ impl Migration for SchemaMigration {
         Ok(())
     }
     
-    async fn verify(&self, context: &MigrationContext) -> MigrationResult<()> {
+    async fn verify(&self, _context: &MigrationContext) -> MigrationResult<()> {
         Ok(())
     }
 }
@@ -268,7 +268,7 @@ impl SchemaMigration {
     async fn apply_transformation(
         &self,
         transformation: &SchemaTransformation,
-        context: &mut MigrationContext,
+        _context: &mut MigrationContext,
     ) -> MigrationResult<()> {
         match transformation {
             SchemaTransformation::AddTable(table) => {
@@ -437,7 +437,7 @@ impl Migration for DataMigration {
         });
         
         reader_handle.await.map_err(|e| 
-            MigrationError::TransformationError(e.to_string()))?;
+            MigrationError::TransformationError(e.to_string()))??;
         
         transformer_handle.await.map_err(|e|
             MigrationError::TransformationError(e.to_string()))??;
@@ -581,8 +581,15 @@ impl DataTransformer for CompressionTransformer {
                 Ok(lz4_flex::compress_prepend_size(&data))
             }
             CompressionAlgorithm::Zstd => {
-                zstd::encode_all(&data[..], 3)
-                    .map_err(|e| MigrationError::TransformationError(e.to_string()))
+                #[cfg(feature = "zstd-compression")]
+                {
+                    zstd::encode_all(&data[..], 3)
+                        .map_err(|e| MigrationError::TransformationError(e.to_string()))
+                }
+                #[cfg(not(feature = "zstd-compression"))]
+                Err(MigrationError::TransformationError(
+                    "ZSTD compression not available without zstd-compression feature".to_string()
+                ))
             }
             CompressionAlgorithm::Snappy => {
                 let mut encoder = snap::raw::Encoder::new();
@@ -590,15 +597,24 @@ impl DataTransformer for CompressionTransformer {
                     .map_err(|e| MigrationError::TransformationError(e.to_string()))
             }
             CompressionAlgorithm::Gzip => {
+                #[cfg(feature = "deflate")]
                 use flate2::Compression;
+                #[cfg(feature = "deflate")]
                 use flate2::write::GzEncoder;
                 use std::io::Write;
                 
-                let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-                encoder.write_all(&data)
-                    .map_err(|e| MigrationError::TransformationError(e.to_string()))?;
-                encoder.finish()
-                    .map_err(|e| MigrationError::TransformationError(e.to_string()))
+                #[cfg(feature = "deflate")]
+                {
+                    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+                    encoder.write_all(&data)
+                        .map_err(|e| MigrationError::TransformationError(e.to_string()))?;
+                    encoder.finish()
+                        .map_err(|e| MigrationError::TransformationError(e.to_string()))
+                }
+                #[cfg(not(feature = "deflate"))]
+                Err(MigrationError::TransformationError(
+                    "GZIP compression not available without deflate feature".to_string()
+                ))
             }
         }
     }
@@ -677,7 +693,7 @@ pub struct SchemaValidator {
 #[async_trait]
 impl DataValidator for SchemaValidator {
     async fn validate(&self, data: &[u8]) -> MigrationResult<()> {
-        let value: serde_json::Value = serde_json::from_slice(data)
+        let _value: serde_json::Value = serde_json::from_slice(data)
             .map_err(|e| MigrationError::SchemaValidationFailed(e.to_string()))?;
         
         Ok(())

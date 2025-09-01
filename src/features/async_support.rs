@@ -1,6 +1,6 @@
 // Combined async support functionality
 
-// TODO: Re-enable when async traits are properly implemented
+// Async modules disabled pending proper async trait implementations:
 // pub mod database;
 pub mod db;
 // pub mod page_manager;

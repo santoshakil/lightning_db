@@ -1,3 +1,4 @@
+#![allow(ambiguous_glob_reexports)]
 use crate::core::error::Result;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize};

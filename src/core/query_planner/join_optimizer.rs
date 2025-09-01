@@ -5,7 +5,7 @@ use super::planner::{JoinNode, JoinType, JoinStrategy, JoinCondition, PlanNode, 
 use super::statistics::TableStatistics;
 use super::cost_model::CostModel;
 
-const MAX_JOIN_PERMUTATIONS: usize = 100000;
+const MAX_JOIN_PERMUTATIONS: usize = 100_000;
 const BUSHY_TREE_THRESHOLD: usize = 8;
 
 #[derive(Debug, Clone)]
@@ -97,7 +97,7 @@ impl JoinOptimizer {
         };
 
         self.build_join_tree(optimal_order, &join_graph)
-            .map(|node| Arc::from(node))
+            .map(Arc::from)
     }
 
     fn build_join_graph(&self, joins: &[JoinNode], stats: &TableStatistics) -> Result<JoinGraph, Error> {
@@ -261,14 +261,13 @@ impl JoinOptimizer {
 
     fn optimize_with_greedy(&self, graph: &JoinGraph, _stats: &TableStatistics) -> Result<JoinOrder, Error> {
         let mut joined = BTreeSet::new();
-        let mut result = None;
         
         let start_node = graph.nodes.iter()
             .min_by_key(|n| n.estimated_rows)
             .ok_or(Error::InvalidOperation { reason: "No nodes in join graph".to_string() })?;
         
         joined.insert(start_node.id);
-        result = Some(JoinOrder::Single(start_node.id));
+        let mut result = JoinOrder::Single(start_node.id);
         
         while joined.len() < graph.nodes.len() {
             let mut best_next = None;
@@ -291,26 +290,25 @@ impl JoinOptimizer {
             
             if let Some(next) = best_next {
                 joined.insert(next);
-                result = Some(JoinOrder::Join(
-                    Box::new(result.unwrap()),
+                result = JoinOrder::Join(
+                    Box::new(result),
                     Box::new(JoinOrder::Single(next)),
-                ));
+                );
             } else if self.config.enable_cartesian_products {
                 let next = graph.nodes.iter()
                     .find(|n| !joined.contains(&n.id))
                     .ok_or(Error::InvalidOperation { reason: "Cannot find next join".to_string() })?;
                 
                 joined.insert(next.id);
-                result = Some(JoinOrder::Join(
-                    Box::new(result.unwrap()),
+                result = JoinOrder::Join(
+                    Box::new(result),
                     Box::new(JoinOrder::Single(next.id)),
-                ));
+                );
             } else {
                 return Err(Error::InvalidOperation { reason: "Disconnected join graph".to_string() });
             }
         }
-        
-        result.ok_or(Error::InvalidOperation { reason: "Failed to build join order".to_string() })
+        Ok(result)
     }
 
     fn optimize_with_genetic_algorithm(
@@ -378,7 +376,8 @@ impl JoinOptimizer {
         let mut nodes: Vec<_> = graph.nodes.iter().map(|n| n.id).collect();
         
         use rand::seq::SliceRandom;
-        nodes.shuffle(&mut rand::thread_rng());
+        let mut rng = rand::rng();
+        nodes.shuffle(&mut rng);
         
         Ok(self.build_left_deep_tree(&nodes, graph))
     }
@@ -426,7 +425,7 @@ impl JoinOptimizer {
         population[best.unwrap()].clone()
     }
 
-    fn crossover(&self, parent1: &JoinOrder, parent2: &JoinOrder) -> Result<JoinOrder, Error> {
+    fn crossover(&self, parent1: &JoinOrder, _parent2: &JoinOrder) -> Result<JoinOrder, Error> {
         Ok(parent1.clone())
     }
 
@@ -434,6 +433,7 @@ impl JoinOptimizer {
         Ok(order.clone())
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn build_join_tree(&self, order: JoinOrder, graph: &JoinGraph) -> Result<Box<PlanNode>, Error> {
         match order {
             JoinOrder::Single(node_id) => {
@@ -478,13 +478,13 @@ impl JoinOptimizer {
     fn estimate_table_rows(&self, table_name: &str, stats: &TableStatistics) -> usize {
         stats.get_table(table_name)
             .map(|t| t.row_count)
-            .unwrap_or(1000000)
+            .unwrap_or(1_000_000)
     }
 
     fn estimate_table_size(&self, table_name: &str, stats: &TableStatistics) -> usize {
         stats.get_table(table_name)
             .map(|t| t.data_size)
-            .unwrap_or(100000000)
+            .unwrap_or(100_000_000)
     }
 
     fn estimate_join_selectivity(&self, _condition: &JoinCondition, _stats: &TableStatistics) -> f64 {
@@ -567,6 +567,7 @@ impl JoinOptimizer {
         1000.0
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn estimate_order_cost(&self, order: &JoinOrder, graph: &JoinGraph, _stats: &TableStatistics) -> Result<CostEstimate, Error> {
         match order {
             JoinOrder::Single(node_id) => {
@@ -617,6 +618,7 @@ impl JoinOptimizer {
         result
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn generate_subsets_recursive(
         &self,
         start: usize,
@@ -670,6 +672,7 @@ impl JoinOptimizer {
         result
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn generate_permutations_recursive(&self, perm: &mut Vec<usize>, start: usize, result: &mut Vec<Vec<usize>>) {
         if start == perm.len() {
             result.push(perm.clone());

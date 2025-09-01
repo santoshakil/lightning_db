@@ -506,14 +506,14 @@ impl TieredStorageManager {
             .name("tier-evaluator".to_string())
             .spawn(move || {
                 while running.load(Ordering::Relaxed) {
-                    if let Err(_) = Self::evaluate_and_schedule_migrations(
+                    if Self::evaluate_and_schedule_migrations(
                         &tiers,
                         &sstables,
                         &patterns,
                         &migration_queue,
                         &next_job_id,
                         &stats,
-                    ) {
+                    ).is_err() {
                         // Log error but continue
                     }
 

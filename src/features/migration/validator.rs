@@ -345,7 +345,7 @@ impl ValidationRule for SyntaxValidationRule {
             });
         }
         
-        if migration.metadata.reversible && migration.down_script.as_ref().map_or(true, |s| s.trim().is_empty()) {
+        if migration.metadata.reversible && migration.down_script.as_ref().is_none_or(|s| s.trim().is_empty()) {
             errors.push(ValidationError {
                 code: "EMPTY_DOWN_SCRIPT".to_string(),
                 message: "Migration marked as reversible but down script is empty".to_string(),

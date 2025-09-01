@@ -1,20 +1,18 @@
-use std::ffi::{CStr, CString};
+use crate::validation::{validate_buffer, validate_c_string, ValidationResult};
+use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
 
-/// Convert a C string to a Rust String
+/// Convert a C string to a Rust String with comprehensive validation
 ///
 /// # Safety
 /// - The pointer must be a valid null-terminated UTF-8 string
+/// - This function now performs comprehensive security validation
 pub unsafe fn c_str_to_string(ptr: *const c_char) -> Result<String, String> {
-    if ptr.is_null() {
-        return Err("Null pointer".to_string());
-    }
-
-    match CStr::from_ptr(ptr).to_str() {
-        Ok(s) => Ok(s.to_string()),
-        Err(e) => Err(format!("Invalid UTF-8: {}", e)),
+    match validate_c_string(ptr, "c_string") {
+        ValidationResult::Valid(s) => Ok(s),
+        ValidationResult::Invalid(_, msg) => Err(msg),
     }
 }
 
@@ -40,26 +38,25 @@ pub unsafe extern "C" fn lightning_db_free_string(ptr: *mut c_char) {
     }
 }
 
-/// Convert a byte slice to a Rust Vec
+/// Convert a byte slice to a Rust Vec with comprehensive validation
 ///
-/// Maximum allowed buffer size for FFI operations (100MB)
-const MAX_FFI_BUFFER_SIZE: usize = 100 * 1024 * 1024;
-
 /// # Safety
-/// - The pointer must be valid for `len` bytes
-/// - `len` must not exceed MAX_FFI_BUFFER_SIZE
+/// - The pointer must be valid for `len` bytes  
+/// - This function now performs comprehensive security validation
 pub unsafe fn bytes_to_vec(ptr: *const u8, len: usize) -> Vec<u8> {
-    if ptr.is_null() || len == 0 {
-        return Vec::new();
+    match validate_buffer(ptr, len, "buffer") {
+        ValidationResult::Valid(()) => {
+            if len == 0 {
+                Vec::new()
+            } else {
+                slice::from_raw_parts(ptr, len).to_vec()
+            }
+        }
+        ValidationResult::Invalid(_, msg) => {
+            eprintln!("Buffer validation failed: {}", msg);
+            Vec::new()
+        }
     }
-    
-    // Prevent potential buffer overflow attacks
-    if len > MAX_FFI_BUFFER_SIZE {
-        eprintln!("FFI buffer size {} exceeds maximum {}", len, MAX_FFI_BUFFER_SIZE);
-        return Vec::new();
-    }
-
-    slice::from_raw_parts(ptr, len).to_vec()
 }
 
 /// Allocate memory for bytes
@@ -73,16 +70,30 @@ pub fn vec_to_bytes(data: Vec<u8>) -> (*mut u8, usize) {
     (ptr, len)
 }
 
-/// Free bytes allocated by this library
+/// Free bytes allocated by this library with validation
 ///
 /// # Safety
 /// - The pointer must have been allocated by this library with the given length
 /// - The pointer must not be used after calling this function
 #[no_mangle]
 pub unsafe extern "C" fn lightning_db_free_bytes(ptr: *mut u8, len: usize) {
-    if !ptr.is_null() && len > 0 {
-        let _ = Vec::from_raw_parts(ptr, len, len);
+    // Validate the pointer before freeing to prevent double-free or invalid free
+    if ptr.is_null() {
+        return;
     }
+    
+    if len == 0 {
+        return;
+    }
+    
+    // Additional safety: check for reasonable length values
+    if len > crate::validation::MAX_FFI_BUFFER_SIZE {
+        eprintln!("Attempted to free buffer with suspicious length: {}", len);
+        return;
+    }
+
+    // Free the memory
+    let _ = Vec::from_raw_parts(ptr, len, len);
 }
 
 /// Result structure for returning data across FFI boundary

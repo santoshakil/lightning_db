@@ -263,7 +263,7 @@ impl FallbackIo {
         fd: RawFd,
         file_cache: Arc<Mutex<HashMap<RawFd, Arc<Mutex<File>>>>>,
     ) -> Result<Arc<Mutex<File>>> {
-        let mut cache = file_cache.lock().map_err(|_| Error::new(ErrorKind::Other, "Cache lock poisoned"))?;
+        let mut cache = file_cache.lock().map_err(|_| Error::other("Cache lock poisoned"))?;
 
         if let Some(file) = cache.get(&fd) {
             Ok(Arc::clone(file))
@@ -289,7 +289,7 @@ impl FallbackIo {
 
 impl ZeroCopyIo for FallbackIo {
     fn submit(&mut self, request: IoRequest) -> Result<()> {
-        let mut pending = self.pending_tasks.lock().map_err(|_| Error::new(ErrorKind::Other, "Pending tasks lock poisoned"))?;
+        let mut pending = self.pending_tasks.lock().map_err(|_| Error::other("Pending tasks lock poisoned"))?;
 
         if pending.len() >= self.queue_depth as usize {
             if let Ok(mut stats) = self.stats.lock() {
@@ -334,7 +334,7 @@ impl ZeroCopyIo for FallbackIo {
         let start = Instant::now();
 
         loop {
-            let mut completed = self.completed.lock().map_err(|_| Error::new(ErrorKind::Other, "Completed lock poisoned"))?;
+            let mut completed = self.completed.lock().map_err(|_| Error::other("Completed lock poisoned"))?;
 
             if completed.len() >= min_complete {
                 let mut results = Vec::with_capacity(min_complete);
@@ -351,7 +351,7 @@ impl ZeroCopyIo for FallbackIo {
             // Check timeout
             if let Some(timeout) = timeout {
                 if start.elapsed() >= timeout {
-                    let mut completed = self.completed.lock().map_err(|_| Error::new(ErrorKind::Other, "Completed lock poisoned"))?;
+                    let mut completed = self.completed.lock().map_err(|_| Error::other("Completed lock poisoned"))?;
                     let results: Vec<_> = completed.drain(..).collect();
                     return Ok(results);
                 }

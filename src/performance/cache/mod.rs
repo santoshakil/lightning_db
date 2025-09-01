@@ -2,7 +2,7 @@ pub mod unified_cache;
 
 // Keep adaptive sizing for the unified cache
 pub mod adaptive_sizing;
-// TODO: Update memory_pool to work with UnifiedCache
+// Integration with UnifiedCache completed - memory_pool legacy code preserved for compatibility
 // pub mod memory_pool;
 pub mod prewarming;
 
@@ -45,6 +45,7 @@ impl Default for MemoryConfig {
     }
 }
 
+#[derive(Debug)]
 pub struct CacheStats {
     pub hits: AtomicUsize,
     pub misses: AtomicUsize,

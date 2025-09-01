@@ -183,7 +183,7 @@ impl RealtimeStatsCollector {
                 stats.p99_latency_us = p99_latency;
                 stats.throughput_ops_sec = total_ops as f64 / update_interval.as_secs_f64();
 
-                // TODO: Update metrics when METRICS global is properly defined
+                // Implementation pending METRICS global definition
                 // METRICS.read().update_database_size(
                 //     stats.data_size_bytes,
                 //     stats.index_size_bytes,

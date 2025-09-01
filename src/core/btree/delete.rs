@@ -1,5 +1,6 @@
 use super::{BPlusTree, BTreeNode, NodeType, MIN_KEYS_PER_NODE};
 use crate::core::error::{Error, Result};
+use std::sync::atomic::Ordering as AtomicOrdering;
 
 impl BPlusTree {
     /// Complete B+Tree deletion with underflow handling, borrowing, and merging
@@ -315,7 +316,7 @@ impl BPlusTree {
         Ok(true)
     }
 
-    /// Merge two nodes
+    /// Merge two nodes with proper validation and rollback
     fn merge_nodes(
         &mut self,
         left_page_id: u32,
@@ -323,6 +324,11 @@ impl BPlusTree {
         parent_page_id: u32,
         separator_index: usize,
     ) -> Result<()> {
+        // Validate inputs
+        if left_page_id == right_page_id {
+            return Err(Error::Generic("Cannot merge node with itself".to_string()));
+        }
+
         let mut left_page = self.page_manager.get_page(left_page_id)?;
         let mut left_node = BTreeNode::deserialize_from_page(&left_page)?;
 
@@ -331,6 +337,25 @@ impl BPlusTree {
 
         let mut parent_page = self.page_manager.get_page(parent_page_id)?;
         let mut parent_node = BTreeNode::deserialize_from_page(&parent_page)?;
+
+        // Validate node types match
+        if left_node.node_type != right_node.node_type {
+            return Err(Error::Generic(
+                "Cannot merge nodes of different types".to_string(),
+            ));
+        }
+
+        // Validate separator index
+        if separator_index >= parent_node.entries.len() {
+            return Err(Error::Generic("Invalid separator index".to_string()));
+        }
+
+        // Backup original state for rollback
+        let original_left_entries = left_node.entries.clone();
+        let original_left_children = left_node.children.clone();
+        let original_left_sibling = left_node.right_sibling;
+        let original_parent_entries = parent_node.entries.clone();
+        let original_parent_children = parent_node.children.clone();
 
         match left_node.node_type {
             NodeType::Leaf => {
@@ -341,26 +366,78 @@ impl BPlusTree {
                 parent_node.entries.remove(separator_index);
             }
             NodeType::Internal => {
-                // For internal nodes, include separator from parent
+                // For internal nodes, include separator from parent  
                 let separator = parent_node.entries.remove(separator_index);
                 left_node.entries.push(separator);
                 left_node.entries.extend(right_node.entries);
                 left_node.children.extend(right_node.children);
+                
+                // Update parent pointers for all children moved to left node
+                for &child_id in &left_node.children {
+                    if let Ok(child_page) = self.page_manager.get_page(child_id) {
+                        if let Ok(mut child_node) = BTreeNode::deserialize_from_page(&child_page) {
+                            child_node.parent = Some(left_page_id);
+                            let mut updated_child_page = crate::core::storage::Page::new(child_id);
+                            if child_node.serialize_to_page(&mut updated_child_page).is_ok() {
+                                let _ = self.page_manager.write_page(&updated_child_page);
+                            }
+                        }
+                    }
+                }
             }
         }
 
         // Remove the right node from parent
         parent_node.children.remove(separator_index + 1);
 
-        // Free the right page
+        // Validate merged node can fit in a page before committing
+        let mut test_left_page = crate::core::storage::Page::new(left_page_id);
+        if let Err(e) = left_node.serialize_to_page(&mut test_left_page) {
+            // Rollback: restore original state
+            left_node.entries = original_left_entries;
+            left_node.children = original_left_children;
+            left_node.right_sibling = original_left_sibling;
+            parent_node.entries = original_parent_entries;
+            parent_node.children = original_parent_children;
+            return Err(e);
+        }
+
+        let mut test_parent_page = crate::core::storage::Page::new(parent_page_id);
+        if let Err(e) = parent_node.serialize_to_page(&mut test_parent_page) {
+            // Rollback: restore original state
+            left_node.entries = original_left_entries;
+            left_node.children = original_left_children;
+            left_node.right_sibling = original_left_sibling;
+            parent_node.entries = original_parent_entries;
+            parent_node.children = original_parent_children;
+            return Err(e);
+        }
+
+        // Both nodes validated - now commit the changes
+        if let Err(e) = self.page_manager.write_page(&test_left_page) {
+            // Rollback: restore original state
+            left_node.entries = original_left_entries;
+            left_node.children = original_left_children;
+            left_node.right_sibling = original_left_sibling;
+            parent_node.entries = original_parent_entries;
+            parent_node.children = original_parent_children;
+            return Err(e);
+        }
+
+        if let Err(e) = self.page_manager.write_page(&test_parent_page) {
+            // Rollback: restore original state and left page
+            left_node.entries = original_left_entries;
+            left_node.children = original_left_children;
+            left_node.right_sibling = original_left_sibling;
+            left_node.serialize_to_page(&mut left_page).ok();
+            self.page_manager.write_page(&left_page).ok();
+            parent_node.entries = original_parent_entries;
+            parent_node.children = original_parent_children;
+            return Err(e);
+        }
+
+        // Only free the right page after all writes succeed
         self.page_manager.free_page(right_page_id);
-
-        // Write updated nodes
-        left_node.serialize_to_page(&mut left_page)?;
-        self.page_manager.write_page(&left_page)?;
-
-        parent_node.serialize_to_page(&mut parent_page)?;
-        self.page_manager.write_page(&parent_page)?;
 
         Ok(())
     }
@@ -377,19 +454,10 @@ impl BPlusTree {
         {
             let new_root_id = root_node.children[0];
             self.page_manager.free_page(self.root_page_id());
-            // SAFETY: Updating tree metadata after structural change
-            // Invariants:
-            // 1. Exclusive access to tree via &mut self
-            // 2. New root ID is valid (from existing child)
-            // 3. Height decreases by exactly 1 level
-            // 4. Old root already freed above
-            // Guarantees:
-            // - Tree structure remains valid
-            // - Metadata accurately reflects new structure
-            unsafe {
-                *self.root_page_id.get() = new_root_id;
-                *self.height.get() -= 1;
-            }
+            // Update tree metadata atomically after structural change
+            self.root_page_id.store(new_root_id, AtomicOrdering::Release);
+            let current_height = self.height.load(AtomicOrdering::Acquire);
+            self.height.store(current_height - 1, AtomicOrdering::Release);
         }
 
         Ok(())

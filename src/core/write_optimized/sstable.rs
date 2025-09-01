@@ -21,7 +21,7 @@ use std::time::Duration;
 /// - Index block (key -> offset mapping)
 /// - Bloom filter
 /// - Footer (offsets to different sections)
-const SSTABLE_MAGIC: u32 = 0x53535442; // "SSTB"
+const SSTABLE_MAGIC: u32 = 0x5353_5442; // "SSTB"
 const BLOCK_SIZE: usize = 4096; // 4KB blocks
 
 /// SSTable metadata
@@ -211,8 +211,13 @@ impl SSTableBuilder {
         match self.metadata.compression_type {
             1 => {
                 // zstd compression
-                let compressed = zstd::encode_all(data, 3)?;
-                Ok(compressed)
+                #[cfg(feature = "zstd-compression")]
+                {
+                    let compressed = zstd::encode_all(data, 3)?;
+                    Ok(compressed)
+                }
+                #[cfg(not(feature = "zstd-compression"))]
+                Err(Error::CompressionError("ZSTD compression not available".to_string()))
             }
             2 => {
                 // lz4 compression
@@ -430,7 +435,7 @@ impl SSTableReader {
     }
 
     /// Create an iterator over all entries
-    pub fn iter(&self) -> Result<SSTableIterator> {
+    pub fn iter(&self) -> Result<SSTableIterator<'_>> {
         Ok(SSTableIterator {
             reader: self,
             current_offset: 0,

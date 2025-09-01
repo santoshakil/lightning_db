@@ -69,7 +69,7 @@ pub struct SagaCoordinator {
     metrics: Arc<SagaMetrics>,
 }
 
-struct SagaDefinition {
+pub struct SagaDefinition {
     name: String,
     version: String,
     steps: Vec<SagaStep>,
@@ -513,7 +513,7 @@ impl SagaCoordinator {
         Err(Error::Custom(last_error.unwrap_or_else(|| "Step failed".to_string())))
     }
 
-    async fn call_service(&self, step: &SagaStep) -> Result<serde_json::Value> {
+    async fn call_service(&self, _step: &SagaStep) -> Result<serde_json::Value> {
         tokio::time::sleep(Duration::from_millis(10)).await;
         Ok(serde_json::json!({ "success": true }))
     }
@@ -551,7 +551,7 @@ impl SagaCoordinator {
         }
     }
 
-    fn should_retry(&self, error: &Error, retry_on: &[ErrorType]) -> bool {
+    fn should_retry(&self, _error: &Error, retry_on: &[ErrorType]) -> bool {
         retry_on.contains(&ErrorType::All) || retry_on.contains(&ErrorType::Transient)
     }
 

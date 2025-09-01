@@ -298,7 +298,7 @@ impl BTreeIntegrityValidator {
 
         // Check if node can be serialized to a page
         let mut test_page = Page::new(page_id);
-        if let Err(_) = node.serialize_to_page(&mut test_page) {
+        if node.serialize_to_page(&mut test_page).is_err() {
             violations.push(crate::utils::integrity::error_types::create_critical_violation(
                 IntegrityError::PageCapacityViolation {
                     details: "Node data exceeds page capacity".to_string(),
@@ -548,7 +548,7 @@ pub mod btree_validators {
         key: &[u8],
         value: &[u8],
     ) -> ValidationResult<()> {
-        let location = format!("btree_insert_validation");
+        let location = "btree_insert_validation".to_string();
         let mut violations = Vec::new();
 
         // Check if insertion would exceed capacity

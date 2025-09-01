@@ -797,10 +797,10 @@ impl CachePrewarmer {
             .predict_next_accesses(current_page, self.config.prefetch_distance);
 
         for prediction in predictions {
-            if prediction.confidence >= self.config.prediction_confidence_threshold {
-                if let Err(_) = self.enqueue_prefetch_request(prediction) {
-                    // Queue might be full, skip this prediction
-                }
+            if prediction.confidence >= self.config.prediction_confidence_threshold
+                && self.enqueue_prefetch_request(prediction).is_err()
+            {
+                // Queue might be full, skip this prediction
             }
         }
     }

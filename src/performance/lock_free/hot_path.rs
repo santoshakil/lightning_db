@@ -191,7 +191,7 @@ impl<K: Clone + Eq + std::hash::Hash + std::fmt::Debug, V: Clone + std::fmt::Deb
         let index = hash as usize & self.capacity_mask;
 
         let guard = &epoch::pin();
-        let generation = self.global_generation.fetch_add(1, Ordering::Relaxed);
+        let generation = self.global_generation.fetch_add(1, Ordering::AcqRel);
         
         let new_entry = Owned::new(CacheEntry {
             key,
@@ -209,7 +209,7 @@ impl<K: Clone + Eq + std::hash::Hash + std::fmt::Debug, V: Clone + std::fmt::Deb
         self.slots[index].generation.store(generation, Ordering::Release);
         
         if unlikely(old_entry.is_null()) {
-            self.size.fetch_add(1, Ordering::Relaxed);
+            self.size.fetch_add(1, Ordering::Release);
         } else {
             // SAFETY: Deferring destruction of replaced cache entry
             // Invariants:
@@ -331,23 +331,29 @@ impl<T: Clone> WaitFreeReadBuffer<T> {
     }
 
     /// Update the buffer (not wait-free, but minimally blocking)
+    /// Uses proper memory ordering and epoch-based reclamation
     pub fn update(&self, new_data: Vec<T>) {
-        let _guard = epoch::pin();
+        let guard = epoch::pin();
         let current_idx = self.active_buffer.load(Ordering::Acquire);
         let next_idx = 1 - current_idx;
 
-        // Update the inactive buffer
-        let old_ptr =
-            self.buffers[next_idx].swap(Box::into_raw(Box::new(new_data)), Ordering::Release);
+        // Update the inactive buffer with proper ordering
+        let new_ptr = Box::into_raw(Box::new(new_data));
+        let old_ptr = self.buffers[next_idx].swap(new_ptr, Ordering::AcqRel);
+
+        // Use memory fence to ensure visibility
+        std::sync::atomic::fence(Ordering::AcqRel);
 
         // Switch active buffer atomically
         self.active_buffer.store(next_idx, Ordering::Release);
-        self.epoch.fetch_add(1, Ordering::Release);
+        self.epoch.fetch_add(1, Ordering::AcqRel);
 
-        // Clean up old buffer after ensuring no readers
-        std::thread::yield_now(); // Give readers time to finish
-        unsafe {
-            let _ = Box::from_raw(old_ptr);
+        // Defer cleanup using epoch to ensure all readers are done
+        if !old_ptr.is_null() {
+            unsafe {
+                // Use defer_destroy instead of defer for better safety
+                guard.defer_destroy(epoch::Shared::from(old_ptr as *const _));
+            }
         }
     }
 }

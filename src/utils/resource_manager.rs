@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity)]
 //! Comprehensive Resource Management System
 //!
 //! This module provides RAII-based resource management with automatic cleanup,
@@ -262,22 +263,16 @@ impl<T> ResourcePool<T> {
 
     /// Get a resource from the pool
     pub fn acquire(&self) -> PooledResource<T> {
-        let _resource = {
+        {
             let mut available = self.available.lock();
-            
             // Try to reuse from pool
             while let Some(resource) = available.pop_front() {
-                if let Some(ref validator) = self.validator {
-                    if validator(&resource) {
-                        self.total_reused.fetch_add(1, Ordering::Relaxed);
-                        return PooledResource::new(resource, self);
-                    }
-                } else {
+                if self.validator.as_ref().is_none_or(|v| v(&resource)) {
                     self.total_reused.fetch_add(1, Ordering::Relaxed);
                     return PooledResource::new(resource, self);
                 }
             }
-        };
+        }
 
         // Create new resource
         let resource = (self.factory)();

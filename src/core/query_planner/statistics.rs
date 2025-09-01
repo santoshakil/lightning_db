@@ -160,7 +160,7 @@ impl TableStatistics {
             
             (left_rows as f64 * right_rows as f64 * selectivity) as usize
         } else {
-            1000000
+            1_000_000
         }
     }
 }
@@ -297,7 +297,7 @@ impl Histogram {
             };
         }
         
-        let min_val = values.iter().min().unwrap();
+        let _min_val = values.iter().min().unwrap();
         let max_val = values.iter().max().unwrap();
         
         let mut bucket_boundaries = Vec::new();
@@ -491,7 +491,7 @@ impl StatisticsCollector {
     }
 
     async fn estimate_row_count(&self, _table_name: &str) -> Result<usize, Error> {
-        Ok(1000000)
+        Ok(1_000_000)
     }
 
     async fn estimate_avg_row_size(&self, _table_name: &str) -> Result<usize, Error> {

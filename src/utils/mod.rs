@@ -8,11 +8,15 @@ pub mod resource_manager;
 pub mod safety;
 pub mod batching;
 pub mod lock_utils;
+pub mod timeout_locks;
+pub mod task_cancellation;
 pub mod resource_guard;
 pub mod retry;
 
 pub use retry::{RetryPolicy, RetryableOperations};
 pub use lock_utils::{LockUtils, RwLockExt, ArcRwLockExt};
+pub use timeout_locks::{TimeoutRwLockExt, TimeoutMutexExt, LockOrdering, HierarchicalLocks, LockLevel};
+pub use task_cancellation::{CancellationToken, TaskRegistry, TaskRegistryStats, get_task_registry};
 pub use memory_tracker::{MemoryTracker, MemoryStats, get_memory_tracker};
 pub use leak_detector::{LeakDetector, LeakReport, LeakType, get_leak_detector};
 pub use resource_manager::{ResourceManager, ResourceUsageStats, get_resource_manager};

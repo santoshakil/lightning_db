@@ -480,10 +480,10 @@ impl EnhancedRaftNode {
             loop {
                 let timeout = {
                     use rand::Rng;
-                    let mut rng = rand::thread_rng();
+                    let mut rng = rand::rng();
                     let min = config.election_timeout_min.as_millis() as u64;
                     let max = config.election_timeout_max.as_millis() as u64;
-                    Duration::from_millis(rng.gen_range(min..max))
+                    Duration::from_millis(rng.random_range(min..max))
                 };
                 
                 tokio::time::sleep(timeout).await;

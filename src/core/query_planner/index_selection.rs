@@ -313,7 +313,7 @@ impl IndexSelector {
             }
         });
         
-        !first_column_has_predicate && predicates.len() > 0
+        !first_column_has_predicate && !predicates.is_empty()
     }
 
     fn is_covering_index(&self, index: &IndexInfo, required_columns: &[String]) -> bool {
@@ -354,6 +354,7 @@ impl IndexSelector {
         Ok(combined_selectivity)
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn estimate_predicate_selectivity(
         &self,
         predicate: &Predicate,
@@ -386,7 +387,7 @@ impl IndexSelector {
         access_type: IndexAccessType,
         estimated_rows: usize,
         is_covering: bool,
-        stats: &TableStatistics,
+        _stats: &TableStatistics,
     ) -> Result<CostEstimate, Error> {
         let index_height = ((index.statistics.distinct_keys as f64).log2() / 100.0).max(1.0) as usize;
         
@@ -468,7 +469,7 @@ impl IndexSelector {
             let cpu_cost = table_stats.row_count as f64 * 0.01;
             Ok(CostEstimate::new(cpu_cost, io_cost, 0.0, 0.0))
         } else {
-            Ok(scan.estimated_cost.clone())
+        Ok(scan.estimated_cost)
         }
     }
 
@@ -503,9 +504,9 @@ impl IndexSelector {
 
     fn create_bitmap_path(
         &self,
-        indexes: Vec<IndexInfo>,
-        scan: &ScanNode,
-        stats: &TableStatistics,
+        _indexes: Vec<IndexInfo>,
+        _scan: &ScanNode,
+        _stats: &TableStatistics,
     ) -> Result<Option<IndexAccessPath>, Error> {
         Ok(None)
     }
@@ -520,6 +521,7 @@ impl IndexSelector {
         result
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn generate_combinations_recursive(
         &self,
         indexes: &[IndexInfo],
@@ -556,7 +558,7 @@ impl IndexSelector {
         false
     }
 
-    fn is_forced_index(&self, index: &IndexInfo) -> bool {
+    fn is_forced_index(&self, _index: &IndexInfo) -> bool {
         false
     }
 

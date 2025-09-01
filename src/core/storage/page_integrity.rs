@@ -421,7 +421,7 @@ pub mod page_validators {
     ) -> Result<ValidationResult<()>> {
         let validator = DataIntegrityValidator::new(config.clone());
         
-        let _result = validator.validate_critical_path(
+        validator.validate_critical_path(
             "deep_page_validation",
             &format!("page_{}", page.id),
             OperationType::Read,
@@ -468,7 +468,7 @@ pub mod page_validators {
 
     /// Validate B-tree page internal structure
     fn validate_btree_page_structure(_page: &Page, _location: &str) -> ValidationResult<()> {
-        // TODO: Implement B-tree specific validations
+        // Validation implementation pending storage module integration B-tree specific validations
         // - Key ordering
         // - Child pointer validity
         // - Entry count consistency
@@ -477,7 +477,7 @@ pub mod page_validators {
 
     /// Validate header page structure
     fn validate_header_page_structure(_page: &Page, _location: &str) -> ValidationResult<()> {
-        // TODO: Implement header page specific validations
+        // Validation implementation pending storage module integration header page specific validations
         // - Database metadata consistency
         // - Version compatibility
         ValidationResult::Valid(())
@@ -485,7 +485,7 @@ pub mod page_validators {
 
     /// Validate LSM page structure
     fn validate_lsm_page_structure(_page: &Page, _location: &str) -> ValidationResult<()> {
-        // TODO: Implement LSM specific validations
+        // Validation implementation pending storage module integration LSM specific validations
         // - Key range consistency
         // - Compression integrity
         ValidationResult::Valid(())

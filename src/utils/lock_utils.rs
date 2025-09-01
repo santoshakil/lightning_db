@@ -9,7 +9,7 @@ pub struct LockUtils;
 
 impl LockUtils {
     /// Try to acquire a read lock with retry on contention
-    pub fn read_with_retry<T>(lock: &RwLock<T>) -> Result<RwLockReadGuard<T>> {
+    pub fn read_with_retry<T>(lock: &RwLock<T>) -> Result<RwLockReadGuard<'_, T>> {
         RetryableOperations::lock_operation(|| {
             lock.try_read().ok_or_else(|| Error::LockFailed {
                 resource: "read lock".to_string(),
@@ -18,7 +18,7 @@ impl LockUtils {
     }
 
     /// Try to acquire a write lock with retry on contention
-    pub fn write_with_retry<T>(lock: &RwLock<T>) -> Result<RwLockWriteGuard<T>> {
+    pub fn write_with_retry<T>(lock: &RwLock<T>) -> Result<RwLockWriteGuard<'_, T>> {
         RetryableOperations::lock_operation(|| {
             lock.try_write().ok_or_else(|| Error::LockFailed {
                 resource: "write lock".to_string(),
@@ -27,7 +27,7 @@ impl LockUtils {
     }
 
     /// Try to acquire a read lock on an `Arc<RwLock<T>>` with retry
-    pub fn arc_read_with_retry<T>(lock: &Arc<RwLock<T>>) -> Result<RwLockReadGuard<T>> {
+    pub fn arc_read_with_retry<T>(lock: &Arc<RwLock<T>>) -> Result<RwLockReadGuard<'_, T>> {
         RetryableOperations::lock_operation(|| {
             lock.try_read().ok_or_else(|| Error::LockFailed {
                 resource: "arc read lock".to_string(),
@@ -36,7 +36,7 @@ impl LockUtils {
     }
 
     /// Try to acquire a write lock on an `Arc<RwLock<T>>` with retry
-    pub fn arc_write_with_retry<T>(lock: &Arc<RwLock<T>>) -> Result<RwLockWriteGuard<T>> {
+    pub fn arc_write_with_retry<T>(lock: &Arc<RwLock<T>>) -> Result<RwLockWriteGuard<'_, T>> {
         RetryableOperations::lock_operation(|| {
             lock.try_write().ok_or_else(|| Error::LockFailed {
                 resource: "arc write lock".to_string(),
@@ -45,7 +45,7 @@ impl LockUtils {
     }
 
     /// Acquire a read lock with timeout
-    pub fn read_with_timeout<T>(lock: &RwLock<T>, timeout: Duration) -> Result<RwLockReadGuard<T>> {
+    pub fn read_with_timeout<T>(lock: &RwLock<T>, timeout: Duration) -> Result<RwLockReadGuard<'_, T>> {
         let policy = RetryPolicy {
             max_attempts: (timeout.as_millis() / 10) as u32, // Try every 10ms
             initial_delay: Duration::from_millis(10),
@@ -64,7 +64,7 @@ impl LockUtils {
     pub fn write_with_timeout<T>(
         lock: &RwLock<T>,
         timeout: Duration,
-    ) -> Result<RwLockWriteGuard<T>> {
+    ) -> Result<RwLockWriteGuard<'_, T>> {
         let policy = RetryPolicy {
             max_attempts: (timeout.as_millis() / 10) as u32, // Try every 10ms
             initial_delay: Duration::from_millis(10),
@@ -82,42 +82,42 @@ impl LockUtils {
 
 /// Extension trait for RwLock to add retry methods
 pub trait RwLockExt<T> {
-    fn read_retry(&self) -> Result<RwLockReadGuard<T>>;
-    fn write_retry(&self) -> Result<RwLockWriteGuard<T>>;
-    fn read_timeout(&self, timeout: Duration) -> Result<RwLockReadGuard<T>>;
-    fn write_timeout(&self, timeout: Duration) -> Result<RwLockWriteGuard<T>>;
+    fn read_retry(&self) -> Result<RwLockReadGuard<'_, T>>;
+    fn write_retry(&self) -> Result<RwLockWriteGuard<'_, T>>;
+    fn read_timeout(&self, timeout: Duration) -> Result<RwLockReadGuard<'_, T>>;
+    fn write_timeout(&self, timeout: Duration) -> Result<RwLockWriteGuard<'_, T>>;
 }
 
 impl<T> RwLockExt<T> for RwLock<T> {
-    fn read_retry(&self) -> Result<RwLockReadGuard<T>> {
+    fn read_retry(&self) -> Result<RwLockReadGuard<'_, T>> {
         LockUtils::read_with_retry(self)
     }
 
-    fn write_retry(&self) -> Result<RwLockWriteGuard<T>> {
+    fn write_retry(&self) -> Result<RwLockWriteGuard<'_, T>> {
         LockUtils::write_with_retry(self)
     }
 
-    fn read_timeout(&self, timeout: Duration) -> Result<RwLockReadGuard<T>> {
+    fn read_timeout(&self, timeout: Duration) -> Result<RwLockReadGuard<'_, T>> {
         LockUtils::read_with_timeout(self, timeout)
     }
 
-    fn write_timeout(&self, timeout: Duration) -> Result<RwLockWriteGuard<T>> {
+    fn write_timeout(&self, timeout: Duration) -> Result<RwLockWriteGuard<'_, T>> {
         LockUtils::write_with_timeout(self, timeout)
     }
 }
 
 /// Extension trait for `Arc<RwLock<T>>` to add retry methods
 pub trait ArcRwLockExt<T> {
-    fn read_retry(&self) -> Result<RwLockReadGuard<T>>;
-    fn write_retry(&self) -> Result<RwLockWriteGuard<T>>;
+    fn read_retry(&self) -> Result<RwLockReadGuard<'_, T>>;
+    fn write_retry(&self) -> Result<RwLockWriteGuard<'_, T>>;
 }
 
 impl<T> ArcRwLockExt<T> for Arc<RwLock<T>> {
-    fn read_retry(&self) -> Result<RwLockReadGuard<T>> {
+    fn read_retry(&self) -> Result<RwLockReadGuard<'_, T>> {
         LockUtils::arc_read_with_retry(self)
     }
 
-    fn write_retry(&self) -> Result<RwLockWriteGuard<T>> {
+    fn write_retry(&self) -> Result<RwLockWriteGuard<'_, T>> {
         LockUtils::arc_write_with_retry(self)
     }
 }

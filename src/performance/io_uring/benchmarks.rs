@@ -247,8 +247,7 @@ impl IoBenchmarkSuite {
         for _ in 0..config.num_operations {
             let offset = if rng.random::<f64>() < config.sequential_ratio {
                 // Sequential access
-                let base = (operations.len() as u64 * config.io_size as u64) % max_offset;
-                base
+                (operations.len() as u64 * config.io_size as u64) % max_offset
             } else {
                 // Random access - align to block boundary
                 let random_offset = rng.random_range(0..max_offset);
@@ -339,7 +338,7 @@ impl IoBenchmarkSuite {
         };
         
         let mmap = if config.use_mmap {
-            Some(OptimizedMmapManager::open(&file_path, MmapConfig::default()).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?)
+            Some(OptimizedMmapManager::open(&file_path, MmapConfig::default()).map_err(std::io::Error::other)?)
         } else {
             None
         };
@@ -445,13 +444,13 @@ impl IoBenchmarkSuite {
     
     fn mmap_read(mmap: &OptimizedMmapManager, offset: u64, size: usize) -> std::io::Result<()> {
         let mut buffer = vec![0u8; size];
-        mmap.read(offset, &mut buffer).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        mmap.read(offset, &mut buffer).map_err(std::io::Error::other)?;
         Ok(())
     }
     
     fn mmap_write(mmap: &OptimizedMmapManager, offset: u64, size: usize) -> std::io::Result<()> {
         let data = vec![0x42u8; size];
-        mmap.write(offset, &data).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        mmap.write(offset, &data).map_err(std::io::Error::other)?;
         Ok(())
     }
     
@@ -617,27 +616,27 @@ impl IoBenchmarkSuite {
         
         for (i, result) in self.results.iter().enumerate() {
             report.push_str(&format!("### Benchmark {}\n\n", i + 1));
-            report.push_str(&format!("**Configuration:**\n"));
+            report.push_str("**Configuration:**\n");
             report.push_str(&format!("- Threads: {}\n", result.config.num_threads));
             report.push_str(&format!("- I/O Size: {} bytes\n", result.config.io_size));
             report.push_str(&format!("- Direct I/O: {}\n", result.config.use_direct_io));
             report.push_str(&format!("- Memory Mapping: {}\n", result.config.use_mmap));
             report.push_str(&format!("- Read-ahead: {}\n", result.config.use_readahead));
             
-            report.push_str(&format!("\n**Performance:**\n"));
+            report.push_str("\n**Performance:**\n");
             report.push_str(&format!("- Total Operations: {}\n", result.total_operations));
             report.push_str(&format!("- Total Data: {:.1} MB\n", result.total_bytes as f64 / (1024.0 * 1024.0)));
             report.push_str(&format!("- Duration: {:.2}s\n", result.duration.as_secs_f64()));
             report.push_str(&format!("- Throughput: {:.1} MB/s\n", result.throughput_mb_per_second));
             report.push_str(&format!("- IOPS: {:.0}\n", result.operations_per_second));
             
-            report.push_str(&format!("\n**Latency Distribution:**\n"));
+            report.push_str("\n**Latency Distribution:**\n");
             report.push_str(&format!("- Average: {:.1} μs\n", result.average_latency_us));
             report.push_str(&format!("- 90th percentile: {:.1} μs\n", result.p90_latency_us));
             report.push_str(&format!("- 95th percentile: {:.1} μs\n", result.p95_latency_us));
             report.push_str(&format!("- 99th percentile: {:.1} μs\n", result.p99_latency_us));
             
-            report.push_str(&format!("\n**Buffer Management:**\n"));
+            report.push_str("\n**Buffer Management:**\n");
             report.push_str(&format!("- Cache Hit Ratio: {:.1}%\n", result.buffer_stats.hit_ratio * 100.0));
             report.push_str(&format!("- Cache Hits: {}\n", result.buffer_stats.cache_hits));
             report.push_str(&format!("- Cache Misses: {}\n", result.buffer_stats.cache_misses));
@@ -652,7 +651,7 @@ impl IoBenchmarkSuite {
             .max_by(|a, b| a.throughput_mb_per_second.partial_cmp(&b.throughput_mb_per_second).unwrap());
         
         if let Some(best) = best_result {
-            report.push_str(&format!("**Best performing configuration:**\n"));
+            report.push_str("**Best performing configuration:**\n");
             report.push_str(&format!("- Direct I/O: {}\n", best.config.use_direct_io));
             report.push_str(&format!("- Memory Mapping: {}\n", best.config.use_mmap));
             report.push_str(&format!("- I/O Size: {} bytes\n", best.config.io_size));

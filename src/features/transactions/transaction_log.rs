@@ -435,7 +435,7 @@ impl TransactionLog {
         let active_txns: Vec<super::TransactionId> = self.checkpoint_manager
             .active_transactions
             .iter()
-            .map(|entry| entry.key().clone())
+            .map(|entry| *entry.key())
             .collect();
         
         let min_lsn = self.checkpoint_manager
@@ -627,8 +627,7 @@ impl TransactionLog {
                 
                 let data = if self.archiver.compression_enabled {
                     let serialized = serde_json::to_vec(&segment).unwrap();
-                    let compressed = lz4_flex::compress_prepend_size(&serialized);
-                    compressed
+                    lz4_flex::compress_prepend_size(&serialized)
                 } else {
                     serde_json::to_vec(&segment).unwrap()
                 };

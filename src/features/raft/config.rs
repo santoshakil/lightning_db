@@ -84,7 +84,8 @@ impl ElectionTimeout {
         use rand::Rng;
         let min_ms = self.min.as_millis() as u64;
         let max_ms = self.max.as_millis() as u64;
-        let timeout_ms = rand::thread_rng().gen_range(min_ms..=max_ms);
+        let mut rng = rand::rng();
+        let timeout_ms = rng.random_range(min_ms..=max_ms);
         Duration::from_millis(timeout_ms)
     }
 }

@@ -205,7 +205,7 @@ impl ProductQuantizer {
             )));
         }
         
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut centroids: Vec<Vec<f32>> = vectors
             .choose_multiple(&mut rng, k)
             .cloned()

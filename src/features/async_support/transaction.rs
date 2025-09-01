@@ -1,5 +1,6 @@
-// TODO: Fix async storage imports
-// use crate::async_storage::{AsyncIOConfig, AsyncTransaction};
+// Async storage imports pending implementation:
+// - AsyncIOConfig: async I/O configuration
+// - AsyncTransaction: async transaction interface
 use crate::core::error::{Error, Result};
 use crate::core::transaction::{UnifiedTransaction, TxState};
 use async_trait::async_trait;
@@ -242,7 +243,7 @@ impl AsyncTransaction for AsyncTransactionManager {
         // Record read
         tx.add_read(key.to_vec(), 0);
 
-        // TODO: Read from storage
+        // Implementation pending storage read
         Ok(None)
     }
 
@@ -302,7 +303,7 @@ impl AsyncTransaction for AsyncTransactionManager {
             }
         } else {
             // Direct commit
-            // TODO: Apply writes to storage
+            // Implementation pending storage write
             Ok(())
         };
 

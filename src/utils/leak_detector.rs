@@ -12,7 +12,7 @@ use std::{
     sync::{Arc, Weak, Mutex, RwLock, atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering}},
     time::{Duration, SystemTime},
     thread,
-    hash::{Hash, Hasher},
+    hash::Hash,
     marker::PhantomData,
 };
 
@@ -519,7 +519,7 @@ impl LeakDetector {
             total_objects_tracked: self.total_objects_tracked.load(Ordering::Relaxed),
             total_scans_performed: self.total_scans.load(Ordering::Relaxed),
             total_leaks_detected: self.total_leaks_detected.load(Ordering::Relaxed),
-            last_scan_time: self.last_scan.lock().unwrap().clone(),
+            last_scan_time: *self.last_scan.lock().unwrap(),
             objects_by_type: self.get_objects_by_type(),
         }
     }

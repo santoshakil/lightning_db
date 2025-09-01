@@ -382,7 +382,7 @@ impl DataMigrator {
                 if let Some(current_version) = progress_guard.current_migration {
                     let step = format!("Migrating data: batch {} of {}", 
                         batch_index + 1, 
-                        (total_records + self.batch_size - 1) / self.batch_size);
+                        total_records.div_ceil(self.batch_size));
                     progress_guard.update_migration_progress(current_version, &step, progress.min(100));
                 }
             }

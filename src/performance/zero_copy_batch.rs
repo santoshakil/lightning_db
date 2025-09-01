@@ -237,6 +237,7 @@ impl PooledZeroCopyBatcher {
                     .unwrap_or_else(|| ZeroCopyWriteBatch::new(self.batch_capacity))
             );
         }
+        // SAFETY: We just ensured active_batch is Some above
         self.active_batch.as_mut().unwrap()
     }
 
