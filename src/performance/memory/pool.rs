@@ -84,8 +84,8 @@ pub struct PoolGuard<'a, T> {
 
 impl<'a, T> PoolGuard<'a, T> {
     /// Take ownership of the object, preventing it from being returned to pool
-    pub fn take(mut self) -> T {
-        self.object.take().expect("Object already taken")
+    pub fn take(mut self) -> Option<T> {
+        self.object.take()
     }
 }
 
@@ -93,13 +93,23 @@ impl<'a, T> Deref for PoolGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.object.as_ref().expect("Object already taken")
+        // SAFETY: object is always Some when PoolGuard is created
+        // and only becomes None if take() is explicitly called.
+        // Using Deref after take() is a logic error.
+        self.object.as_ref().unwrap_or_else(|| {
+            panic!("PoolGuard used after take() was called")
+        })
     }
 }
 
 impl<'a, T> DerefMut for PoolGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.object.as_mut().expect("Object already taken")
+        // SAFETY: object is always Some when PoolGuard is created
+        // and only becomes None if take() is explicitly called.
+        // Using DerefMut after take() is a logic error.
+        self.object.as_mut().unwrap_or_else(|| {
+            panic!("PoolGuard used after take() was called")
+        })
     }
 }
 
@@ -319,7 +329,7 @@ mod tests {
         let mut guard = pool.get();
         guard.push(42);
 
-        let vec = guard.take();
+        let vec = guard.take().unwrap();
         assert_eq!(vec, vec![42]);
         assert_eq!(pool.len(), 0); // Object not returned to pool
     }

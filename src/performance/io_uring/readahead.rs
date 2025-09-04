@@ -3,6 +3,7 @@
 //! This module implements intelligent prefetching and background writing strategies
 //! to improve I/O throughput and reduce latency.
 
+use crate::Error;
 use crate::performance::io_uring::io_scheduler::IoPriority;
 use crate::performance::io_uring::zero_copy_buffer::{AlignedBuffer, HighPerformanceBufferManager};
 use std::collections::{HashMap, VecDeque};
@@ -118,7 +119,7 @@ pub struct ReadAheadStats {
 }
 
 impl ReadAheadManager {
-    pub fn new(config: ReadAheadConfig) -> Self {
+    pub fn new(config: ReadAheadConfig) -> Result<Self, Error> {
         let buffer_manager = Arc::new(HighPerformanceBufferManager::new());
         let cache = Arc::new(RwLock::new(HashMap::new()));
         let access_patterns = Arc::new(RwLock::new(HashMap::new()));
@@ -149,12 +150,12 @@ impl ReadAheadManager {
                 .spawn(move || {
                     Self::readahead_worker(cache_clone, queue_clone, buffer_manager_clone, shutdown_clone, stats_clone);
                 })
-                .expect("Failed to spawn read-ahead worker thread");
+                .map_err(|e| Error::IoError(format!("Failed to spawn read-ahead worker thread: {}", e)))?;
             
             worker_threads.push(handle);
         }
         
-        Self {
+        Ok(Self {
             config,
             buffer_manager,
             cache,
@@ -163,7 +164,7 @@ impl ReadAheadManager {
             stats,
             shutdown,
             worker_threads,
-        }
+        })
     }
     
     /// Read data with read-ahead optimization
@@ -446,7 +447,7 @@ pub struct WriteBehindStats {
 }
 
 impl WriteBehindManager {
-    pub fn new(config: WriteBehindConfig) -> Self {
+    pub fn new(config: WriteBehindConfig) -> Result<Self, Error> {
         let buffer_manager = Arc::new(HighPerformanceBufferManager::new());
         let dirty_pages = Arc::new(RwLock::new(HashMap::new()));
         let writeback_queue = Arc::new(Mutex::new(VecDeque::new()));
@@ -468,12 +469,12 @@ impl WriteBehindManager {
                 .spawn(move || {
                     Self::writeback_worker(dirty_pages_clone, queue_clone, shutdown_clone, flush_interval, stats_clone);
                 })
-                .expect("Failed to spawn write-behind worker thread");
+                .map_err(|e| Error::IoError(format!("Failed to spawn write-behind worker thread: {}", e)))?;
             
             worker_threads.push(handle);
         }
         
-        Self {
+        Ok(Self {
             config,
             buffer_manager,
             dirty_pages,
@@ -481,7 +482,7 @@ impl WriteBehindManager {
             stats,
             shutdown,
             worker_threads,
-        }
+        })
     }
     
     /// Mark page as dirty for write-behind

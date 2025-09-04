@@ -75,8 +75,8 @@ pub struct ThreadLocalGuard<'a, T> {
 }
 
 impl<'a, T> ThreadLocalGuard<'a, T> {
-    pub fn take(mut self) -> T {
-        self.object.take().expect("Object already taken")
+    pub fn take(mut self) -> Option<T> {
+        self.object.take()
     }
 }
 
@@ -84,13 +84,17 @@ impl<'a, T> Deref for ThreadLocalGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.object.as_ref().expect("Object already taken")
+        self.object.as_ref().unwrap_or_else(|| {
+            panic!("ThreadLocalGuard used after take() was called")
+        })
     }
 }
 
 impl<'a, T> DerefMut for ThreadLocalGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.object.as_mut().expect("Object already taken")
+        self.object.as_mut().unwrap_or_else(|| {
+            panic!("ThreadLocalGuard used after take() was called")
+        })
     }
 }
 
