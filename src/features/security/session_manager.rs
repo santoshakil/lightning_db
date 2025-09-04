@@ -641,7 +641,8 @@ impl SessionManager {
     
     async fn ensure_minimum_validation_time(&self, start_time: Instant) {
         let min_duration = std::time::Duration::from_millis(50);
-        let random_extra = std::time::Duration::from_millis(thread_rng().gen_range(10..30));
+        use rand::random_range;
+        let random_extra = std::time::Duration::from_millis(random_range(10..30));
         let target_duration = min_duration + random_extra;
         
         let elapsed = start_time.elapsed();

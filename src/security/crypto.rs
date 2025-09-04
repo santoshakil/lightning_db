@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, Instant};
-use rand::{RngCore, thread_rng};
+use rand::{RngCore, rng};
 
 const KEY_SIZE: usize = 32;
 const NONCE_SIZE: usize = 12;
@@ -224,13 +224,13 @@ impl CryptographicManager {
     }
 
     pub fn add_random_delay(&self) -> SecurityResult<()> {
-        let delay_ms = thread_rng().next_u32() % 50 + 10;
+        let delay_ms = rng().next_u32() % 50 + 10;
         std::thread::sleep(Duration::from_millis(delay_ms as u64));
         Ok(())
     }
 
     pub async fn add_random_delay_async(&self) -> SecurityResult<()> {
-        let delay_ms = thread_rng().next_u32() % 50 + 10;
+        let delay_ms = rng().next_u32() % 50 + 10;
         tokio::time::sleep(Duration::from_millis(delay_ms as u64)).await;
         Ok(())
     }
@@ -247,8 +247,10 @@ impl CryptographicManager {
             
             dummy_a[..a_bytes.len().min(max_len)].copy_from_slice(&a_bytes[..a_bytes.len().min(max_len)]);
             dummy_b[..b_bytes.len().min(max_len)].copy_from_slice(&b_bytes[..b_bytes.len().min(max_len)]);
-            
-            dummy_a.ct_eq(&dummy_b).into() && false
+            // Perform a constant-time compare to keep timing roughly consistent,
+            // but ignore the result since lengths differ; always return false.
+            let _ = subtle::ConstantTimeEq::ct_eq(&dummy_a[..], &dummy_b[..]);
+            false
         } else {
             a_bytes.ct_eq(b_bytes).into()
         }

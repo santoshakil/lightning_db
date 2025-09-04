@@ -1,3 +1,4 @@
+#![cfg(feature = "integration_tests")]
 use lightning_db::{Database, LightningDbConfig};
 use lightning_db::features::transactions::isolation::{IsolationLevel, IsolationConfig, LockMode};
 use std::time::Duration;

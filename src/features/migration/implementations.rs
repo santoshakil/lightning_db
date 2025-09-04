@@ -601,6 +601,7 @@ impl DataTransformer for CompressionTransformer {
                 use flate2::Compression;
                 #[cfg(feature = "deflate")]
                 use flate2::write::GzEncoder;
+                #[cfg(feature = "deflate")]
                 use std::io::Write;
                 
                 #[cfg(feature = "deflate")]

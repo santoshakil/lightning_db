@@ -18,6 +18,12 @@
 .DS_Store
 Thumbs.db
 
+# Local logs and artifacts
+logs/
+benchmark_results/
+snapshots/
+build/releases/
+
 # Temporary files
 *.tmp
 *.bak

@@ -611,7 +611,7 @@ impl BufferPool {
             if let Some(mut buffer) = pool.free_buffers.pop_front() {
                 self.stats.hits.fetch_add(1, Ordering::Relaxed);
                 buffer.len = size; // Adjust size if needed
-                buffer.zero(); // Clear buffer
+                let _ = buffer.zero(); // Clear buffer
                 return Ok(buffer);
             }
         }
@@ -1076,7 +1076,7 @@ mod tests {
         buffer.prefault();
         
         // Buffer should still be usable
-        buffer.zero();
+        let _ = buffer.zero();
         assert_eq!(buffer.as_slice().map(|s| s[0]).unwrap_or(0), 0);
     }
 }

@@ -12,8 +12,9 @@ fn test_basic_compaction() -> Result<(), Box<dyn std::error::Error>> {
     let compaction_id = db.compact()?;
     assert!(compaction_id > 0);
     
-    // Test compaction statistics
-    let stats = db.get_compaction_stats()?;
+    // Test compaction statistics (async API via runtime)
+    let rt = tokio::runtime::Runtime::new()?;
+    let stats = rt.block_on(db.get_compaction_stats())?;
     assert!(stats.total_compactions >= 1);
     
     Ok(())
@@ -31,7 +32,7 @@ fn test_async_compaction() -> Result<(), Box<dyn std::error::Error>> {
     // Wait a bit and check progress
     std::thread::sleep(Duration::from_millis(100));
     
-    match db.get_compaction_progress(compaction_id) {
+    match tokio::runtime::Runtime::new()?.block_on(db.get_compaction_progress(compaction_id)) {
         Ok(progress) => {
             assert_eq!(progress.compaction_id, compaction_id);
             assert_eq!(progress.compaction_type, CompactionType::Online);
@@ -93,7 +94,7 @@ fn test_garbage_collection() -> Result<(), Box<dyn std::error::Error>> {
     let tx_id = db.begin_transaction()?;
     db.put_tx(tx_id, b"temp_key", b"temp_value")?;
     // Don't commit - this creates garbage
-    db.rollback_transaction(tx_id)?;
+    db.abort_transaction(tx_id)?;
     
     // Test garbage collection
     let bytes_collected = db.garbage_collect()?;
@@ -127,8 +128,8 @@ fn test_space_savings_estimation() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempdir()?;
     let db = Database::create(temp_dir.path(), LightningDbConfig::default())?;
     
-    // Estimate space savings
-    let estimated_savings = db.estimate_space_savings()?;
+    // Estimate space savings (async)
+    let estimated_savings = tokio::runtime::Runtime::new()?.block_on(db.estimate_space_savings())?;
     assert!(estimated_savings >= 0);
     
     Ok(())
@@ -249,15 +250,16 @@ fn test_compaction_stats_tracking() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempdir()?;
     let db = Database::create(temp_dir.path(), LightningDbConfig::default())?;
     
-    // Get initial stats
-    let initial_stats = db.get_compaction_stats()?;
+    // Get initial stats (async API): block on a runtime to avoid changing library API
+    let rt = tokio::runtime::Runtime::new()?;
+    let initial_stats = rt.block_on(db.get_compaction_stats())?;
     
     // Run multiple compactions
     db.compact()?;
     db.compact_incremental()?;
     
     // Get updated stats
-    let updated_stats = db.get_compaction_stats()?;
+    let updated_stats = rt.block_on(db.get_compaction_stats())?;
     
     // Verify stats increased
     assert!(updated_stats.total_compactions >= initial_stats.total_compactions + 2);
@@ -271,7 +273,8 @@ fn test_compaction_stats_tracking() -> Result<(), Box<dyn std::error::Error>> {
 fn test_integration_with_lsm_compaction() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempdir()?;
     let mut config = LightningDbConfig::default();
-    config.enable_lsm_tree = true;
+    // LSM is enabled when compression is enabled in current config
+    config.compression_enabled = true;
     
     let db = Database::create(temp_dir.path(), config)?;
     

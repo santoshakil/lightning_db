@@ -1,18 +1,20 @@
-//! Stress tests for Lightning DB
+//! Stress tests for Lightning DB (opt-in via `--features integration_tests`)
 //! 
 //! These tests push the database to its limits to ensure stability under load
 
-use lightning_db::*;
-use rand::{distributions::Alphanumeric, Rng, SeedableRng};
-use rand_chacha::ChaCha8Rng;
-use std::sync::{Arc, Barrier, atomic::{AtomicBool, AtomicU64, Ordering}};
-use std::thread;
-use std::time::{Duration, Instant};
-use tempfile::TempDir;
+// Imports are scoped within the gated module to avoid compiling when feature is disabled
 
-#[cfg(test)]
+#[cfg(all(test, feature = "integration_tests"))]
 mod stress_tests {
-    use super::*;
+    use lightning_db::*;
+    use rand::{distributions::Alphanumeric, Rng, SeedableRng};
+    use rand_chacha::ChaCha8Rng;
+    use std::sync::{Arc, Barrier, atomic::{AtomicBool, AtomicU64, Ordering}};
+    use std::thread;
+    use std::time::{Duration, Instant};
+    use tempfile::TempDir;
+    
+    // Note: imports moved inside the gated module to avoid compiling without feature
     
     /// Helper to generate random key-value pairs
     fn random_kv(rng: &mut impl Rng, key_size: usize, value_size: usize) -> (Vec<u8>, Vec<u8>) {

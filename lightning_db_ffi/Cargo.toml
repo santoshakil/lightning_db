@@ -14,8 +14,9 @@ crate-type = ["lib", "cdylib", "staticlib"]
 cbindgen = "0.27"
 
 [dependencies]
-lightning_db = { path = "..", default-features = false }
+lightning_db = { path = "..", default-features = false, features = ["futures-util"] }
 lazy_static = "1.4"
+parking_lot = "0.12"
 
 [features]
 default = ["zstd-compression"]

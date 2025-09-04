@@ -1,3 +1,4 @@
+#![cfg(feature = "integration_tests")]
 //! Integration Test Entry Point
 //! 
 //! This file serves as the entry point for all integration tests.

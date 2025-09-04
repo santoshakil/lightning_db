@@ -146,49 +146,35 @@ impl Logger {
     
     fn create_otel_layer(
         &mut self,
-        jaeger_config: &crate::features::logging::config::JaegerConfig,
+        _jaeger_config: &crate::features::logging::config::JaegerConfig,
     ) -> Result<Box<dyn tracing_subscriber::Layer<Registry> + Send + Sync>, Box<dyn std::error::Error>> {
-        #[cfg(feature = "telemetry")]
-        let mut resource_attrs = vec![
-            KeyValue::new("service.name", self.config.telemetry.service_name.clone()),
-            KeyValue::new("service.version", self.config.telemetry.service_version.clone()),
-            KeyValue::new("environment", self.config.telemetry.environment.clone()),
-        ];
-        
-        #[cfg(feature = "telemetry")]
-        for (key, value) in &self.config.telemetry.resource_attributes {
-            resource_attrs.push(KeyValue::new(key.clone(), value.clone()));
-        }
-        
         #[cfg(not(feature = "telemetry"))]
-        let resource_attrs: Vec<(&str, String)> = vec![];
-        
-        // Use new pipeline API instead of deprecated one
+        {
+            return Err("Telemetry feature not enabled".into());
+        }
+
         #[cfg(feature = "telemetry")]
-        let tracer = {
-            opentelemetry_jaeger::new_collector_pipeline()
+        {
+            let mut resource_attrs = vec![
+                KeyValue::new("service.name", self.config.telemetry.service_name.clone()),
+                KeyValue::new("service.version", self.config.telemetry.service_version.clone()),
+                KeyValue::new("environment", self.config.telemetry.environment.clone()),
+            ];
+
+            for (key, value) in &self.config.telemetry.resource_attributes {
+                resource_attrs.push(KeyValue::new(key.clone(), value.clone()));
+            }
+
+            let tracer = opentelemetry_jaeger::new_collector_pipeline()
                 .with_service_name(&jaeger_config.service_name)
                 .with_endpoint(&jaeger_config.endpoint)
                 .with_trace_config(
                     trace::config().with_resource(Resource::new(resource_attrs))
                 )
-                .install_batch(opentelemetry_sdk::runtime::Tokio)?
-        };
-        
-        #[cfg(not(feature = "telemetry"))]
-        let tracer = {
-            return Err("Telemetry feature not enabled".into());
-        };
-            
-        #[cfg(feature = "telemetry")]
-        {
+                .install_batch(opentelemetry_sdk::runtime::Tokio)?;
+
             self.tracer_provider = Some(tracer.provider().unwrap().clone());
             Ok(Box::new(tracing_opentelemetry::layer().with_tracer(tracer)))
-        }
-        #[cfg(not(feature = "telemetry"))]
-        {
-            // Unreachable due to early return above, but needed for type checking
-            Err("Telemetry feature not enabled".into())
         }
     }
 }

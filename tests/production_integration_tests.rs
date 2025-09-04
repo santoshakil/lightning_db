@@ -1,3 +1,4 @@
+
 use lightning_db::{Database, LightningDbConfig, WalSyncMode};
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -49,7 +50,7 @@ fn test_heavy_concurrent_load() {
     let dir = tempdir().unwrap();
     let config = LightningDbConfig {
         cache_size: 100 * 1024 * 1024, // 100MB cache
-        use_improved_wal: true,
+        use_unified_wal: true,
         wal_sync_mode: WalSyncMode::Periodic { interval_ms: 100 },
         prefetch_enabled: true,
         ..Default::default()
@@ -291,7 +292,7 @@ fn test_crash_recovery_simulation() {
     // Phase 1: Normal operations followed by abrupt termination
     {
         let config = LightningDbConfig {
-            use_improved_wal: true,
+            use_unified_wal: true,
             wal_sync_mode: WalSyncMode::Sync,
             ..Default::default()
         };
@@ -348,7 +349,7 @@ fn test_crash_recovery_simulation() {
 fn test_long_running_with_checkpoints() {
     let dir = tempdir().unwrap();
     let config = LightningDbConfig {
-        use_improved_wal: true,
+        use_unified_wal: true,
         wal_sync_mode: WalSyncMode::Periodic { interval_ms: 500 },
         ..Default::default()
     };

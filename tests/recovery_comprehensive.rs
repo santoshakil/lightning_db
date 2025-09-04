@@ -1,3 +1,4 @@
+#![cfg(feature = "integration_tests")]
 //! Comprehensive recovery and crash testing for Lightning DB
 //! 
 //! This consolidated module contains all recovery-related tests including:

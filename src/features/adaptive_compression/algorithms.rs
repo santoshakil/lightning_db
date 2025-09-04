@@ -147,21 +147,23 @@ impl CompressionAlgorithmTrait for ZstdCompression {
             return Ok(Vec::new());
         }
 
-        let compression_level = match level {
-            CompressionLevel::Fastest => 1,
-            CompressionLevel::Fast => 3,
-            CompressionLevel::Balanced => 6,
-            CompressionLevel::High => 9,
-            CompressionLevel::Maximum => 19,
-        };
-
         #[cfg(feature = "zstd-compression")]
         {
+            let compression_level = match level {
+                CompressionLevel::Fastest => 1,
+                CompressionLevel::Fast => 3,
+                CompressionLevel::Balanced => 6,
+                CompressionLevel::High => 9,
+                CompressionLevel::Maximum => 19,
+            };
             zstd::encode_all(data, compression_level)
                 .map_err(|e| Error::Compression(format!("Zstd compression failed: {}", e)))
         }
         #[cfg(not(feature = "zstd-compression"))]
-        Err(Error::Compression("ZSTD compression not available".to_string()))
+        {
+            let _ = level;
+            Err(Error::Compression("ZSTD compression not available".to_string()))
+        }
     }
 
     fn decompress(&self, compressed_data: &[u8]) -> Result<Vec<u8>> {
@@ -454,7 +456,7 @@ impl CompressionAlgorithmFactory {
 
     /// Get available algorithms
     pub fn available_algorithms() -> Vec<CompressionAlgorithm> {
-        let mut algorithms = vec![
+        let algorithms = vec![
             CompressionAlgorithm::None,
             CompressionAlgorithm::LZ4,
             CompressionAlgorithm::Zstd,

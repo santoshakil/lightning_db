@@ -626,14 +626,8 @@ impl Default for MigrationCliRunner {
 pub fn run_cli() -> DatabaseResult<()> {
     let cli = MigrationCli::parse();
     let mut runner = MigrationCliRunner::new();
-    
-    match runner.run(cli) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            process::exit(1);
-        }
-    }
+    // Defer error handling/exit to binary main; keep pure Result here.
+    runner.run(cli)
 }
 
 #[cfg(not(feature = "cli"))]

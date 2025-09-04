@@ -4,9 +4,10 @@ use crate::error::{clear_last_error, set_last_error};
 use crate::handle_registry::HandleRegistry;
 use crate::utils::{bytes_to_vec, ByteResult};
 use crate::{ffi_try, ErrorCode};
+use std::sync::Arc;
 
 lazy_static::lazy_static! {
-    static ref TRANSACTION_REGISTRY: HandleRegistry<(u64, u64)> = HandleRegistry::new();
+    static ref TRANSACTION_REGISTRY: HandleRegistry<(u64, u64)> = HandleRegistry::<(u64, u64)>::new();
 }
 
 /// Begin a new transaction
@@ -24,7 +25,7 @@ pub extern "C" fn lightning_db_begin_transaction(db_handle: u64, out_handle: *mu
         return ErrorCode::InvalidArgument as i32;
     }
 
-    let db = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+    let db: Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
         Some(db) => db,
         None => {
             set_last_error(
@@ -64,7 +65,7 @@ pub extern "C" fn lightning_db_commit_transaction(tx_handle: u64) -> i32 {
         }
     };
 
-    let db = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+    let db: Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
         Some(db) => db,
         None => {
             set_last_error(
@@ -99,7 +100,7 @@ pub extern "C" fn lightning_db_abort_transaction(tx_handle: u64) -> i32 {
         }
     };
 
-    let db = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+    let db: Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
         Some(db) => db,
         None => {
             set_last_error(
@@ -148,7 +149,7 @@ pub unsafe extern "C" fn lightning_db_put_tx(
         }
     };
 
-    let db = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+    let db: Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
         Some(db) => db,
         None => {
             set_last_error(
@@ -198,7 +199,7 @@ pub unsafe extern "C" fn lightning_db_get_tx(
         }
     };
 
-    let db = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+    let db: Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
         Some(db) => db,
         None => {
             set_last_error(
@@ -253,7 +254,7 @@ pub extern "C" fn lightning_db_delete_tx(tx_handle: u64, key: *const u8, key_len
         }
     };
 
-    let db = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+    let db: Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
         Some(db) => db,
         None => {
             set_last_error(

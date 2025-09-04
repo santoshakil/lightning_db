@@ -163,7 +163,7 @@ impl RetryManager {
         if self.config.jitter {
             use rand::Rng;
             let mut rng = rand::rng();
-            delay *= rng.gen_range(0.5..1.5);
+            delay *= rand::random_range(0.5..1.5);
         }
         
         let delay = Duration::from_millis(delay as u64);

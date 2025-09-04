@@ -5,13 +5,14 @@ use crate::handle_registry::HandleRegistry;
 use crate::panic_guard::{ffi_guard_int, ffi_guard_bytes, ResourceGuard};
 use crate::utils::{bytes_to_vec, c_str_to_string, ByteResult};
 use crate::validation::{validate_database_operation, validate_cache_size, ValidationResult};
-use crate::{ffi_try, ffi_try_safe, CompressionType, ConsistencyLevel, ErrorCode, WalSyncMode};
+use crate::{ffi_try_safe, CompressionType, ConsistencyLevel, ErrorCode, WalSyncMode};
 use lightning_db::{Database, LightningDbConfig};
+use std::sync::Arc;
 use std::os::raw::c_char;
 use std::path::Path;
 
 lazy_static::lazy_static! {
-    pub(crate) static ref DATABASE_REGISTRY: HandleRegistry<Database> = HandleRegistry::new();
+    pub(crate) static ref DATABASE_REGISTRY: HandleRegistry<Database> = HandleRegistry::<Database>::new();
 }
 
 /// Create a new Lightning DB database with comprehensive security validation
@@ -245,7 +246,7 @@ pub unsafe extern "C" fn lightning_db_put(
             ValidationResult::Valid(_) => {}
         }
 
-        let db = match DATABASE_REGISTRY.get(handle) {
+        let db: Arc<lightning_db::Database> = match DATABASE_REGISTRY.get(handle) {
             Some(db) => db,
             None => {
                 set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
@@ -295,7 +296,7 @@ pub unsafe extern "C" fn lightning_db_get(
             ValidationResult::Valid(_) => {}
         }
 
-        let db = match DATABASE_REGISTRY.get(handle) {
+        let db: Arc<lightning_db::Database> = match DATABASE_REGISTRY.get(handle) {
             Some(db) => db,
             None => {
                 set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
@@ -343,7 +344,7 @@ pub unsafe extern "C" fn lightning_db_delete(handle: u64, key: *const u8, key_le
         return ErrorCode::InvalidArgument as i32;
     }
 
-    let db = match DATABASE_REGISTRY.get(handle) {
+    let db: Arc<lightning_db::Database> = match DATABASE_REGISTRY.get(handle) {
         Some(db) => db,
         None => {
             set_last_error(
@@ -380,7 +381,7 @@ pub unsafe extern "C" fn lightning_db_delete(handle: u64, key: *const u8, key_le
 #[no_mangle]
 pub extern "C" fn lightning_db_sync(handle: u64) -> i32 {
     ffi_guard_int("lightning_db_sync", || {
-        let db = match DATABASE_REGISTRY.get(handle) {
+        let db: Arc<lightning_db::Database> = match DATABASE_REGISTRY.get(handle) {
             Some(db) => db,
             None => {
                 set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
@@ -400,7 +401,7 @@ pub extern "C" fn lightning_db_sync(handle: u64) -> i32 {
 #[no_mangle]
 pub extern "C" fn lightning_db_checkpoint(handle: u64) -> i32 {
     ffi_guard_int("lightning_db_checkpoint", || {
-        let db = match DATABASE_REGISTRY.get(handle) {
+        let db: Arc<lightning_db::Database> = match DATABASE_REGISTRY.get(handle) {
             Some(db) => db,
             None => {
                 set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
@@ -438,7 +439,7 @@ pub unsafe extern "C" fn lightning_db_put_with_consistency(
             ValidationResult::Valid(_) => {}
         }
 
-        let db = match DATABASE_REGISTRY.get(handle) {
+        let db: Arc<lightning_db::Database> = match DATABASE_REGISTRY.get(handle) {
             Some(db) => db,
             None => {
                 set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
@@ -491,7 +492,7 @@ pub unsafe extern "C" fn lightning_db_get_with_consistency(
         return ByteResult::error(ErrorCode::InvalidArgument as i32);
     }
 
-    let db = match DATABASE_REGISTRY.get(handle) {
+    let db: Arc<lightning_db::Database> = match DATABASE_REGISTRY.get(handle) {
         Some(db) => db,
         None => {
             set_last_error(

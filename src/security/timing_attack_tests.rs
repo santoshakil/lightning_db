@@ -250,7 +250,7 @@ impl TimingAttackTester {
         let mut valid_times = Vec::new();
         let mut invalid_times = Vec::new();
 
-        let secret = "JBSWY3DPEHPK3PXP";
+        let _secret = "JBSWY3DPEHPK3PXP";
         let valid_code = "123456";
         let invalid_codes = ["654321", "111111", "000000", "999999"];
 

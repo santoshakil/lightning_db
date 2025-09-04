@@ -20,196 +20,187 @@
 ## Phase 2: Critical Fixes & Stabilization
 **Status:** IN PROGRESS  
 **Owner:** Risk Officer + Test Steward  
-**Duration:** Days 2-4  
+**Duration:** 2–4 days  
 **Dependencies:** None  
 
-### 2.1 Fix Compilation Errors
+### 2.1 Fix Build & Test Failures (Blocking)
 **Owner:** Test Steward  
 **Acceptance Criteria:**
-- [ ] All lib compilation errors resolved
-- [ ] All test compilation errors fixed
-- [ ] All binary compilation errors fixed
-- [ ] Zero warnings in release build
-- [ ] CI/CD pipeline green
+- [ ] Resolve all library compile errors (e.g., borrow issues in encryption tests)
+- [ ] Fix or update broken tests referencing stale config (e.g., `use_improved_wal`, `enable_lsm_tree`)
+- [ ] Adapt tests to async APIs (e.g., `get_compaction_stats`) deterministically
+- [ ] Zero failing tests locally and in CI
+- [ ] Release build compiles with `-D warnings` cleanly
 
-### 2.2 Remove Dead Code & Unused Imports
+### 2.2 Code Hygiene Cleanup
 **Owner:** PM/Coordinator  
 **Acceptance Criteria:**
-- [ ] Zero unused imports
-- [ ] No dead code warnings
-- [ ] All TODO/FIXME comments resolved
-- [ ] Dependency tree optimized (<100 core deps)
+- [ ] Zero unused imports, variables, or dead code warnings
+- [ ] All TODO/FIXME triaged; critical items ticketed or resolved
+- [ ] Dependencies pinned and reduced to <100 core crates
+- [ ] Clippy clean under `--all-features -- -D warnings`
 
-### 2.3 Security Vulnerability Audit
+### 2.3 Security Pass (No Behavior Changes)
 **Owner:** Risk Officer  
 **Acceptance Criteria:**
-- [ ] All unwrap()/expect() replaced with proper error handling
-- [ ] All unsafe blocks audited and documented
-- [ ] Memory safety validated with MIRI
-- [ ] No secrets/keys in code
-- [ ] Rate limiting implemented
-- [ ] Timing attack protection verified
+- [ ] All `unwrap/expect` audited and replaced where unsafe
+- [ ] All unsafe blocks reviewed and documented with rationale
+- [ ] Miri and address sanitizer runs clean for targeted modules
+- [ ] Secrets scanning clean; `.secrets.baseline` updated
+- [ ] Timing-attack mitigations verified (docs + targeted tests)
+- [ ] ADR: “Security posture verification without feature changes”
 
 ## Phase 3: OLTP Performance Hardening
 **Status:** PENDING  
 **Owner:** Query Optimizer + Schema Auditor  
-**Duration:** Days 5-8  
+**Duration:** 3–4 days  
 **Dependencies:** Phase 2 completion  
 
 ### 3.1 Transaction Performance Baseline
 **Owner:** Query Optimizer  
 **Acceptance Criteria:**
-- [ ] Benchmark suite covering all transaction types
-- [ ] Baseline metrics: p50/p95/p99 latency
-- [ ] TPS measurements under various loads
-- [ ] Lock contention heat maps generated
-- [ ] Deadlock frequency measurements
+- [ ] Benchmarks for put/get/delete, range scans, batched ops
+- [ ] Baseline metrics: p50/p95/p99 latency and TPS under 1, 4, 16, 64 threads
+- [ ] Lock/wait graphs captured from internal metrics
+- [ ] Deadlock frequency observed and recorded
+- [ ] Artifacts: JSON + HTML reports checked into `benchmark_results/`
 
 ### 3.2 Lock & Concurrency Optimization
 **Owner:** Query Optimizer  
 **Acceptance Criteria:**
-- [ ] Lock contention reduced by >30%
-- [ ] Deadlock detection <100ms
-- [ ] MVCC implementation validated
-- [ ] Isolation levels properly enforced
-- [ ] No phantom reads or lost updates
+- [ ] Lock contention reduced by >30% vs baseline on mixed workload
+- [ ] Deadlock detection/respond <100ms in synthetic deadlock tests
+- [ ] MVCC read-your-writes and repeatable-read validated
+- [ ] Isolation-level behavior verified by targeted tests (no phantoms/lost updates)
+- [ ] ADR: “Concurrency tuning without external API changes”
 
 ### 3.3 B+Tree Performance & Integrity
 **Owner:** Schema Auditor  
 **Acceptance Criteria:**
-- [ ] Node split/merge operations optimized
-- [ ] Page cache hit ratio >90%
-- [ ] Index selectivity statistics accurate
-- [ ] Crash recovery tested (100 scenarios)
-- [ ] Zero data corruption under stress
+- [ ] Node split/merge remain correct under stress; no regressions
+- [ ] Page cache hit ratio ≥90% with configured cache in read-heavy runs
+- [ ] Crash/recovery chaos tests (power-cut, reorder) pass 100 randomized scenarios
+- [ ] Zero data corruption across fsync permutations; artifacts saved
+- [ ] ADR: “B+Tree integrity verification scope”
 
 ## Phase 4: OLAP/Columnar Optimization
 **Status:** PENDING  
 **Owner:** OLAP Architect + Query Optimizer  
-**Duration:** Days 9-12  
+**Duration:** 3–4 days  
 **Dependencies:** Phase 3 completion  
 
 ### 4.1 Columnar Engine Validation
 **Owner:** OLAP Architect  
 **Acceptance Criteria:**
-- [ ] Column storage format validated
-- [ ] Compression ratios >5x for typical data
-- [ ] Predicate pushdown working
-- [ ] Statistics maintained automatically
-- [ ] NULL handling optimized
+- [ ] Columnar page/segment formats validated with roundtrip tests
+- [ ] Compression ratios ≥5x on synthetic + semi-real data
+- [ ] Predicate pushdown verified by targeted filter-selectivity benches
+- [ ] Stats maintenance routines scheduled via tests (no new features)
+- [ ] Null handling covered in vectorized paths
 
 ### 4.2 Compression & Encoding
 **Owner:** OLAP Architect  
 **Acceptance Criteria:**
-- [ ] Dictionary encoding for strings
-- [ ] RLE for sorted columns
-- [ ] Delta encoding for timestamps
-- [ ] Adaptive compression selection
-- [ ] Zero-copy decompression where possible
+- [ ] Dictionary/RLE/delta paths benchmarked and documented (existing code)
+- [ ] Heuristic selection documented; no behavior change
+- [ ] Zero-copy paths proven via perf counters
 
 ### 4.3 Vectorized Operations
 **Owner:** Query Optimizer  
 **Acceptance Criteria:**
-- [ ] SIMD operations for aggregates
-- [ ] Batch processing (1024+ rows)
-- [ ] Late materialization implemented
-- [ ] Parallel scan operators
-- [ ] Cost model updated for columnar
+- [ ] SIMD aggregate paths measured for ≥1024 batch size
+- [ ] Late materialization and parallel scans validated by benches
+- [ ] Cost model doc updated; no external API change
 
 ## Phase 5: Test Suite Overhaul
 **Status:** PENDING  
 **Owner:** Test Steward  
-**Duration:** Days 13-15  
+**Duration:** 2–3 days  
 **Dependencies:** Phase 4 completion  
 
 ### 5.1 Test Cleanup
 **Owner:** Test Steward  
 **Acceptance Criteria:**
-- [ ] Remove duplicate tests
-- [ ] Fix all flaky tests
-- [ ] Categorize: unit/integration/perf
-- [ ] Test execution <5 minutes
-- [ ] Coverage >80% for critical paths
+- [ ] Remove or update tests pinned to deprecated config or APIs
+- [ ] Flaky tests isolated; timeouts and nondeterminism removed
+- [ ] Clear categories: unit/integration/perf with labels
+- [ ] Suite runtime ≤5 minutes on dev hardware; CI within SLA
+- [ ] Coverage ≥80% on critical paths (txn, WAL, compaction, columnar scan)
 
 ### 5.2 Integration Test Harness
 **Owner:** Test Steward  
 **Acceptance Criteria:**
-- [ ] Docker-based test environment
-- [ ] Realistic data generators
-- [ ] Chaos testing framework
-- [ ] Network partition tests
-- [ ] Crash recovery scenarios
+- [ ] Deterministic data generators with configurable sizes
+- [ ] Chaos tests (fsync faults, crash injectors) scripted
+- [ ] Crash-recovery matrix runs nightly in CI
+- [ ] No external services required (embedded DB)
 
 ### 5.3 Performance Regression Suite
 **Owner:** Test Steward + Query Optimizer  
 **Acceptance Criteria:**
-- [ ] Automated benchmark runs
-- [ ] Historical trend tracking
-- [ ] Alert on >5% regression
-- [ ] Memory/CPU profiling
-- [ ] Latency distribution tracking
+- [ ] Automated benches via scripts in `scripts/`
+- [ ] Trend tracking JSON committed per run; HTML reports archived
+- [ ] Alert/fail threshold at ≥5% regression
+- [ ] Flamegraphs/cpu/mem stats captured for hotspots
+- [ ] Latency histograms captured and versioned
 
 ## Phase 6: Documentation
 **Status:** PENDING  
 **Owner:** Docs & Runbooks  
-**Duration:** Days 16-18  
+**Duration:** 2–3 days  
 **Dependencies:** Phase 5 completion  
 
 ### 6.1 Architecture Documentation
 **Owner:** Docs & Runbooks  
 **Acceptance Criteria:**
-- [ ] System architecture diagrams
-- [ ] Data flow diagrams
-- [ ] Component interaction docs
-- [ ] API reference complete
-- [ ] Schema catalog maintained
+- [ ] Up-to-date architecture and data flow diagrams
+- [ ] Component interaction docs aligned with current code
+- [ ] Public API reference consistent with crate exports
+- [ ] On-disk format and migration catalog documented
 
 ### 6.2 Operational Runbooks
 **Owner:** Docs & Runbooks + Risk Officer  
 **Acceptance Criteria:**
-- [ ] Deployment procedures
-- [ ] Monitoring setup guide
-- [ ] Alert response playbooks
-- [ ] Performance tuning guide
-- [ ] Troubleshooting decision trees
+- [ ] Build, test, bench procedures documented, version-pinned
+- [ ] Monitoring & metrics usage documented (no new features)
+- [ ] Incident response and rollback playbooks
+- [ ] Performance tuning guidance for config knobs
 
 ### 6.3 Migration & Backup Guides
 **Owner:** Data Quality & Migrations  
 **Acceptance Criteria:**
-- [ ] Zero-downtime migration procedures
-- [ ] Backup/restore validated
-- [ ] Point-in-time recovery documented
-- [ ] RTO/RPO targets met
-- [ ] Disaster recovery tested
+- [ ] Snapshot/backup via existing BackupManager with CLI script
+- [ ] Restore + validation procedure with checksum verification
+- [ ] PITR documented when WAL available
+- [ ] RTO/RPO validated on synthetic datasets; evidence recorded
+- [ ] DR drill scripted and documented
 
 ## Phase 7: Repository Cleanup
 **Status:** PENDING  
 **Owner:** PM/Coordinator  
-**Duration:** Days 19-20  
+**Duration:** 1–2 days  
 **Dependencies:** Phase 6 completion  
 
 ### 7.1 File Cleanup
 **Owner:** PM/Coordinator  
 **Acceptance Criteria:**
-- [ ] Remove orphaned documentation
-- [ ] Archive old reports
-- [ ] Clean example files
-- [ ] Remove test artifacts
-- [ ] Organize directory structure
+- [ ] Remove/trim stale reports; move legacy artifacts to `/archive`
+- [ ] Drop unused examples or align with APIs
+- [ ] Remove build/test artifacts; ensure `.gitignore` covers them
+- [ ] Keep repo navigable with a clear top-level README
 
 ### 7.2 Configuration Consolidation
 **Owner:** PM/Coordinator  
 **Acceptance Criteria:**
-- [ ] Single config file format
-- [ ] Environment variables documented
-- [ ] Default configs optimized
-- [ ] Feature flags documented
-- [ ] Build profiles cleaned
+- [ ] Single source of truth for config docs
+- [ ] Feature flags enumerated and described
+- [ ] Build profiles aligned; strip unused profiles
+- [ ] Toolchain pinned via `rust-toolchain.toml`
 
 ## Phase 8: Final Validation
 **Status:** PENDING  
 **Owner:** Risk Officer + PM/Coordinator  
-**Duration:** Days 21-22  
+**Duration:** 1–2 days  
 **Dependencies:** All phases complete  
 
 ### Acceptance Criteria
@@ -219,6 +210,38 @@
 - [ ] Documentation complete and accurate
 - [ ] Rollback procedures tested
 - [ ] Sign-off from all sub-agents
+
+---
+
+## Ownership Matrix (Sub-Agents)
+- Schema Auditor: Phase 3.3, 6.1 (format/catalog)
+- Query Optimizer: Phases 3.1–3.2, 4.3, 5.3
+- OLAP Architect: Phase 4.1–4.2
+- Data Quality & Migrations: Phase 6.3
+- Test Steward: Phases 2.1, 5.1–5.3
+- Docs & Runbooks: Phase 6.1–6.2
+- Risk Officer: Phases 2.3, 6.2, 8
+- PM/Coordinator: Phases 2.2, 7, overall cadence
+
+## Risk & Mitigation Updates
+- Build breaks: gate merges on CI + bench smoke tests
+- Perf regressions: 5% threshold auto-fail with rollback to baseline
+- Data integrity: mandatory backup/restore drill before risky changes
+
+## Timeline & ETAs (Ranges)
+- Phase 2: 2–4 days
+- Phase 3: 3–4 days
+- Phase 4: 3–4 days
+- Phase 5: 2–3 days
+- Phase 6: 2–3 days
+- Phase 7: 1–2 days
+- Phase 8: 1–2 days
+
+## Evidence & Artifacts
+- Bench reports: `benchmark_results/<date>/`
+- Security scans: `security_reports/<date>/`
+- ADRs: `docs/adr/NNN-title.md`
+- Baselines: `performance-baselines.json`
 
 ## Risk Register
 

@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH, Instant};
 use uuid::Uuid;
-use rand::thread_rng;
+// rand 0.9 deprecations: avoid thread_rng/gen_range
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UserId(pub String);
@@ -211,7 +211,7 @@ impl AuthenticationManager {
         use std::time::Instant;
         let start_time = Instant::now();
         
-        let (user_id, found_user) = {
+        let (user_id, _found_user) = {
             let users = self.users.read().unwrap();
             if let Some(user) = users.values().find(|u| u.username == username) {
                 (Some(user.id.clone()), true)
@@ -253,7 +253,7 @@ impl AuthenticationManager {
 
         let password_valid = {
             let hash_str = user.password_hash.expose_secret();
-            let mut dummy_hash = "$2b$12$dummy.hash.for.constant.time.comparison.purposes.only".to_string();
+            let dummy_hash = "$2b$12$dummy.hash.for.constant.time.comparison.purposes.only".to_string();
             
             let hash_to_check = if hash_str.len() > 0 {
                 hash_str
@@ -298,7 +298,7 @@ impl AuthenticationManager {
         result
     }
     
-    fn authenticate_nonexistent_user(&self, username: &str, password: &str, start_time: Instant) -> SecurityResult<String> {
+    fn authenticate_nonexistent_user(&self, _username: &str, password: &str, start_time: Instant) -> SecurityResult<String> {
         let dummy_hash = "$2b$12$dummy.hash.for.constant.time.comparison.purposes.only.dummy.salt";
         let _ = verify(password, dummy_hash);
         
@@ -307,9 +307,9 @@ impl AuthenticationManager {
     }
     
     fn ensure_minimum_auth_time(&self, start_time: Instant) {
-        use rand::{thread_rng, Rng};
+        use rand::random_range;
         let min_duration = Duration::from_millis(100);
-        let random_extra = Duration::from_millis(thread_rng().gen_range(10..50));
+        let random_extra = Duration::from_millis(random_range(10..50));
         let target_duration = min_duration + random_extra;
         
         let elapsed = start_time.elapsed();

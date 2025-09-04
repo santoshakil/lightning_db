@@ -4,10 +4,7 @@ use serde::{Serialize, Deserialize};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
-// When the `wee_alloc` feature is enabled, use `wee_alloc` as the global allocator.
-#[cfg(feature = "wee_alloc")]
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+// Using the default allocator; remove unused wee_alloc cfg to avoid warnings.
 
 #[wasm_bindgen]
 extern "C" {

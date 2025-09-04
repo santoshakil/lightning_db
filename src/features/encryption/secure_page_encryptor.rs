@@ -380,7 +380,10 @@ impl SecurePageEncryptor {
         }
 
         #[cfg(not(feature = "zstd-compression"))]
-        Err(Error::Encryption("Zstd compression not available".to_string()))
+        {
+            let _ = compressed_data;
+            Err(Error::Encryption("Zstd compression not available".to_string()))
+        }
     }
 
     /// Serialize encrypted page to bytes
@@ -491,7 +494,8 @@ mod tests {
         
         // Tamper with encrypted data
         if encrypted.len() > 10 {
-            encrypted[encrypted.len() - 10] ^= 0xFF;
+            let len = encrypted.len();
+            encrypted[len - 10] ^= 0xFF;
         }
         
         // Decryption should fail

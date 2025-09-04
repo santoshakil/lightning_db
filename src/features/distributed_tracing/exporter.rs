@@ -331,7 +331,7 @@ impl HttpExporter {
         })
     }
 
-    fn send_http_request(&self, payload: serde_json::Value) -> Result<()> {
+    fn send_http_request(&self, _payload: serde_json::Value) -> Result<()> {
         #[cfg(feature = "http-client")]
         {
             let mut request = self
