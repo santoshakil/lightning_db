@@ -259,3 +259,7 @@ harness = false
 [[bench]]
 name = "comprehensive_regression_suite"
 harness = false
+
+[[bench]]
+name = "comprehensive_benchmarks"
+harness = false
