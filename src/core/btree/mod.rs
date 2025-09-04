@@ -1,5 +1,4 @@
 mod delete;
-#[allow(dead_code)]
 mod iterator;
 pub mod integrity_validation;
 pub mod write_buffer;
