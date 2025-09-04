@@ -11,9 +11,10 @@ repository = "https://github.com/santoshakil/lightning_db"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-lightning_db = { path = "..", default-features = false, features = ["wasm"] }
+lightning_db = { path = "..", default-features = false, features = ["wasm", "futures-util"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
+serde = { version = "1", features = ["derive"] }
 console_error_panic_hook = "0.1"
 web-sys = { version = "0.3", features = [
   "console",

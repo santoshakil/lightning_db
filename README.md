@@ -84,6 +84,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Stability, Baselines, and Operations
+
+- Toolchain: pinned via `rust-toolchain.toml` (see ADR 0003). Use the pinned nightly for reproducible builds.
+- Snapshots: `scripts/create_snapshot.sh` creates a seeded DB and backup under `snapshots/<date>/`.
+- OLTP baseline: `scripts/baseline_oltp.sh` (saves artifacts to `benchmark_results/<date>/`).
+- OLAP KV baseline: `scripts/baseline_olap_kv.sh` (saves artifacts to `benchmark_results/<date>/`).
+- Integrity: `lightning-cli check <db_path> --checksums 50 --verbose`.
+
+Integration tests are gated behind the `integration_tests` feature to keep default runs fast and deterministic during hardening:
+
+```
+cargo test --lib --tests                 # default fast tests
+cargo test --features integration_tests  # heavy integration suites
+```
+
+Archived reports live under `archive/` to keep the root clean.
+
 ### Transactions
 
 ```rust
@@ -291,8 +308,7 @@ cargo doc --open
 - [MODULE_ARCHITECTURE.md](./MODULE_ARCHITECTURE.md) - System architecture
 - [PERFORMANCE_TUNING.md](./PERFORMANCE_TUNING.md) - Performance optimization
 - [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) - Security assessment
-- [TIMING_ATTACK_SECURITY_REPORT.md](./TIMING_ATTACK_SECURITY_REPORT.md) - Timing attack mitigations
-- [RACE_CONDITION_ANALYSIS_REPORT.md](./RACE_CONDITION_ANALYSIS_REPORT.md) - Concurrency safety
+- See `archive/` for historical reports and analyses.
 
 ## Examples
 

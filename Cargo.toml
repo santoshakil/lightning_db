@@ -171,6 +171,7 @@ brotli = []
 rand = []
 testing = []
 cli-tools = ["clap"]
+integration_tests = []
 
 [lib]
 name = "lightning_db"
@@ -210,6 +211,26 @@ strip = true
 [[example]]
 name = "basic_usage"
 path = "examples/basic_usage.rs"
+
+[[example]]
+name = "oltp_basic_benchmark"
+path = "examples/oltp_basic_benchmark.rs"
+required-features = ["integration_tests"]
+
+[[example]]
+name = "oltp_benchmark"
+path = "examples/oltp_benchmark.rs"
+required-features = ["integration_tests"]
+
+[[example]]
+name = "migration_example"
+path = "examples/migration_example.rs"
+required-features = ["integration_tests"]
+
+[[example]]
+name = "production_validation"
+path = "examples/production_validation.rs"
+required-features = ["integration_tests"]
 
 [[bench]]
 name = "mmap_benchmark"

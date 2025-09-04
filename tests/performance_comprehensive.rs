@@ -1,3 +1,4 @@
+#![cfg(feature = "integration_tests")]
 //! Comprehensive performance regression testing for Lightning DB
 //! 
 //! This consolidated module contains all performance regression tests including:

@@ -335,7 +335,7 @@ impl BPlusTree {
         let right_page = self.page_manager.get_page(right_page_id)?;
         let right_node = BTreeNode::deserialize_from_page(&right_page)?;
 
-        let mut parent_page = self.page_manager.get_page(parent_page_id)?;
+        let parent_page = self.page_manager.get_page(parent_page_id)?;
         let mut parent_node = BTreeNode::deserialize_from_page(&parent_page)?;
 
         // Validate node types match

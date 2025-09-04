@@ -1,4 +1,4 @@
-# Lightning DB Timing Attack Security Audit Report
+# [ARCHIVED] Lightning DB Timing Attack Security Audit Report
 
 **Date:** August 31, 2025  
 **Auditor:** Claude Code Security Analyst  

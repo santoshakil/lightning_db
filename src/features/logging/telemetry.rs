@@ -380,7 +380,7 @@ impl DatabaseSpan {
         self.set_status(SpanStatus::Error(error.to_string()));
     }
     
-    pub fn finish(mut self) {
+    pub fn finish(self) {
         let duration = self.start_time.elapsed().unwrap_or(Duration::ZERO);
         
         let span_data = DatabaseSpanData {

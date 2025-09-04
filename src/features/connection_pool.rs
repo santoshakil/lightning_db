@@ -521,7 +521,7 @@ impl ConnectionPool {
             }
             LoadBalancingStrategy::Random => {
                 use rand::Rng;
-                let idx = rand::rng().gen_range(0..available.len());
+                let idx = rand::random_range(0..available.len());
                 available.get(idx).copied()
             }
             LoadBalancingStrategy::WeightedPerformance => {

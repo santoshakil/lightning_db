@@ -6,7 +6,8 @@ use std::os::raw::c_char;
 use std::ptr;
 
 lazy_static::lazy_static! {
-    static ref LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+    // Store as CString to guarantee a stable, null-terminated pointer for FFI
+    static ref LAST_ERROR: Mutex<Option<CString>> = Mutex::new(None);
 }
 
 /// Convert Lightning DB error to FFI error code
@@ -28,7 +29,13 @@ pub fn error_to_code(error: &LightningError) -> ErrorCode {
 /// Set the last error message
 pub fn set_last_error(code: ErrorCode, message: String) {
     let mut last_error = LAST_ERROR.lock();
-    *last_error = Some(format!("{:?}: {}", code, message));
+    // Ensure no interior NULs break CString contract
+    let sanitized = message.replace('\0', "");
+    let formatted = format!("{:?}: {}", code, sanitized);
+    match CString::new(formatted) {
+        Ok(cstr) => *last_error = Some(cstr),
+        Err(_) => *last_error = None, // Fallback to None on unexpected error
+    }
 }
 
 /// Clear the last error
@@ -46,10 +53,7 @@ pub fn clear_last_error() {
 pub extern "C" fn lightning_db_get_last_error() -> *const c_char {
     let last_error = LAST_ERROR.lock();
     match last_error.as_ref() {
-        Some(err) => {
-            // Return a static string that lives as long as the error is stored
-            err.as_ptr() as *const c_char
-        }
+        Some(err) => err.as_ptr(),
         None => ptr::null(),
     }
 }
@@ -71,21 +75,14 @@ pub extern "C" fn lightning_db_get_last_error_buffer(
     let last_error = LAST_ERROR.lock();
     match last_error.as_ref() {
         Some(err) => {
-            let c_str = match CString::new(err.as_str()) {
-                Ok(s) => s,
-                Err(_) => return -1,
-            };
-
-            let bytes = c_str.as_bytes_with_nul();
+            let bytes = err.as_bytes_with_nul();
             if bytes.len() > buffer_len {
                 return -(bytes.len() as i32);
             }
-
             unsafe {
                 ptr::copy_nonoverlapping(bytes.as_ptr(), buffer as *mut u8, bytes.len());
             }
-
-            (bytes.len() - 1) as i32 // Don't count null terminator
+            (bytes.len() - 1) as i32 // Exclude null terminator from count
         }
         None => 0,
     }

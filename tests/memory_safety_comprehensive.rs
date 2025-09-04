@@ -1,3 +1,4 @@
+#![cfg(feature = "integration_tests")]
 //! Comprehensive memory safety validation tests for Lightning DB
 //! 
 //! This consolidated module contains all memory safety tests including:

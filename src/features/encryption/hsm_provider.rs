@@ -283,7 +283,7 @@ impl HSMProvider for PKCS11HSMProvider {
         Err(Error::Encryption("Key export not allowed by policy".to_string()))
     }
 
-    async fn encrypt(&self, handle: &HSMKeyHandle, plaintext: &[u8], aad: Option<&[u8]>) -> Result<HSMEncryptResult> {
+    async fn encrypt(&self, _handle: &HSMKeyHandle, plaintext: &[u8], aad: Option<&[u8]>) -> Result<HSMEncryptResult> {
         self.initialize().await?;
         let _session = self.get_session(&self.token_label).await?;
 
@@ -301,7 +301,7 @@ impl HSMProvider for PKCS11HSMProvider {
         })
     }
 
-    async fn decrypt(&self, handle: &HSMKeyHandle, encrypted: &HSMEncryptResult) -> Result<Vec<u8>> {
+    async fn decrypt(&self, _handle: &HSMKeyHandle, encrypted: &HSMEncryptResult) -> Result<Vec<u8>> {
         self.initialize().await?;
         let _session = self.get_session(&self.token_label).await?;
 
@@ -309,7 +309,7 @@ impl HSMProvider for PKCS11HSMProvider {
         Ok(encrypted.ciphertext.clone()) // Placeholder
     }
 
-    async fn sign(&self, handle: &HSMKeyHandle, data: &[u8], algorithm: SigningAlgorithm) -> Result<Vec<u8>> {
+    async fn sign(&self, _handle: &HSMKeyHandle, _data: &[u8], algorithm: SigningAlgorithm) -> Result<Vec<u8>> {
         self.initialize().await?;
         let _session = self.get_session(&self.token_label).await?;
 
@@ -324,7 +324,7 @@ impl HSMProvider for PKCS11HSMProvider {
         Ok(vec![0u8; signature_size]) // Placeholder signature
     }
 
-    async fn verify(&self, handle: &HSMKeyHandle, data: &[u8], signature: &[u8], algorithm: SigningAlgorithm) -> Result<bool> {
+    async fn verify(&self, _handle: &HSMKeyHandle, _data: &[u8], _signature: &[u8], _algorithm: SigningAlgorithm) -> Result<bool> {
         self.initialize().await?;
         let _session = self.get_session(&self.token_label).await?;
 
@@ -332,7 +332,7 @@ impl HSMProvider for PKCS11HSMProvider {
         Ok(true) // Placeholder
     }
 
-    async fn destroy_key(&self, handle: &HSMKeyHandle) -> Result<()> {
+    async fn destroy_key(&self, _handle: &HSMKeyHandle) -> Result<()> {
         self.initialize().await?;
         let _session = self.get_session(&self.token_label).await?;
 

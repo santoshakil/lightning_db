@@ -1,4 +1,4 @@
-# Lightning DB Race Condition Analysis Report
+# [ARCHIVED] Lightning DB Race Condition Analysis Report
 
 ## Executive Summary
 

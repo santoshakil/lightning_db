@@ -2117,6 +2117,7 @@ dependencies = [
  "cbindgen",
  "lazy_static",
  "lightning_db",
+ "parking_lot",
  "tempfile",
 ]
 
@@ -2126,6 +2127,7 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "lightning_db",
+ "serde",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

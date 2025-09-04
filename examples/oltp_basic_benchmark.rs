@@ -1,7 +1,8 @@
 use lightning_db::{Database, LightningDbConfig};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
-use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use rand_chacha::rand_core::{SeedableRng, RngCore};
 
 struct BenchmarkMetrics {
     operation: String,
@@ -21,7 +22,7 @@ fn benchmark_inserts(db: &Database, num_ops: u64) -> BenchmarkMetrics {
     
     for i in 0..num_ops {
         let key = format!("key_{:08}", i);
-        let value = format!("value_{:016}", rng.gen::<u64>());
+        let value = format!("value_{:016}", rng.next_u64());
         
         let op_start = Instant::now();
         db.put(key.as_bytes(), value.as_bytes()).unwrap();
@@ -43,7 +44,7 @@ fn benchmark_batch_ops(db: &Database, num_batches: u64, batch_size: u64) -> Benc
         
         for i in 0..batch_size {
             let key = format!("batch_{:06}_{:04}", batch, i);
-            let value = format!("value_{:016}", rng.gen::<u64>());
+            let value = format!("value_{:016}", rng.next_u64());
             db.put(key.as_bytes(), value.as_bytes()).unwrap();
         }
         
@@ -70,7 +71,7 @@ fn benchmark_reads(db: &Database, num_ops: u64) -> BenchmarkMetrics {
     let mut rng = ChaCha8Rng::seed_from_u64(44);
     
     for _ in 0..num_ops {
-        let key_idx = rng.gen_range(0..num_ops);
+        let key_idx = (rng.next_u64() % num_ops as u64) as u64;
         let key = format!("read_key_{:08}", key_idx);
         
         let op_start = Instant::now();
@@ -98,9 +99,9 @@ fn benchmark_updates(db: &Database, num_ops: u64) -> BenchmarkMetrics {
     let mut rng = ChaCha8Rng::seed_from_u64(46);
     
     for _ in 0..num_ops {
-        let key_idx = rng.gen_range(0..num_ops);
+        let key_idx = (rng.next_u64() % num_ops as u64) as u64;
         let key = format!("update_key_{:08}", key_idx);
-        let value = format!("updated_value_{:016}", rng.gen::<u64>());
+        let value = format!("updated_value_{:016}", rng.next_u64());
         
         let op_start = Instant::now();
         db.put(key.as_bytes(), value.as_bytes()).unwrap();
@@ -126,24 +127,24 @@ fn benchmark_mixed(db: &Database, num_ops: u64) -> BenchmarkMetrics {
     let mut rng = ChaCha8Rng::seed_from_u64(47);
     
     for i in 0..num_ops {
-        let op_type = rng.gen_range(0..100);
+        let op_type = (rng.next_u64() % 100) as u64;
         let op_start = Instant::now();
         
         if op_type < 30 {
             // 30% inserts
             let key = format!("mixed_new_{:08}", i);
-            let value = format!("value_{:016}", rng.gen::<u64>());
+            let value = format!("value_{:016}", rng.next_u64());
             db.put(key.as_bytes(), value.as_bytes()).unwrap();
         } else if op_type < 80 {
             // 50% reads
-            let key_idx = rng.gen_range(0..1000);
+            let key_idx = (rng.next_u64() % 1000) as u64;
             let key = format!("mixed_key_{:08}", key_idx);
             let _ = db.get(key.as_bytes()).unwrap();
         } else {
             // 20% updates
-            let key_idx = rng.gen_range(0..1000);
+            let key_idx = (rng.next_u64() % 1000) as u64;
             let key = format!("mixed_key_{:08}", key_idx);
-            let value = format!("updated_{:016}", rng.gen::<u64>());
+            let value = format!("updated_{:016}", rng.next_u64());
             db.put(key.as_bytes(), value.as_bytes()).unwrap();
         }
         
@@ -182,7 +183,7 @@ fn calculate_metrics(operation: &str, mut latencies: Vec<u64>, total_ops: u64, d
 }
 
 fn generate_report(metrics: &[BenchmarkMetrics]) {
-    println!("\n" + &"=".repeat(60));
+    println!("\n{}", "=".repeat(60));
     println!("OLTP PERFORMANCE BENCHMARK REPORT");
     println!("{}", "=".repeat(60));
     println!();
@@ -256,8 +257,20 @@ fn main() {
     println!("========================================");
     println!();
     
-    // Create temporary database for benchmarking
-    let db = Database::create_temp().expect("Failed to create database");
+    // Create temporary database with tuned config for realistic OLTP
+    let mut cfg = LightningDbConfig::default();
+    // Reduce overhead to increase throughput in benchmark context
+    cfg.compression_enabled = true;            // keep LSM enabled for write optimization
+    cfg.cache_size = 0;                        // favor write throughput in this mixed bench
+    cfg.write_batch_size = 2000;              // larger batching for write coalescing
+    cfg.enable_statistics = false;            // disable background stats collection in benches
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let tmp = std::env::temp_dir().join(format!("lightning_db_bench_{}", nanos));
+    let db = Database::create(tmp, cfg).expect("Failed to create database");
     
     // Warm up
     println!("Warming up...");

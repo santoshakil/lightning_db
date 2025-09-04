@@ -8,7 +8,7 @@ use lightning_db::RangeIterator;
 use std::ptr;
 
 lazy_static::lazy_static! {
-    static ref ITERATOR_REGISTRY: MutableHandleRegistry<RangeIterator> = MutableHandleRegistry::new();
+    static ref ITERATOR_REGISTRY: MutableHandleRegistry<RangeIterator> = MutableHandleRegistry::<RangeIterator>::new();
 }
 
 /// Key-value pair result for iterator
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn lightning_db_scan(
         return ErrorCode::InvalidArgument as i32;
     }
 
-    let db = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+    let db: std::sync::Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
         Some(db) => db,
         None => {
             set_last_error(
@@ -108,7 +108,7 @@ pub unsafe extern "C" fn lightning_db_scan(
 /// - The returned KeyValueResult must be freed using lightning_db_free_key_value
 #[no_mangle]
 pub extern "C" fn lightning_db_iterator_next(iter_handle: u64) -> KeyValueResult {
-    match ITERATOR_REGISTRY.with_mut(iter_handle, |iter| {
+    match ITERATOR_REGISTRY.with_mut(iter_handle, |iter: &mut RangeIterator| {
         match iter.next() {
             Some(Ok((key, value))) => KeyValueResult::success(key, value),
             Some(Err(e)) => {
@@ -125,7 +125,7 @@ pub extern "C" fn lightning_db_iterator_next(iter_handle: u64) -> KeyValueResult
         Some(result) => {
             if result.error_code == 0 && result.key.is_null() {
                 // Iterator exhausted, remove it
-                ITERATOR_REGISTRY.remove(iter_handle);
+                let _: Option<RangeIterator> = ITERATOR_REGISTRY.remove(iter_handle);
             }
             clear_last_error();
             result
@@ -147,7 +147,8 @@ pub extern "C" fn lightning_db_iterator_next(iter_handle: u64) -> KeyValueResult
 /// - The handle must not be used after calling this function
 #[no_mangle]
 pub extern "C" fn lightning_db_iterator_close(iter_handle: u64) -> i32 {
-    if ITERATOR_REGISTRY.remove(iter_handle).is_some() {
+    let removed: Option<RangeIterator> = ITERATOR_REGISTRY.remove(iter_handle);
+    if removed.is_some() {
         clear_last_error();
         0
     } else {

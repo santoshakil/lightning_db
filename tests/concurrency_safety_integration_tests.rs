@@ -185,7 +185,7 @@ fn test_arc_cache_concurrent_stress() {
 fn test_transaction_manager_concurrent_load() {
     let dir = tempdir().unwrap();
     let config = LightningDbConfig {
-        use_improved_wal: true,
+        use_unified_wal: true,
         wal_sync_mode: WalSyncMode::Periodic { interval_ms: 10 },
         ..Default::default()
     };
@@ -383,7 +383,7 @@ fn test_transaction_manager_concurrent_load() {
 fn test_background_processing_concurrent() {
     let dir = tempdir().unwrap();
     let config = LightningDbConfig {
-        use_improved_wal: true,
+        use_unified_wal: true,
         wal_sync_mode: WalSyncMode::Periodic { interval_ms: 50 },
         prefetch_enabled: true,
         compression_enabled: true,

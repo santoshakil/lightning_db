@@ -1,3 +1,4 @@
+#![cfg(feature = "integration_tests")]
 //! Comprehensive integration testing for Lightning DB
 //! 
 //! This consolidated module contains all feature and module integration tests including:
@@ -141,12 +142,7 @@ impl IntegrationTestFramework {
         println!("Testing online compaction during writes...");
         
         let temp_dir = TempDir::new()?;
-        let config = LightningDbConfig {
-            path: temp_dir.path().to_path_buf(),
-            auto_compaction: true,
-            compaction_threshold: 0.5, // 50% fragmentation triggers compaction
-            ..Default::default()
-        };
+        let config = LightningDbConfig::default();
         
         let db = Arc::new(Database::create(temp_dir.path(), config)?);
         let db_compact = db.clone();
@@ -196,10 +192,18 @@ impl IntegrationTestFramework {
 
         // Wait for all operations to complete
         for handle in write_handles {
-            handle.join().map_err(|_| "Write thread panicked")??;
+            match handle.join() {
+                Ok(res) => res.map_err(|e| {
+                    let msg: Box<dyn std::error::Error + Send + Sync> = e;
+                    msg
+                })?,
+                Err(_) => return Err("Write thread panicked".into()),
+            }
         }
 
-        compaction_handle.join().map_err(|_| "Compaction thread panicked")?;
+        if compaction_handle.join().is_err() {
+            return Err("Compaction thread panicked".into());
+        }
 
         let duration = start_time.elapsed();
         let ops_completed = *operations.lock().unwrap();
@@ -361,14 +365,15 @@ impl IntegrationTestFramework {
         }
 
         // Create index (simplified)
-        match db.create_index("age_index", "age") {
+        match db.create_index("age_index", vec!["age".to_string()]) {
             Ok(_) => println!("Index created successfully"),
             Err(_) => error_count += 1,
         }
 
         // Test index queries
         for age in 20..25 {
-            match db.query_by_index("age_index", &age.to_string()) {
+            let key = age.to_string();
+            match db.query_index("age_index", key.as_bytes()) {
                 Ok(_) => operations_completed += 1,
                 Err(_) => error_count += 1,
             }
