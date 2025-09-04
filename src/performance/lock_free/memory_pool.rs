@@ -112,8 +112,8 @@ impl<'a> BufferGuard<'a> {
         self.buffer.as_mut().unwrap()
     }
 
-    pub fn take(mut self) -> Vec<u8> {
-        self.buffer.take().unwrap()
+    pub fn take(mut self) -> Option<Vec<u8>> {
+        self.buffer.take()
     }
 }
 
