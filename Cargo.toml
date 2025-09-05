@@ -46,8 +46,6 @@ blake3 = "1.5"
 zeroize = { version = "1.8", features = ["derive"] }
 subtle = "2.6"
 ring = "0.17"
-rustls = { version = "0.23", features = ["ring"] }
-tokio-rustls = "0.25"
 base64 = "0.22"
 uuid = { version = "1.11", features = ["v4", "serde"] }
 
