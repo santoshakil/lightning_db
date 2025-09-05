@@ -76,9 +76,6 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-// Clean public API
-pub mod api;
-
 // Core database functionality
 pub mod core {
     pub mod btree;
