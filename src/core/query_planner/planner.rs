@@ -4,7 +4,7 @@ use crate::core::index::IndexKey;
 use parking_lot::RwLock;
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ExecutionStep {
     IndexLookup {
         index_name: String,
@@ -512,6 +512,7 @@ impl QueryPlanner {
         
         let exec_plan = ExecutionPlan {
             root_node: physical_plan.root.as_ref().clone(),
+            steps: Vec::new(), // TODO: Extract steps from physical plan
             estimated_cost: QueryCost {
                 cpu_cost: physical_plan.estimated_cost.cpu_cost,
                 io_cost: physical_plan.estimated_cost.io_cost,

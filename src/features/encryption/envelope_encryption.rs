@@ -130,7 +130,7 @@ pub struct EnvelopeMetadata {
 pub enum CompressionAlgorithm {
     None,
     Zstd,
-    Lz4,
+    LZ4,
 }
 
 /// Temporary DEK for encryption operations
@@ -520,8 +520,8 @@ impl EnvelopeEncryptionManager {
             Some(CompressionAlgorithm::Zstd) => {
                 Err(Error::Encryption("Zstd compression not available".to_string()))
             }
-            Some(CompressionAlgorithm::Lz4) => {
-                Err(Error::Encryption("Lz4 compression not yet implemented".to_string()))
+            Some(CompressionAlgorithm::LZ4) => {
+                Err(Error::Encryption("LZ4 compression not yet implemented".to_string()))
             }
         }
     }

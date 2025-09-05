@@ -23,7 +23,7 @@ pub enum IndexType {
 }
 
 /// Index key that can be single or composite
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum IndexKey {
     Single(Vec<u8>),
     Composite(Vec<Vec<u8>>),
