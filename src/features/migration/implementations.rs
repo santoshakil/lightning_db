@@ -567,7 +567,7 @@ pub struct CompressionTransformer {
 
 #[derive(Debug, Clone)]
 pub enum CompressionAlgorithm {
-    Lz4,
+    LZ4,
     Zstd,
     Snappy,
     Gzip,
@@ -577,7 +577,7 @@ pub enum CompressionAlgorithm {
 impl DataTransformer for CompressionTransformer {
     async fn transform(&self, data: Vec<u8>) -> MigrationResult<Vec<u8>> {
         match self.algorithm {
-            CompressionAlgorithm::Lz4 => {
+            CompressionAlgorithm::LZ4 => {
                 Ok(lz4_flex::compress_prepend_size(&data))
             }
             CompressionAlgorithm::Zstd => {

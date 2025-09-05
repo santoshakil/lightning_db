@@ -176,7 +176,7 @@ pub unsafe extern "C" fn lightning_db_create_with_config(
             compression_type: match compression_type {
                 CompressionType::None => 0,
                 CompressionType::Zstd => 1,
-                CompressionType::Lz4 => 2,
+                CompressionType::LZ4 => 2,
                 CompressionType::Snappy => 3,
             },
             wal_sync_mode: match wal_sync_mode {

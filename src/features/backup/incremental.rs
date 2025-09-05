@@ -63,7 +63,7 @@ impl Default for IncrementalConfig {
 pub enum CompressionAlgorithm {
     None,
     Zstd,
-    Lz4,
+    LZ4,
     Brotli,
 }
 
@@ -766,7 +766,7 @@ impl IncrementalBackupManager {
                     Err(Error::Generic("Zstd compression not available".to_string()))
                 }
             }
-            CompressionAlgorithm::Lz4 => {
+            CompressionAlgorithm::LZ4 => {
                 use crate::features::adaptive_compression::algorithms::{CompressionAlgorithmTrait, LZ4Compression};
                 use crate::features::adaptive_compression::CompressionLevel;
                 let compressor = LZ4Compression::new();

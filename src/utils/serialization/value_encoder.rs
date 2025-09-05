@@ -52,10 +52,10 @@ impl ValueEncoder for CompressionValueEncoder {
                     // Add header to indicate compression with fixed encoding
                     let compression_byte = match self.compression_type {
                         CompressionType::None => 0u8,
-                        #[cfg(feature = "zstd-compression")]
                         CompressionType::Zstd => 1u8,
                         CompressionType::LZ4 => 2u8,
                         CompressionType::Snappy => 3u8,
+                        _ => 0u8, // Default to no compression for unsupported types
                     };
                     let mut result = vec![compression_byte];
                     result.extend_from_slice(&compressed);
@@ -78,10 +78,7 @@ impl ValueEncoder for CompressionValueEncoder {
         // Fixed encoding values for backward compatibility
         let compression_type = match first_byte {
             0 => CompressionType::None,
-            #[cfg(feature = "zstd-compression")]
             1 => CompressionType::Zstd,
-            #[cfg(not(feature = "zstd-compression"))]
-            1 => return Cow::Borrowed(encoded), // Zstd not available
             2 => CompressionType::LZ4,
             3 => CompressionType::Snappy,
             _ => return Cow::Borrowed(encoded),

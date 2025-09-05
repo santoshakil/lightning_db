@@ -123,11 +123,6 @@ pub mod features {
     pub mod integrity;
     pub mod transactions;
     pub mod migration;
-    pub mod connection_pool;
-    pub mod query_optimizer;
-    pub mod error_recovery;
-    pub mod monitoring_dashboard_optimized;
-    pub mod distributed_cache;
     pub mod graceful_shutdown;
 }
 
@@ -410,9 +405,9 @@ impl Database {
                     1 => CompType::Zstd,
                     #[cfg(not(feature = "zstd-compression"))]
                     1 => CompType::Snappy,
-                    2 => CompType::Lz4,
+                    2 => CompType::LZ4,
                     3 => CompType::Snappy,
-                    _ => CompType::Lz4,
+                    _ => CompType::LZ4,
                 },
                 ..Default::default()
             };
@@ -671,9 +666,9 @@ impl Database {
                         1 => CompType::Zstd,
                         #[cfg(not(feature = "zstd-compression"))]
                         1 => CompType::Snappy,
-                        2 => CompType::Lz4,
+                        2 => CompType::LZ4,
                         3 => CompType::Snappy,
-                        _ => CompType::Lz4,
+                        _ => CompType::LZ4,
                     },
                     ..Default::default()
                 };

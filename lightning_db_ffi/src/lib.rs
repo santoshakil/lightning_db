@@ -59,7 +59,7 @@ pub enum WalSyncMode {
 pub enum CompressionType {
     None = 0,
     Zstd = 1,
-    Lz4 = 2,
+    LZ4 = 2,
     Snappy = 3,
 }
 
