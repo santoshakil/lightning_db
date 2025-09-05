@@ -767,9 +767,10 @@ impl IncrementalBackupManager {
                 }
             }
             CompressionAlgorithm::Lz4 => {
-                use crate::features::compression::{Compressor, Lz4Compressor};
-                let compressor = Lz4Compressor;
-                compressor.compress(data)
+                use crate::features::adaptive_compression::algorithms::{CompressionAlgorithmTrait, LZ4Compression};
+                use crate::features::adaptive_compression::CompressionLevel;
+                let compressor = LZ4Compression::new();
+                compressor.compress(data, CompressionLevel::Fast)
             }
             CompressionAlgorithm::Brotli => Err(Error::Generic(
                 "Brotli compression not yet implemented".to_string(),
