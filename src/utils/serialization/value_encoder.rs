@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn test_compression_encoder() {
-        let encoder = CompressionValueEncoder::new(CompressionType::Lz4, 10);
+        let encoder = CompressionValueEncoder::new(CompressionType::LZ4, 10);
 
         // Small value (not compressed)
         let small_value = b"small";
