@@ -1,4 +1,4 @@
-use crate::features::compression::{compress, decompress, CompressionType};
+use crate::features::adaptive_compression::{compress, decompress, CompressionType};
 use std::borrow::Cow;
 
 /// Trait for efficient value encoding/decoding
@@ -54,7 +54,7 @@ impl ValueEncoder for CompressionValueEncoder {
                         CompressionType::None => 0u8,
                         #[cfg(feature = "zstd-compression")]
                         CompressionType::Zstd => 1u8,
-                        CompressionType::Lz4 => 2u8,
+                        CompressionType::LZ4 => 2u8,
                         CompressionType::Snappy => 3u8,
                     };
                     let mut result = vec![compression_byte];
@@ -82,7 +82,7 @@ impl ValueEncoder for CompressionValueEncoder {
             1 => CompressionType::Zstd,
             #[cfg(not(feature = "zstd-compression"))]
             1 => return Cow::Borrowed(encoded), // Zstd not available
-            2 => CompressionType::Lz4,
+            2 => CompressionType::LZ4,
             3 => CompressionType::Snappy,
             _ => return Cow::Borrowed(encoded),
         };

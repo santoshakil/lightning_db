@@ -1,7 +1,34 @@
 use std::sync::Arc;
 use crate::core::error::Error;
+use crate::core::index::IndexKey;
 use parking_lot::RwLock;
 use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Clone)]
+pub enum ExecutionStep {
+    IndexLookup {
+        index_name: String,
+        condition: QueryCondition,
+        estimated_rows: usize,
+    },
+    RangeScan {
+        index_name: String,
+        start_key: IndexKey,
+        end_key: IndexKey,
+        estimated_rows: usize,
+    },
+    Join {
+        left_step: usize,
+        right_step: usize,
+        join_type: JoinType,
+        estimated_rows: usize,
+    },
+    Filter {
+        input_step: usize,
+        condition: QueryCondition,
+        estimated_rows: usize,
+    },
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuerySpec {
@@ -23,6 +50,7 @@ pub enum QueryCondition {
     NotEquals { field: String, value: Vec<u8> },
     In { field: String, values: Vec<Vec<u8>> },
     Between { field: String, low: Vec<u8>, high: Vec<u8> },
+    Range { field: String, start: Vec<u8>, end: Vec<u8> },
     And(Box<QueryCondition>, Box<QueryCondition>),
     Or(Box<QueryCondition>, Box<QueryCondition>),
     Not(Box<QueryCondition>),
@@ -55,6 +83,7 @@ pub struct OrderByClause {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionPlan {
     pub root_node: PlanNode,
+    pub steps: Vec<ExecutionStep>,
     pub estimated_cost: QueryCost,
     pub estimated_rows: usize,
     pub optimization_hints: Vec<String>,

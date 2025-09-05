@@ -154,7 +154,7 @@ impl ConsistentHash {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
 pub enum CacheMessage {
     Get { key: Vec<u8>, request_id: u64 },
     GetResponse { value: Option<Vec<u8>>, version: u64, request_id: u64 },
@@ -469,7 +469,7 @@ impl DistributedCache {
     }
     
     async fn send_to_node(&self, node: &NodeId, msg: CacheMessage) -> Result<()> {
-        let serialized = bincode::encode_to_vec(&msg)
+        let serialized = bincode::encode_to_vec(&msg, bincode::config::standard())
             .map_err(|e| Error::Generic(format!("Serialization failed: {}", e)))?;
         
         let mut stream = TcpStream::connect(&node.addr).await
@@ -554,7 +554,7 @@ impl DistributedCache {
         self.statistics.network_bytes_received
             .fetch_add((len + 4) as u64, Ordering::Relaxed);
         
-        if let Ok(msg) = bincode::deserialize::<CacheMessage>(&buf) {
+        if let Ok((msg, _)) = bincode::decode_from_slice::<CacheMessage, _>(&buf, bincode::config::standard()) {
             self.handle_message(msg).await;
         }
     }

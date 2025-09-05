@@ -22,6 +22,84 @@ pub use benchmark::*;
 pub use hardware_detection::*;
 pub use streaming::*;
 
+// Compatibility types for FFI and legacy code
+pub type CompressionType = CompressionAlgorithm;
+
+impl CompressionType {
+    pub fn from_u8(val: u8) -> Self {
+        match val {
+            0 => CompressionAlgorithm::None,
+            1 => CompressionAlgorithm::Zstd,
+            2 => CompressionAlgorithm::LZ4,
+            3 => CompressionAlgorithm::Snappy,
+            _ => CompressionAlgorithm::None,
+        }
+    }
+    
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            CompressionAlgorithm::None => 0,
+            CompressionAlgorithm::Zstd => 1,
+            CompressionAlgorithm::LZ4 => 2,
+            CompressionAlgorithm::Snappy => 3,
+            _ => 0,
+        }
+    }
+}
+
+// Helper functions for compatibility
+pub fn compress(data: &[u8], algorithm: CompressionType) -> Result<Vec<u8>> {
+    use self::algorithms::*;
+    
+    let compressor: Box<dyn CompressionAlgorithmTrait> = match algorithm {
+        CompressionAlgorithm::None => Box::new(NoCompression::new()),
+        CompressionAlgorithm::LZ4 => Box::new(LZ4Compression::new()),
+        CompressionAlgorithm::Zstd => Box::new(ZstdCompression::new()),
+        CompressionAlgorithm::Snappy => Box::new(SnappyCompression::new()),
+        _ => Box::new(NoCompression::new()),
+    };
+    
+    compressor.compress(data, CompressionLevel::Fast)
+}
+
+pub fn decompress(data: &[u8], algorithm: CompressionType) -> Result<Vec<u8>> {
+    use self::algorithms::*;
+    
+    let decompressor: Box<dyn CompressionAlgorithmTrait> = match algorithm {
+        CompressionAlgorithm::None => Box::new(NoCompression::new()),
+        CompressionAlgorithm::LZ4 => Box::new(LZ4Compression::new()),
+        CompressionAlgorithm::Zstd => Box::new(ZstdCompression::new()),
+        CompressionAlgorithm::Snappy => Box::new(SnappyCompression::new()),
+        _ => Box::new(NoCompression::new()),
+    };
+    
+    decompressor.decompress(data)
+}
+
+// Compressor trait for legacy compatibility
+pub trait Compressor: Send + Sync {
+    fn compress(&self, data: &[u8]) -> Result<Vec<u8>>;
+    fn decompress(&self, data: &[u8]) -> Result<Vec<u8>>;
+}
+
+struct CompressorImpl {
+    algorithm: CompressionType,
+}
+
+impl Compressor for CompressorImpl {
+    fn compress(&self, data: &[u8]) -> Result<Vec<u8>> {
+        compress(data, self.algorithm)
+    }
+    
+    fn decompress(&self, data: &[u8]) -> Result<Vec<u8>> {
+        decompress(data, self.algorithm)
+    }
+}
+
+pub fn get_compressor(algorithm: CompressionType) -> Box<dyn Compressor> {
+    Box::new(CompressorImpl { algorithm })
+}
+
 /// Compression level settings
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CompressionLevel {

@@ -112,22 +112,23 @@ pub mod performance {
 pub mod features {
     pub mod backup;
     pub mod encryption;
-    pub mod compression;
     pub mod adaptive_compression;
     pub mod monitoring;
-    pub mod observability;
-    pub mod distributed_tracing;
     pub mod admin;
-    pub mod repl;
     pub mod async_support;
     pub mod statistics;
-    pub mod profiling;
     pub mod logging;
     pub mod memory_monitoring;
     pub mod compaction;
     pub mod integrity;
     pub mod transactions;
     pub mod migration;
+    pub mod connection_pool;
+    pub mod query_optimizer;
+    pub mod error_recovery;
+    pub mod monitoring_dashboard_optimized;
+    pub mod distributed_cache;
+    pub mod graceful_shutdown;
 }
 
 // Utilities and helpers
@@ -142,7 +143,7 @@ pub mod security;
 // Re-export core types and functionality
 pub use utils::batching::FastAutoBatcher as AutoBatcher;
 use core::btree::BPlusTree;
-use features::compression::CompressionType as CompType;
+use features::adaptive_compression::CompressionAlgorithm as CompType;
 use utils::safety::consistency::ConsistencyManager;
 pub use crate::core::error::{Error, Result};
 pub use utils::batching::FastAutoBatcher;

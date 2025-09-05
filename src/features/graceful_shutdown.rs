@@ -20,7 +20,7 @@ pub enum ShutdownError {
 
 pub type ShutdownResult = Result<(), ShutdownError>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ShutdownPriority {
     Critical = 0,
     High = 1,
@@ -85,17 +85,19 @@ pub struct ShutdownCoordinator {
     shutdown_status: Arc<RwLock<HashMap<String, ComponentShutdownStatus>>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ComponentShutdownStatus {
     pub name: String,
     pub priority: ShutdownPriority,
     pub state: ShutdownState,
+    #[serde(skip)]
     pub started_at: Option<Instant>,
+    #[serde(skip)]
     pub completed_at: Option<Instant>,
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ShutdownState {
     Active,
     Preparing,
