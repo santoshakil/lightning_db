@@ -130,7 +130,7 @@ pub mod features {
 pub mod utils;
 
 // Testing infrastructure
-pub mod testing;
+// Testing module removed - test utilities are in individual module test submodules
 
 // Security module for comprehensive security hardening
 pub mod security;
