@@ -2,7 +2,6 @@ pub mod recovery_fixes;
 pub mod corruption_validator;
 pub mod safe_recovery;
 pub mod unified_wal;
-#[allow(dead_code)]
 pub mod optimized_wal;
 pub mod atomic_wal;
 pub mod checkpoint_manager;
