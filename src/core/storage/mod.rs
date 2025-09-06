@@ -11,6 +11,7 @@ pub mod page_manager_wrapper;
 pub mod page_type;
 #[allow(dead_code)]
 pub mod page_integrity;
+pub mod sharded_page_manager;
 
 pub use mmap_optimized::{MmapConfig, MmapStatistics, OptimizedMmapManager};
 pub use optimized_page_manager::{OptimizedPageManager, OptimizedPageManagerStats};
@@ -22,3 +23,4 @@ pub use page_manager_trait::PageManagerTrait;
 pub use page_manager_wrapper::PageManagerWrapper;
 pub use page_type::PageType;
 pub use page_integrity::{ValidatedPage, page_validators};
+pub use sharded_page_manager::ShardedPageManager;
