@@ -238,8 +238,15 @@ impl AlignedBuffer {
 
         let lifetime_id = BUFFER_LIFETIME_TRACKER.new_buffer();
         
+        let ptr = NonNull::new(ptr).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::OutOfMemory,
+                "Failed to create NonNull pointer from allocation"
+            )
+        })?;
+        
         Ok(AlignedBuffer {
-            ptr: NonNull::new(ptr).unwrap(),
+            ptr,
             len: size,
             cap: aligned_size,
             alignment,
@@ -487,7 +494,13 @@ impl Drop for AlignedBuffer {
         
         if self.owned {
             let align_size = self.alignment.size();
-            let layout = Layout::from_size_align(self.cap, align_size).unwrap();
+            let layout = match Layout::from_size_align(self.cap, align_size) {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("Failed to create layout for deallocation: {}", e);
+                    return;
+                }
+            };
             // SAFETY: Deallocating owned aligned memory
             // Invariants:
             // 1. Memory was allocated with same layout (cap, align_size)

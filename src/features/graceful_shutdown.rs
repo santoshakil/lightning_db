@@ -339,7 +339,7 @@ impl ShutdownCoordinator {
         let components = self.components.read().await;
         let mut handles = Vec::new();
         
-        for (name, component) in components.iter() {
+        for (_name, component) in components.iter() {
             let component = component.clone();
             let handle = tokio::spawn(async move {
                 component.force_shutdown().await

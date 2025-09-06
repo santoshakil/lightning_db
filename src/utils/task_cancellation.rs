@@ -93,7 +93,9 @@ impl TaskRegistry {
             .spawn(move || {
                 f(combined_token.into());
             })
-            .expect("Failed to spawn thread");
+            .unwrap_or_else(|e| {
+                panic!("Failed to spawn thread '{}': {}", name, e);
+            });
         
         let managed = ManagedThread {
             name,

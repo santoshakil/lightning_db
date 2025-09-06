@@ -7,6 +7,7 @@
 //! - Memory statistics reporting
 //! - Integration with existing profiling system
 
+use tracing::error;
 use std::{
     sync::{Arc, Mutex, RwLock, atomic::{AtomicU64, AtomicBool, Ordering}},
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -199,7 +200,9 @@ impl MemoryTracker {
         // Start monitoring thread - need to get Arc reference to self
         // Since we're in the global MEMORY_TRACKER, we can safely clone the Arc
         let tracker_arc = MEMORY_TRACKER.clone();
-        Self::start_monitoring_thread(tracker_arc);
+        if let Err(e) = Self::start_monitoring_thread(tracker_arc) {
+            error!("Failed to start memory monitoring thread: {}", e);
+        }
     }
 
     /// Stop memory tracking
@@ -310,7 +313,7 @@ impl MemoryTracker {
 
     /// Get current memory statistics
     pub fn get_statistics(&self) -> MemoryStats {
-        let mut stats = self.statistics.read().unwrap().clone();
+        let mut stats = self.statistics.read().unwrap_or_else(|e| e.into_inner()).clone();
         
         // Update with current atomic values
         stats.total_allocated = self.total_allocated.load(Ordering::Relaxed);
@@ -326,7 +329,7 @@ impl MemoryTracker {
 
     /// Detect memory growth patterns
     pub fn detect_growth_pattern(&self) -> GrowthPattern {
-        let history = self.memory_history.lock().unwrap();
+        let history = self.memory_history.lock().unwrap_or_else(|e| e.into_inner());
         if history.len() < 3 {
             return GrowthPattern::Stable;
         }
@@ -339,7 +342,7 @@ impl MemoryTracker {
 
     /// Get recent memory alerts
     pub fn get_alerts(&self, since: SystemTime) -> Vec<(SystemTime, MemoryAlert)> {
-        let alerts = self.alerts.lock().unwrap();
+        let alerts = self.alerts.lock().unwrap_or_else(|e| e.into_inner());
         alerts.iter()
             .filter(|(timestamp, _)| *timestamp >= since)
             .cloned()
@@ -407,8 +410,8 @@ impl MemoryTracker {
     fn reset_statistics(&self) {
         self.allocations.clear();
         self.allocation_sites.clear();
-        self.memory_history.lock().unwrap().clear();
-        self.alerts.lock().unwrap().clear();
+        self.memory_history.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.alerts.lock().unwrap_or_else(|e| e.into_inner()).clear();
         
         self.total_allocated.store(0, Ordering::Relaxed);
         self.total_deallocated.store(0, Ordering::Relaxed);
@@ -418,10 +421,10 @@ impl MemoryTracker {
         self.deallocation_count.store(0, Ordering::Relaxed);
     }
 
-    fn start_monitoring_thread(tracker_arc: Arc<MemoryTracker>) {
+    fn start_monitoring_thread(tracker_arc: Arc<MemoryTracker>) -> std::io::Result<()> {
         let config = tracker_arc.config.read().clone();
         if !config.collect_statistics {
-            return;
+            return Ok(());
         }
 
         // Use Arc directly - completely safe, no type punning needed
@@ -433,12 +436,16 @@ impl MemoryTracker {
             .spawn(move || {
                 Self::safe_monitoring_loop(tracker_for_thread, shutdown_flag, config);
             })
-            .expect("Failed to start memory monitoring thread");
+            .map_err(|e| std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to start memory monitoring thread: {}", e)
+            ))?;
 
         // Store the handle safely
         if let Ok(mut monitoring_thread) = tracker_arc.monitoring_thread.lock() {
             *monitoring_thread = Some(handle);
         }
+        Ok(())
     }
 
     fn safe_monitoring_loop(
@@ -469,7 +476,7 @@ impl MemoryTracker {
         
         // Add to history
         {
-            let mut history = self.memory_history.lock().unwrap();
+            let mut history = self.memory_history.lock().unwrap_or_else(|e| e.into_inner());
             history.push((timestamp, current_usage));
             
             // Keep last 1000 entries
@@ -480,7 +487,7 @@ impl MemoryTracker {
 
         // Update statistics
         {
-            let mut stats = self.statistics.write().unwrap();
+            let mut stats = self.statistics.write().unwrap_or_else(|e| e.into_inner());
             stats.current_usage = current_usage;
             stats.peak_usage = self.peak_usage.load(Ordering::Relaxed);
             stats.total_allocated = self.total_allocated.load(Ordering::Relaxed);
@@ -490,7 +497,7 @@ impl MemoryTracker {
             stats.live_allocations = self.allocations.len();
             
             // Calculate rates
-            let history = self.memory_history.lock().unwrap();
+            let history = self.memory_history.lock().unwrap_or_else(|e| e.into_inner());
             if history.len() >= 2 {
                 let time_diff = (timestamp - history[history.len()-2].0) as f64 / 1_000_000_000.0;
                 if time_diff > 0.0 {
@@ -565,7 +572,7 @@ impl MemoryTracker {
         // Store alerts
         if !alerts.is_empty() {
             let timestamp = SystemTime::now();
-            let mut alert_storage = self.alerts.lock().unwrap();
+            let mut alert_storage = self.alerts.lock().unwrap_or_else(|e| e.into_inner());
             
             for alert in alerts {
                 warn!("Memory alert: {:?}", alert);
