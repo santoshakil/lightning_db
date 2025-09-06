@@ -305,11 +305,9 @@ impl AtomicWriteAheadLog {
                 {
                     use std::os::unix::io::AsRawFd;
                     let fd = file.as_raw_fd();
-                    if unsafe { libc::fsync(fd) } != 0 {
-                        if file.sync_all().is_err() {
-                            all_successful = false;
-                            last_error = Some(Error::Io("Failed to sync WAL file".to_string()));
-                        }
+                    if unsafe { libc::fsync(fd) } != 0 && file.sync_all().is_err() {
+                        all_successful = false;
+                        last_error = Some(Error::Io("Failed to sync WAL file".to_string()));
                     }
                 }
                 #[cfg(not(unix))]

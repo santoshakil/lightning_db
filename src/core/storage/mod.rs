@@ -1,5 +1,4 @@
 pub mod graceful_file_operations;
-#[allow(dead_code)]
 pub mod mmap_optimized;
 pub mod optimized_page_manager;
 pub mod page;
@@ -9,7 +8,6 @@ pub mod page_manager_async;
 pub mod page_manager_trait;
 pub mod page_manager_wrapper;
 pub mod page_type;
-#[allow(dead_code)]
 pub mod page_integrity;
 pub mod sharded_page_manager;
 

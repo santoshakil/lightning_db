@@ -102,18 +102,16 @@ impl RecoveryManager {
         match self.replay_wal_entries(page_id, &wal_entries).await {
             Ok(recovered_data) => {
                 // Verify recovered data if enabled
-                if self.recovery_options.verify_recovered_data {
-                    if !self.verify_recovered_page_data(page_id, &recovered_data).await? {
-                        return Ok(RecoveryResult {
-                            success: false,
-                            strategy_used: RecoveryStrategy::WalReplay,
-                            pages_recovered: 0,
-                            data_recovered: 0,
-                            recovery_time: start_time.elapsed(),
-                            error_message: Some("Recovered data failed verification".to_string()),
-                            partial_recovery: false,
-                        });
-                    }
+                if self.recovery_options.verify_recovered_data && !self.verify_recovered_page_data(page_id, &recovered_data).await? {
+                    return Ok(RecoveryResult {
+                        success: false,
+                        strategy_used: RecoveryStrategy::WalReplay,
+                        pages_recovered: 0,
+                        data_recovered: 0,
+                        recovery_time: start_time.elapsed(),
+                        error_message: Some("Recovered data failed verification".to_string()),
+                        partial_recovery: false,
+                    });
                 }
 
                 // Write recovered data back to database
@@ -148,10 +146,8 @@ impl RecoveryManager {
             match self.try_recover_from_backup(page_id, backup_location).await {
                 Ok(Some(recovered_data)) => {
                     // Verify recovered data
-                    if self.recovery_options.verify_recovered_data {
-                        if !self.verify_recovered_page_data(page_id, &recovered_data).await? {
-                            continue; // Try next backup
-                        }
+                    if self.recovery_options.verify_recovered_data && !self.verify_recovered_page_data(page_id, &recovered_data).await? {
+                        continue; // Try next backup
                     }
 
                     // Write recovered data
@@ -190,10 +186,8 @@ impl RecoveryManager {
             match self.try_recover_from_replica(page_id, replica_endpoint).await {
                 Ok(Some(recovered_data)) => {
                     // Verify recovered data
-                    if self.recovery_options.verify_recovered_data {
-                        if !self.verify_recovered_page_data(page_id, &recovered_data).await? {
-                            continue; // Try next replica
-                        }
+                    if self.recovery_options.verify_recovered_data && !self.verify_recovered_page_data(page_id, &recovered_data).await? {
+                        continue; // Try next replica
                     }
 
                     // Write recovered data
@@ -235,18 +229,16 @@ impl RecoveryManager {
         match self.attempt_data_repair(backup_data).await {
             Ok(Some(repaired_data)) => {
                 // Verify repaired data
-                if self.recovery_options.verify_recovered_data {
-                    if !self.verify_recovered_page_data(quarantine_entry.page_id, &repaired_data).await? {
-                        return Ok(RecoveryResult {
-                            success: false,
-                            strategy_used: RecoveryStrategy::PartialReconstruction,
-                            pages_recovered: 0,
-                            data_recovered: 0,
-                            recovery_time: start_time.elapsed(),
-                            error_message: Some("Repaired data failed verification".to_string()),
-                            partial_recovery: false,
-                        });
-                    }
+                if self.recovery_options.verify_recovered_data && !self.verify_recovered_page_data(quarantine_entry.page_id, &repaired_data).await? {
+                    return Ok(RecoveryResult {
+                        success: false,
+                        strategy_used: RecoveryStrategy::PartialReconstruction,
+                        pages_recovered: 0,
+                        data_recovered: 0,
+                        recovery_time: start_time.elapsed(),
+                        error_message: Some("Repaired data failed verification".to_string()),
+                        partial_recovery: false,
+                    });
                 }
 
                 // Write repaired data
