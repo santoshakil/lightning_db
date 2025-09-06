@@ -250,9 +250,6 @@ harness = false
 name = "production_benchmarks"
 harness = false
 
-[[bench]]
-name = "simple_production_test"
-harness = false
 
 [[bench]]
 name = "comprehensive_regression_suite"
