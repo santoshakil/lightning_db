@@ -113,12 +113,14 @@ impl BufferSecurityValidator {
         #[cfg(target_pointer_width = "64")]
         {
             const MAX_USER_ADDR: usize = 0x7fff_ffff_ffff_0000;
-            if (ptr as usize) >= MAX_USER_ADDR || end_ptr.unwrap() >= MAX_USER_ADDR {
-                SECURITY_STATS.record_buffer_validation(false);
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("Buffer address outside user space in {}", operation),
-                ));
+            if let Some(end) = end_ptr {
+                if (ptr as usize) >= MAX_USER_ADDR || end >= MAX_USER_ADDR {
+                    SECURITY_STATS.record_buffer_validation(false);
+                    return Err(Error::new(
+                        ErrorKind::InvalidInput,
+                        format!("Buffer address outside user space in {}", operation),
+                    ));
+                }
             }
         }
 

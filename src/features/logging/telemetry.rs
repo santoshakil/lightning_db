@@ -398,7 +398,9 @@ impl DatabaseSpan {
         
         self.processor.on_end(&span_data);
         #[cfg(feature = "telemetry")]
-        self.span.end();
+        {
+            self.span.end();
+        }
     }
     
     pub fn context(&self) -> &TelemetryContext {

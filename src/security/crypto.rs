@@ -113,10 +113,12 @@ impl CryptographicManager {
             version: 1,
         };
 
-        let mut keys = self.keys.write().unwrap();
+        let mut keys = self.keys.write()
+            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire keys write lock".to_string()))?;
         keys.insert(key_id.clone(), key);
         
-        let mut active_key = self.active_key.write().unwrap();
+        let mut active_key = self.active_key.write()
+            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire active key write lock".to_string()))?;
         *active_key = Some(key_id.clone());
 
         Ok(key_id)
@@ -128,7 +130,8 @@ impl CryptographicManager {
             None => self.get_active_key_id()?,
         };
 
-        let keys = self.keys.read().unwrap();
+        let keys = self.keys.read()
+            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire keys read lock".to_string()))?;
         let key = keys.get(&key_id)
             .ok_or_else(|| SecurityError::CryptographicFailure("Encryption key not found".to_string()))?;
 
@@ -147,7 +150,8 @@ impl CryptographicManager {
     }
 
     pub fn decrypt(&self, encrypted_data: &EncryptedData) -> SecurityResult<Vec<u8>> {
-        let keys = self.keys.read().unwrap();
+        let keys = self.keys.read()
+            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire keys read lock".to_string()))?;
         let key = keys.get(&encrypted_data.key_id)
             .ok_or_else(|| SecurityError::CryptographicFailure("Decryption key not found".to_string()))?;
 
@@ -268,13 +272,15 @@ impl CryptographicManager {
         let new_key_id = self.generate_key(EncryptionAlgorithm::Aes256Gcm)?;
         
         {
-            let mut keys = self.keys.write().unwrap();
+            let mut keys = self.keys.write()
+            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire keys write lock".to_string()))?;
             if let Some(old_key) = keys.get_mut(&current_key_id) {
                 old_key.active = false;
             }
         }
 
-        let mut active_key = self.active_key.write().unwrap();
+        let mut active_key = self.active_key.write()
+            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire active key write lock".to_string()))?;
         *active_key = Some(new_key_id);
 
         self.cleanup_expired_keys()?;
@@ -282,7 +288,8 @@ impl CryptographicManager {
     }
 
     pub fn cleanup_expired_keys(&self) -> SecurityResult<()> {
-        let mut keys = self.keys.write().unwrap();
+        let mut keys = self.keys.write()
+            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire keys write lock".to_string()))?;
         let now = SystemTime::now();
         
         keys.retain(|_, key| {
@@ -297,12 +304,12 @@ impl CryptographicManager {
     }
 
     pub fn get_key_info(&self, key_id: &KeyId) -> Option<(EncryptionAlgorithm, SystemTime, bool)> {
-        let keys = self.keys.read().unwrap();
+        let keys = self.keys.read().ok()?;
         keys.get(key_id).map(|key| (key.algorithm, key.created_at, key.active))
     }
 
     pub fn list_keys(&self) -> Vec<(KeyId, EncryptionAlgorithm, SystemTime, bool)> {
-        let keys = self.keys.read().unwrap();
+        let keys = self.keys.read().unwrap_or_else(|e| e.into_inner());
         keys.values()
             .map(|key| (key.id.clone(), key.algorithm, key.created_at, key.active))
             .collect()
@@ -314,7 +321,8 @@ impl CryptographicManager {
     }
 
     fn get_active_key_id(&self) -> SecurityResult<KeyId> {
-        let active_key = self.active_key.read().unwrap();
+        let active_key = self.active_key.read()
+            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire active key read lock".to_string()))?;
         active_key.as_ref()
             .cloned()
             .ok_or_else(|| SecurityError::CryptographicFailure("No active encryption key".to_string()))

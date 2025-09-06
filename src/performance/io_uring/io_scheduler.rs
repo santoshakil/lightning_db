@@ -18,13 +18,12 @@ trait ThreadIdExt {
 
 impl ThreadIdExt for std::thread::ThreadId {
     fn as_u64(&self) -> std::num::NonZeroU64 {
-        // This is a workaround since ThreadId doesn't expose its internal value
-        // In practice, you might use a different approach or external crate
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
-        std::num::NonZeroU64::new(hasher.finish()).unwrap_or(std::num::NonZeroU64::new(1).unwrap())
+        const ONE: std::num::NonZeroU64 = unsafe { std::num::NonZeroU64::new_unchecked(1) };
+        std::num::NonZeroU64::new(hasher.finish()).unwrap_or(ONE)
     }
 }
 
