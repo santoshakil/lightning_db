@@ -61,7 +61,7 @@ pubspec.lock
 *.log
 **/btree.db
 **/wal.log
-**/lsm/
+# **/lsm/ # Commented out - this is source code directory
 # **/wal/ # Commented out - this is source code directory
 
 # Test output
