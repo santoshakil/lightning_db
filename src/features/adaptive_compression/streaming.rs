@@ -270,8 +270,10 @@ impl StreamingCompressor {
             return Ok(0);
         }
 
-        for i in 0..bytes_to_read {
-            buffer[i] = buffers.output_buffer.pop_front().unwrap();
+        // Efficiently drain bytes from output buffer
+        let drain_iter = buffers.output_buffer.drain(..bytes_to_read);
+        for (i, byte) in drain_iter.enumerate() {
+            buffer[i] = byte;
         }
 
         Ok(bytes_to_read)
