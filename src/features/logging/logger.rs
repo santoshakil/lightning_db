@@ -171,7 +171,7 @@ impl Logger {
     > {
         #[cfg(not(feature = "telemetry"))]
         {
-            return Err("Telemetry feature not enabled".into());
+            Err("Telemetry feature not enabled".into())
         }
 
         #[cfg(feature = "telemetry")]
