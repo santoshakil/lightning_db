@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// Extension trait for Arc<RwLock<T>> with timeout support
+/// Extension trait for `Arc<RwLock<T>>` with timeout support
 pub trait TimeoutRwLockExt<T> {
     fn read_timeout(&self, timeout: Duration) -> Result<RwLockReadGuard<'_, T>>;
     fn write_timeout(&self, timeout: Duration) -> Result<RwLockWriteGuard<'_, T>>;
@@ -56,7 +56,7 @@ impl<T> TimeoutRwLockExt<T> for Arc<RwLock<T>> {
     }
 }
 
-/// Extension trait for Arc<Mutex<T>> with timeout support
+/// Extension trait for `Arc<Mutex<T>>` with timeout support
 pub trait TimeoutMutexExt<T> {
     fn lock_timeout(&self, timeout: Duration) -> Result<MutexGuard<'_, T>>;
 }
