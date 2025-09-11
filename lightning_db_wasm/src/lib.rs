@@ -28,6 +28,7 @@ pub struct LightningDB {
 
 #[derive(Clone)]
 struct Transaction {
+    #[allow(dead_code)]
     id: u64,
     operations: Vec<Operation>,
     committed: bool,
@@ -47,15 +48,21 @@ pub struct Config {
     sync_mode: String,
 }
 
-#[wasm_bindgen]
-impl Config {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
+impl Default for Config {
+    fn default() -> Self {
         Self {
             cache_size: 100 * 1024 * 1024, // 100MB
             compression_enabled: true,
             sync_mode: "async".to_string(),
         }
+    }
+}
+
+#[wasm_bindgen]
+impl Config {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self::default()
     }
 
     #[wasm_bindgen(getter)]
