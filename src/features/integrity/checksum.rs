@@ -56,18 +56,20 @@ impl ChecksumManager {
                 hasher.update(data);
                 hasher.finalize() as u64
             }
-            ChecksumType::XXHash64 => {
-                xxhash_rust::xxh64::xxh64(data, 0)
-            }
-            ChecksumType::XXHash3 => {
-                xxhash_rust::xxh3::xxh3_64(data)
-            }
+            ChecksumType::XXHash64 => xxhash_rust::xxh64::xxh64(data, 0),
+            ChecksumType::XXHash3 => xxhash_rust::xxh3::xxh3_64(data),
             ChecksumType::Blake3 => {
                 let hash = blake3::hash(data);
                 let hash_bytes = hash.as_bytes();
                 u64::from_le_bytes([
-                    hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
-                    hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+                    hash_bytes[0],
+                    hash_bytes[1],
+                    hash_bytes[2],
+                    hash_bytes[3],
+                    hash_bytes[4],
+                    hash_bytes[5],
+                    hash_bytes[6],
+                    hash_bytes[7],
                 ])
             }
         }
@@ -75,7 +77,7 @@ impl ChecksumManager {
 
     pub async fn store_checksum(&self, page_id: u64, data: &[u8]) -> Result<u64> {
         let checksum = self.calculate_checksum(data).await;
-        
+
         let entry = ChecksumEntry {
             checksum,
             algorithm: self.algorithm,
@@ -89,7 +91,7 @@ impl ChecksumManager {
 
     pub async fn verify_checksum(&self, page_id: u64, data: &[u8]) -> Result<bool> {
         let checksums = self.checksums.read().await;
-        
+
         if let Some(entry) = checksums.get(&page_id) {
             let current_checksum = self.calculate_checksum(data).await;
             Ok(current_checksum == entry.checksum)
@@ -101,12 +103,16 @@ impl ChecksumManager {
         }
     }
 
-    pub async fn verify_and_report(&self, page_id: u64, data: &[u8]) -> Result<Option<ChecksumError>> {
+    pub async fn verify_and_report(
+        &self,
+        page_id: u64,
+        data: &[u8],
+    ) -> Result<Option<ChecksumError>> {
         let checksums = self.checksums.read().await;
-        
+
         if let Some(entry) = checksums.get(&page_id) {
             let current_checksum = self.calculate_checksum(data).await;
-            
+
             if current_checksum != entry.checksum {
                 return Ok(Some(ChecksumError {
                     page_id,
@@ -118,7 +124,7 @@ impl ChecksumManager {
                 }));
             }
         }
-        
+
         Ok(None)
     }
 
@@ -133,13 +139,13 @@ impl ChecksumManager {
 
     pub async fn bulk_verify(&self, pages: &[(u64, Vec<u8>)]) -> Result<Vec<ChecksumError>> {
         let mut errors = Vec::new();
-        
+
         for (page_id, data) in pages {
             if let Some(error) = self.verify_and_report(*page_id, data).await? {
                 errors.push(error);
             }
         }
-        
+
         Ok(errors)
     }
 
@@ -151,21 +157,27 @@ impl ChecksumManager {
     pub async fn validate_page_header(&self, _page_id: u64, header_data: &[u8]) -> Result<bool> {
         // Validate page header checksum separately
         let _header_checksum = self.calculate_checksum(header_data).await;
-        
+
         // Page header should include its own checksum at a known offset
         if header_data.len() >= 8 {
             let stored_checksum = u64::from_le_bytes([
-                header_data[0], header_data[1], header_data[2], header_data[3],
-                header_data[4], header_data[5], header_data[6], header_data[7],
+                header_data[0],
+                header_data[1],
+                header_data[2],
+                header_data[3],
+                header_data[4],
+                header_data[5],
+                header_data[6],
+                header_data[7],
             ]);
-            
+
             // Calculate checksum excluding the stored checksum bytes
             let data_without_checksum = &header_data[8..];
             let calculated_checksum = self.calculate_checksum(data_without_checksum).await;
-            
+
             return Ok(stored_checksum == calculated_checksum);
         }
-        
+
         Ok(false)
     }
 
@@ -210,11 +222,11 @@ impl ChecksumManager {
 
     pub async fn batch_calculate(&self, data_chunks: &[&[u8]]) -> Vec<u64> {
         let mut checksums = Vec::with_capacity(data_chunks.len());
-        
+
         for chunk in data_chunks {
             checksums.push(self.calculate_checksum(chunk).await);
         }
-        
+
         checksums
     }
 

@@ -198,9 +198,9 @@ pub fn export_metrics() -> Result<String> {
     let encoder = TextEncoder::new();
     let metric_families = prometheus::gather();
     let mut buffer = Vec::new();
-    encoder
-        .encode(&metric_families, &mut buffer)
-        .map_err(|e| crate::core::error::Error::Generic(format!("Failed to encode metrics: {}", e)))?;
+    encoder.encode(&metric_families, &mut buffer).map_err(|e| {
+        crate::core::error::Error::Generic(format!("Failed to encode metrics: {}", e))
+    })?;
 
     String::from_utf8(buffer).map_err(|e| {
         crate::core::error::Error::Generic(format!("Failed to convert metrics to string: {}", e))

@@ -48,7 +48,7 @@ impl FixedVersionStore {
         self.get_versioned(key, read_timestamp)
             .and_then(|versioned| versioned.value)
     }
-    
+
     pub fn get_versioned(&self, key: &[u8], read_timestamp: u64) -> Option<VersionedValue> {
         if let Some(key_versions) = self.versions.get(key) {
             // Find the latest version that is <= read_timestamp
@@ -93,7 +93,7 @@ impl FixedVersionStore {
                     kept_count += 1;
                     continue;
                 }
-                
+
                 if *version_entry.key() < before_timestamp {
                     to_remove.push(*version_entry.key());
                 }
@@ -104,18 +104,18 @@ impl FixedVersionStore {
                 key_versions.remove(&version);
                 removed_count += 1;
             }
-            
+
             // Check if key has become empty
             if key_versions.is_empty() {
                 empty_keys.push(key);
             }
         }
-        
+
         // Remove empty keys from the main map
         for key in empty_keys {
             self.versions.remove(&key);
         }
-        
+
         removed_count
     }
 
@@ -130,15 +130,12 @@ impl FixedVersionStore {
             Vec::new()
         }
     }
-    
+
     /// Get total number of versions across all keys
     pub fn total_version_count(&self) -> usize {
-        self.versions
-            .iter()
-            .map(|entry| entry.value().len())
-            .sum()
+        self.versions.iter().map(|entry| entry.value().len()).sum()
     }
-    
+
     /// Get number of unique keys
     pub fn key_count(&self) -> usize {
         self.versions.len()
@@ -154,12 +151,11 @@ impl Default for FixedVersionStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    
+
     #[test]
     fn test_cleanup_removes_versions() {
         let store = FixedVersionStore::new();
-        
+
         // Add multiple versions
         for i in 0..100 {
             store.put(
@@ -169,29 +165,29 @@ mod tests {
                 i as u64,
             );
         }
-        
+
         assert_eq!(store.total_version_count(), 100);
-        
+
         // Cleanup versions older than 50
         let removed = store.cleanup_old_versions(50, 2);
-        
+
         // Should keep only versions >= 50 or the minimum 2 versions
         assert!(removed > 0);
         assert!(store.total_version_count() < 100);
     }
-    
+
     #[test]
     fn test_cleanup_removes_empty_keys() {
         let store = FixedVersionStore::new();
-        
+
         // Add a key with one old version
         store.put(b"old_key".to_vec(), Some(b"value".to_vec()), 1, 1);
-        
+
         assert_eq!(store.key_count(), 1);
-        
+
         // Cleanup with no minimum versions
         store.cleanup_old_versions(1000, 0);
-        
+
         // Key should be removed entirely
         assert_eq!(store.key_count(), 0);
     }

@@ -233,8 +233,7 @@ mod tests {
 
     #[test]
     fn test_normal_file_operations() {
-        let temp_dir = TempDir::new()
-            .expect("Failed to create temp directory");
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let file_path = temp_dir.path().join("test_file");
 
         // Create file should work normally
@@ -254,21 +253,18 @@ mod tests {
     fn test_read_only_fallback() {
         use std::os::unix::fs::PermissionsExt;
 
-        let temp_dir = TempDir::new()
-            .expect("Failed to create temp directory");
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let file_path = temp_dir.path().join("test_file");
 
         // Create file first
-        std::fs::write(&file_path, b"existing data")
-            .expect("Failed to write test file");
+        std::fs::write(&file_path, b"existing data").expect("Failed to write test file");
 
         // Make file read-only
         let mut perms = std::fs::metadata(&file_path)
             .expect("Failed to get file metadata")
             .permissions();
         perms.set_mode(0o444);
-        std::fs::set_permissions(&file_path, perms)
-            .expect("Failed to set file permissions");
+        std::fs::set_permissions(&file_path, perms).expect("Failed to set file permissions");
 
         // Open should fall back to read-only mode
         let result = GracefulFile::open_with_fallback(&file_path)
@@ -288,8 +284,7 @@ mod tests {
 
     #[test]
     fn test_write_permission_detection() {
-        let temp_dir = TempDir::new()
-            .expect("Failed to create temp directory for permission test");
+        let temp_dir = TempDir::new().expect("Failed to create temp directory for permission test");
 
         // Should be writable initially
         assert!(is_path_writable(temp_dir.path()));

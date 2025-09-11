@@ -513,7 +513,9 @@ impl TieredStorageManager {
                         &migration_queue,
                         &next_job_id,
                         &stats,
-                    ).is_err() {
+                    )
+                    .is_err()
+                    {
                         // Log error but continue
                     }
 

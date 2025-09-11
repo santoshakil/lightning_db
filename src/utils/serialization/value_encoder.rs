@@ -115,7 +115,7 @@ impl ValueEncoder for EncryptionValueEncoder {
 
     fn decode<'a>(&self, encoded: &'a [u8]) -> Cow<'a, [u8]> {
         // Decryption implementation requires cryptographic library integration
-        // Currently returns plaintext - NOT for production use  
+        // Currently returns plaintext - NOT for production use
         Cow::Borrowed(encoded)
     }
 }

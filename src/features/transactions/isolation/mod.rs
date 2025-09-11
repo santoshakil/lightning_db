@@ -1,5 +1,5 @@
 //! Transaction isolation system for Lightning DB
-//! 
+//!
 //! This module implements comprehensive transaction isolation following SQL standards:
 //! - Read Uncommitted: Allows dirty reads, non-repeatable reads, and phantom reads
 //! - Read Committed: Prevents dirty reads, allows non-repeatable reads and phantom reads  
@@ -84,24 +84,23 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+pub mod conflicts;
 pub mod levels;
 pub mod locks;
-pub mod deadlock;
-pub mod visibility;
 pub mod snapshot;
-pub mod conflicts;
-pub mod predicates;
 pub mod validation;
+pub mod visibility;
+pub mod deadlock_types;
 
 // Re-export main types for public API
-pub use levels::{IsolationLevel, IsolationConfig, LockRequirements, LockDurationPolicy};
-pub use locks::{LockManager, LockMode, LockGranularity, TxId};
-pub use deadlock::{DeadlockDetector, DeadlockResolutionStrategy, DeadlockResult, DeadlockStats};
-pub use visibility::{VisibilityEngine, VersionInfo, TxInfo, TxState, VisibilityStats};
-pub use snapshot::{SnapshotManager, Snapshot, SnapshotId, SnapshotStats};
-pub use conflicts::{ConflictResolver, ConflictType, Conflict, ConflictResolution, ConflictStats};
-pub use predicates::{PredicateLockManager, Predicate, PredicateLock, NextKeyLocker, PredicateLockStats};
-pub use validation::{SerializationValidator, ValidationResult, ValidationInfo, ValidationStats};
+pub use conflicts::{Conflict, ConflictResolution, ConflictResolver, ConflictStats, ConflictType};
+pub use deadlock_types::{DeadlockDetector, DeadlockResolutionStrategy, DeadlockResult, DeadlockStats, 
+    NextKeyLocker, Predicate, PredicateLock, PredicateLockManager, PredicateLockStats};
+pub use levels::{IsolationConfig, IsolationLevel, LockDurationPolicy, LockRequirements};
+pub use locks::{LockGranularity, LockManager, LockMode, TxId};
+pub use snapshot::{Snapshot, SnapshotId, SnapshotManager, SnapshotStats};
+pub use validation::{SerializationValidator, ValidationInfo, ValidationResult, ValidationStats};
+pub use visibility::{TxInfo, TxState, VersionInfo, VisibilityEngine, VisibilityStats};
 
 use crate::core::error::{Error, Result};
 use parking_lot::RwLock;
@@ -151,16 +150,16 @@ impl IsolationManager {
         ));
 
         let visibility_engine = Arc::new(VisibilityEngine::new());
-        
+
         let snapshot_manager = Arc::new(SnapshotManager::new(
             Duration::from_secs(300), // 5 minute max age
             config.snapshot_cleanup_interval,
         ));
 
         let conflict_resolver = Arc::new(ConflictResolver::new());
-        
+
         let predicate_manager = Arc::new(PredicateLockManager::new(lock_manager.clone()));
-        
+
         let serialization_validator = Arc::new(SerializationValidator::new());
 
         Self {
@@ -177,15 +176,23 @@ impl IsolationManager {
 
     /// Begin a new transaction with specified isolation level
     pub fn begin_transaction(&self, tx_id: TxId, isolation_level: IsolationLevel) -> Result<()> {
-        debug!("Beginning transaction {} with isolation level {}", tx_id, isolation_level);
+        debug!(
+            "Beginning transaction {} with isolation level {}",
+            tx_id, isolation_level
+        );
 
         // Register with all relevant components
-        self.deadlock_detector.register_transaction(tx_id, 0);
+        self.deadlock_detector.register_transaction(tx_id);
         self.conflict_resolver.register_transaction(tx_id);
-        self.visibility_engine.begin_transaction(tx_id, isolation_level)?;
-        self.serialization_validator.begin_transaction(tx_id, isolation_level)?;
+        self.visibility_engine
+            .begin_transaction(tx_id, isolation_level)?;
+        self.serialization_validator
+            .begin_transaction(tx_id, isolation_level)?;
 
-        info!("Started transaction {} with {} isolation", tx_id, isolation_level);
+        info!(
+            "Started transaction {} with {} isolation",
+            tx_id, isolation_level
+        );
         Ok(())
     }
 
@@ -209,14 +216,15 @@ impl IsolationManager {
             }
             ValidationResult::Retry { reason } => {
                 return Err(Error::TransactionRetry(format!(
-                    "Transaction {} should retry: {}", tx_id, reason
+                    "Transaction {} should retry: {}",
+                    tx_id, reason
                 )));
             }
         }
 
         // Clean up resources
         self.cleanup_transaction(tx_id)?;
-        
+
         info!("Committed transaction {}", tx_id);
         Ok(())
     }
@@ -245,7 +253,12 @@ impl IsolationManager {
 
     /// Check for deadlocks
     pub fn detect_deadlocks(&self) -> Result<Vec<DeadlockResult>> {
-        self.deadlock_detector.detect_deadlocks()
+        let deadlocked_txs = self.deadlock_detector.detect_deadlocks()?;
+        Ok(deadlocked_txs.into_iter().map(|tx_id| DeadlockResult {
+            deadlocked_txs: vec![tx_id],
+            victim_tx: Some(tx_id),
+            victim: Some(tx_id),
+        }).collect())
     }
 
     /// Get current isolation level for a transaction
@@ -286,14 +299,14 @@ impl IsolationManager {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs()
-                .saturating_sub(3600) // Clean versions older than 1 hour
+                .saturating_sub(3600), // Clean versions older than 1 hour
         );
         let old_txs_cleaned = self.serialization_validator.cleanup_old_transactions(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs()
-                .saturating_sub(1800) // Clean transactions older than 30 minutes
+                .saturating_sub(1800), // Clean transactions older than 30 minutes
         );
 
         Ok(MaintenanceResults {
@@ -310,7 +323,8 @@ impl IsolationManager {
         self.deadlock_detector.unregister_transaction(tx_id);
         self.conflict_resolver.unregister_transaction(tx_id);
         self.predicate_manager.release_predicate_locks(tx_id);
-        self.conflict_resolver.clear_conflicts_for_transaction(tx_id);
+        self.conflict_resolver
+            .clear_conflicts_for_transaction(tx_id);
         Ok(())
     }
 }
@@ -350,14 +364,18 @@ mod tests {
     #[test]
     fn test_isolation_manager_basic() {
         let manager = IsolationManager::new();
-        
+
         // Begin transaction
-        manager.begin_transaction(1, IsolationLevel::ReadCommitted).unwrap();
-        
+        manager
+            .begin_transaction(1, IsolationLevel::ReadCommitted)
+            .unwrap();
+
         // Acquire lock
         let lock_granularity = LockGranularity::Row(Bytes::from("test_key"));
-        manager.acquire_lock(1, lock_granularity, LockMode::Shared).unwrap();
-        
+        manager
+            .acquire_lock(1, lock_granularity, LockMode::Shared)
+            .unwrap();
+
         // Commit transaction
         manager.commit_transaction(1).unwrap();
     }
@@ -365,16 +383,24 @@ mod tests {
     #[test]
     fn test_deadlock_detection() {
         let manager = IsolationManager::new();
-        
-        manager.begin_transaction(1, IsolationLevel::Serializable).unwrap();
-        manager.begin_transaction(2, IsolationLevel::Serializable).unwrap();
+
+        manager
+            .begin_transaction(1, IsolationLevel::Serializable)
+            .unwrap();
+        manager
+            .begin_transaction(2, IsolationLevel::Serializable)
+            .unwrap();
 
         // Create potential deadlock scenario
         let key1 = LockGranularity::Row(Bytes::from("key1"));
         let key2 = LockGranularity::Row(Bytes::from("key2"));
 
-        manager.acquire_lock(1, key1.clone(), LockMode::Exclusive).unwrap();
-        manager.acquire_lock(2, key2.clone(), LockMode::Exclusive).unwrap();
+        manager
+            .acquire_lock(1, key1.clone(), LockMode::Exclusive)
+            .unwrap();
+        manager
+            .acquire_lock(2, key2.clone(), LockMode::Exclusive)
+            .unwrap();
 
         // This should detect no deadlock yet (no circular dependency)
         let deadlocks = manager.detect_deadlocks().unwrap();
@@ -388,7 +414,7 @@ mod tests {
     #[test]
     fn test_isolation_levels() {
         let manager = IsolationManager::new();
-        
+
         // Test different isolation levels
         let levels = [
             IsolationLevel::ReadUncommitted,
@@ -408,10 +434,10 @@ mod tests {
     #[test]
     fn test_maintenance() {
         let manager = IsolationManager::new();
-        
+
         // Run maintenance - should not fail
         let results = manager.run_maintenance().unwrap();
-        
+
         // Should have some results (even if zero)
         assert!(results.deadlocks_detected == 0); // No transactions running
     }

@@ -1,5 +1,5 @@
-use crate::core::error::Result;
 use super::Page;
+use crate::core::error::Result;
 
 /// Common trait for page managers
 pub trait PageManagerTrait: Send + Sync {

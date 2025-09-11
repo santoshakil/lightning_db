@@ -188,7 +188,7 @@ impl SimdOps {
             let value1 = _mm256_extract_epi64(chunk, 1) as u64;
             let value2 = _mm256_extract_epi64(chunk, 2) as u64;
             let value3 = _mm256_extract_epi64(chunk, 3) as u64;
-            
+
             for &value in &[value0, value1, value2, value3] {
                 hash = hash.wrapping_mul(0x9e3779b97f4a7c15u64);
                 hash ^= value;
@@ -231,7 +231,7 @@ impl SimdOps {
 
             // Calculate byte frequencies (simplified entropy estimation) using safe extraction
             let mut local_entropy = 0u32;
-            
+
             // Extract bytes safely using SIMD intrinsics
             for i in 0..32 {
                 let byte = _mm256_extract_epi8(chunk, i) as u8;
@@ -255,7 +255,7 @@ impl SimdOps {
             let val5 = _mm256_extract_epi32(entropy_acc, 5);
             let val6 = _mm256_extract_epi32(entropy_acc, 6);
             let val7 = _mm256_extract_epi32(entropy_acc, 7);
-            
+
             val0 + val1 + val2 + val3 + val4 + val5 + val6 + val7
         };
 

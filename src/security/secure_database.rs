@@ -39,7 +39,10 @@ pub struct SecureOperationContext {
 impl<T> SecureDatabase<T> {
     pub async fn new(inner_db: T, config: SecurityConfig) -> SecurityResult<Self> {
         let auth_manager = Arc::new(AuthenticationManager::new(
-            config.jwt_secret.clone().unwrap_or_else(|| "default_secret".to_string()),
+            config
+                .jwt_secret
+                .clone()
+                .unwrap_or_else(|| "default_secret".to_string()),
             Duration::from_secs(config.session_timeout_seconds),
         ));
 
@@ -90,7 +93,12 @@ impl<T> SecureDatabase<T> {
         })
     }
 
-    pub async fn authenticate(&self, username: &str, password: &str, source_ip: Option<IpAddr>) -> SecurityResult<String> {
+    pub async fn authenticate(
+        &self,
+        username: &str,
+        password: &str,
+        source_ip: Option<IpAddr>,
+    ) -> SecurityResult<String> {
         if let Some(ip) = source_ip {
             self.rate_limiter.check_ip_limit(ip).await?;
         }
@@ -103,27 +111,24 @@ impl<T> SecureDatabase<T> {
             details.insert("source_ip".to_string(), ip.to_string());
         }
 
-        match self.auth_manager.authenticate(username, password, source_ip.map(|ip| ip.to_string())) {
+        match self
+            .auth_manager
+            .authenticate(username, password, source_ip.map(|ip| ip.to_string()))
+        {
             Ok(token) => {
-                self.audit_logger.log_authentication(
-                    Some(username.to_string()),
-                    None,
-                    source_ip,
-                    true,
-                    details,
-                ).await?;
+                self.audit_logger
+                    .log_authentication(Some(username.to_string()), None, source_ip, true, details)
+                    .await?;
                 Ok(token)
             }
             Err(e) => {
-                self.audit_logger.log_authentication(
-                    Some(username.to_string()),
-                    None,
-                    source_ip,
-                    false,
-                    details,
-                ).await?;
-                
-                self.security_monitor.report_failed_authentication(source_ip, Some(username.to_string())).await?;
+                self.audit_logger
+                    .log_authentication(Some(username.to_string()), None, source_ip, false, details)
+                    .await?;
+
+                self.security_monitor
+                    .report_failed_authentication(source_ip, Some(username.to_string()))
+                    .await?;
                 Err(e)
             }
         }
@@ -133,34 +138,51 @@ impl<T> SecureDatabase<T> {
         self.auth_manager.validate_session(token)
     }
 
-    pub async fn secure_get(&self, context: SecureOperationContext, key: &[u8]) -> SecurityResult<Option<Vec<u8>>>
+    pub async fn secure_get(
+        &self,
+        context: SecureOperationContext,
+        key: &[u8],
+    ) -> SecurityResult<Option<Vec<u8>>>
     where
         T: DatabaseOperations,
     {
-        self.validate_operation(&context, "read", "database").await?;
+        self.validate_operation(&context, "read", "database")
+            .await?;
         self.input_validator.validate_key(key)?;
 
-        let _query_guard = self.resource_manager.start_query(context.operation_id.clone(), 1)?;
-        
+        let _query_guard = self
+            .resource_manager
+            .start_query(context.operation_id.clone(), 1)?;
+
         let key_str = String::from_utf8_lossy(key);
         let mut details = HashMap::new();
         details.insert("key".to_string(), key_str.to_string());
 
         match self.inner_db.get(key).await {
             Ok(value) => {
-                self.audit_logger.log_data_access(
-                    context.user_id,
-                    context.session_id.map(|s| s.0),
-                    key_str.to_string(),
-                    true,
-                    details,
-                ).await?;
+                self.audit_logger
+                    .log_data_access(
+                        context.user_id,
+                        context.session_id.map(|s| s.0),
+                        key_str.to_string(),
+                        true,
+                        details,
+                    )
+                    .await?;
 
                 if self.config.encryption_required {
                     if let Some(encrypted_value) = value {
-                        let encrypted_data = bincode::decode_from_slice(&encrypted_value, bincode::config::standard())
-                            .map_err(|e| SecurityError::CryptographicFailure(format!("Deserialization failed: {}", e)))?
-                            .0;
+                        let encrypted_data = bincode::decode_from_slice(
+                            &encrypted_value,
+                            bincode::config::standard(),
+                        )
+                        .map_err(|e| {
+                            SecurityError::CryptographicFailure(format!(
+                                "Deserialization failed: {}",
+                                e
+                            ))
+                        })?
+                        .0;
                         let decrypted = self.crypto_manager.decrypt(&encrypted_data)?;
                         Ok(Some(decrypted))
                     } else {
@@ -171,27 +193,40 @@ impl<T> SecureDatabase<T> {
                 }
             }
             Err(e) => {
-                self.audit_logger.log_data_access(
-                    context.user_id,
-                    context.session_id.map(|s| s.0),
-                    key_str.to_string(),
-                    false,
-                    details,
-                ).await?;
-                Err(SecurityError::PolicyViolation(format!("Database error: {}", e)))
+                self.audit_logger
+                    .log_data_access(
+                        context.user_id,
+                        context.session_id.map(|s| s.0),
+                        key_str.to_string(),
+                        false,
+                        details,
+                    )
+                    .await?;
+                Err(SecurityError::PolicyViolation(format!(
+                    "Database error: {}",
+                    e
+                )))
             }
         }
     }
 
-    pub async fn secure_put(&self, context: SecureOperationContext, key: &[u8], value: &[u8]) -> SecurityResult<()>
+    pub async fn secure_put(
+        &self,
+        context: SecureOperationContext,
+        key: &[u8],
+        value: &[u8],
+    ) -> SecurityResult<()>
     where
         T: DatabaseOperations,
     {
-        self.validate_operation(&context, "write", "database").await?;
+        self.validate_operation(&context, "write", "database")
+            .await?;
         self.input_validator.validate_key(key)?;
         self.input_validator.validate_value(value)?;
 
-        let _query_guard = self.resource_manager.start_query(context.operation_id.clone(), 1)?;
+        let _query_guard = self
+            .resource_manager
+            .start_query(context.operation_id.clone(), 1)?;
         let _memory_guard = self.resource_manager.allocate_memory(
             ((key.len() + value.len()) / (1024 * 1024) + 1) as u64,
             "put_operation".to_string(),
@@ -204,46 +239,61 @@ impl<T> SecureDatabase<T> {
 
         let final_value = if self.config.encryption_required {
             let encrypted = self.crypto_manager.encrypt(value, None)?;
-            bincode::encode_to_vec(&encrypted, bincode::config::standard())
-                .map_err(|e| SecurityError::CryptographicFailure(format!("Serialization failed: {}", e)))?
+            bincode::encode_to_vec(&encrypted, bincode::config::standard()).map_err(|e| {
+                SecurityError::CryptographicFailure(format!("Serialization failed: {}", e))
+            })?
         } else {
             value.to_vec()
         };
 
         match self.inner_db.put(key, &final_value).await {
             Ok(()) => {
-                self.audit_logger.log_data_modification(
-                    context.user_id,
-                    context.session_id.map(|s| s.0),
-                    key_str.to_string(),
-                    "put".to_string(),
-                    true,
-                    details,
-                ).await?;
+                self.audit_logger
+                    .log_data_modification(
+                        context.user_id,
+                        context.session_id.map(|s| s.0),
+                        key_str.to_string(),
+                        "put".to_string(),
+                        true,
+                        details,
+                    )
+                    .await?;
                 Ok(())
             }
             Err(e) => {
-                self.audit_logger.log_data_modification(
-                    context.user_id,
-                    context.session_id.map(|s| s.0),
-                    key_str.to_string(),
-                    "put".to_string(),
-                    false,
-                    details,
-                ).await?;
-                Err(SecurityError::PolicyViolation(format!("Database error: {}", e)))
+                self.audit_logger
+                    .log_data_modification(
+                        context.user_id,
+                        context.session_id.map(|s| s.0),
+                        key_str.to_string(),
+                        "put".to_string(),
+                        false,
+                        details,
+                    )
+                    .await?;
+                Err(SecurityError::PolicyViolation(format!(
+                    "Database error: {}",
+                    e
+                )))
             }
         }
     }
 
-    pub async fn secure_delete(&self, context: SecureOperationContext, key: &[u8]) -> SecurityResult<()>
+    pub async fn secure_delete(
+        &self,
+        context: SecureOperationContext,
+        key: &[u8],
+    ) -> SecurityResult<()>
     where
         T: DatabaseOperations,
     {
-        self.validate_operation(&context, "delete", "database").await?;
+        self.validate_operation(&context, "delete", "database")
+            .await?;
         self.input_validator.validate_key(key)?;
 
-        let _query_guard = self.resource_manager.start_query(context.operation_id.clone(), 1)?;
+        let _query_guard = self
+            .resource_manager
+            .start_query(context.operation_id.clone(), 1)?;
 
         let key_str = String::from_utf8_lossy(key);
         let mut details = HashMap::new();
@@ -251,40 +301,49 @@ impl<T> SecureDatabase<T> {
 
         match self.inner_db.delete(key).await {
             Ok(()) => {
-                self.audit_logger.log_data_modification(
-                    context.user_id,
-                    context.session_id.map(|s| s.0),
-                    key_str.to_string(),
-                    "delete".to_string(),
-                    true,
-                    details,
-                ).await?;
+                self.audit_logger
+                    .log_data_modification(
+                        context.user_id,
+                        context.session_id.map(|s| s.0),
+                        key_str.to_string(),
+                        "delete".to_string(),
+                        true,
+                        details,
+                    )
+                    .await?;
                 Ok(())
             }
             Err(e) => {
-                self.audit_logger.log_data_modification(
-                    context.user_id,
-                    context.session_id.map(|s| s.0),
-                    key_str.to_string(),
-                    "delete".to_string(),
-                    false,
-                    details,
-                ).await?;
-                Err(SecurityError::PolicyViolation(format!("Database error: {}", e)))
+                self.audit_logger
+                    .log_data_modification(
+                        context.user_id,
+                        context.session_id.map(|s| s.0),
+                        key_str.to_string(),
+                        "delete".to_string(),
+                        false,
+                        details,
+                    )
+                    .await?;
+                Err(SecurityError::PolicyViolation(format!(
+                    "Database error: {}",
+                    e
+                )))
             }
         }
     }
 
     pub async fn scan_payload(&self, payload: &str, context: &str) -> SecurityResult<()> {
         let alerts = self.security_monitor.scan_payload(payload, context).await?;
-        
+
         if !alerts.is_empty() {
             for alert in alerts {
                 warn!("Security alert: {}", alert.description);
             }
-            return Err(SecurityError::PolicyViolation("Malicious payload detected".to_string()));
+            return Err(SecurityError::PolicyViolation(
+                "Malicious payload detected".to_string(),
+            ));
         }
-        
+
         Ok(())
     }
 
@@ -302,15 +361,17 @@ impl<T> SecureDatabase<T> {
 
     pub async fn rotate_keys(&self) -> SecurityResult<()> {
         self.crypto_manager.rotate_keys()?;
-        
-        self.audit_logger.log_key_management(
-            None,
-            "system".to_string(),
-            "rotate_keys".to_string(),
-            true,
-            HashMap::new(),
-        ).await?;
-        
+
+        self.audit_logger
+            .log_key_management(
+                None,
+                "system".to_string(),
+                "rotate_keys".to_string(),
+                true,
+                HashMap::new(),
+            )
+            .await?;
+
         info!("Encryption keys rotated successfully");
         Ok(())
     }
@@ -322,9 +383,15 @@ impl<T> SecureDatabase<T> {
         self.auth_manager.cleanup_expired_sessions();
     }
 
-    async fn validate_operation(&self, context: &SecureOperationContext, action: &str, resource: &str) -> SecurityResult<()> {
+    async fn validate_operation(
+        &self,
+        context: &SecureOperationContext,
+        action: &str,
+        resource: &str,
+    ) -> SecurityResult<()> {
         if let Some(ref session_id) = context.session_id {
-            self.auth_manager.check_permission(session_id, resource, action)?;
+            self.auth_manager
+                .check_permission(session_id, resource, action)?;
         }
 
         if let Some(ref user_id) = context.user_id {
@@ -333,7 +400,8 @@ impl<T> SecureDatabase<T> {
 
         if let Some(ip) = context.source_ip {
             self.rate_limiter.check_ip_limit(ip).await?;
-            self.network_manager.validate_incoming_connection(std::net::SocketAddr::new(ip, 8080))?;
+            self.network_manager
+                .validate_incoming_connection(std::net::SocketAddr::new(ip, 8080))?;
         }
 
         self.rate_limiter.check_global_limit().await?;
@@ -360,7 +428,11 @@ pub struct SecurityMetrics {
 }
 
 impl SecureOperationContext {
-    pub fn new(session_id: Option<SessionId>, user_id: Option<String>, source_ip: Option<IpAddr>) -> Self {
+    pub fn new(
+        session_id: Option<SessionId>,
+        user_id: Option<String>,
+        source_ip: Option<IpAddr>,
+    ) -> Self {
         Self {
             session_id,
             user_id,
@@ -423,12 +495,14 @@ mod tests {
         let mock_db = MockDatabase::new();
         let config = SecurityConfig::default();
         let secure_db = SecureDatabase::new(mock_db, config).await.unwrap();
-        
+
         let context = SecureOperationContext::anonymous();
-        
-        let result = secure_db.secure_put(context.clone(), b"test_key", b"test_value").await;
+
+        let result = secure_db
+            .secure_put(context.clone(), b"test_key", b"test_value")
+            .await;
         assert!(result.is_ok());
-        
+
         let result = secure_db.secure_get(context, b"test_key").await;
         assert!(result.is_ok());
     }

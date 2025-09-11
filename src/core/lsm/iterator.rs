@@ -1,5 +1,5 @@
-use crate::core::error::Result;
 use super::{LSMTree, MemTable};
+use crate::core::error::Result;
 use parking_lot::RwLock;
 use std::sync::Arc;
 

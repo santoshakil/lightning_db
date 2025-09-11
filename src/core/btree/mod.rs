@@ -1,6 +1,6 @@
 mod delete;
-mod iterator;
 pub mod integrity_validation;
+mod iterator;
 pub mod write_buffer;
 // SAFETY WARNING: lock_free_btree module disabled due to critical concurrency bugs
 // This implementation has known memory safety issues including:
@@ -11,25 +11,26 @@ pub mod write_buffer;
 // DO NOT RE-ENABLE WITHOUT COMPLETE REDESIGN AND FORMAL VERIFICATION
 // pub mod lock_free_btree;
 pub mod node;
-pub mod simple_btree;
 mod split_handler;
 #[cfg(test)]
 mod test_utils;
 
+pub use integrity_validation::{btree_validators, BTreeIntegrityValidator, TreeConsistencyReport};
 pub use iterator::BTreeLeafIterator;
-pub use integrity_validation::{BTreeIntegrityValidator, TreeConsistencyReport, btree_validators};
-pub use simple_btree::SimpleBTree;
 
 use crate::core::error::{Error, Result};
-#[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
-use crate::performance::optimizations::simd::simd_compare_keys;
 use crate::core::storage::page::PAGE_SIZE;
 use crate::core::storage::{Page, PageManager, PageManagerWrapper};
+#[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
+use crate::performance::optimizations::simd::simd_compare_keys;
 use parking_lot::RwLock;
 use split_handler::SplitHandler;
 use std::cmp::Ordering;
-use std::sync::{Arc, atomic::{AtomicU32, Ordering as AtomicOrdering}};
 use std::collections::HashSet;
+use std::sync::{
+    atomic::{AtomicU32, Ordering as AtomicOrdering},
+    Arc,
+};
 
 pub use node::*;
 
@@ -104,7 +105,10 @@ impl BTreeMemoryTracker {
         self.allocated_pages.lock().clone()
     }
 
-    pub fn cleanup_leaked_pages<PM: crate::core::storage::PageManagerTrait>(&self, page_manager: &PM) {
+    pub fn cleanup_leaked_pages<PM: crate::core::storage::PageManagerTrait>(
+        &self,
+        page_manager: &PM,
+    ) {
         let leaked_pages = self.allocated_pages.lock().drain().collect::<HashSet<_>>();
         for page_id in leaked_pages {
             page_manager.free_page(page_id);
@@ -119,7 +123,7 @@ impl BTreeMemoryTracker {
 
 impl BPlusTree {
     pub fn new(page_manager: Arc<RwLock<PageManager>>) -> Result<Self> {
-        Self::new_with_wrapper(PageManagerWrapper::standard(page_manager))
+        Self::new_with_wrapper(PageManagerWrapper::from_arc(page_manager))
     }
 
     pub fn new_with_wrapper(page_manager: PageManagerWrapper) -> Result<Self> {
@@ -141,7 +145,7 @@ impl BPlusTree {
         height: u32,
     ) -> Self {
         Self::from_existing_with_wrapper(
-            PageManagerWrapper::standard(page_manager),
+            PageManagerWrapper::from_arc(page_manager),
             root_page_id,
             height,
         )
@@ -296,7 +300,7 @@ impl BPlusTree {
             match compare_keys(key, &entry.key) {
                 Ordering::Equal => return Ok(Some(entry.value.clone())),
                 Ordering::Less => break,
-                Ordering::Greater => {},
+                Ordering::Greater => {}
             }
         }
 
@@ -323,7 +327,7 @@ impl BPlusTree {
                     self.page_manager.write_page(&leaf_page)?;
                     return Ok(None);
                 }
-                Ordering::Greater => {},
+                Ordering::Greater => {}
             }
         }
 
@@ -370,26 +374,26 @@ impl BPlusTree {
         let min_left = 1; // At least 1 entry in left node
         let min_right = 1; // At least 1 entry in right node
         let max_left = total_entries - min_right;
-        
+
         let mut best_split_pos = total_entries / 2;
         let mut best_left_size = u64::MAX;
-        
+
         // Find split position that balances size constraints
         for split_pos in min_left..=max_left {
             let mut left_size = 64u64; // Base node overhead
-            
+
             // Calculate left side size
             for entry in &node.entries[0..split_pos] {
                 left_size += 8 + entry.key.len() as u64 + entry.value.len() as u64 + 8;
             }
-            
+
             let mut right_size = 64u64; // Base node overhead
-            
-            // Calculate right side size  
+
+            // Calculate right side size
             for entry in &node.entries[split_pos..] {
                 right_size += 8 + entry.key.len() as u64 + entry.value.len() as u64 + 8;
             }
-            
+
             // Both halves must fit in a page
             if left_size <= PAGE_SIZE as u64 && right_size <= PAGE_SIZE as u64 {
                 // Prefer more balanced split
@@ -400,13 +404,13 @@ impl BPlusTree {
                 }
             }
         }
-        
+
         // Final validation - ensure split position creates valid nodes
         if best_split_pos == 0 || best_split_pos >= total_entries {
             return Err(Error::PageOverflow);
         }
 
-        let right_entries: smallvec::SmallVec<[KeyEntry; 8]> = 
+        let right_entries: smallvec::SmallVec<[KeyEntry; 8]> =
             node.entries.drain(best_split_pos..).collect();
 
         // Double-check that both sides have entries
@@ -428,7 +432,7 @@ impl BPlusTree {
                 return Err(e);
             }
         };
-        
+
         let mut right_node = BTreeNode::new_leaf(right_page_id);
         right_node.entries = right_entries;
         right_node.right_sibling = original_right_sibling;
@@ -439,18 +443,18 @@ impl BPlusTree {
         // Validate both nodes can be serialized before committing changes
         let mut left_page = Page::new(page_id);
         let mut right_page = Page::new(right_page_id);
-        
+
         if let Err(e) = node.serialize_to_page(&mut left_page) {
             // Rollback: free allocated page and restore state
-            self.page_manager.free_page(right_page_id);
+            let _ = self.page_manager.free_page(right_page_id);
             node.right_sibling = original_right_sibling;
             node.entries.extend(right_node.entries);
             return Err(e);
         }
-        
+
         if let Err(e) = right_node.serialize_to_page(&mut right_page) {
             // Rollback: free allocated page and restore state
-            self.page_manager.free_page(right_page_id);
+            let _ = self.page_manager.free_page(right_page_id);
             node.right_sibling = original_right_sibling;
             node.entries.extend(right_node.entries);
             return Err(e);
@@ -459,15 +463,15 @@ impl BPlusTree {
         // Both nodes validated - now commit the changes
         if let Err(e) = self.page_manager.write_page(&left_page) {
             // Rollback: free allocated page and restore state
-            self.page_manager.free_page(right_page_id);
+            let _ = self.page_manager.free_page(right_page_id);
             node.right_sibling = original_right_sibling;
             node.entries.extend(right_node.entries);
             return Err(e);
         }
-        
+
         if let Err(e) = self.page_manager.write_page(&right_page) {
             // Rollback: free allocated page and restore state
-            self.page_manager.free_page(right_page_id);
+            let _ = self.page_manager.free_page(right_page_id);
             node.right_sibling = original_right_sibling;
             node.entries.extend(right_node.entries);
             return Err(e);
@@ -505,19 +509,20 @@ impl BPlusTree {
         let mut root_page = Page::new(new_root_id);
         if let Err(e) = new_root.serialize_to_page(&mut root_page) {
             // Rollback: free the allocated page
-            self.page_manager.free_page(new_root_id);
+            let _ = self.page_manager.free_page(new_root_id);
             return Err(e);
         }
 
         // Write new root
         if let Err(e) = self.page_manager.write_page(&root_page) {
-            // Rollback: free the allocated page  
-            self.page_manager.free_page(new_root_id);
+            // Rollback: free the allocated page
+            let _ = self.page_manager.free_page(new_root_id);
             return Err(e);
         }
 
         // Update tree metadata atomically only after successful write
-        self.root_page_id.store(new_root_id, AtomicOrdering::Release);
+        self.root_page_id
+            .store(new_root_id, AtomicOrdering::Release);
         self.height.store(old_height + 1, AtomicOrdering::Release);
 
         Ok(())
@@ -717,9 +722,10 @@ impl BPlusTree {
         visited_pages.insert(page_id);
 
         // Load and validate the page
-        let page = self.page_manager.get_page(page_id).map_err(|e| {
-            Error::Generic(format!("Failed to load page {}: {}", page_id, e))
-        })?;
+        let page = self
+            .page_manager
+            .get_page(page_id)
+            .map_err(|e| Error::Generic(format!("Failed to load page {}: {}", page_id, e)))?;
 
         let node = BTreeNode::deserialize_from_page(&page).map_err(|e| {
             Error::Generic(format!("Failed to deserialize page {}: {}", page_id, e))
@@ -743,7 +749,7 @@ impl BPlusTree {
 
         // Validate key ordering within node
         for i in 1..node.entries.len() {
-            if compare_keys(&node.entries[i-1].key, &node.entries[i].key) != Ordering::Less {
+            if compare_keys(&node.entries[i - 1].key, &node.entries[i].key) != Ordering::Less {
                 return Err(Error::Generic(format!(
                     "Key ordering violation in page {} at index {}",
                     page_id, i
@@ -776,15 +782,25 @@ impl BPlusTree {
             if node.children.len() != node.entries.len() + 1 {
                 return Err(Error::Generic(format!(
                     "Child count mismatch in internal page {}: {} children, {} entries",
-                    page_id, node.children.len(), node.entries.len()
+                    page_id,
+                    node.children.len(),
+                    node.entries.len()
                 )));
             }
 
             // Recursively validate children
             for (i, &child_id) in node.children.iter().enumerate() {
-                let child_min = if i == 0 { min_key } else { Some(node.entries[i-1].key.as_slice()) };
-                let child_max = if i < node.entries.len() { Some(node.entries[i].key.as_slice()) } else { max_key };
-                
+                let child_min = if i == 0 {
+                    min_key
+                } else {
+                    Some(node.entries[i - 1].key.as_slice())
+                };
+                let child_max = if i < node.entries.len() {
+                    Some(node.entries[i].key.as_slice())
+                } else {
+                    max_key
+                };
+
                 self.validate_subtree(
                     child_id,
                     expected_level - 1,
@@ -814,7 +830,7 @@ impl BPlusTree {
     pub fn attempt_corruption_repair(&mut self) -> Result<bool> {
         // This is a basic implementation - real corruption repair is much more complex
         let root_id = self.root_page_id();
-        
+
         // Try to load the root page
         match self.page_manager.get_page(root_id) {
             Ok(root_page) => {
@@ -840,12 +856,13 @@ impl BPlusTree {
         let new_root_id = self.page_manager.allocate_page()?;
         let mut new_root_page = Page::new(new_root_id);
         let new_root_node = BTreeNode::new_leaf(new_root_id);
-        
+
         new_root_node.serialize_to_page(&mut new_root_page)?;
         self.page_manager.write_page(&new_root_page)?;
 
         // Update tree metadata
-        self.root_page_id.store(new_root_id, AtomicOrdering::Release);
+        self.root_page_id
+            .store(new_root_id, AtomicOrdering::Release);
         self.height.store(1, AtomicOrdering::Release);
 
         Ok(true) // Repair was performed

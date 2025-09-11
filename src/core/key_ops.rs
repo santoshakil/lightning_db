@@ -1,7 +1,7 @@
+use crate::core::error::Result;
 use crate::features::logging;
 use crate::utils::batching::WriteBatch;
 use crate::{ConsistencyLevel, Database, Key};
-use crate::core::error::Result;
 
 impl Database {
     /// Get value by key using zero-copy key type

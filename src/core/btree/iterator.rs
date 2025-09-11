@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 fn likely(b: bool) -> bool {
     #[cold]
     fn cold() {}
-    
+
     if !b {
         cold();
     }
@@ -18,7 +18,7 @@ fn likely(b: bool) -> bool {
 fn unlikely(b: bool) -> bool {
     #[cold]
     fn cold() {}
-    
+
     if b {
         cold();
     }
@@ -26,8 +26,8 @@ fn unlikely(b: bool) -> bool {
 }
 
 // Optimized constants for iterator performance
-const PREFETCH_SIZE: usize = 64;  // Cache line size for prefetching
-const STACK_BUFFER_ENTRIES: usize = 32;  // Stack buffer for small result sets
+const PREFETCH_SIZE: usize = 64; // Cache line size for prefetching
+const STACK_BUFFER_ENTRIES: usize = 32; // Stack buffer for small result sets
 
 /// Safe stack-like buffer for small key-value pairs to avoid heap allocation
 #[repr(align(64))]
@@ -81,7 +81,7 @@ impl SafeStackEntryBuffer {
 #[inline(always)]
 fn compare_keys_optimized(a: &[u8], b: &[u8]) -> Ordering {
     // Fast path for equal length keys
-    a.cmp(b)  // The standard library implementation is already highly optimized
+    a.cmp(b) // The standard library implementation is already highly optimized
 }
 
 /// Iterator for B+Tree that properly traverses leaf nodes - highly optimized
@@ -129,7 +129,7 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
             prefetch_enabled: true,
         })
     }
-    
+
     /// Create iterator with optimized settings
     #[inline]
     pub fn new_optimized(
@@ -158,7 +158,7 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
                 // Forward iteration: find leftmost leaf containing start_key or greater
                 let leaf_id = self.find_start_leaf_optimized()?;
                 self.current_leaf_id = Some(leaf_id);
-                
+
                 // Prefetch next leaf if enabled
                 if self.prefetch_enabled {
                     self.prefetch_next_leaf(leaf_id)?;
@@ -277,12 +277,15 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
 
             // Decide whether to use stack buffer or heap buffer
             self.use_stack_buffer = node.entries.len() <= STACK_BUFFER_ENTRIES;
-            
+
             if self.use_stack_buffer {
                 // Use stack buffer for small leaf nodes - now completely safe
                 self.stack_buffer.clear();
                 for entry in node.entries.iter().take(STACK_BUFFER_ENTRIES) {
-                    if !self.stack_buffer.push(entry.key.clone(), entry.value.clone()) {
+                    if !self
+                        .stack_buffer
+                        .push(entry.key.clone(), entry.value.clone())
+                    {
                         // Buffer full, switch to heap buffer
                         self.use_stack_buffer = false;
                         break;
@@ -293,21 +296,32 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
                 // Use heap buffer for large leaf nodes with vectorized copying
                 self.current_leaf_entries.clear();
                 self.current_leaf_entries.reserve_exact(node.entries.len());
-                
+
                 // Unroll loop for better performance
                 let mut i = 0;
                 while i + 3 < node.entries.len() {
                     // Process 4 entries at once
-                    self.current_leaf_entries.push((node.entries[i].key.clone(), node.entries[i].value.clone()));
-                    self.current_leaf_entries.push((node.entries[i+1].key.clone(), node.entries[i+1].value.clone()));
-                    self.current_leaf_entries.push((node.entries[i+2].key.clone(), node.entries[i+2].value.clone()));
-                    self.current_leaf_entries.push((node.entries[i+3].key.clone(), node.entries[i+3].value.clone()));
+                    self.current_leaf_entries
+                        .push((node.entries[i].key.clone(), node.entries[i].value.clone()));
+                    self.current_leaf_entries.push((
+                        node.entries[i + 1].key.clone(),
+                        node.entries[i + 1].value.clone(),
+                    ));
+                    self.current_leaf_entries.push((
+                        node.entries[i + 2].key.clone(),
+                        node.entries[i + 2].value.clone(),
+                    ));
+                    self.current_leaf_entries.push((
+                        node.entries[i + 3].key.clone(),
+                        node.entries[i + 3].value.clone(),
+                    ));
                     i += 4;
                 }
-                
+
                 // Handle remaining entries
                 for entry in &node.entries[i..] {
-                    self.current_leaf_entries.push((entry.key.clone(), entry.value.clone()));
+                    self.current_leaf_entries
+                        .push((entry.key.clone(), entry.value.clone()));
                 }
             }
 
@@ -319,7 +333,7 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
 
         Ok(())
     }
-    
+
     /// Prefetch next leaf page for better cache performance
     #[inline]
     fn prefetch_next_leaf(&mut self, current_leaf_id: u32) -> Result<()> {
@@ -327,7 +341,7 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
             let page = self.btree.page_manager.get_page(current_leaf_id)?;
             let node = BTreeNode::deserialize_from_page(&page)?;
             self.next_leaf_id = node.right_sibling;
-            
+
             // Prefetch the next page if it exists
             if let Some(next_id) = self.next_leaf_id {
                 // This would ideally use a prefetch instruction
@@ -365,7 +379,10 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
                     }
                 } else {
                     // Binary search for heap buffer (large)
-                    match self.current_leaf_entries.binary_search_by(|entry| entry.0.cmp(start_key)) {
+                    match self
+                        .current_leaf_entries
+                        .binary_search_by(|entry| entry.0.cmp(start_key))
+                    {
                         Ok(pos) => {
                             self.current_position = if self.include_start { pos } else { pos + 1 };
                         }
@@ -402,7 +419,10 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
                     }
                 } else {
                     // Binary search for heap buffer
-                    match self.current_leaf_entries.binary_search_by(|entry| entry.0.cmp(end_key)) {
+                    match self
+                        .current_leaf_entries
+                        .binary_search_by(|entry| entry.0.cmp(end_key))
+                    {
                         Ok(pos) => {
                             self.current_position = if self.include_end { pos + 1 } else { pos };
                         }
@@ -441,12 +461,12 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
                     self.current_leaf_id = Some(next_id);
                     self.load_current_leaf_optimized()?;
                     self.current_position = 0;
-                    
+
                     // Prefetch next leaf for future use
                     if self.prefetch_enabled {
                         let _ = self.prefetch_next_leaf(next_id);
                     }
-                    
+
                     return Ok(true);
                 }
             } else {
@@ -467,7 +487,9 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
         if self.forward {
             if let Some(ref end_key) = self.end_key {
                 let cmp = compare_keys_optimized(key, end_key);
-                if unlikely(cmp == Ordering::Greater || (!self.include_end && cmp == Ordering::Equal)) {
+                if unlikely(
+                    cmp == Ordering::Greater || (!self.include_end && cmp == Ordering::Equal),
+                ) {
                     return false;
                 }
             }
@@ -475,7 +497,9 @@ impl<'a, const BATCH_SIZE: usize> BTreeLeafIterator<'a, BATCH_SIZE> {
             // Check against start bound for backward iteration
             if let Some(ref start_key) = self.start_key {
                 let cmp = compare_keys_optimized(key, start_key);
-                if unlikely(cmp == Ordering::Less || (!self.include_start && cmp == Ordering::Equal)) {
+                if unlikely(
+                    cmp == Ordering::Less || (!self.include_start && cmp == Ordering::Equal),
+                ) {
                     return false;
                 }
             }
@@ -521,7 +545,7 @@ impl<const BATCH_SIZE: usize> Iterator for BTreeLeafIterator<'_, BATCH_SIZE> {
                 }
                 // Try to move to next leaf
                 match self.move_to_next_leaf_optimized() {
-                    Ok(true) => {},
+                    Ok(true) => {}
                     Ok(false) => return None,
                     Err(e) => return Some(Err(e)),
                 }

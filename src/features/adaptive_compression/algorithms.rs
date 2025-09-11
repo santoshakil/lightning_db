@@ -162,7 +162,9 @@ impl CompressionAlgorithmTrait for ZstdCompression {
         #[cfg(not(feature = "zstd-compression"))]
         {
             let _ = level;
-            Err(Error::Compression("ZSTD compression not available".to_string()))
+            Err(Error::Compression(
+                "ZSTD compression not available".to_string(),
+            ))
         }
     }
 
@@ -177,7 +179,9 @@ impl CompressionAlgorithmTrait for ZstdCompression {
                 .map_err(|e| Error::Compression(format!("Zstd decompression failed: {}", e)))
         }
         #[cfg(not(feature = "zstd-compression"))]
-        Err(Error::Compression("ZSTD compression not available".to_string()))
+        Err(Error::Compression(
+            "ZSTD compression not available".to_string(),
+        ))
     }
 
     fn name(&self) -> &'static str {

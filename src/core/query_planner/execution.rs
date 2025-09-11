@@ -1,11 +1,11 @@
-use std::sync::Arc;
+use super::planner::{Expression, PlanNode, Predicate, QueryPlan, Value};
+use crate::core::error::Error;
+use async_trait::async_trait;
+use parking_lot::RwLock;
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
-use parking_lot::RwLock;
+use std::sync::Arc;
 use tokio::sync::{mpsc, Semaphore};
-use crate::core::error::Error;
-use super::planner::{QueryPlan, PlanNode, Value, Expression, Predicate};
-use async_trait::async_trait;
 
 const DEFAULT_BATCH_SIZE: usize = 1024;
 const MAX_MEMORY_PER_OPERATOR: usize = 100 * 1024 * 1024;
@@ -166,27 +166,27 @@ impl QueryExecutor {
         context: ExecutionContext,
     ) -> Result<QueryResult, Error> {
         let start_time = std::time::Instant::now();
-        
+
         let physical_plan = self.create_physical_plan(plan)?;
-        
+
         let mut stream = physical_plan.execute(&context).await?;
         let mut all_batches = Vec::new();
         let mut total_rows = 0;
-        
+
         while let Some(batch) = stream.next().await {
             let batch = batch?;
             total_rows += batch.row_count;
             all_batches.push(batch);
         }
-        
+
         let execution_time = start_time.elapsed();
-        
+
         {
             let mut stats = context.statistics_collector.write();
             stats.execution_time = execution_time;
             stats.rows_processed = total_rows;
         }
-        
+
         Ok(QueryResult {
             batches: all_batches,
             total_rows,
@@ -202,14 +202,12 @@ impl QueryExecutor {
     #[allow(clippy::only_used_in_recursion)]
     fn plan_to_operator(&self, node: Box<PlanNode>) -> Result<Arc<dyn PhysicalOperator>, Error> {
         match node.as_ref() {
-            PlanNode::Scan(scan) => {
-                Ok(Arc::new(ScanOperator {
-                    table_name: scan.table_name.clone(),
-                    columns: scan.columns.clone(),
-                    predicate: scan.predicate.clone(),
-                    estimated_rows: scan.estimated_rows,
-                }))
-            },
+            PlanNode::Scan(scan) => Ok(Arc::new(ScanOperator {
+                table_name: scan.table_name.clone(),
+                columns: scan.columns.clone(),
+                predicate: scan.predicate.clone(),
+                estimated_rows: scan.estimated_rows,
+            })),
             PlanNode::Filter(filter) => {
                 let input = self.plan_to_operator(filter.input.clone())?;
                 Ok(Arc::new(FilterOperator {
@@ -217,26 +215,24 @@ impl QueryExecutor {
                     predicate: filter.predicate.clone(),
                     selectivity: filter.selectivity,
                 }))
-            },
+            }
             PlanNode::Join(join) => {
                 let left = self.plan_to_operator(join.left.clone())?;
                 let right = self.plan_to_operator(join.right.clone())?;
-                
+
                 match join.strategy {
-                    super::planner::JoinStrategy::HashJoin => {
-                        Ok(Arc::new(HashJoinOperator {
-                            left,
-                            right,
-                            join_type: join.join_type,
-                            left_keys: join.join_condition.left_keys.clone(),
-                            right_keys: join.join_condition.right_keys.clone(),
-                        }))
-                    },
+                    super::planner::JoinStrategy::HashJoin => Ok(Arc::new(HashJoinOperator {
+                        left,
+                        right,
+                        join_type: join.join_type,
+                        left_keys: join.join_condition.left_keys.clone(),
+                        right_keys: join.join_condition.right_keys.clone(),
+                    })),
                     _ => Err(Error::UnsupportedFeature {
                         feature: format!("Join strategy {:?}", join.strategy),
                     }),
                 }
-            },
+            }
             PlanNode::HashAggregate(agg) => {
                 let input = self.plan_to_operator(agg.input.clone())?;
                 Ok(Arc::new(HashAggregateOperator {
@@ -245,7 +241,7 @@ impl QueryExecutor {
                     aggregates: agg.aggregates.clone(),
                     estimated_groups: agg.estimated_groups,
                 }))
-            },
+            }
             PlanNode::Sort(sort) => {
                 let input = self.plan_to_operator(sort.input.clone())?;
                 Ok(Arc::new(SortOperator {
@@ -253,7 +249,7 @@ impl QueryExecutor {
                     order_by: sort.order_by.clone(),
                     limit: sort.limit,
                 }))
-            },
+            }
             PlanNode::Limit(limit) => {
                 let input = self.plan_to_operator(limit.input.clone())?;
                 Ok(Arc::new(LimitOperator {
@@ -261,7 +257,7 @@ impl QueryExecutor {
                     limit: limit.limit,
                     offset: limit.offset,
                 }))
-            },
+            }
             _ => Err(Error::UnsupportedFeature {
                 feature: "Plan node type".to_string(),
             }),
@@ -280,37 +276,37 @@ struct ScanOperator {
 impl PhysicalOperator for ScanOperator {
     async fn execute(&self, context: &ExecutionContext) -> Result<RecordBatchStream, Error> {
         let (sender, receiver) = mpsc::channel(PIPELINE_BUFFER_SIZE);
-        
+
         let _table_name = self.table_name.clone();
         let columns = self.columns.clone();
         let batch_size = context.batch_size;
-        
+
         tokio::spawn(async move {
             let mut row_count = 0;
-            
+
             while row_count < 10000 {
                 let mut batch_columns = HashMap::new();
-                
+
                 for col in &columns {
                     let values = (0..batch_size.min(10000 - row_count))
                         .map(|i| (row_count + i) as i64)
                         .collect();
                     batch_columns.insert(col.clone(), ColumnVector::Int64(values));
                 }
-                
+
                 let batch = RecordBatch {
                     columns: batch_columns,
                     row_count: batch_size.min(10000 - row_count),
                 };
-                
+
                 row_count += batch.row_count;
-                
+
                 if sender.send(Ok(batch)).await.is_err() {
                     break;
                 }
             }
         });
-        
+
         Ok(RecordBatchStream::new(receiver))
     }
 
@@ -338,9 +334,9 @@ impl PhysicalOperator for FilterOperator {
     async fn execute(&self, context: &ExecutionContext) -> Result<RecordBatchStream, Error> {
         let mut input_stream = self.input.execute(context).await?;
         let (sender, receiver) = mpsc::channel(PIPELINE_BUFFER_SIZE);
-        
+
         let predicate = self.predicate.clone();
-        
+
         tokio::spawn(async move {
             while let Some(batch) = input_stream.next().await {
                 match batch {
@@ -349,15 +345,15 @@ impl PhysicalOperator for FilterOperator {
                         if filtered.row_count > 0 && sender.send(Ok(filtered)).await.is_err() {
                             break;
                         }
-                    },
+                    }
                     Err(e) => {
                         let _ = sender.send(Err(e)).await;
                         break;
-                    },
+                    }
                 }
             }
         });
-        
+
         Ok(RecordBatchStream::new(receiver))
     }
 
@@ -393,14 +389,14 @@ impl PhysicalOperator for HashJoinOperator {
     async fn execute(&self, context: &ExecutionContext) -> Result<RecordBatchStream, Error> {
         let build_side = self.right.execute(context).await?;
         let hash_table = self.build_hash_table(build_side).await?;
-        
+
         let mut probe_side = self.left.execute(context).await?;
         let (sender, receiver) = mpsc::channel(PIPELINE_BUFFER_SIZE);
-        
+
         let left_keys = self.left_keys.clone();
         let right_keys = self.right_keys.clone();
         let join_type = self.join_type;
-        
+
         tokio::spawn(async move {
             while let Some(batch) = probe_side.next().await {
                 match batch {
@@ -415,15 +411,15 @@ impl PhysicalOperator for HashJoinOperator {
                         if joined.row_count > 0 && sender.send(Ok(joined)).await.is_err() {
                             break;
                         }
-                    },
+                    }
                     Err(e) => {
                         let _ = sender.send(Err(e)).await;
                         break;
-                    },
+                    }
                 }
             }
         });
-        
+
         Ok(RecordBatchStream::new(receiver))
     }
 
@@ -443,12 +439,12 @@ impl PhysicalOperator for HashJoinOperator {
 impl HashJoinOperator {
     async fn build_hash_table(&self, mut stream: RecordBatchStream) -> Result<HashTable, Error> {
         let mut table = HashTable::new();
-        
+
         while let Some(batch) = stream.next().await {
             let batch = batch?;
             table.insert_batch(batch, &self.right_keys)?;
         }
-        
+
         Ok(table)
     }
 
@@ -492,19 +488,19 @@ impl PhysicalOperator for HashAggregateOperator {
     async fn execute(&self, context: &ExecutionContext) -> Result<RecordBatchStream, Error> {
         let mut input_stream = self.input.execute(context).await?;
         let mut accumulator = AggregateAccumulator::new(&self.group_by, &self.aggregates);
-        
+
         while let Some(batch) = input_stream.next().await {
             let batch = batch?;
             accumulator.update(batch)?;
         }
-        
+
         let result = accumulator.finalize()?;
         let (sender, receiver) = mpsc::channel(1);
-        
+
         tokio::spawn(async move {
             let _ = sender.send(Ok(result)).await;
         });
-        
+
         Ok(RecordBatchStream::new(receiver))
     }
 
@@ -562,18 +558,18 @@ impl PhysicalOperator for SortOperator {
     async fn execute(&self, context: &ExecutionContext) -> Result<RecordBatchStream, Error> {
         let mut input_stream = self.input.execute(context).await?;
         let mut all_batches = Vec::new();
-        
+
         while let Some(batch) = input_stream.next().await {
             all_batches.push(batch?);
         }
-        
+
         let sorted = self.sort_batches(all_batches)?;
         let (sender, receiver) = mpsc::channel(1);
-        
+
         tokio::spawn(async move {
             let _ = sender.send(Ok(sorted)).await;
         });
-        
+
         Ok(RecordBatchStream::new(receiver))
     }
 
@@ -598,7 +594,7 @@ impl SortOperator {
                 row_count: 0,
             });
         }
-        
+
         Ok(batches.into_iter().next().unwrap())
     }
 }
@@ -614,14 +610,14 @@ impl PhysicalOperator for LimitOperator {
     async fn execute(&self, context: &ExecutionContext) -> Result<RecordBatchStream, Error> {
         let mut input_stream = self.input.execute(context).await?;
         let (sender, receiver) = mpsc::channel(PIPELINE_BUFFER_SIZE);
-        
+
         let limit = self.limit;
         let offset = self.offset.unwrap_or(0);
-        
+
         tokio::spawn(async move {
             let mut skipped = 0;
             let mut taken = 0;
-            
+
             while let Some(batch) = input_stream.next().await {
                 match batch {
                     Ok(mut batch) => {
@@ -634,30 +630,30 @@ impl PhysicalOperator for LimitOperator {
                             batch = Self::skip_rows(batch, to_skip);
                             skipped = offset;
                         }
-                        
+
                         if taken >= limit {
                             break;
                         }
-                        
+
                         let to_take = limit - taken;
                         if to_take < batch.row_count {
                             batch = Self::take_rows(batch, to_take);
                         }
-                        
+
                         taken += batch.row_count;
-                        
+
                         if sender.send(Ok(batch)).await.is_err() {
                             break;
                         }
-                    },
+                    }
                     Err(e) => {
                         let _ = sender.send(Err(e)).await;
                         break;
-                    },
+                    }
                 }
             }
         });
-        
+
         Ok(RecordBatchStream::new(receiver))
     }
 
@@ -701,16 +697,20 @@ impl MemoryManager {
 
     fn allocate(&self, operator: &str, size: usize) -> Result<MemoryAllocation<'_>, Error> {
         let mut used = self.used_memory.write();
-        
+
         if *used + size > self.total_memory {
             return Err(Error::ResourceExhausted {
-                resource: format!("Memory: requested {}, available {}", size, self.total_memory - *used),
+                resource: format!(
+                    "Memory: requested {}, available {}",
+                    size,
+                    self.total_memory - *used
+                ),
             });
         }
-        
+
         *used += size;
         self.allocations.write().insert(operator.to_string(), size);
-        
+
         Ok(MemoryAllocation {
             manager: self,
             size,

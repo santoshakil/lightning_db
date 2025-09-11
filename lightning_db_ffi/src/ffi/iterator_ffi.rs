@@ -67,16 +67,17 @@ pub unsafe extern "C" fn lightning_db_scan(
         return ErrorCode::InvalidArgument as i32;
     }
 
-    let db: std::sync::Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
-        Some(db) => db,
-        None => {
-            set_last_error(
-                ErrorCode::DatabaseNotFound,
-                "Invalid database handle".to_string(),
-            );
-            return ErrorCode::DatabaseNotFound as i32;
-        }
-    };
+    let db: std::sync::Arc<lightning_db::Database> =
+        match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+            Some(db) => db,
+            None => {
+                set_last_error(
+                    ErrorCode::DatabaseNotFound,
+                    "Invalid database handle".to_string(),
+                );
+                return ErrorCode::DatabaseNotFound as i32;
+            }
+        };
 
     let start = if start_key.is_null() || start_key_len == 0 {
         None

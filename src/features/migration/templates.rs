@@ -1,10 +1,7 @@
-use std::{
-    collections::HashMap,
-    time::SystemTime,
-};
+use super::{Migration, MigrationMetadata, MigrationMode, MigrationType, MigrationVersion};
+use crate::core::error::{DatabaseError, DatabaseResult};
 use serde::{Deserialize, Serialize};
-use crate::core::error::{DatabaseResult, DatabaseError};
-use super::{MigrationVersion, MigrationMetadata, MigrationType, MigrationMode, Migration};
+use std::{collections::HashMap, time::SystemTime};
 
 pub struct MigrationTemplateManager {
     templates: HashMap<String, MigrationTemplate>,
@@ -24,39 +21,37 @@ impl MigrationTemplateManager {
         manager.load_builtin_templates();
         manager
     }
-    
+
     fn load_builtin_templates(&mut self) {
         self.templates.insert(
             "create_table".to_string(),
             MigrationTemplate::create_table_template(),
         );
-        
+
         self.templates.insert(
             "add_column".to_string(),
             MigrationTemplate::add_column_template(),
         );
-        
+
         self.templates.insert(
             "drop_column".to_string(),
             MigrationTemplate::drop_column_template(),
         );
-        
+
         self.templates.insert(
             "create_index".to_string(),
             MigrationTemplate::create_index_template(),
         );
-        
+
         self.templates.insert(
             "data_migration".to_string(),
             MigrationTemplate::data_migration_template(),
         );
-        
-        self.templates.insert(
-            "custom".to_string(),
-            MigrationTemplate::custom_template(),
-        );
+
+        self.templates
+            .insert("custom".to_string(), MigrationTemplate::custom_template());
     }
-    
+
     pub fn generate_migration(
         &self,
         template_name: &str,
@@ -64,26 +59,25 @@ impl MigrationTemplateManager {
         name: &str,
         params: &HashMap<String, String>,
     ) -> DatabaseResult<Migration> {
-        let template = self.templates.get(template_name)
-            .ok_or_else(|| DatabaseError::MigrationError(
-                format!("Template '{}' not found", template_name)
-            ))?;
-        
+        let template = self.templates.get(template_name).ok_or_else(|| {
+            DatabaseError::MigrationError(format!("Template '{}' not found", template_name))
+        })?;
+
         template.generate_migration(version, name, params)
     }
-    
+
     pub fn list_templates(&self) -> Vec<&str> {
         self.templates.keys().map(|s| s.as_str()).collect()
     }
-    
+
     pub fn add_template(&mut self, name: String, template: MigrationTemplate) {
         self.templates.insert(name, template);
     }
-    
+
     pub fn remove_template(&mut self, name: &str) -> Option<MigrationTemplate> {
         self.templates.remove(name)
     }
-    
+
     pub fn get_template(&self, name: &str) -> Option<&MigrationTemplate> {
         self.templates.get(name)
     }
@@ -130,14 +124,14 @@ impl MigrationTemplate {
         params: &HashMap<String, String>,
     ) -> DatabaseResult<Migration> {
         self.validate_parameters(params)?;
-        
+
         let up_script = self.render_template(&self.up_template, params)?;
         let down_script = if let Some(ref down_template) = self.down_template {
             Some(self.render_template(down_template, params)?)
         } else {
             None
         };
-        
+
         let metadata = MigrationMetadata {
             version,
             name: name.to_string(),
@@ -151,7 +145,7 @@ impl MigrationTemplate {
             estimated_duration: None,
             checksum: super::calculate_checksum(&up_script),
         };
-        
+
         Ok(Migration {
             metadata,
             up_script,
@@ -159,33 +153,36 @@ impl MigrationTemplate {
             validation_script: None,
         })
     }
-    
+
     fn validate_parameters(&self, params: &HashMap<String, String>) -> DatabaseResult<()> {
         for required_param in &self.required_params {
             if !params.contains_key(&required_param.name) {
-                return Err(DatabaseError::MigrationError(
-                    format!("Required parameter '{}' is missing", required_param.name)
-                ));
+                return Err(DatabaseError::MigrationError(format!(
+                    "Required parameter '{}' is missing",
+                    required_param.name
+                )));
             }
-            
+
             if let Some(value) = params.get(&required_param.name) {
                 self.validate_parameter_value(&required_param, value)?;
             }
         }
-        
+
         for (param_name, value) in params {
-            let param_def = self.required_params.iter()
+            let param_def = self
+                .required_params
+                .iter()
                 .chain(self.optional_params.iter())
                 .find(|p| &p.name == param_name);
-            
+
             if let Some(param_def) = param_def {
                 self.validate_parameter_value(param_def, value)?;
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn validate_parameter_value(
         &self,
         param_def: &TemplateParameter,
@@ -194,80 +191,94 @@ impl MigrationTemplate {
         match param_def.param_type {
             ParameterType::String => {
                 if value.is_empty() {
-                    return Err(DatabaseError::MigrationError(
-                        format!("Parameter '{}' cannot be empty", param_def.name)
-                    ));
+                    return Err(DatabaseError::MigrationError(format!(
+                        "Parameter '{}' cannot be empty",
+                        param_def.name
+                    )));
                 }
-            },
+            }
             ParameterType::Integer => {
                 if value.parse::<i64>().is_err() {
-                    return Err(DatabaseError::MigrationError(
-                        format!("Parameter '{}' must be a valid integer", param_def.name)
-                    ));
+                    return Err(DatabaseError::MigrationError(format!(
+                        "Parameter '{}' must be a valid integer",
+                        param_def.name
+                    )));
                 }
-            },
+            }
             ParameterType::Boolean => {
-                if !matches!(value.to_lowercase().as_str(), "true" | "false" | "1" | "0" | "yes" | "no") {
-                    return Err(DatabaseError::MigrationError(
-                        format!("Parameter '{}' must be a valid boolean", param_def.name)
-                    ));
+                if !matches!(
+                    value.to_lowercase().as_str(),
+                    "true" | "false" | "1" | "0" | "yes" | "no"
+                ) {
+                    return Err(DatabaseError::MigrationError(format!(
+                        "Parameter '{}' must be a valid boolean",
+                        param_def.name
+                    )));
                 }
-            },
+            }
             ParameterType::TableName | ParameterType::ColumnName => {
                 if !value.chars().all(|c| c.is_alphanumeric() || c == '_') || value.is_empty() {
-                    return Err(DatabaseError::MigrationError(
-                        format!("Parameter '{}' must be a valid identifier", param_def.name)
-                    ));
+                    return Err(DatabaseError::MigrationError(format!(
+                        "Parameter '{}' must be a valid identifier",
+                        param_def.name
+                    )));
                 }
-            },
+            }
             ParameterType::DataType => {
-                let valid_types = ["INTEGER", "TEXT", "BLOB", "REAL", "NUMERIC", "VARCHAR", "CHAR"];
+                let valid_types = [
+                    "INTEGER", "TEXT", "BLOB", "REAL", "NUMERIC", "VARCHAR", "CHAR",
+                ];
                 let normalized_type = value.to_uppercase();
                 let is_valid = valid_types.iter().any(|&t| normalized_type.starts_with(t));
-                
+
                 if !is_valid {
-                    return Err(DatabaseError::MigrationError(
-                        format!("Parameter '{}' must be a valid data type", param_def.name)
-                    ));
+                    return Err(DatabaseError::MigrationError(format!(
+                        "Parameter '{}' must be a valid data type",
+                        param_def.name
+                    )));
                 }
-            },
+            }
             ParameterType::SqlExpression => {
                 if value.trim().is_empty() {
-                    return Err(DatabaseError::MigrationError(
-                        format!("Parameter '{}' cannot be empty SQL expression", param_def.name)
-                    ));
+                    return Err(DatabaseError::MigrationError(format!(
+                        "Parameter '{}' cannot be empty SQL expression",
+                        param_def.name
+                    )));
                 }
-            },
-        }
-        
-        if let Some(ref regex_pattern) = param_def.validation_regex {
-            let regex = regex::Regex::new(regex_pattern)
-                .map_err(|e| DatabaseError::MigrationError(
-                    format!("Invalid validation regex for parameter '{}': {}", param_def.name, e)
-                ))?;
-            
-            if !regex.is_match(value) {
-                return Err(DatabaseError::MigrationError(
-                    format!("Parameter '{}' does not match required pattern", param_def.name)
-                ));
             }
         }
-        
+
+        if let Some(ref regex_pattern) = param_def.validation_regex {
+            let regex = regex::Regex::new(regex_pattern).map_err(|e| {
+                DatabaseError::MigrationError(format!(
+                    "Invalid validation regex for parameter '{}': {}",
+                    param_def.name, e
+                ))
+            })?;
+
+            if !regex.is_match(value) {
+                return Err(DatabaseError::MigrationError(format!(
+                    "Parameter '{}' does not match required pattern",
+                    param_def.name
+                )));
+            }
+        }
+
         Ok(())
     }
-    
+
     fn render_template(
         &self,
         template: &str,
         params: &HashMap<String, String>,
     ) -> DatabaseResult<String> {
         let mut result = template.to_string();
-        
+
         for (key, value) in params {
             let placeholder = format!("{{{{{}}}}}", key);
             result = result.replace(&placeholder, value);
         }
-        
+
         for optional_param in &self.optional_params {
             if let Some(ref default_value) = optional_param.default_value {
                 if !params.contains_key(&optional_param.name) {
@@ -276,24 +287,25 @@ impl MigrationTemplate {
                 }
             }
         }
-        
+
         if result.contains("{{") && result.contains("}}") {
             let remaining_placeholders: Vec<&str> = result
                 .split("{{")
                 .skip(1)
                 .filter_map(|s| s.split("}}").next())
                 .collect();
-            
+
             if !remaining_placeholders.is_empty() {
-                return Err(DatabaseError::MigrationError(
-                    format!("Unresolved template placeholders: {:?}", remaining_placeholders)
-                ));
+                return Err(DatabaseError::MigrationError(format!(
+                    "Unresolved template placeholders: {:?}",
+                    remaining_placeholders
+                )));
             }
         }
-        
+
         Ok(result)
     }
-    
+
     pub fn create_table_template() -> Self {
         Self {
             name: "create_table".to_string(),
@@ -306,9 +318,13 @@ CREATE TABLE {{table_name}} (
     {{columns}}
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);"#.to_string(),
-            down_template: Some(r#"-- +migrate Down
-DROP TABLE IF EXISTS {{table_name}};"#.to_string()),
+);"#
+            .to_string(),
+            down_template: Some(
+                r#"-- +migrate Down
+DROP TABLE IF EXISTS {{table_name}};"#
+                    .to_string(),
+            ),
             required_params: vec![
                 TemplateParameter {
                     name: "table_name".to_string(),
@@ -325,19 +341,17 @@ DROP TABLE IF EXISTS {{table_name}};"#.to_string()),
                     validation_regex: None,
                 },
             ],
-            optional_params: vec![
-                TemplateParameter {
-                    name: "auto_increment".to_string(),
-                    description: "AUTO_INCREMENT for primary key".to_string(),
-                    param_type: ParameterType::String,
-                    default_value: Some("".to_string()),
-                    validation_regex: None,
-                },
-            ],
+            optional_params: vec![TemplateParameter {
+                name: "auto_increment".to_string(),
+                description: "AUTO_INCREMENT for primary key".to_string(),
+                param_type: ParameterType::String,
+                default_value: Some("".to_string()),
+                validation_regex: None,
+            }],
             reversible: true,
         }
     }
-    
+
     pub fn add_column_template() -> Self {
         Self {
             name: "add_column".to_string(),
@@ -345,9 +359,13 @@ DROP TABLE IF EXISTS {{table_name}};"#.to_string()),
             migration_type: MigrationType::Schema,
             mode: MigrationMode::Online,
             up_template: r#"-- +migrate Up
-ALTER TABLE {{table_name}} ADD COLUMN {{column_name}} {{data_type}}{{not_null}}{{default_value}};"#.to_string(),
-            down_template: Some(r#"-- +migrate Down
-ALTER TABLE {{table_name}} DROP COLUMN {{column_name}};"#.to_string()),
+ALTER TABLE {{table_name}} ADD COLUMN {{column_name}} {{data_type}}{{not_null}}{{default_value}};"#
+                .to_string(),
+            down_template: Some(
+                r#"-- +migrate Down
+ALTER TABLE {{table_name}} DROP COLUMN {{column_name}};"#
+                    .to_string(),
+            ),
             required_params: vec![
                 TemplateParameter {
                     name: "table_name".to_string(),
@@ -390,7 +408,7 @@ ALTER TABLE {{table_name}} DROP COLUMN {{column_name}};"#.to_string()),
             reversible: true,
         }
     }
-    
+
     pub fn drop_column_template() -> Self {
         Self {
             name: "drop_column".to_string(),
@@ -398,7 +416,8 @@ ALTER TABLE {{table_name}} DROP COLUMN {{column_name}};"#.to_string()),
             migration_type: MigrationType::Schema,
             mode: MigrationMode::Offline,
             up_template: r#"-- +migrate Up
-ALTER TABLE {{table_name}} DROP COLUMN {{column_name}};"#.to_string(),
+ALTER TABLE {{table_name}} DROP COLUMN {{column_name}};"#
+                .to_string(),
             down_template: None,
             required_params: vec![
                 TemplateParameter {
@@ -420,7 +439,7 @@ ALTER TABLE {{table_name}} DROP COLUMN {{column_name}};"#.to_string(),
             reversible: false,
         }
     }
-    
+
     pub fn create_index_template() -> Self {
         Self {
             name: "create_index".to_string(),
@@ -428,9 +447,13 @@ ALTER TABLE {{table_name}} DROP COLUMN {{column_name}};"#.to_string(),
             migration_type: MigrationType::Index,
             mode: MigrationMode::Online,
             up_template: r#"-- +migrate Up
-CREATE{{unique}} INDEX {{index_name}} ON {{table_name}} ({{columns}});"#.to_string(),
-            down_template: Some(r#"-- +migrate Down
-DROP INDEX IF EXISTS {{index_name}};"#.to_string()),
+CREATE{{unique}} INDEX {{index_name}} ON {{table_name}} ({{columns}});"#
+                .to_string(),
+            down_template: Some(
+                r#"-- +migrate Down
+DROP INDEX IF EXISTS {{index_name}};"#
+                    .to_string(),
+            ),
             required_params: vec![
                 TemplateParameter {
                     name: "table_name".to_string(),
@@ -454,19 +477,17 @@ DROP INDEX IF EXISTS {{index_name}};"#.to_string()),
                     validation_regex: None,
                 },
             ],
-            optional_params: vec![
-                TemplateParameter {
-                    name: "unique".to_string(),
-                    description: "UNIQUE keyword for unique index".to_string(),
-                    param_type: ParameterType::String,
-                    default_value: Some("".to_string()),
-                    validation_regex: None,
-                },
-            ],
+            optional_params: vec![TemplateParameter {
+                name: "unique".to_string(),
+                description: "UNIQUE keyword for unique index".to_string(),
+                param_type: ParameterType::String,
+                default_value: Some("".to_string()),
+                validation_regex: None,
+            }],
             reversible: true,
         }
     }
-    
+
     pub fn data_migration_template() -> Self {
         Self {
             name: "data_migration".to_string(),
@@ -474,31 +495,31 @@ DROP INDEX IF EXISTS {{index_name}};"#.to_string()),
             migration_type: MigrationType::Data,
             mode: MigrationMode::Offline,
             up_template: r#"-- +migrate Up
-{{migration_sql}}"#.to_string(),
-            down_template: Some(r#"-- +migrate Down
-{{rollback_sql}}"#.to_string()),
-            required_params: vec![
-                TemplateParameter {
-                    name: "migration_sql".to_string(),
-                    description: "SQL statements for data migration".to_string(),
-                    param_type: ParameterType::SqlExpression,
-                    default_value: None,
-                    validation_regex: None,
-                },
-            ],
-            optional_params: vec![
-                TemplateParameter {
-                    name: "rollback_sql".to_string(),
-                    description: "SQL statements to rollback the migration".to_string(),
-                    param_type: ParameterType::SqlExpression,
-                    default_value: Some("-- No rollback available".to_string()),
-                    validation_regex: None,
-                },
-            ],
+{{migration_sql}}"#
+                .to_string(),
+            down_template: Some(
+                r#"-- +migrate Down
+{{rollback_sql}}"#
+                    .to_string(),
+            ),
+            required_params: vec![TemplateParameter {
+                name: "migration_sql".to_string(),
+                description: "SQL statements for data migration".to_string(),
+                param_type: ParameterType::SqlExpression,
+                default_value: None,
+                validation_regex: None,
+            }],
+            optional_params: vec![TemplateParameter {
+                name: "rollback_sql".to_string(),
+                description: "SQL statements to rollback the migration".to_string(),
+                param_type: ParameterType::SqlExpression,
+                default_value: Some("-- No rollback available".to_string()),
+                validation_regex: None,
+            }],
             reversible: true,
         }
     }
-    
+
     pub fn custom_template() -> Self {
         Self {
             name: "custom".to_string(),
@@ -506,27 +527,27 @@ DROP INDEX IF EXISTS {{index_name}};"#.to_string()),
             migration_type: MigrationType::Schema,
             mode: MigrationMode::Offline,
             up_template: r#"-- +migrate Up
-{{up_sql}}"#.to_string(),
-            down_template: Some(r#"-- +migrate Down
-{{down_sql}}"#.to_string()),
-            required_params: vec![
-                TemplateParameter {
-                    name: "up_sql".to_string(),
-                    description: "SQL statements for the migration".to_string(),
-                    param_type: ParameterType::SqlExpression,
-                    default_value: None,
-                    validation_regex: None,
-                },
-            ],
-            optional_params: vec![
-                TemplateParameter {
-                    name: "down_sql".to_string(),
-                    description: "SQL statements to rollback the migration".to_string(),
-                    param_type: ParameterType::SqlExpression,
-                    default_value: Some("-- No rollback available".to_string()),
-                    validation_regex: None,
-                },
-            ],
+{{up_sql}}"#
+                .to_string(),
+            down_template: Some(
+                r#"-- +migrate Down
+{{down_sql}}"#
+                    .to_string(),
+            ),
+            required_params: vec![TemplateParameter {
+                name: "up_sql".to_string(),
+                description: "SQL statements for the migration".to_string(),
+                param_type: ParameterType::SqlExpression,
+                default_value: None,
+                validation_regex: None,
+            }],
+            optional_params: vec![TemplateParameter {
+                name: "down_sql".to_string(),
+                description: "SQL statements to rollback the migration".to_string(),
+                param_type: ParameterType::SqlExpression,
+                default_value: Some("-- No rollback available".to_string()),
+                validation_regex: None,
+            }],
             reversible: true,
         }
     }
@@ -538,51 +559,61 @@ impl MigrationGenerator {
     pub fn generate_timestamp_version() -> MigrationVersion {
         super::timestamp_to_version(SystemTime::now())
     }
-    
+
     pub fn generate_sequential_version(current_version: MigrationVersion) -> MigrationVersion {
         current_version.next()
     }
-    
+
     pub fn generate_migration_filename(version: MigrationVersion, name: &str) -> String {
         format!("{}_{}.sql", version, name.to_lowercase().replace(' ', "_"))
     }
-    
+
     pub fn save_migration_to_file(
         migration: &Migration,
         directory: &str,
         filename: &str,
     ) -> DatabaseResult<String> {
-        std::fs::create_dir_all(directory)
-            .map_err(|e| DatabaseError::IoError(e.to_string()))?;
-        
+        std::fs::create_dir_all(directory).map_err(|e| DatabaseError::IoError(e.to_string()))?;
+
         let file_path = format!("{}/{}", directory, filename);
-        
+
         let mut content = String::new();
         content.push_str(&format!("-- Migration: {}\n", migration.metadata.name));
         content.push_str(&format!("-- Version: {}\n", migration.metadata.version));
-        content.push_str(&format!("-- Type: {:?}\n", migration.metadata.migration_type));
+        content.push_str(&format!(
+            "-- Type: {:?}\n",
+            migration.metadata.migration_type
+        ));
         content.push_str(&format!("-- Mode: {:?}\n", migration.metadata.mode));
         content.push_str(&format!("-- Author: {}\n", migration.metadata.author));
-        content.push_str(&format!("-- Created: {:?}\n", migration.metadata.created_at));
-        
+        content.push_str(&format!(
+            "-- Created: {:?}\n",
+            migration.metadata.created_at
+        ));
+
         if !migration.metadata.dependencies.is_empty() {
-            content.push_str(&format!("-- Dependencies: {:?}\n", migration.metadata.dependencies));
+            content.push_str(&format!(
+                "-- Dependencies: {:?}\n",
+                migration.metadata.dependencies
+            ));
         }
-        
-        content.push_str(&format!("-- Reversible: {}\n", migration.metadata.reversible));
+
+        content.push_str(&format!(
+            "-- Reversible: {}\n",
+            migration.metadata.reversible
+        ));
         content.push_str(&format!("-- Checksum: {}\n", migration.metadata.checksum));
         content.push('\n');
-        
+
         content.push_str(&migration.up_script);
-        
+
         if let Some(ref down_script) = migration.down_script {
             content.push_str("\n\n");
             content.push_str(down_script);
         }
-        
-        std::fs::write(&file_path, content)
-            .map_err(|e| DatabaseError::IoError(e.to_string()))?;
-        
+
+        std::fs::write(&file_path, content).map_err(|e| DatabaseError::IoError(e.to_string()))?;
+
         Ok(file_path)
     }
 }

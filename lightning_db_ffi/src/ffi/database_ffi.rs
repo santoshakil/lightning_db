@@ -2,14 +2,14 @@
 
 use crate::error::{clear_last_error, set_last_error};
 use crate::handle_registry::HandleRegistry;
-use crate::panic_guard::{ffi_guard_int, ffi_guard_bytes, ResourceGuard};
+use crate::panic_guard::{ffi_guard_bytes, ffi_guard_int, ResourceGuard};
 use crate::utils::{bytes_to_vec, c_str_to_string, ByteResult};
-use crate::validation::{validate_database_operation, validate_cache_size, ValidationResult};
+use crate::validation::{validate_cache_size, validate_database_operation, ValidationResult};
 use crate::{ffi_try_safe, CompressionType, ConsistencyLevel, ErrorCode, WalSyncMode};
 use lightning_db::{Database, LightningDbConfig};
-use std::sync::Arc;
 use std::os::raw::c_char;
 use std::path::Path;
+use std::sync::Arc;
 
 lazy_static::lazy_static! {
     pub(crate) static ref DATABASE_REGISTRY: HandleRegistry<Database> = HandleRegistry::<Database>::new();
@@ -52,7 +52,7 @@ pub unsafe extern "C" fn lightning_db_create(path: *const c_char, out_handle: *m
             Database::create(Path::new(&path_str), LightningDbConfig::default()),
             "database_create"
         );
-        
+
         let handle = DATABASE_REGISTRY.insert(db);
 
         // Safely write to output handle
@@ -97,7 +97,7 @@ pub unsafe extern "C" fn lightning_db_open(path: *const c_char, out_handle: *mut
             Database::open(Path::new(&path_str), LightningDbConfig::default()),
             "database_open"
         );
-        
+
         let handle = DATABASE_REGISTRY.insert(db);
 
         unsafe {
@@ -156,7 +156,7 @@ pub unsafe extern "C" fn lightning_db_create_with_config(
         if compression_val < 0 || compression_val > 3 {
             set_last_error(
                 ErrorCode::InvalidArgument,
-                format!("Invalid compression type: {}", compression_val)
+                format!("Invalid compression type: {}", compression_val),
             );
             return Err(ErrorCode::InvalidArgument);
         }
@@ -165,7 +165,7 @@ pub unsafe extern "C" fn lightning_db_create_with_config(
         if wal_mode_val < 0 || wal_mode_val > 2 {
             set_last_error(
                 ErrorCode::InvalidArgument,
-                format!("Invalid WAL sync mode: {}", wal_mode_val)
+                format!("Invalid WAL sync mode: {}", wal_mode_val),
             );
             return Err(ErrorCode::InvalidArgument);
         }
@@ -187,7 +187,10 @@ pub unsafe extern "C" fn lightning_db_create_with_config(
             ..Default::default()
         };
 
-        let db = ffi_try_safe!(Database::create(Path::new(&path_str), config), "database_create_with_config");
+        let db = ffi_try_safe!(
+            Database::create(Path::new(&path_str), config),
+            "database_create_with_config"
+        );
         let handle = DATABASE_REGISTRY.insert(db);
 
         unsafe {
@@ -249,7 +252,10 @@ pub unsafe extern "C" fn lightning_db_put(
         let db: Arc<lightning_db::Database> = match DATABASE_REGISTRY.get(handle) {
             Some(db) => db,
             None => {
-                set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
+                set_last_error(
+                    ErrorCode::DatabaseNotFound,
+                    "Invalid database handle".to_string(),
+                );
                 return Err(ErrorCode::DatabaseNotFound);
             }
         };
@@ -260,12 +266,18 @@ pub unsafe extern "C" fn lightning_db_put(
 
         // Validate that conversion was successful (empty vectors indicate validation failure)
         if key_data.is_empty() && key_len > 0 {
-            set_last_error(ErrorCode::BufferOverflow, "Key buffer validation failed".to_string());
+            set_last_error(
+                ErrorCode::BufferOverflow,
+                "Key buffer validation failed".to_string(),
+            );
             return Err(ErrorCode::BufferOverflow);
         }
-        
+
         if value_data.is_empty() && value_len > 0 {
-            set_last_error(ErrorCode::BufferOverflow, "Value buffer validation failed".to_string());
+            set_last_error(
+                ErrorCode::BufferOverflow,
+                "Value buffer validation failed".to_string(),
+            );
             return Err(ErrorCode::BufferOverflow);
         }
 
@@ -299,17 +311,23 @@ pub unsafe extern "C" fn lightning_db_get(
         let db: Arc<lightning_db::Database> = match DATABASE_REGISTRY.get(handle) {
             Some(db) => db,
             None => {
-                set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
+                set_last_error(
+                    ErrorCode::DatabaseNotFound,
+                    "Invalid database handle".to_string(),
+                );
                 return Err(ErrorCode::DatabaseNotFound);
             }
         };
 
         // Convert key with validation
         let key_data = unsafe { bytes_to_vec(key, key_len) };
-        
+
         // Validate that conversion was successful
         if key_data.is_empty() && key_len > 0 {
-            set_last_error(ErrorCode::BufferOverflow, "Key buffer validation failed".to_string());
+            set_last_error(
+                ErrorCode::BufferOverflow,
+                "Key buffer validation failed".to_string(),
+            );
             return Err(ErrorCode::BufferOverflow);
         }
 
@@ -384,7 +402,10 @@ pub extern "C" fn lightning_db_sync(handle: u64) -> i32 {
         let db: Arc<lightning_db::Database> = match DATABASE_REGISTRY.get(handle) {
             Some(db) => db,
             None => {
-                set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
+                set_last_error(
+                    ErrorCode::DatabaseNotFound,
+                    "Invalid database handle".to_string(),
+                );
                 return Err(ErrorCode::DatabaseNotFound);
             }
         };
@@ -404,7 +425,10 @@ pub extern "C" fn lightning_db_checkpoint(handle: u64) -> i32 {
         let db: Arc<lightning_db::Database> = match DATABASE_REGISTRY.get(handle) {
             Some(db) => db,
             None => {
-                set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
+                set_last_error(
+                    ErrorCode::DatabaseNotFound,
+                    "Invalid database handle".to_string(),
+                );
                 return Err(ErrorCode::DatabaseNotFound);
             }
         };
@@ -442,7 +466,10 @@ pub unsafe extern "C" fn lightning_db_put_with_consistency(
         let db: Arc<lightning_db::Database> = match DATABASE_REGISTRY.get(handle) {
             Some(db) => db,
             None => {
-                set_last_error(ErrorCode::DatabaseNotFound, "Invalid database handle".to_string());
+                set_last_error(
+                    ErrorCode::DatabaseNotFound,
+                    "Invalid database handle".to_string(),
+                );
                 return Err(ErrorCode::DatabaseNotFound);
             }
         };
@@ -453,12 +480,18 @@ pub unsafe extern "C" fn lightning_db_put_with_consistency(
 
         // Validate that conversion was successful
         if key_data.is_empty() && key_len > 0 {
-            set_last_error(ErrorCode::BufferOverflow, "Key buffer validation failed".to_string());
+            set_last_error(
+                ErrorCode::BufferOverflow,
+                "Key buffer validation failed".to_string(),
+            );
             return Err(ErrorCode::BufferOverflow);
         }
-        
+
         if value_data.is_empty() && value_len > 0 {
-            set_last_error(ErrorCode::BufferOverflow, "Value buffer validation failed".to_string());
+            set_last_error(
+                ErrorCode::BufferOverflow,
+                "Value buffer validation failed".to_string(),
+            );
             return Err(ErrorCode::BufferOverflow);
         }
 
@@ -467,7 +500,10 @@ pub unsafe extern "C" fn lightning_db_put_with_consistency(
             ConsistencyLevel::Strong => lightning_db::ConsistencyLevel::Strong,
         };
 
-        ffi_try_safe!(db.put_with_consistency(&key_data, &value_data, consistency_level), "database_put_consistency");
+        ffi_try_safe!(
+            db.put_with_consistency(&key_data, &value_data, consistency_level),
+            "database_put_consistency"
+        );
         Ok(())
     })
 }

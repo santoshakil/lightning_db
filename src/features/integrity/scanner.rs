@@ -1,12 +1,12 @@
-use crate::{Database, Result};
 use super::{
-    detector::{CorruptionDetector, DetectionResult, CorruptionType},
+    detector::{CorruptionDetector, CorruptionType, DetectionResult},
     validator::DataValidator,
 };
+use crate::{Database, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, Instant};
-use tokio::sync::{RwLock, Mutex, mpsc};
+use std::time::{Duration, Instant, SystemTime};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,7 +46,8 @@ impl ScanResult {
     }
 
     pub fn critical_corruptions(&self) -> Vec<&DetectionResult> {
-        self.corruptions.iter()
+        self.corruptions
+            .iter()
             .filter(|c| matches!(c.severity, super::detector::CorruptionSeverity::Critical))
             .collect()
     }
@@ -182,9 +183,13 @@ impl IntegrityScanner {
 
         for i in 0..sample_size {
             let page_id = (i * 10) + 1; // Sample every 10th page
-            
+
             if let Ok(page_data) = self.get_page_data(page_id).await {
-                if let Ok(page_corruptions) = self.detector.detect_page_corruption(page_id, &page_data).await {
+                if let Ok(page_corruptions) = self
+                    .detector
+                    .detect_page_corruption(page_id, &page_data)
+                    .await
+                {
                     corruptions.extend(page_corruptions);
                 }
             }
@@ -228,7 +233,11 @@ impl IntegrityScanner {
 
         for (idx, page_id) in page_ids.iter().enumerate() {
             if let Ok(page_data) = self.get_page_data(*page_id).await {
-                if let Ok(page_corruptions) = self.detector.detect_page_corruption(*page_id, &page_data).await {
+                if let Ok(page_corruptions) = self
+                    .detector
+                    .detect_page_corruption(*page_id, &page_data)
+                    .await
+                {
                     corruptions.extend(page_corruptions);
                 }
             }
@@ -281,26 +290,34 @@ impl IntegrityScanner {
             let handle = tokio::spawn(async move {
                 for page_id in start_page..end_page {
                     if let Ok(page_data) = Self::get_page_data_static(&database, page_id).await {
-                        if let Ok(page_corruptions) = detector.detect_page_corruption(page_id, &page_data).await {
+                        if let Ok(page_corruptions) =
+                            detector.detect_page_corruption(page_id, &page_data).await
+                        {
                             for corruption in page_corruptions {
                                 let _ = worker_tx.send((worker_id, page_id, corruption)).await;
                             }
                         }
 
                         if deep_validation {
-                            if let Ok(validation_result) = validator.validate_btree_node(&page_data).await {
+                            if let Ok(validation_result) =
+                                validator.validate_btree_node(&page_data).await
+                            {
                                 if !validation_result.is_valid {
                                     for error in validation_result.errors {
                                         let corruption = DetectionResult {
                                             page_id,
-                                            corruption_type: CorruptionType::BTreeStructureViolation,
+                                            corruption_type:
+                                                CorruptionType::BTreeStructureViolation,
                                             severity: super::detector::CorruptionSeverity::Medium,
                                             description: format!("Validation error: {:?}", error),
                                             affected_data: page_data.clone(),
-                                            recovery_hint: Some("Rebuild B+Tree structure".to_string()),
+                                            recovery_hint: Some(
+                                                "Rebuild B+Tree structure".to_string(),
+                                            ),
                                             timestamp: SystemTime::now(),
                                         };
-                                        let _ = worker_tx.send((worker_id, page_id, corruption)).await;
+                                        let _ =
+                                            worker_tx.send((worker_id, page_id, corruption)).await;
                                     }
                                 }
                             }
@@ -337,17 +354,27 @@ impl IntegrityScanner {
         Ok(corruptions)
     }
 
-    async fn sequential_scan(&self, _scan_id: u64, total_pages: u64) -> Result<Vec<DetectionResult>> {
+    async fn sequential_scan(
+        &self,
+        _scan_id: u64,
+        total_pages: u64,
+    ) -> Result<Vec<DetectionResult>> {
         let mut corruptions = Vec::new();
 
         for page_id in 1..=total_pages {
             if let Ok(page_data) = self.get_page_data(page_id).await {
-                if let Ok(page_corruptions) = self.detector.detect_page_corruption(page_id, &page_data).await {
+                if let Ok(page_corruptions) = self
+                    .detector
+                    .detect_page_corruption(page_id, &page_data)
+                    .await
+                {
                     corruptions.extend(page_corruptions);
                 }
 
                 if self.config.deep_validation {
-                    if let Ok(validation_result) = self.validator.validate_btree_node(&page_data).await {
+                    if let Ok(validation_result) =
+                        self.validator.validate_btree_node(&page_data).await
+                    {
                         if !validation_result.is_valid {
                             for error in validation_result.errors {
                                 corruptions.push(DetectionResult {
@@ -395,7 +422,10 @@ impl IntegrityScanner {
             if let Ok(scan_result) = self.quick_scan().await {
                 if scan_result.has_corruption() {
                     // Log corruption found during background scan
-                    eprintln!("Background scan found {} corruptions", scan_result.corruption_count());
+                    eprintln!(
+                        "Background scan found {} corruptions",
+                        scan_result.corruption_count()
+                    );
                 }
             }
 
@@ -412,7 +442,11 @@ impl IntegrityScanner {
         } else {
             0.0
         };
-        (percentage, progress.current_page, progress.corruptions_found)
+        (
+            percentage,
+            progress.current_page,
+            progress.corruptions_found,
+        )
     }
 
     pub async fn update_scan_interval(&self, interval: Duration) -> Result<()> {

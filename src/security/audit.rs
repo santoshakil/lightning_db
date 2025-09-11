@@ -91,7 +91,7 @@ impl Default for AuditConfig {
 impl AuditLogger {
     pub fn new(config: AuditConfig) -> SecurityResult<Self> {
         let (sender, receiver) = mpsc::channel(config.buffer_size);
-        
+
         if config.enabled {
             Self::start_background_writer(receiver, config.clone())?;
         }
@@ -108,25 +108,43 @@ impl AuditLogger {
             return Ok(());
         }
 
-        self.sender.send(event).await
-            .map_err(|e| SecurityError::AuditFailure(format!("Failed to queue audit event: {}", e)))?;
+        self.sender.send(event).await.map_err(|e| {
+            SecurityError::AuditFailure(format!("Failed to queue audit event: {}", e))
+        })?;
 
         Ok(())
     }
 
-    pub async fn log_authentication(&self, user_id: Option<String>, session_id: Option<String>, 
-                                   source_ip: Option<IpAddr>, success: bool, details: HashMap<String, String>) -> SecurityResult<()> {
+    pub async fn log_authentication(
+        &self,
+        user_id: Option<String>,
+        session_id: Option<String>,
+        source_ip: Option<IpAddr>,
+        success: bool,
+        details: HashMap<String, String>,
+    ) -> SecurityResult<()> {
         let event = AuditEvent {
             event_id: self.generate_event_id(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             event_type: AuditEventType::Authentication,
-            severity: if success { AuditSeverity::Low } else { AuditSeverity::Medium },
+            severity: if success {
+                AuditSeverity::Low
+            } else {
+                AuditSeverity::Medium
+            },
             user_id,
             session_id,
             source_ip,
             resource: "authentication".to_string(),
             action: "login".to_string(),
-            result: if success { AuditResult::Success } else { AuditResult::Failure },
+            result: if success {
+                AuditResult::Success
+            } else {
+                AuditResult::Failure
+            },
             details,
             metadata: HashMap::new(),
         };
@@ -134,20 +152,37 @@ impl AuditLogger {
         self.log_event(event).await
     }
 
-    pub async fn log_authorization(&self, user_id: Option<String>, session_id: Option<String>,
-                                  resource: String, action: String, allowed: bool, 
-                                  details: HashMap<String, String>) -> SecurityResult<()> {
+    pub async fn log_authorization(
+        &self,
+        user_id: Option<String>,
+        session_id: Option<String>,
+        resource: String,
+        action: String,
+        allowed: bool,
+        details: HashMap<String, String>,
+    ) -> SecurityResult<()> {
         let event = AuditEvent {
             event_id: self.generate_event_id(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             event_type: AuditEventType::Authorization,
-            severity: if allowed { AuditSeverity::Low } else { AuditSeverity::Medium },
+            severity: if allowed {
+                AuditSeverity::Low
+            } else {
+                AuditSeverity::Medium
+            },
             user_id,
             session_id,
             source_ip: None,
             resource,
             action,
-            result: if allowed { AuditResult::Success } else { AuditResult::Failure },
+            result: if allowed {
+                AuditResult::Success
+            } else {
+                AuditResult::Failure
+            },
             details,
             metadata: HashMap::new(),
         };
@@ -155,11 +190,20 @@ impl AuditLogger {
         self.log_event(event).await
     }
 
-    pub async fn log_data_access(&self, user_id: Option<String>, session_id: Option<String>,
-                                key: String, success: bool, details: HashMap<String, String>) -> SecurityResult<()> {
+    pub async fn log_data_access(
+        &self,
+        user_id: Option<String>,
+        session_id: Option<String>,
+        key: String,
+        success: bool,
+        details: HashMap<String, String>,
+    ) -> SecurityResult<()> {
         let event = AuditEvent {
             event_id: self.generate_event_id(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             event_type: AuditEventType::DataAccess,
             severity: AuditSeverity::Low,
             user_id,
@@ -167,7 +211,11 @@ impl AuditLogger {
             source_ip: None,
             resource: key,
             action: "read".to_string(),
-            result: if success { AuditResult::Success } else { AuditResult::Failure },
+            result: if success {
+                AuditResult::Success
+            } else {
+                AuditResult::Failure
+            },
             details,
             metadata: HashMap::new(),
         };
@@ -175,12 +223,21 @@ impl AuditLogger {
         self.log_event(event).await
     }
 
-    pub async fn log_data_modification(&self, user_id: Option<String>, session_id: Option<String>,
-                                     key: String, action: String, success: bool, 
-                                     details: HashMap<String, String>) -> SecurityResult<()> {
+    pub async fn log_data_modification(
+        &self,
+        user_id: Option<String>,
+        session_id: Option<String>,
+        key: String,
+        action: String,
+        success: bool,
+        details: HashMap<String, String>,
+    ) -> SecurityResult<()> {
         let event = AuditEvent {
             event_id: self.generate_event_id(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             event_type: AuditEventType::DataModification,
             severity: AuditSeverity::Medium,
             user_id,
@@ -188,7 +245,11 @@ impl AuditLogger {
             source_ip: None,
             resource: key,
             action,
-            result: if success { AuditResult::Success } else { AuditResult::Failure },
+            result: if success {
+                AuditResult::Success
+            } else {
+                AuditResult::Failure
+            },
             details,
             metadata: HashMap::new(),
         };
@@ -196,12 +257,20 @@ impl AuditLogger {
         self.log_event(event).await
     }
 
-    pub async fn log_security_violation(&self, user_id: Option<String>, session_id: Option<String>,
-                                       source_ip: Option<IpAddr>, violation_type: String,
-                                       details: HashMap<String, String>) -> SecurityResult<()> {
+    pub async fn log_security_violation(
+        &self,
+        user_id: Option<String>,
+        session_id: Option<String>,
+        source_ip: Option<IpAddr>,
+        violation_type: String,
+        details: HashMap<String, String>,
+    ) -> SecurityResult<()> {
         let event = AuditEvent {
             event_id: self.generate_event_id(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             event_type: AuditEventType::SecurityViolation,
             severity: AuditSeverity::High,
             user_id,
@@ -217,12 +286,22 @@ impl AuditLogger {
         self.log_event(event).await
     }
 
-    pub async fn log_system_access(&self, user_id: Option<String>, session_id: Option<String>,
-                                  source_ip: Option<IpAddr>, system_component: String,
-                                  action: String, success: bool, details: HashMap<String, String>) -> SecurityResult<()> {
+    pub async fn log_system_access(
+        &self,
+        user_id: Option<String>,
+        session_id: Option<String>,
+        source_ip: Option<IpAddr>,
+        system_component: String,
+        action: String,
+        success: bool,
+        details: HashMap<String, String>,
+    ) -> SecurityResult<()> {
         let event = AuditEvent {
             event_id: self.generate_event_id(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             event_type: AuditEventType::SystemAccess,
             severity: AuditSeverity::Medium,
             user_id,
@@ -230,7 +309,11 @@ impl AuditLogger {
             source_ip,
             resource: system_component,
             action,
-            result: if success { AuditResult::Success } else { AuditResult::Failure },
+            result: if success {
+                AuditResult::Success
+            } else {
+                AuditResult::Failure
+            },
             details,
             metadata: HashMap::new(),
         };
@@ -238,11 +321,20 @@ impl AuditLogger {
         self.log_event(event).await
     }
 
-    pub async fn log_key_management(&self, user_id: Option<String>, key_id: String,
-                                   action: String, success: bool, details: HashMap<String, String>) -> SecurityResult<()> {
+    pub async fn log_key_management(
+        &self,
+        user_id: Option<String>,
+        key_id: String,
+        action: String,
+        success: bool,
+        details: HashMap<String, String>,
+    ) -> SecurityResult<()> {
         let event = AuditEvent {
             event_id: self.generate_event_id(),
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             event_type: AuditEventType::KeyManagement,
             severity: AuditSeverity::High,
             user_id,
@@ -250,7 +342,11 @@ impl AuditLogger {
             source_ip: None,
             resource: key_id,
             action,
-            result: if success { AuditResult::Success } else { AuditResult::Failure },
+            result: if success {
+                AuditResult::Success
+            } else {
+                AuditResult::Failure
+            },
             details,
             metadata: HashMap::new(),
         };
@@ -280,7 +376,10 @@ impl AuditLogger {
         uuid::Uuid::new_v4().to_string()
     }
 
-    fn start_background_writer(mut receiver: Receiver<AuditEvent>, config: AuditConfig) -> SecurityResult<()> {
+    fn start_background_writer(
+        mut receiver: Receiver<AuditEvent>,
+        config: AuditConfig,
+    ) -> SecurityResult<()> {
         tokio::spawn(async move {
             let mut buffer = Vec::new();
             let mut last_sync = std::time::Instant::now();
@@ -288,8 +387,9 @@ impl AuditLogger {
             while let Some(event) = receiver.recv().await {
                 buffer.push(event);
 
-                if buffer.len() >= config.buffer_size || 
-                   last_sync.elapsed().as_secs() >= config.sync_interval_seconds {
+                if buffer.len() >= config.buffer_size
+                    || last_sync.elapsed().as_secs() >= config.sync_interval_seconds
+                {
                     if let Err(e) = Self::flush_buffer(&mut buffer, &config).await {
                         error!("Failed to flush audit buffer: {}", e);
                     }
@@ -307,7 +407,10 @@ impl AuditLogger {
         Ok(())
     }
 
-    async fn flush_buffer(buffer: &mut Vec<AuditEvent>, config: &AuditConfig) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn flush_buffer(
+        buffer: &mut Vec<AuditEvent>,
+        config: &AuditConfig,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if buffer.is_empty() {
             return Ok(());
         }
@@ -421,25 +524,27 @@ mod tests {
             ..AuditConfig::default()
         };
         let logger = AuditLogger::new(config).unwrap();
-        
-        let result = logger.log_authentication(
-            Some("user123".to_string()),
-            Some("session456".to_string()),
-            None,
-            true,
-            HashMap::new()
-        ).await;
-        
+
+        let result = logger
+            .log_authentication(
+                Some("user123".to_string()),
+                Some("session456".to_string()),
+                None,
+                true,
+                HashMap::new(),
+            )
+            .await;
+
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_security_metrics() {
         let metrics = SecurityMetrics::new();
-        
+
         metrics.increment_authentication_attempts();
         metrics.increment_authentication_failures();
-        
+
         let snapshot = metrics.get_metrics();
         assert_eq!(snapshot.authentication_attempts, 1);
         assert_eq!(snapshot.authentication_failures, 1);
@@ -452,7 +557,7 @@ mod tests {
             ..AuditConfig::default()
         };
         let logger = AuditLogger::new(config).unwrap();
-        
+
         assert!(!logger.should_log_severity(&AuditSeverity::Low));
         assert!(logger.should_log_severity(&AuditSeverity::Medium));
         assert!(logger.should_log_severity(&AuditSeverity::High));

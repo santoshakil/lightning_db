@@ -1,4 +1,3 @@
-pub mod cache_friendly;
 pub mod memory_layout;
 /// High-performance optimization modules for Lightning DB
 ///
@@ -11,7 +10,6 @@ pub mod memory_layout;
 /// - Memory pooling and alignment optimizations
 pub mod simd;
 
-pub use cache_friendly::{CacheFriendlyAlgorithms, CacheFriendlyBTree, CacheFriendlyLRU};
 pub use memory_layout::{
     CacheAlignedAllocator, CompactRecord, MappedBuffer, MemoryLayoutOps, ObjectPool,
     OptimizedBTreeNode,

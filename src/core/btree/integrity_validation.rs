@@ -1,11 +1,11 @@
-use super::{BTreeNode, NodeType, MIN_KEYS_PER_NODE, MAX_KEYS_PER_NODE};
+use super::{BTreeNode, NodeType, MAX_KEYS_PER_NODE, MIN_KEYS_PER_NODE};
 use crate::core::error::Result;
+use crate::core::storage::{Page, PageManagerTrait};
 use crate::utils::integrity::{
     data_integrity::DataIntegrityValidator,
     error_types::{IntegrityError, ValidationResult, ViolationSeverity},
     validation_config::{IntegrityConfig, OperationType, ValidationContext},
 };
-use crate::core::storage::{Page, PageManagerTrait};
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -60,7 +60,7 @@ impl BTreeIntegrityValidator {
     ) -> Result<TreeConsistencyReport> {
         let mut report = TreeConsistencyReport::new();
         let mut visited_pages = HashSet::new();
-        
+
         // Validate tree structure recursively
         self.validate_tree_recursive(
             root_page_id,
@@ -91,17 +91,19 @@ impl BTreeIntegrityValidator {
 
         // Validate basic node properties
         if node.page_id != page_id {
-            violations.push(crate::utils::integrity::error_types::create_critical_violation(
-                IntegrityError::StructuralViolation {
-                    structure: "btree_node".to_string(),
-                    violation: format!(
-                        "Node page_id {} doesn't match expected {}",
-                        node.page_id, page_id
-                    ),
-                },
-                &location,
-                "Node page ID mismatch indicates corruption",
-            ));
+            violations.push(
+                crate::utils::integrity::error_types::create_critical_violation(
+                    IntegrityError::StructuralViolation {
+                        structure: "btree_node".to_string(),
+                        violation: format!(
+                            "Node page_id {} doesn't match expected {}",
+                            node.page_id, page_id
+                        ),
+                    },
+                    &location,
+                    "Node page ID mismatch indicates corruption",
+                ),
+            );
         }
 
         // Validate entry count
@@ -124,14 +126,16 @@ impl BTreeIntegrityValidator {
 
                 // For leaf nodes, children array should be empty
                 if !node.children.is_empty() {
-                    violations.push(crate::utils::integrity::error_types::create_critical_violation(
-                        IntegrityError::StructuralViolation {
-                            structure: "btree_leaf".to_string(),
-                            violation: "Leaf node has child pointers".to_string(),
-                        },
-                        &location,
-                        "Leaf nodes should not have children",
-                    ));
+                    violations.push(
+                        crate::utils::integrity::error_types::create_critical_violation(
+                            IntegrityError::StructuralViolation {
+                                structure: "btree_leaf".to_string(),
+                                violation: "Leaf node has child pointers".to_string(),
+                            },
+                            &location,
+                            "Leaf nodes should not have children",
+                        ),
+                    );
                 }
             }
             NodeType::Internal => {
@@ -189,32 +193,30 @@ impl BTreeIntegrityValidator {
         for i in 1..node.entries.len() {
             let prev_key = &node.entries[i - 1].key;
             let curr_key = &node.entries[i].key;
-            
+
             match prev_key.cmp(curr_key) {
                 Ordering::Greater => {
-                    violations.push(crate::utils::integrity::error_types::create_critical_violation(
-                        IntegrityError::KeyOrderingViolation {
-                            index: i,
-                            details: format!(
-                                "Key at index {} is greater than key at index {}",
-                                i - 1,
-                                i
-                            ),
-                        },
-                        &location,
-                        "Key ordering violation breaks B+Tree invariants",
-                    ));
+                    violations.push(
+                        crate::utils::integrity::error_types::create_critical_violation(
+                            IntegrityError::KeyOrderingViolation {
+                                index: i,
+                                details: format!(
+                                    "Key at index {} is greater than key at index {}",
+                                    i - 1,
+                                    i
+                                ),
+                            },
+                            &location,
+                            "Key ordering violation breaks B+Tree invariants",
+                        ),
+                    );
                 }
                 Ordering::Equal => {
                     // Duplicate keys might be allowed depending on implementation
                     violations.push(crate::utils::integrity::error_types::create_violation(
                         IntegrityError::KeyOrderingViolation {
                             index: i,
-                            details: format!(
-                                "Duplicate key found at indices {} and {}",
-                                i - 1,
-                                i
-                            ),
+                            details: format!("Duplicate key found at indices {} and {}", i - 1, i),
                         },
                         ViolationSeverity::Warning,
                         &location,
@@ -299,13 +301,15 @@ impl BTreeIntegrityValidator {
         // Check if node can be serialized to a page
         let mut test_page = Page::new(page_id);
         if node.serialize_to_page(&mut test_page).is_err() {
-            violations.push(crate::utils::integrity::error_types::create_critical_violation(
-                IntegrityError::PageCapacityViolation {
-                    details: "Node data exceeds page capacity".to_string(),
-                },
-                &location,
-                "Node too large to serialize - requires split",
-            ));
+            violations.push(
+                crate::utils::integrity::error_types::create_critical_violation(
+                    IntegrityError::PageCapacityViolation {
+                        details: "Node data exceeds page capacity".to_string(),
+                    },
+                    &location,
+                    "Node too large to serialize - requires split",
+                ),
+            );
         }
 
         // Validate minimum key requirements for non-root nodes
@@ -408,7 +412,7 @@ impl BTreeIntegrityValidator {
                 } else {
                     Some(node.entries[i - 1].key.as_slice())
                 };
-                
+
                 let child_max_key = if i < node.entries.len() {
                     Some(node.entries[i].key.as_slice())
                 } else {
@@ -620,11 +624,16 @@ pub mod btree_validators {
 /// Integration with existing B+Tree operations
 pub trait ValidatedBTreeOperations {
     /// Insert with validation
-    fn insert_validated(&mut self, key: &[u8], value: &[u8], config: &IntegrityConfig) -> Result<()>;
-    
+    fn insert_validated(
+        &mut self,
+        key: &[u8],
+        value: &[u8],
+        config: &IntegrityConfig,
+    ) -> Result<()>;
+
     /// Delete with validation
     fn delete_validated(&mut self, key: &[u8], config: &IntegrityConfig) -> Result<bool>;
-    
+
     /// Get with validation
     fn get_validated(&self, key: &[u8], config: &IntegrityConfig) -> Result<Option<Vec<u8>>>;
 }

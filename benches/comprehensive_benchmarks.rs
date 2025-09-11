@@ -1,403 +1,264 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, BatchSize};
-use lightning_db::{Config, Database, TransactionMode};
-use tempfile::tempdir;
-use rand::{Rng, thread_rng, SeedableRng, rngs::StdRng};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use lightning_db::{Database, LightningDbConfig};
+use rand::{thread_rng, Rng};
+use std::hint::black_box;
+use std::sync::Arc;
 use std::time::Duration;
+use tempfile::tempdir;
 
-fn generate_key(idx: usize) -> Vec<u8> {
-    format!("benchmark_key_{:010}", idx).into_bytes()
-}
-
-fn generate_value(size: usize) -> Vec<u8> {
-    vec![0x42; size]
-}
-
-fn bench_sequential_writes(c: &mut Criterion) {
-    let mut group = c.benchmark_group("sequential_writes");
-    
-    for value_size in &[100, 1024, 4096, 16384] {
-        group.bench_with_input(
-            BenchmarkId::new("value_size", value_size),
-            value_size,
-            |b, &size| {
-                let dir = tempdir().unwrap();
-                let config = Config {
-                    path: dir.path().to_path_buf(),
-                    cache_size: 256 * 1024 * 1024,
-                    max_concurrent_transactions: 10,
-                    enable_compression: false,
-                    compression_level: None,
-                    fsync_mode: lightning_db::FsyncMode::Never,
-                    page_size: 4096,
-                    enable_encryption: false,
-                    encryption_key: None,
-                };
-                
-                let db = Database::open(config).unwrap();
-                let mut counter = 0;
-                
-                b.iter(|| {
-                    let mut tx = db.begin_transaction(TransactionMode::ReadWrite).unwrap();
-                    let key = generate_key(counter);
-                    let value = generate_value(size);
-                    tx.put(&key, &value).unwrap();
-                    tx.commit().unwrap();
-                    counter += 1;
-                });
-            }
-        );
-    }
-    
-    group.finish();
-}
-
-fn bench_random_reads(c: &mut Criterion) {
-    let mut group = c.benchmark_group("random_reads");
-    
-    for num_keys in &[1000, 10000, 100000] {
-        group.bench_with_input(
-            BenchmarkId::new("num_keys", num_keys),
-            num_keys,
-            |b, &num| {
-                let dir = tempdir().unwrap();
-                let config = Config {
-                    path: dir.path().to_path_buf(),
-                    cache_size: 256 * 1024 * 1024,
-                    max_concurrent_transactions: 10,
-                    enable_compression: false,
-                    compression_level: None,
-                    fsync_mode: lightning_db::FsyncMode::Never,
-                    page_size: 4096,
-                    enable_encryption: false,
-                    encryption_key: None,
-                };
-                
-                let db = Database::open(config).unwrap();
-                
-                // Pre-populate database
-                let mut tx = db.begin_transaction(TransactionMode::ReadWrite).unwrap();
-                for i in 0..num {
-                    let key = generate_key(i);
-                    let value = generate_value(1024);
-                    tx.put(&key, &value).unwrap();
-                    
-                    if i % 1000 == 999 {
-                        tx.commit().unwrap();
-                        tx = db.begin_transaction(TransactionMode::ReadWrite).unwrap();
-                    }
-                }
-                tx.commit().unwrap();
-                
-                let mut rng = StdRng::seed_from_u64(42);
-                
-                b.iter(|| {
-                    let tx = db.begin_transaction(TransactionMode::ReadOnly).unwrap();
-                    let key_idx = rng.gen_range(0..num);
-                    let key = generate_key(key_idx);
-                    black_box(tx.get(&key).unwrap());
-                });
-            }
-        );
-    }
-    
-    group.finish();
-}
-
-fn bench_batch_operations(c: &mut Criterion) {
-    let mut group = c.benchmark_group("batch_operations");
-    
-    for batch_size in &[10, 100, 1000] {
-        group.bench_with_input(
-            BenchmarkId::new("batch_size", batch_size),
-            batch_size,
-            |b, &size| {
-                let dir = tempdir().unwrap();
-                let config = Config {
-                    path: dir.path().to_path_buf(),
-                    cache_size: 256 * 1024 * 1024,
-                    max_concurrent_transactions: 10,
-                    enable_compression: false,
-                    compression_level: None,
-                    fsync_mode: lightning_db::FsyncMode::Never,
-                    page_size: 4096,
-                    enable_encryption: false,
-                    encryption_key: None,
-                };
-                
-                let db = Database::open(config).unwrap();
-                let mut counter = 0;
-                
-                b.iter(|| {
-                    let mut tx = db.begin_transaction(TransactionMode::ReadWrite).unwrap();
-                    for _ in 0..size {
-                        let key = generate_key(counter);
-                        let value = generate_value(1024);
-                        tx.put(&key, &value).unwrap();
-                        counter += 1;
-                    }
-                    tx.commit().unwrap();
-                });
-            }
-        );
-    }
-    
-    group.finish();
-}
-
-fn bench_range_scans(c: &mut Criterion) {
-    let mut group = c.benchmark_group("range_scans");
-    
-    let dir = tempdir().unwrap();
-    let config = Config {
-        path: dir.path().to_path_buf(),
-        cache_size: 256 * 1024 * 1024,
-        max_concurrent_transactions: 10,
-        enable_compression: false,
-        compression_level: None,
-        fsync_mode: lightning_db::FsyncMode::Never,
-        page_size: 4096,
-        enable_encryption: false,
-        encryption_key: None,
-    };
-    
-    let db = Database::open(config).unwrap();
-    
-    // Pre-populate with sorted keys
-    let mut tx = db.begin_transaction(TransactionMode::ReadWrite).unwrap();
-    for i in 0..100000 {
-        let key = generate_key(i);
-        let value = generate_value(100);
-        tx.put(&key, &value).unwrap();
-        
-        if i % 1000 == 999 {
-            tx.commit().unwrap();
-            tx = db.begin_transaction(TransactionMode::ReadWrite).unwrap();
-        }
-    }
-    tx.commit().unwrap();
-    
-    for range_size in &[10, 100, 1000, 10000] {
-        group.bench_with_input(
-            BenchmarkId::new("range_size", range_size),
-            range_size,
-            |b, &size| {
-                let mut rng = StdRng::seed_from_u64(42);
-                
-                b.iter(|| {
-                    let tx = db.begin_transaction(TransactionMode::ReadOnly).unwrap();
-                    let start_idx = rng.gen_range(0..100000 - size);
-                    let start_key = generate_key(start_idx);
-                    let end_key = generate_key(start_idx + size);
-                    
-                    let mut count = 0;
-                    for result in tx.range(&start_key..&end_key) {
-                        black_box(result.unwrap());
-                        count += 1;
-                    }
-                    assert!(count > 0);
-                });
-            }
-        );
-    }
-    
-    group.finish();
-}
-
-fn bench_concurrent_mixed_workload(c: &mut Criterion) {
-    let mut group = c.benchmark_group("concurrent_mixed");
-    group.sample_size(10);
+fn bench_write_operations(c: &mut Criterion) {
+    let mut group = c.benchmark_group("write_operations");
     group.measurement_time(Duration::from_secs(10));
     
-    for num_threads in &[1, 2, 4, 8] {
-        group.bench_with_input(
-            BenchmarkId::new("threads", num_threads),
-            num_threads,
-            |b, &threads| {
-                let dir = tempdir().unwrap();
-                let config = Config {
-                    path: dir.path().to_path_buf(),
-                    cache_size: 512 * 1024 * 1024,
-                    max_concurrent_transactions: threads * 2,
-                    enable_compression: false,
-                    compression_level: None,
-                    fsync_mode: lightning_db::FsyncMode::Never,
-                    page_size: 4096,
-                    enable_encryption: false,
-                    encryption_key: None,
-                };
-                
-                let db = std::sync::Arc::new(Database::open(config).unwrap());
-                
-                // Pre-populate
-                let mut tx = db.begin_transaction(TransactionMode::ReadWrite).unwrap();
-                for i in 0..10000 {
-                    let key = generate_key(i);
-                    let value = generate_value(1024);
-                    tx.put(&key, &value).unwrap();
-                    
-                    if i % 1000 == 999 {
-                        tx.commit().unwrap();
-                        tx = db.begin_transaction(TransactionMode::ReadWrite).unwrap();
-                    }
-                }
-                tx.commit().unwrap();
-                
-                b.iter_custom(|iters| {
-                    let start = std::time::Instant::now();
-                    
-                    let handles: Vec<_> = (0..threads)
-                        .map(|thread_id| {
-                            let db_clone = std::sync::Arc::clone(&db);
-                            std::thread::spawn(move || {
-                                let mut rng = StdRng::seed_from_u64(thread_id as u64);
-                                
-                                for _ in 0..iters / threads {
-                                    let op = rng.gen_range(0..100);
-                                    
-                                    if op < 50 {
-                                        // Read
-                                        let tx = db_clone.begin_transaction(TransactionMode::ReadOnly).unwrap();
-                                        let key_idx = rng.gen_range(0..10000);
-                                        let key = generate_key(key_idx);
-                                        black_box(tx.get(&key).unwrap());
-                                    } else if op < 80 {
-                                        // Write
-                                        let mut tx = db_clone.begin_transaction(TransactionMode::ReadWrite).unwrap();
-                                        let key_idx = rng.gen_range(10000..20000);
-                                        let key = generate_key(key_idx);
-                                        let value = generate_value(1024);
-                                        tx.put(&key, &value).unwrap();
-                                        tx.commit().unwrap();
-                                    } else {
-                                        // Range scan
-                                        let tx = db_clone.begin_transaction(TransactionMode::ReadOnly).unwrap();
-                                        let start_idx = rng.gen_range(0..9900);
-                                        let start_key = generate_key(start_idx);
-                                        let end_key = generate_key(start_idx + 100);
-                                        
-                                        for result in tx.range(&start_key..&end_key).take(10) {
-                                            black_box(result.unwrap());
-                                        }
-                                    }
-                                }
-                            })
-                        })
-                        .collect();
-                    
-                    for handle in handles {
-                        handle.join().unwrap();
-                    }
-                    
-                    start.elapsed()
-                });
-            }
-        );
-    }
-    
-    group.finish();
-}
-
-fn bench_compression_impact(c: &mut Criterion) {
-    let mut group = c.benchmark_group("compression");
-    
-    for compressed in &[false, true] {
-        let label = if *compressed { "with_compression" } else { "without_compression" };
+    for size in &[100, 1000, 10000] {
+        group.throughput(Throughput::Elements(*size as u64));
         
-        group.bench_with_input(
-            BenchmarkId::new("mode", label),
-            compressed,
-            |b, &use_compression| {
-                let dir = tempdir().unwrap();
-                let config = Config {
-                    path: dir.path().to_path_buf(),
-                    cache_size: 256 * 1024 * 1024,
-                    max_concurrent_transactions: 10,
-                    enable_compression: use_compression,
-                    compression_level: if use_compression { Some(3) } else { None },
-                    fsync_mode: lightning_db::FsyncMode::Never,
-                    page_size: 4096,
-                    enable_encryption: false,
-                    encryption_key: None,
-                };
-                
-                let db = Database::open(config).unwrap();
-                let mut counter = 0;
-                
-                // Use compressible data
-                let value = "Hello World! ".repeat(100).into_bytes();
-                
-                b.iter(|| {
-                    let mut tx = db.begin_transaction(TransactionMode::ReadWrite).unwrap();
-                    let key = generate_key(counter);
-                    tx.put(&key, &value).unwrap();
-                    tx.commit().unwrap();
-                    counter += 1;
-                });
-            }
-        );
+        group.bench_function(BenchmarkId::new("sequential", size), |b| {
+            let dir = tempdir().unwrap();
+            let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
+            let mut i = 0;
+            
+            b.iter(|| {
+                let key = format!("key_{:08}", i);
+                let value = format!("value_{:08}", i);
+                db.put(key.as_bytes(), value.as_bytes()).unwrap();
+                i += 1;
+            });
+        });
+        
+        group.bench_function(BenchmarkId::new("random", size), |b| {
+            let dir = tempdir().unwrap();
+            let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
+            let mut rng = thread_rng();
+            
+            b.iter(|| {
+                let key = format!("key_{:08}", rng.gen::<u32>());
+                let value = vec![0u8; 100];
+                db.put(key.as_bytes(), &value).unwrap();
+            });
+        });
     }
     
     group.finish();
 }
 
-fn bench_transaction_overhead(c: &mut Criterion) {
-    let mut group = c.benchmark_group("transaction_overhead");
+fn bench_read_operations(c: &mut Criterion) {
+    let mut group = c.benchmark_group("read_operations");
+    group.measurement_time(Duration::from_secs(10));
+    
+    for size in &[1000, 10000] {
+        let dir = tempdir().unwrap();
+        let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
+        
+        for i in 0..*size {
+            let key = format!("key_{:08}", i);
+            let value = format!("value_{:08}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+        
+        group.throughput(Throughput::Elements(*size as u64));
+        
+        group.bench_function(BenchmarkId::new("sequential", size), |b| {
+            let mut i = 0;
+            b.iter(|| {
+                let key = format!("key_{:08}", i % size);
+                black_box(db.get(key.as_bytes()).unwrap());
+                i += 1;
+            });
+        });
+        
+        group.bench_function(BenchmarkId::new("random", size), |b| {
+            let mut rng = thread_rng();
+            b.iter(|| {
+                let key = format!("key_{:08}", rng.gen::<u32>() % size);
+                black_box(db.get(key.as_bytes()).unwrap());
+            });
+        });
+    }
+    
+    group.finish();
+}
+
+fn bench_range_operations(c: &mut Criterion) {
+    let mut group = c.benchmark_group("range_operations");
     
     let dir = tempdir().unwrap();
-    let config = Config {
-        path: dir.path().to_path_buf(),
-        cache_size: 256 * 1024 * 1024,
-        max_concurrent_transactions: 100,
-        enable_compression: false,
-        compression_level: None,
-        fsync_mode: lightning_db::FsyncMode::Never,
-        page_size: 4096,
-        enable_encryption: false,
-        encryption_key: None,
-    };
+    let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
     
-    let db = Database::open(config).unwrap();
+    for i in 0..10000 {
+        let key = format!("key_{:08}", i);
+        let value = format!("value_{:08}", i);
+        db.put(key.as_bytes(), value.as_bytes()).unwrap();
+    }
     
-    group.bench_function("begin_readonly", |b| {
+    for range_size in &[10, 100, 1000] {
+        group.throughput(Throughput::Elements(*range_size as u64));
+        
+        group.bench_function(BenchmarkId::new("scan", range_size), |b| {
+            let mut start = 0;
+            b.iter(|| {
+                let start_key = format!("key_{:08}", start);
+                let end_key = format!("key_{:08}", start + range_size);
+                black_box(db.range(Some(start_key.as_bytes()), Some(end_key.as_bytes())).unwrap());
+                start = (start + 1) % (10000 - range_size);
+            });
+        });
+    }
+    
+    group.finish();
+}
+
+fn bench_transaction_operations(c: &mut Criterion) {
+    let mut group = c.benchmark_group("transactions");
+    
+    group.bench_function("simple_transaction", |b| {
+        let dir = tempdir().unwrap();
+        let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
+        let mut i = 0;
+        
         b.iter(|| {
-            let tx = db.begin_transaction(TransactionMode::ReadOnly).unwrap();
-            black_box(tx);
+            let tx = db.begin_transaction().unwrap();
+            for j in 0..10 {
+                let key = format!("tx_key_{}_{}", i, j);
+                let value = format!("tx_value_{}_{}", i, j);
+                db.put_tx(tx, key.as_bytes(), value.as_bytes()).unwrap();
+            }
+            db.commit_transaction(tx).unwrap();
+            i += 1;
         });
     });
     
-    group.bench_function("begin_readwrite", |b| {
+    group.bench_function("read_write_transaction", |b| {
+        let dir = tempdir().unwrap();
+        let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
+        
+        for i in 0..100 {
+            let key = format!("base_key_{}", i);
+            let value = format!("base_value_{}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+        
+        let mut i = 0;
         b.iter(|| {
-            let tx = db.begin_transaction(TransactionMode::ReadWrite).unwrap();
-            black_box(tx);
+            let tx = db.begin_transaction().unwrap();
+            
+            let read_key = format!("base_key_{}", i % 100);
+            black_box(db.get_tx(tx, read_key.as_bytes()).unwrap());
+            
+            let write_key = format!("new_key_{}", i);
+            let write_value = format!("new_value_{}", i);
+            db.put_tx(tx, write_key.as_bytes(), write_value.as_bytes()).unwrap();
+            
+            db.commit_transaction(tx).unwrap();
+            i += 1;
         });
     });
     
-    group.bench_function("commit_empty", |b| {
+    group.finish();
+}
+
+fn bench_concurrent_operations(c: &mut Criterion) {
+    let mut group = c.benchmark_group("concurrent");
+    group.measurement_time(Duration::from_secs(10));
+    
+    for num_threads in &[2, 4, 8] {
+        group.bench_function(BenchmarkId::new("writes", num_threads), |b| {
+            let dir = tempdir().unwrap();
+            let db = Arc::new(Database::create(dir.path(), LightningDbConfig::default()).unwrap());
+            
+            b.iter(|| {
+                let handles: Vec<_> = (0..*num_threads)
+                    .map(|t| {
+                        let db_clone = db.clone();
+                        std::thread::spawn(move || {
+                            for i in 0..100 {
+                                let key = format!("t{}_key_{}", t, i);
+                                let value = format!("t{}_value_{}", t, i);
+                                db_clone.put(key.as_bytes(), value.as_bytes()).unwrap();
+                            }
+                        })
+                    })
+                    .collect();
+                
+                for handle in handles {
+                    handle.join().unwrap();
+                }
+            });
+        });
+    }
+    
+    group.finish();
+}
+
+fn bench_compression(c: &mut Criterion) {
+    let mut group = c.benchmark_group("compression");
+    
+    let uncompressed_dir = tempdir().unwrap();
+    let mut config = LightningDbConfig::default();
+    let db_uncompressed = Database::create(uncompressed_dir.path(), config.clone()).unwrap();
+    
+    let compressed_dir = tempdir().unwrap();
+    config.compression_enabled = true;
+    config.compression_type = 2;
+    let db_compressed = Database::create(compressed_dir.path(), config).unwrap();
+    
+    let data = vec![42u8; 1000];
+    
+    group.bench_function("uncompressed_write", |b| {
+        let mut i = 0;
         b.iter(|| {
-            let tx = db.begin_transaction(TransactionMode::ReadWrite).unwrap();
-            tx.commit().unwrap();
+            let key = format!("key_{}", i);
+            db_uncompressed.put(key.as_bytes(), &data).unwrap();
+            i += 1;
         });
     });
     
-    group.bench_function("rollback", |b| {
+    group.bench_function("compressed_write", |b| {
+        let mut i = 0;
         b.iter(|| {
-            let tx = db.begin_transaction(TransactionMode::ReadWrite).unwrap();
-            drop(tx); // Implicit rollback
+            let key = format!("key_{}", i);
+            db_compressed.put(key.as_bytes(), &data).unwrap();
+            i += 1;
         });
     });
+    
+    group.finish();
+}
+
+fn bench_large_values(c: &mut Criterion) {
+    let mut group = c.benchmark_group("large_values");
+    group.sample_size(10);
+    
+    for size_kb in &[1, 10, 100, 1000] {
+        let value_size = size_kb * 1024;
+        group.throughput(Throughput::Bytes(value_size as u64));
+        
+        group.bench_function(BenchmarkId::new("write", size_kb), |b| {
+            let dir = tempdir().unwrap();
+            let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
+            let value = vec![0u8; value_size];
+            let mut i = 0;
+            
+            b.iter(|| {
+                let key = format!("large_key_{}", i);
+                db.put(key.as_bytes(), &value).unwrap();
+                i += 1;
+            });
+        });
+    }
     
     group.finish();
 }
 
 criterion_group!(
     benches,
-    bench_sequential_writes,
-    bench_random_reads,
-    bench_batch_operations,
-    bench_range_scans,
-    bench_concurrent_mixed_workload,
-    bench_compression_impact,
-    bench_transaction_overhead
+    bench_write_operations,
+    bench_read_operations,
+    bench_range_operations,
+    bench_transaction_operations,
+    bench_concurrent_operations,
+    bench_compression,
+    bench_large_values
 );
 
 criterion_main!(benches);

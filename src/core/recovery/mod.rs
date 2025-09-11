@@ -10,43 +10,37 @@
 //! - Redundant metadata storage
 //! - Recovery orchestration
 
-pub mod enhanced_recovery;
+pub mod corruption_recovery;
 pub mod crash_recovery_manager;
-pub mod test_error_propagation;
 pub mod io_recovery;
 pub mod memory_recovery;
 pub mod transaction_recovery;
-pub mod corruption_recovery;
-pub mod comprehensive_recovery;
+pub mod recovery_utils;
 
-pub use enhanced_recovery::{
-    DoubleWriteBuffer, EnhancedWalRecovery, RecoveryProgress, RecoveryStats, RedundantMetadata,
+pub use corruption_recovery::{
+    CorruptionHealthReport, CorruptionHealthStatus, CorruptionRecoveryConfig,
+    CorruptionRecoveryManager, CorruptionRecoveryStats, CorruptionReport, CorruptionScanReport,
+    CorruptionSeverity, CorruptionType, RepairResult, RepairStrategy, ValidationLevel,
 };
 pub use crash_recovery_manager::{
-    CrashRecoveryManager, RecoveryStage, RecoveryStageResult, RecoveryState, 
-    RollbackData, RollbackAction, RecoveryLockManager, ResourceChecker, RollbackManager,
+    CrashRecoveryManager, RecoveryLockManager, RecoveryStage, RecoveryStageResult, RecoveryState,
+    ResourceChecker, RollbackAction, RollbackData, RollbackManager,
 };
 pub use io_recovery::{
-    IoRecoveryManager, IoRecoveryConfig, IoRecoveryStats, DiskHealthReport, DiskHealthStatus,
+    DiskHealthReport, DiskHealthStatus, IoRecoveryConfig, IoRecoveryManager, IoRecoveryStats,
     ReliableFileHandle,
 };
 pub use memory_recovery::{
-    MemoryRecoveryManager, MemoryRecoveryConfig, MemoryStats, MemoryHealthReport, 
-    MemoryHealthStatus, MemoryPool, CacheManager,
+    CacheManager, MemoryHealthReport, MemoryHealthStatus, MemoryPool, MemoryRecoveryConfig,
+    MemoryRecoveryManager, MemoryStats,
 };
 pub use transaction_recovery::{
-    TransactionRecoveryManager, TransactionRecoveryConfig, TransactionRecoveryStats,
-    TransactionInfo, TransactionOperation, TransactionState, OperationType,
-    ConflictResolutionStrategy, TransactionHealthReport, TransactionHealthStatus,
+    ConflictResolutionStrategy, OperationType, TransactionHealthReport, TransactionHealthStatus,
+    TransactionInfo, TransactionOperation, TransactionRecoveryConfig, TransactionRecoveryManager,
+    TransactionRecoveryStats, TransactionState,
 };
-pub use corruption_recovery::{
-    CorruptionRecoveryManager, CorruptionRecoveryConfig, CorruptionRecoveryStats,
-    CorruptionReport, CorruptionType, CorruptionSeverity, RepairStrategy, RepairResult,
-    ValidationLevel, CorruptionScanReport, CorruptionHealthReport, CorruptionHealthStatus,
-};
-pub use comprehensive_recovery::{
-    ComprehensiveRecoveryManager, RecoveryConfiguration, ComprehensiveHealthReport,
-    OverallHealthStatus,
+pub use recovery_utils::{
+    DoubleWriteBuffer, EnhancedWalRecovery, RecoveryProgress, RecoveryStats, RedundantMetadata,
 };
 
 use crate::core::error::Result;
@@ -55,7 +49,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 /// Recovery manager that coordinates all recovery operations
-/// 
+///
 /// This is the main entry point for database recovery operations.
 /// It provides both legacy compatibility and access to the new comprehensive
 /// crash recovery system.
@@ -77,7 +71,10 @@ impl RecoveryManager {
     }
 
     /// Create a new recovery manager with comprehensive crash recovery
-    pub fn with_crash_recovery(db_path: impl AsRef<Path>, config: LightningDbConfig) -> Result<Self> {
+    pub fn with_crash_recovery(
+        db_path: impl AsRef<Path>,
+        config: LightningDbConfig,
+    ) -> Result<Self> {
         let crash_recovery_manager = Some(CrashRecoveryManager::new(
             db_path.as_ref(),
             config.clone(),
@@ -98,7 +95,7 @@ impl RecoveryManager {
     }
 
     /// Perform full database recovery with comprehensive error handling
-    /// 
+    ///
     /// This method will use the new crash recovery system if available,
     /// otherwise fall back to the legacy recovery method.
     pub fn recover(&self) -> Result<Database> {
@@ -130,27 +127,28 @@ impl RecoveryManager {
         // Step 2: Recover from double-write buffer
         self.progress.set_phase("Checking double-write buffer");
         let dwb = DoubleWriteBuffer::new(Path::new(&self.db_path), header.page_size as usize, 32)
-            .map_err(|e| {
-                crate::core::error::Error::PartialRecoveryFailure {
-                    completed_stages: vec!["Metadata Recovery".to_string()],
-                    failed_stage: "Double-Write Buffer Setup".to_string(),
-                    cause: Box::new(e),
-                    rollback_available: false,
-                }
-            })?;
+            .map_err(|e| crate::core::error::Error::PartialRecoveryFailure {
+            completed_stages: vec!["Metadata Recovery".to_string()],
+            failed_stage: "Double-Write Buffer Setup".to_string(),
+            cause: Box::new(e),
+            rollback_available: false,
+        })?;
 
-        let recovered_pages = dwb.recover(|page_id, _data| {
-            // In real implementation, write to page manager
-            println!("Recovered page {} from double-write buffer", page_id);
-            Ok(())
-        }).map_err(|e| {
-            crate::core::error::Error::PartialRecoveryFailure {
-                completed_stages: vec!["Metadata Recovery".to_string(), "Double-Write Buffer Setup".to_string()],
+        let recovered_pages = dwb
+            .recover(|page_id, _data| {
+                // In real implementation, write to page manager
+                println!("Recovered page {} from double-write buffer", page_id);
+                Ok(())
+            })
+            .map_err(|e| crate::core::error::Error::PartialRecoveryFailure {
+                completed_stages: vec![
+                    "Metadata Recovery".to_string(),
+                    "Double-Write Buffer Setup".to_string(),
+                ],
                 failed_stage: "Double-Write Buffer Recovery".to_string(),
                 cause: Box::new(e),
                 rollback_available: false,
-            }
-        })?;
+            })?;
 
         if recovered_pages > 0 {
             println!(
@@ -164,21 +162,21 @@ impl RecoveryManager {
         let wal_recovery =
             EnhancedWalRecovery::new(Path::new(&self.db_path).join("wal"), self.progress.clone());
 
-        let stats = wal_recovery.recover(|_entry| {
-            // In real implementation, apply entry to database
-            Ok(())
-        }).map_err(|e| {
-            crate::core::error::Error::PartialRecoveryFailure {
+        let stats = wal_recovery
+            .recover(|_entry| {
+                // In real implementation, apply entry to database
+                Ok(())
+            })
+            .map_err(|e| crate::core::error::Error::PartialRecoveryFailure {
                 completed_stages: vec![
-                    "Metadata Recovery".to_string(), 
+                    "Metadata Recovery".to_string(),
                     "Double-Write Buffer Setup".to_string(),
                     "Double-Write Buffer Recovery".to_string(),
                 ],
                 failed_stage: "WAL Recovery".to_string(),
                 cause: Box::new(e),
                 rollback_available: false,
-            }
-        })?;
+            })?;
 
         println!("WAL recovery stats: {:?}", stats);
 
@@ -201,7 +199,7 @@ impl RecoveryManager {
     pub fn needs_recovery(&self) -> Result<bool> {
         // Check for recovery indicators:
         // 1. Incomplete shutdown marker
-        // 2. Non-empty double-write buffer  
+        // 2. Non-empty double-write buffer
         // 3. WAL entries after last checkpoint
         // 4. Database lock files
         // 5. Consistency markers
@@ -223,12 +221,12 @@ impl RecoveryManager {
         // Check double-write buffer
         let dwb_path = db_path.join("double_write.buffer");
         if dwb_path.exists() {
-            let dwb_size = std::fs::metadata(&dwb_path).map_err(|e| {
-                crate::core::error::Error::RecoveryDependencyError {
+            let dwb_size = std::fs::metadata(&dwb_path)
+                .map_err(|e| crate::core::error::Error::RecoveryDependencyError {
                     dependency: "double_write.buffer".to_string(),
                     issue: format!("Cannot check file: {}", e),
-                }
-            })?.len();
+                })?
+                .len();
             if dwb_size > 8 {
                 // Has more than just header
                 return Ok(true);

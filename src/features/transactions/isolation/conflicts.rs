@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, warn, error};
+use tracing::{debug, error, warn};
 
 use super::levels::IsolationLevel;
 use super::locks::TxId;
@@ -155,12 +155,7 @@ impl ConflictResolver {
     }
 
     /// Record a range read operation
-    pub fn record_range_read(
-        &self,
-        tx_id: TxId,
-        start_key: Option<Bytes>,
-        end_key: Option<Bytes>,
-    ) {
+    pub fn record_range_read(&self, tx_id: TxId, start_key: Option<Bytes>, end_key: Option<Bytes>) {
         if let Some(range_reads) = self.range_reads.write().get_mut(&tx_id) {
             range_reads.push((start_key, end_key));
         }
@@ -190,10 +185,12 @@ impl ConflictResolver {
 
                 self.add_conflict(conflict.clone());
                 self.stats.write().write_write_conflicts += 1;
-                
-                warn!("Write-write conflict detected: tx {} vs tx {} on key {:?}", 
-                      tx_id, other_tx, key);
-                
+
+                warn!(
+                    "Write-write conflict detected: tx {} vs tx {} on key {:?}",
+                    tx_id, other_tx, key
+                );
+
                 return Ok(Some(conflict));
             }
         }
@@ -233,10 +230,12 @@ impl ConflictResolver {
                 self.add_conflict(conflict.clone());
                 self.add_serialization_dependency(reading_tx, writing_tx);
                 self.stats.write().read_write_conflicts += 1;
-                
-                warn!("Read-write conflict detected: tx {} read key {:?} that tx {} is writing", 
-                      reading_tx, key, writing_tx);
-                
+
+                warn!(
+                    "Read-write conflict detected: tx {} read key {:?} that tx {} is writing",
+                    reading_tx, key, writing_tx
+                );
+
                 return Ok(Some(conflict));
             }
         }
@@ -284,10 +283,10 @@ impl ConflictResolver {
 
                     self.add_conflict(conflict.clone());
                     self.stats.write().phantom_reads += 1;
-                    
+
                     warn!("Phantom read detected: tx {} range query affected by tx {} inserting key {:?}", 
                           tx_id, writing_tx, new_key);
-                    
+
                     return Ok(Some(conflict));
                 }
             }
@@ -300,7 +299,7 @@ impl ConflictResolver {
     pub fn check_serialization_anomaly(&self) -> Result<Vec<Conflict>> {
         let graph = self.serialization_graph.read();
         let cycles = self.find_cycles(&graph)?;
-        
+
         let mut conflicts = Vec::new();
         for cycle in cycles {
             let conflict = Conflict {
@@ -310,14 +309,20 @@ impl ConflictResolver {
                 key: None,
                 range: None,
                 timestamp: Instant::now(),
-                description: format!("Serialization anomaly: cycle detected in transactions {:?}", cycle),
+                description: format!(
+                    "Serialization anomaly: cycle detected in transactions {:?}",
+                    cycle
+                ),
             };
 
             self.add_conflict(conflict.clone());
             conflicts.push(conflict);
             self.stats.write().serialization_anomalies += 1;
-            
-            error!("Serialization anomaly detected: cycle in transactions {:?}", cycle);
+
+            error!(
+                "Serialization anomaly detected: cycle in transactions {:?}",
+                cycle
+            );
         }
 
         Ok(conflicts)
@@ -361,8 +366,11 @@ impl ConflictResolver {
                 };
 
                 self.add_conflict(conflict.clone());
-                warn!("Write skew anomaly detected between tx {} and tx {}", tx1, tx2);
-                
+                warn!(
+                    "Write skew anomaly detected between tx {} and tx {}",
+                    tx1, tx2
+                );
+
                 return Ok(Some(conflict));
             }
         }
@@ -378,42 +386,69 @@ impl ConflictResolver {
     ) -> Result<ConflictResolution> {
         let resolution = match (conflict.conflict_type.clone(), isolation_level) {
             // Read uncommitted allows most conflicts
-            (ConflictType::WriteWrite, IsolationLevel::ReadUncommitted) => ConflictResolution::Allow,
+            (ConflictType::WriteWrite, IsolationLevel::ReadUncommitted) => {
+                ConflictResolution::Allow
+            }
             (ConflictType::WriteRead, IsolationLevel::ReadUncommitted) => ConflictResolution::Allow,
             (ConflictType::ReadWrite, IsolationLevel::ReadUncommitted) => ConflictResolution::Allow,
-            (ConflictType::PhantomRead, IsolationLevel::ReadUncommitted) => ConflictResolution::Allow,
+            (ConflictType::PhantomRead, IsolationLevel::ReadUncommitted) => {
+                ConflictResolution::Allow
+            }
             (ConflictType::WriteSkew, IsolationLevel::ReadUncommitted) => ConflictResolution::Allow,
-            
+
             // Read committed prevents dirty reads but allows others
-            (ConflictType::WriteWrite, IsolationLevel::ReadCommitted) => ConflictResolution::AbortNewer,
-            (ConflictType::WriteRead, IsolationLevel::ReadCommitted) => ConflictResolution::AbortNewer,
+            (ConflictType::WriteWrite, IsolationLevel::ReadCommitted) => {
+                ConflictResolution::AbortNewer
+            }
+            (ConflictType::WriteRead, IsolationLevel::ReadCommitted) => {
+                ConflictResolution::AbortNewer
+            }
             (ConflictType::ReadWrite, IsolationLevel::ReadCommitted) => ConflictResolution::Allow,
             (ConflictType::PhantomRead, IsolationLevel::ReadCommitted) => ConflictResolution::Allow,
             (ConflictType::WriteSkew, IsolationLevel::ReadCommitted) => ConflictResolution::Allow,
-            
+
             // Repeatable read prevents non-repeatable reads
-            (ConflictType::WriteWrite, IsolationLevel::RepeatableRead) => ConflictResolution::AbortNewer,
-            (ConflictType::WriteRead, IsolationLevel::RepeatableRead) => ConflictResolution::AbortNewer,
-            (ConflictType::ReadWrite, IsolationLevel::RepeatableRead) => ConflictResolution::AbortConflicting,
-            (ConflictType::PhantomRead, IsolationLevel::RepeatableRead) => ConflictResolution::Allow,
+            (ConflictType::WriteWrite, IsolationLevel::RepeatableRead) => {
+                ConflictResolution::AbortNewer
+            }
+            (ConflictType::WriteRead, IsolationLevel::RepeatableRead) => {
+                ConflictResolution::AbortNewer
+            }
+            (ConflictType::ReadWrite, IsolationLevel::RepeatableRead) => {
+                ConflictResolution::AbortConflicting
+            }
+            (ConflictType::PhantomRead, IsolationLevel::RepeatableRead) => {
+                ConflictResolution::Allow
+            }
             (ConflictType::WriteSkew, IsolationLevel::RepeatableRead) => ConflictResolution::Allow,
-            
+
             // Serialization anomalies are generally allowed at lower isolation levels
-            (ConflictType::SerializationAnomaly, IsolationLevel::ReadUncommitted) => ConflictResolution::Allow,
-            (ConflictType::SerializationAnomaly, IsolationLevel::ReadCommitted) => ConflictResolution::Allow,
-            (ConflictType::SerializationAnomaly, IsolationLevel::RepeatableRead) => ConflictResolution::Allow,
-            
+            (ConflictType::SerializationAnomaly, IsolationLevel::ReadUncommitted) => {
+                ConflictResolution::Allow
+            }
+            (ConflictType::SerializationAnomaly, IsolationLevel::ReadCommitted) => {
+                ConflictResolution::Allow
+            }
+            (ConflictType::SerializationAnomaly, IsolationLevel::RepeatableRead) => {
+                ConflictResolution::Allow
+            }
+
             // Serializable prevents all anomalies
             (_, IsolationLevel::Serializable) => ConflictResolution::AbortNewer,
-            
+
             // Snapshot isolation
-            (ConflictType::WriteWrite, IsolationLevel::Snapshot) => ConflictResolution::AbortConflicting,
+            (ConflictType::WriteWrite, IsolationLevel::Snapshot) => {
+                ConflictResolution::AbortConflicting
+            }
             (ConflictType::WriteSkew, IsolationLevel::Snapshot) => ConflictResolution::Allow, // Write skew allowed
             (_, IsolationLevel::Snapshot) => ConflictResolution::Allow,
         };
 
         self.stats.write().conflicts_resolved += 1;
-        debug!("Resolved conflict {:?} with resolution {:?}", conflict.conflict_type, resolution);
+        debug!(
+            "Resolved conflict {:?} with resolution {:?}",
+            conflict.conflict_type, resolution
+        );
 
         Ok(resolution)
     }
@@ -454,11 +489,11 @@ impl ConflictResolver {
     /// Add a dependency in the serialization graph
     fn add_serialization_dependency(&self, tx1: TxId, tx2: TxId) {
         let mut graph = self.serialization_graph.write();
-        
+
         if let Some(node1) = graph.get_mut(&tx1) {
             node1.depends_on.insert(tx2);
         }
-        
+
         if let Some(node2) = graph.get_mut(&tx2) {
             node2.depended_by.insert(tx1);
         }
@@ -472,7 +507,9 @@ impl ConflictResolver {
 
         for &tx_id in graph.keys() {
             if !visited.contains(&tx_id) {
-                if let Some(cycle) = self.dfs_cycle_detection(tx_id, graph, &mut visited, &mut rec_stack) {
+                if let Some(cycle) =
+                    self.dfs_cycle_detection(tx_id, graph, &mut visited, &mut rec_stack)
+                {
                     cycles.push(cycle);
                 }
             }
@@ -495,7 +532,8 @@ impl ConflictResolver {
         if let Some(node) = graph.get(&tx_id) {
             for &dep_tx in &node.depends_on {
                 if !visited.contains(&dep_tx) {
-                    if let Some(cycle) = self.dfs_cycle_detection(dep_tx, graph, visited, rec_stack) {
+                    if let Some(cycle) = self.dfs_cycle_detection(dep_tx, graph, visited, rec_stack)
+                    {
                         return Some(cycle);
                     }
                 } else if rec_stack.contains(&dep_tx) {
@@ -517,13 +555,13 @@ mod tests {
     #[test]
     fn test_write_write_conflict() {
         let resolver = ConflictResolver::new();
-        
+
         resolver.register_transaction(1);
         resolver.register_transaction(2);
 
         let key = Bytes::from("test_key");
         let other_writers = vec![2];
-        
+
         let conflict = resolver
             .check_write_write_conflict(1, &key, &other_writers)
             .unwrap();
@@ -535,7 +573,7 @@ mod tests {
     #[test]
     fn test_phantom_read_detection() {
         let resolver = ConflictResolver::new();
-        
+
         resolver.register_transaction(1);
         resolver.register_transaction(2);
 
@@ -555,7 +593,7 @@ mod tests {
     #[test]
     fn test_conflict_resolution() {
         let resolver = ConflictResolver::new();
-        
+
         let conflict = Conflict {
             conflict_type: ConflictType::WriteWrite,
             tx1: 1,
@@ -576,7 +614,7 @@ mod tests {
     #[test]
     fn test_serialization_graph() {
         let resolver = ConflictResolver::new();
-        
+
         resolver.register_transaction(1);
         resolver.register_transaction(2);
         resolver.register_transaction(3);
@@ -588,6 +626,9 @@ mod tests {
 
         let conflicts = resolver.check_serialization_anomaly().unwrap();
         assert!(!conflicts.is_empty());
-        assert_eq!(conflicts[0].conflict_type, ConflictType::SerializationAnomaly);
+        assert_eq!(
+            conflicts[0].conflict_type,
+            ConflictType::SerializationAnomaly
+        );
     }
 }

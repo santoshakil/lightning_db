@@ -1,13 +1,13 @@
 use super::{
-    scanner::ScanResult,
-    detector::{DetectionResult, CorruptionType, CorruptionSeverity},
+    detector::{CorruptionSeverity, CorruptionType, DetectionResult},
     quarantine::QuarantineStats,
+    scanner::ScanResult,
     IntegrityStats,
 };
 use crate::core::error::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{SystemTime, Duration};
+use std::time::{Duration, SystemTime};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ReportFormat {
@@ -139,13 +139,14 @@ impl ReportGenerator {
         integrity_stats: &IntegrityStats,
     ) -> crate::Result<CorruptionReport> {
         let report_id = self.generate_report_id();
-        
+
         let database_info = self.get_database_info().await;
         let scan_summary = self.create_scan_summary(scan_result);
         let corruption_details = self.extract_corruption_details(&scan_result.corruptions);
         let risk_assessment = self.assess_risk(&scan_result.corruptions);
         let recovery_status = self.assess_recovery_status(&scan_result.corruptions);
-        let recommendations = self.generate_recommendations(&scan_result.corruptions, &risk_assessment);
+        let recommendations =
+            self.generate_recommendations(&scan_result.corruptions, &risk_assessment);
 
         Ok(CorruptionReport {
             report_id,
@@ -174,9 +175,9 @@ impl ReportGenerator {
         quarantine_stats: &QuarantineStats,
     ) -> crate::Result<CorruptionReport> {
         let report_id = self.generate_report_id();
-        
+
         let database_info = self.get_database_info().await;
-        
+
         // Create a status-only report
         let scan_summary = ScanSummary {
             scan_type: "Status Report".to_string(),
@@ -188,7 +189,8 @@ impl ReportGenerator {
         };
 
         let risk_assessment = self.assess_risk_from_stats(integrity_stats, quarantine_stats);
-        let recommendations = self.generate_status_recommendations(integrity_stats, quarantine_stats);
+        let recommendations =
+            self.generate_status_recommendations(integrity_stats, quarantine_stats);
 
         Ok(CorruptionReport {
             report_id,
@@ -245,28 +247,50 @@ impl ReportGenerator {
 
         output.push_str("=== SCAN SUMMARY ===\n");
         output.push_str(&format!("Scan Type: {}\n", report.scan_summary.scan_type));
-        output.push_str(&format!("Pages Scanned: {}\n", report.scan_summary.pages_scanned));
-        output.push_str(&format!("Corruptions Found: {}\n", report.scan_summary.corruption_count));
-        output.push_str(&format!("Corruption Rate: {:.2}%\n", report.scan_summary.corruption_percentage));
-        
+        output.push_str(&format!(
+            "Pages Scanned: {}\n",
+            report.scan_summary.pages_scanned
+        ));
+        output.push_str(&format!(
+            "Corruptions Found: {}\n",
+            report.scan_summary.corruption_count
+        ));
+        output.push_str(&format!(
+            "Corruption Rate: {:.2}%\n",
+            report.scan_summary.corruption_percentage
+        ));
+
         if let Some(duration) = report.scan_summary.scan_duration {
             output.push_str(&format!("Scan Duration: {:?}\n", duration));
         }
         output.push('\n');
 
         output.push_str("=== RISK ASSESSMENT ===\n");
-        output.push_str(&format!("Overall Risk: {:?}\n", report.risk_assessment.overall_risk));
-        output.push_str(&format!("Data Loss Probability: {:.1}%\n", 
-            report.risk_assessment.data_loss_probability * 100.0));
-        output.push_str(&format!("Performance Impact: {:?}\n", report.risk_assessment.performance_impact));
+        output.push_str(&format!(
+            "Overall Risk: {:?}\n",
+            report.risk_assessment.overall_risk
+        ));
+        output.push_str(&format!(
+            "Data Loss Probability: {:.1}%\n",
+            report.risk_assessment.data_loss_probability * 100.0
+        ));
+        output.push_str(&format!(
+            "Performance Impact: {:?}\n",
+            report.risk_assessment.performance_impact
+        ));
         output.push_str(&format!("Urgency: {:?}\n", report.risk_assessment.urgency));
         output.push('\n');
 
         if !report.corruption_details.is_empty() {
             output.push_str("=== CORRUPTION DETAILS ===\n");
             for (i, detail) in report.corruption_details.iter().enumerate() {
-                output.push_str(&format!("{}. Page {}: {:?} ({:?})\n", 
-                    i + 1, detail.page_id, detail.corruption_type, detail.severity));
+                output.push_str(&format!(
+                    "{}. Page {}: {:?} ({:?})\n",
+                    i + 1,
+                    detail.page_id,
+                    detail.corruption_type,
+                    detail.severity
+                ));
                 output.push_str(&format!("   {}\n", detail.description));
                 if let Some(hint) = &detail.recovery_hint {
                     output.push_str(&format!("   Recovery: {}\n", hint));
@@ -282,8 +306,14 @@ impl ReportGenerator {
         output.push('\n');
 
         output.push_str("=== RECOVERY STATUS ===\n");
-        output.push_str(&format!("Recoverable Pages: {}\n", report.recovery_status.recoverable_pages));
-        output.push_str(&format!("Unrecoverable Pages: {}\n", report.recovery_status.unrecoverable_pages));
+        output.push_str(&format!(
+            "Recoverable Pages: {}\n",
+            report.recovery_status.recoverable_pages
+        ));
+        output.push_str(&format!(
+            "Unrecoverable Pages: {}\n",
+            report.recovery_status.unrecoverable_pages
+        ));
         output.push_str("Available Recovery Strategies:\n");
         for strategy in &report.recovery_status.recovery_strategies_available {
             output.push_str(&format!("  - {}\n", strategy));
@@ -294,12 +324,14 @@ impl ReportGenerator {
 
     fn format_as_html(&self, report: &CorruptionReport) -> crate::Result<String> {
         let mut html = String::new();
-        
+
         html.push_str("<!DOCTYPE html>\n<html>\n<head>\n");
         html.push_str("<title>Lightning DB Integrity Report</title>\n");
         html.push_str("<style>\n");
         html.push_str("body { font-family: Arial, sans-serif; margin: 20px; }\n");
-        html.push_str(".header { background-color: #f0f0f0; padding: 10px; border-radius: 5px; }\n");
+        html.push_str(
+            ".header { background-color: #f0f0f0; padding: 10px; border-radius: 5px; }\n",
+        );
         html.push_str(".section { margin: 20px 0; }\n");
         html.push_str(".corruption { background-color: #ffe6e6; padding: 10px; margin: 5px 0; border-radius: 3px; }\n");
         html.push_str(".warning { color: #ff9900; }\n");
@@ -319,9 +351,18 @@ impl ReportGenerator {
         html.push_str("<div class='section'>\n<h2>Scan Summary</h2>\n");
         html.push_str("<table>\n");
         html.push_str("<tr><th>Metric</th><th>Value</th></tr>\n");
-        html.push_str(&format!("<tr><td>Pages Scanned</td><td>{}</td></tr>\n", report.scan_summary.pages_scanned));
-        html.push_str(&format!("<tr><td>Corruptions Found</td><td>{}</td></tr>\n", report.scan_summary.corruption_count));
-        html.push_str(&format!("<tr><td>Corruption Rate</td><td>{:.2}%</td></tr>\n", report.scan_summary.corruption_percentage));
+        html.push_str(&format!(
+            "<tr><td>Pages Scanned</td><td>{}</td></tr>\n",
+            report.scan_summary.pages_scanned
+        ));
+        html.push_str(&format!(
+            "<tr><td>Corruptions Found</td><td>{}</td></tr>\n",
+            report.scan_summary.corruption_count
+        ));
+        html.push_str(&format!(
+            "<tr><td>Corruption Rate</td><td>{:.2}%</td></tr>\n",
+            report.scan_summary.corruption_percentage
+        ));
         html.push_str("</table>\n</div>\n");
 
         if !report.corruption_details.is_empty() {
@@ -333,9 +374,12 @@ impl ReportGenerator {
                     CorruptionSeverity::High => "error",
                     CorruptionSeverity::Critical => "critical",
                 };
-                
+
                 html.push_str(&format!("<div class='corruption {}'>\n", severity_class));
-                html.push_str(&format!("<h3>Page {} - {:?}</h3>\n", detail.page_id, detail.corruption_type));
+                html.push_str(&format!(
+                    "<h3>Page {} - {:?}</h3>\n",
+                    detail.page_id, detail.corruption_type
+                ));
                 html.push_str(&format!("<p>{}</p>\n", detail.description));
                 if let Some(hint) = &detail.recovery_hint {
                     html.push_str(&format!("<p><strong>Recovery:</strong> {}</p>\n", hint));
@@ -351,9 +395,9 @@ impl ReportGenerator {
 
     fn format_as_csv(&self, report: &CorruptionReport) -> crate::Result<String> {
         let mut csv = String::new();
-        
+
         csv.push_str("Page ID,Corruption Type,Severity,Description,Recovery Hint\n");
-        
+
         for detail in &report.corruption_details {
             csv.push_str(&format!(
                 "{},{:?},{:?},\"{}\",\"{}\"\n",
@@ -361,7 +405,11 @@ impl ReportGenerator {
                 detail.corruption_type,
                 detail.severity,
                 detail.description.replace("\"", "\"\""),
-                detail.recovery_hint.as_deref().unwrap_or("").replace("\"", "\"\"")
+                detail
+                    .recovery_hint
+                    .as_deref()
+                    .unwrap_or("")
+                    .replace("\"", "\"\"")
             ));
         }
 
@@ -369,7 +417,9 @@ impl ReportGenerator {
     }
 
     fn generate_report_id(&self) -> String {
-        let counter = self.report_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let counter = self
+            .report_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
@@ -381,7 +431,7 @@ impl ReportGenerator {
         DatabaseInfo {
             name: "Lightning DB".to_string(),
             version: "1.0.0".to_string(),
-            total_pages: 1000, // Would be queried from database
+            total_pages: 1000,   // Would be queried from database
             total_size: 4096000, // Would be calculated
             last_backup: Some(SystemTime::now() - Duration::from_secs(24 * 3600)),
         }
@@ -394,9 +444,7 @@ impl ReportGenerator {
             0.0
         };
 
-        let worst_severity = scan_result.corruptions.iter()
-            .map(|c| c.severity)
-            .max();
+        let worst_severity = scan_result.corruptions.iter().map(|c| c.severity).max();
 
         ScanSummary {
             scan_type: format!("{:?}", scan_result.scan_type),
@@ -409,8 +457,9 @@ impl ReportGenerator {
     }
 
     fn extract_corruption_details(&self, corruptions: &[DetectionResult]) -> Vec<CorruptionDetail> {
-        corruptions.iter().map(|corruption| {
-            CorruptionDetail {
+        corruptions
+            .iter()
+            .map(|corruption| CorruptionDetail {
                 page_id: corruption.page_id,
                 corruption_type: corruption.corruption_type.clone(),
                 severity: corruption.severity,
@@ -418,16 +467,18 @@ impl ReportGenerator {
                 affected_data_size: corruption.affected_data.len(),
                 recovery_hint: corruption.recovery_hint.clone(),
                 discovered_at: corruption.timestamp,
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     fn assess_risk(&self, corruptions: &[DetectionResult]) -> RiskAssessment {
-        let critical_count = corruptions.iter()
+        let critical_count = corruptions
+            .iter()
             .filter(|c| c.severity == CorruptionSeverity::Critical)
             .count();
-        
-        let high_count = corruptions.iter()
+
+        let high_count = corruptions
+            .iter()
             .filter(|c| c.severity == CorruptionSeverity::High)
             .count();
 
@@ -486,10 +537,11 @@ impl ReportGenerator {
     }
 
     fn assess_recovery_status(&self, corruptions: &[DetectionResult]) -> RecoveryStatus {
-        let recoverable = corruptions.iter()
+        let recoverable = corruptions
+            .iter()
             .filter(|c| c.recovery_hint.is_some())
             .count() as u64;
-        
+
         let unrecoverable = corruptions.len() as u64 - recoverable;
 
         RecoveryStatus {
@@ -509,19 +561,26 @@ impl ReportGenerator {
         }
     }
 
-    fn generate_recommendations(&self, corruptions: &[DetectionResult], risk: &RiskAssessment) -> Vec<String> {
+    fn generate_recommendations(
+        &self,
+        corruptions: &[DetectionResult],
+        risk: &RiskAssessment,
+    ) -> Vec<String> {
         let mut recommendations = Vec::new();
 
         match risk.overall_risk {
             RiskLevel::Catastrophic | RiskLevel::Critical => {
-                recommendations.push("IMMEDIATE ACTION REQUIRED: Stop all write operations".to_string());
+                recommendations
+                    .push("IMMEDIATE ACTION REQUIRED: Stop all write operations".to_string());
                 recommendations.push("Create emergency backup of current state".to_string());
                 recommendations.push("Contact database administrator immediately".to_string());
             }
             RiskLevel::High => {
-                recommendations.push("Schedule immediate maintenance window for repairs".to_string());
+                recommendations
+                    .push("Schedule immediate maintenance window for repairs".to_string());
                 recommendations.push("Enable automatic backups if not already enabled".to_string());
-                recommendations.push("Monitor database closely for additional corruption".to_string());
+                recommendations
+                    .push("Monitor database closely for additional corruption".to_string());
             }
             RiskLevel::Medium => {
                 recommendations.push("Plan maintenance window within 24-48 hours".to_string());
@@ -529,23 +588,27 @@ impl ReportGenerator {
                 recommendations.push("Review database configuration for optimization".to_string());
             }
             RiskLevel::Low => {
-                recommendations.push("Schedule routine maintenance to address minor issues".to_string());
+                recommendations
+                    .push("Schedule routine maintenance to address minor issues".to_string());
                 recommendations.push("Continue regular monitoring".to_string());
             }
         }
 
         // Add specific recommendations based on corruption types
-        let corruption_types: std::collections::HashSet<_> = corruptions.iter()
+        let corruption_types: std::collections::HashSet<_> = corruptions
+            .iter()
             .map(|c| c.corruption_type.clone())
             .collect();
 
         for corruption_type in corruption_types {
             match corruption_type {
                 CorruptionType::ChecksumMismatch => {
-                    recommendations.push("Consider hardware diagnostics for storage devices".to_string());
+                    recommendations
+                        .push("Consider hardware diagnostics for storage devices".to_string());
                 }
                 CorruptionType::BTreeStructureViolation => {
-                    recommendations.push("Rebuild affected indexes during maintenance window".to_string());
+                    recommendations
+                        .push("Rebuild affected indexes during maintenance window".to_string());
                 }
                 CorruptionType::WalInconsistency => {
                     recommendations.push("Review WAL configuration and disk space".to_string());
@@ -557,7 +620,11 @@ impl ReportGenerator {
         recommendations
     }
 
-    fn assess_risk_from_stats(&self, _integrity_stats: &IntegrityStats, quarantine_stats: &QuarantineStats) -> RiskAssessment {
+    fn assess_risk_from_stats(
+        &self,
+        _integrity_stats: &IntegrityStats,
+        quarantine_stats: &QuarantineStats,
+    ) -> RiskAssessment {
         let overall_risk = if quarantine_stats.total_entries > 10 {
             RiskLevel::High
         } else if quarantine_stats.total_entries > 5 {
@@ -575,12 +642,17 @@ impl ReportGenerator {
         }
     }
 
-    fn generate_status_recommendations(&self, _integrity_stats: &IntegrityStats, quarantine_stats: &QuarantineStats) -> Vec<String> {
+    fn generate_status_recommendations(
+        &self,
+        _integrity_stats: &IntegrityStats,
+        quarantine_stats: &QuarantineStats,
+    ) -> Vec<String> {
         let mut recommendations = Vec::new();
 
         if quarantine_stats.total_entries > 0 {
             recommendations.push("Review quarantined data for recovery opportunities".to_string());
-            recommendations.push("Schedule integrity scanning to prevent future corruption".to_string());
+            recommendations
+                .push("Schedule integrity scanning to prevent future corruption".to_string());
         } else {
             recommendations.push("Database integrity appears good".to_string());
             recommendations.push("Continue regular monitoring and maintenance".to_string());

@@ -1,11 +1,11 @@
+use crate::core::error::{Error, Result};
+use async_trait::async_trait;
+use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::collections::{HashMap, VecDeque};
-use tokio::sync::{RwLock, mpsc};
-use serde::{Serialize, Deserialize};
-use crate::core::error::{Error, Result};
-use dashmap::DashMap;
-use async_trait::async_trait;
+use tokio::sync::{mpsc, RwLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SagaStep {
@@ -396,36 +396,45 @@ impl SagaCoordinator {
     }
 
     pub async fn execute(&self) -> Result<SagaResult> {
-        self.metrics.total_sagas.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.metrics.active_sagas.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+        self.metrics
+            .total_sagas
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.metrics
+            .active_sagas
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         let mut state = self.state_machine.write().await;
         state.current_state = SagaState::Running;
         drop(state);
-        
-        self.log_event(SagaEventType::SagaStarted, serde_json::json!({})).await;
-        
+
+        self.log_event(SagaEventType::SagaStarted, serde_json::json!({}))
+            .await;
+
         for step in &self.definition.steps {
             if !self.check_dependencies(&step.dependencies).await {
                 continue;
             }
-            
+
             let result = self.execute_step(step).await;
-            
+
             match result {
                 Ok(output) => {
                     self.mark_step_completed(&step.step_id, output).await;
                 }
                 Err(e) => {
                     self.mark_step_failed(&step.step_id, e.to_string()).await;
-                    
+
                     if self.should_compensate().await {
                         self.start_compensation().await?;
                     }
-                    
-                    self.metrics.failed_sagas.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    self.metrics.active_sagas.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                    
+
+                    self.metrics
+                        .failed_sagas
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    self.metrics
+                        .active_sagas
+                        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+
                     return Ok(SagaResult {
                         saga_id: self.saga_id.clone(),
                         status: SagaStatus::Failed,
@@ -438,16 +447,21 @@ impl SagaCoordinator {
                 }
             }
         }
-        
+
         let mut state = self.state_machine.write().await;
         state.current_state = SagaState::Completed;
         drop(state);
-        
-        self.log_event(SagaEventType::SagaCompleted, serde_json::json!({})).await;
-        
-        self.metrics.completed_sagas.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.metrics.active_sagas.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-        
+
+        self.log_event(SagaEventType::SagaCompleted, serde_json::json!({}))
+            .await;
+
+        self.metrics
+            .completed_sagas
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.metrics
+            .active_sagas
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+
         Ok(SagaResult {
             saga_id: self.saga_id.clone(),
             status: SagaStatus::Completed,
@@ -460,24 +474,27 @@ impl SagaCoordinator {
     }
 
     async fn execute_step(&self, step: &SagaStep) -> Result<serde_json::Value> {
-        self.metrics.total_steps.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+        self.metrics
+            .total_steps
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         self.log_event(
             SagaEventType::StepStarted,
             serde_json::json!({ "step_id": step.step_id }),
-        ).await;
-        
+        )
+        .await;
+
         let mut attempts = 0;
         let mut last_error = None;
-        
+
         while attempts < step.retry_policy.max_attempts {
             attempts += 1;
-            
+
             let delay = self.calculate_backoff(&step.retry_policy.backoff, attempts);
             if attempts > 1 {
                 tokio::time::sleep(delay).await;
             }
-            
+
             match self.call_service(step).await {
                 Ok(response) => {
                     self.log_event(
@@ -486,31 +503,37 @@ impl SagaCoordinator {
                             "step_id": step.step_id,
                             "attempts": attempts,
                         }),
-                    ).await;
-                    
+                    )
+                    .await;
+
                     return Ok(response);
                 }
                 Err(e) => {
                     last_error = Some(e.to_string());
-                    
+
                     if !self.should_retry(&e, &step.retry_policy.retry_on) {
                         break;
                     }
                 }
             }
         }
-        
-        self.metrics.failed_steps.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+
+        self.metrics
+            .failed_steps
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         self.log_event(
             SagaEventType::StepFailed,
             serde_json::json!({
                 "step_id": step.step_id,
                 "error": last_error,
             }),
-        ).await;
-        
-        Err(Error::Custom(last_error.unwrap_or_else(|| "Step failed".to_string())))
+        )
+        .await;
+
+        Err(Error::Custom(
+            last_error.unwrap_or_else(|| "Step failed".to_string()),
+        ))
     }
 
     async fn call_service(&self, _step: &SagaStep) -> Result<serde_json::Value> {
@@ -557,20 +580,20 @@ impl SagaCoordinator {
 
     async fn check_dependencies(&self, dependencies: &[String]) -> bool {
         let state = self.state_machine.read().await;
-        
+
         for dep in dependencies {
             if !state.completed_steps.contains(dep) {
                 return false;
             }
         }
-        
+
         true
     }
 
     async fn mark_step_completed(&self, step_id: &str, output: serde_json::Value) {
         let mut state = self.state_machine.write().await;
         state.completed_steps.push(step_id.to_string());
-        
+
         if let Some(step_state) = state.step_states.get_mut(step_id) {
             step_state.status = StepStatus::Completed;
             step_state.end_time = Some(Instant::now());
@@ -581,7 +604,7 @@ impl SagaCoordinator {
     async fn mark_step_failed(&self, step_id: &str, error: String) {
         let mut state = self.state_machine.write().await;
         state.failed_steps.push(step_id.to_string());
-        
+
         if let Some(step_state) = state.step_states.get_mut(step_id) {
             step_state.status = StepStatus::Failed;
             step_state.end_time = Some(Instant::now());
@@ -597,26 +620,30 @@ impl SagaCoordinator {
         let mut state = self.state_machine.write().await;
         state.current_state = SagaState::Compensating;
         drop(state);
-        
-        self.log_event(SagaEventType::CompensationStarted, serde_json::json!({})).await;
-        
+
+        self.log_event(SagaEventType::CompensationStarted, serde_json::json!({}))
+            .await;
+
         let completed_steps = self.get_completed_steps().await;
-        
+
         for step_id in completed_steps.iter().rev() {
             if let Some(step) = self.find_step(step_id) {
                 if let Some(compensation) = &step.compensation_step {
                     self.execute_compensation(compensation).await?;
-                    
+
                     let mut state = self.state_machine.write().await;
                     state.compensated_steps.push(step_id.clone());
                 }
             }
         }
-        
-        self.metrics.compensated_sagas.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
-        self.log_event(SagaEventType::CompensationCompleted, serde_json::json!({})).await;
-        
+
+        self.metrics
+            .compensated_sagas
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        self.log_event(SagaEventType::CompensationCompleted, serde_json::json!({}))
+            .await;
+
         Ok(())
     }
 
@@ -630,8 +657,9 @@ impl SagaCoordinator {
                         "step_id": step.step_id,
                         "error": e.to_string(),
                     }),
-                ).await;
-                
+                )
+                .await;
+
                 Err(e)
             }
         }
@@ -662,8 +690,11 @@ impl SagaCoordinator {
     }
 
     async fn log_event(&self, event_type: SagaEventType, payload: serde_json::Value) {
-        let event_id = self.event_log.event_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        
+        let event_id = self
+            .event_log
+            .event_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
         let event = SagaEvent {
             event_id,
             saga_id: self.saga_id.clone(),
@@ -674,7 +705,7 @@ impl SagaCoordinator {
                 .as_secs(),
             payload,
         };
-        
+
         self.event_log.events.insert(event_id, event.clone());
         self.event_log.persistence.persist(&event).await.ok();
     }
@@ -708,7 +739,11 @@ impl EventPersistence for InMemoryEventPersistence {
     }
 
     async fn load(&self, saga_id: &str) -> Result<Vec<SagaEvent>> {
-        Ok(self.storage.get(saga_id).map(|v| v.clone()).unwrap_or_default())
+        Ok(self
+            .storage
+            .get(saga_id)
+            .map(|v| v.clone())
+            .unwrap_or_default())
     }
 }
 

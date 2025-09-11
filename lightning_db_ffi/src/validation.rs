@@ -1,5 +1,5 @@
 //! FFI input validation and security hardening
-//! 
+//!
 //! This module provides comprehensive validation for all FFI inputs to prevent
 //! security vulnerabilities including buffer overflows, integer overflows,
 //! null pointer dereferences, and other common FFI attack vectors.
@@ -56,12 +56,21 @@ pub fn validate_pointer<T>(ptr: *const T, name: &str) -> ValidationResult<*const
     // Check alignment - only for types that actually need alignment
     let addr = ptr as usize;
     let type_size = std::mem::size_of::<T>();
-    let required_alignment = if type_size >= 8 { 8 } else if type_size >= 4 { 4 } else { 1 };
-    
+    let required_alignment = if type_size >= 8 {
+        8
+    } else if type_size >= 4 {
+        4
+    } else {
+        1
+    };
+
     if addr % required_alignment != 0 {
         return ValidationResult::Invalid(
             ErrorCode::InvalidAlignment,
-            format!("{} has invalid alignment: 0x{:x}, required: {}", name, addr, required_alignment),
+            format!(
+                "{} has invalid alignment: 0x{:x}, required: {}",
+                name, addr, required_alignment
+            ),
         );
     }
 
@@ -71,25 +80,36 @@ pub fn validate_pointer<T>(ptr: *const T, name: &str) -> ValidationResult<*const
     if addr < 0x100 {
         return ValidationResult::Invalid(
             ErrorCode::InvalidPointer,
-            format!("{} points to suspicious low memory address: 0x{:x}", name, addr),
+            format!(
+                "{} points to suspicious low memory address: 0x{:x}",
+                name, addr
+            ),
         );
     }
 
     // Check for extremely high addresses that might indicate overflow
     // These are more conservative checks that shouldn't affect normal pointers
     #[cfg(target_pointer_width = "64")]
-    if addr > 0x800000000000 { // Much higher threshold for 64-bit
+    if addr > 0x800000000000 {
+        // Much higher threshold for 64-bit
         return ValidationResult::Invalid(
             ErrorCode::InvalidPointer,
-            format!("{} points to suspicious high memory address: 0x{:x}", name, addr),
+            format!(
+                "{} points to suspicious high memory address: 0x{:x}",
+                name, addr
+            ),
         );
     }
 
     #[cfg(target_pointer_width = "32")]
-    if addr > 0x80000000 { // Higher threshold for 32-bit
+    if addr > 0x80000000 {
+        // Higher threshold for 32-bit
         return ValidationResult::Invalid(
             ErrorCode::InvalidPointer,
-            format!("{} points to suspicious high memory address: 0x{:x}", name, addr),
+            format!(
+                "{} points to suspicious high memory address: 0x{:x}",
+                name, addr
+            ),
         );
     }
 
@@ -120,7 +140,10 @@ pub fn validate_buffer(ptr: *const u8, len: usize, name: &str) -> ValidationResu
     if len > MAX_FFI_BUFFER_SIZE {
         return ValidationResult::Invalid(
             ErrorCode::InvalidArgument,
-            format!("{} size {} exceeds maximum allowed size {}", name, len, MAX_FFI_BUFFER_SIZE),
+            format!(
+                "{} size {} exceeds maximum allowed size {}",
+                name, len, MAX_FFI_BUFFER_SIZE
+            ),
         );
     }
 
@@ -153,7 +176,12 @@ pub fn validate_c_string(ptr: *const c_char, name: &str) -> ValidationResult<Str
     if bytes.len() > MAX_FFI_STRING_LENGTH {
         return ValidationResult::Invalid(
             ErrorCode::InvalidArgument,
-            format!("{} string length {} exceeds maximum {}", name, bytes.len(), MAX_FFI_STRING_LENGTH),
+            format!(
+                "{} string length {} exceeds maximum {}",
+                name,
+                bytes.len(),
+                MAX_FFI_STRING_LENGTH
+            ),
         );
     }
 
@@ -169,7 +197,9 @@ pub fn validate_c_string(ptr: *const c_char, name: &str) -> ValidationResult<Str
             }
 
             // Check for control characters that might indicate injection attempts
-            if s.chars().any(|c| c.is_control() && c != '\t' && c != '\n' && c != '\r') {
+            if s.chars()
+                .any(|c| c.is_control() && c != '\t' && c != '\n' && c != '\r')
+            {
                 return ValidationResult::Invalid(
                     ErrorCode::InvalidArgument,
                     format!("{} contains suspicious control characters", name),
@@ -256,7 +286,8 @@ pub fn validate_database_operation(
 
     // Validate value if provided
     if let Some((value_ptr, value_len)) = value {
-        if let ValidationResult::Invalid(code, msg) = validate_buffer(value_ptr, value_len, "value") {
+        if let ValidationResult::Invalid(code, msg) = validate_buffer(value_ptr, value_len, "value")
+        {
             return ValidationResult::Invalid(code, msg);
         }
     }
@@ -275,9 +306,9 @@ pub fn sanitize_error_message(msg: &str) -> String {
 
     // Remove any potentially sensitive patterns
     sanitized
-        .replace("0x", "**")  // Hide memory addresses
+        .replace("0x", "**") // Hide memory addresses
         .chars()
-        .take(200)  // Limit message length
+        .take(200) // Limit message length
         .collect()
 }
 
@@ -348,7 +379,7 @@ mod tests {
     fn test_error_message_sanitization() {
         let msg = "Error in /home/user/secret/file.db at address 0xDEADBEEF";
         let sanitized = sanitize_error_message(msg);
-        
+
         assert!(!sanitized.contains("/home/user/secret"));
         assert!(!sanitized.contains("0x"));
         assert!(sanitized.len() <= 200);

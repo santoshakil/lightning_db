@@ -3,13 +3,13 @@
 //! Provides secure encryption for large data by using envelope encryption pattern:
 //! 1. Generate a random Data Encryption Key (DEK)
 //! 2. Encrypt the data with the DEK using symmetric encryption
-//! 3. Encrypt the DEK with a Key Encryption Key (KEK) 
+//! 3. Encrypt the DEK with a Key Encryption Key (KEK)
 //! 4. Store both encrypted data and encrypted DEK
 
 use crate::core::error::{Error, Result};
-use crate::features::encryption::{
-    hsm_provider::{HSMProvider, HSMKeyHandle, HSMEncryptResult},
-    secure_crypto_provider::{SecureCryptoProvider, SecureAlgorithm, SecureKey, SecureEncryptionResult},
+use crate::features::encryption::encryption_stubs::{
+    HSMEncryptResult, HSMKeyHandle, HSMProvider,
+    SecureAlgorithm, SecureCryptoProvider, SecureEncryptionResult, SecureKey,
 };
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -166,20 +166,23 @@ impl EnvelopeEncryptionManager {
     ) -> Result<EnvelopeEncryptedData> {
         // Generate ephemeral DEK
         let dek = self.generate_ephemeral_dek().await?;
-        
+
         // Encrypt DEK with KEK
         let encrypted_dek = self.encrypt_dek(&dek, kek).await?;
-        
+
         // Compress data if configured
         let (data_to_encrypt, compression) = self.compress_data(data)?;
-        
+
         // Encrypt data with DEK in chunks
-        let encrypted_data = if self.config.parallel_chunks && data_to_encrypt.len() > self.config.chunk_size * 2 {
-            self.encrypt_data_parallel(&dek.key, &data_to_encrypt, context).await?
-        } else {
-            self.encrypt_data_sequential(&dek.key, &data_to_encrypt, context).await?
-        };
-        
+        let encrypted_data =
+            if self.config.parallel_chunks && data_to_encrypt.len() > self.config.chunk_size * 2 {
+                self.encrypt_data_parallel(&dek.key, &data_to_encrypt, context)
+                    .await?
+            } else {
+                self.encrypt_data_sequential(&dek.key, &data_to_encrypt, context)
+                    .await?
+            };
+
         let metadata = EnvelopeMetadata {
             version: 1,
             created_at: std::time::SystemTime::now()
@@ -191,18 +194,19 @@ impl EnvelopeEncryptionManager {
             context: context.to_vec(),
             compression,
         };
-        
+
         let envelope = EnvelopeEncryptedData {
             encrypted_dek,
             encrypted_data,
             metadata,
             envelope_signature: Vec::new(), // Will be computed below
         };
-        
+
         // Sign the entire envelope for integrity
         let mut envelope_with_sig = envelope;
-        envelope_with_sig.envelope_signature = self.sign_envelope(&envelope_with_sig, &dek.key).await?;
-        
+        envelope_with_sig.envelope_signature =
+            self.sign_envelope(&envelope_with_sig, &dek.key).await?;
+
         Ok(envelope_with_sig)
     }
 
@@ -214,33 +218,43 @@ impl EnvelopeEncryptionManager {
     ) -> Result<Vec<u8>> {
         // Decrypt DEK with KEK
         let dek = self.decrypt_dek(&encrypted.encrypted_dek, kek).await?;
-        
+
         // Verify envelope signature
         let expected_sig = self.sign_envelope(encrypted, &dek.key).await?;
-        if !self.crypto_provider.constant_time_compare(&encrypted.envelope_signature, &expected_sig) {
-            return Err(Error::Encryption("Envelope signature verification failed".to_string()));
+        if !self
+            .crypto_provider
+            .constant_time_compare(&encrypted.envelope_signature, &expected_sig)
+        {
+            return Err(Error::Encryption(
+                "Envelope signature verification failed".to_string(),
+            ));
         }
-        
+
         // Decrypt data chunks
-        let decrypted_data = if self.config.parallel_chunks && encrypted.encrypted_data.chunks.len() > 2 {
-            self.decrypt_data_parallel(&dek.key, &encrypted.encrypted_data).await?
-        } else {
-            self.decrypt_data_sequential(&dek.key, &encrypted.encrypted_data).await?
-        };
-        
+        let decrypted_data =
+            if self.config.parallel_chunks && encrypted.encrypted_data.chunks.len() > 2 {
+                self.decrypt_data_parallel(&dek.key, &encrypted.encrypted_data)
+                    .await?
+            } else {
+                self.decrypt_data_sequential(&dek.key, &encrypted.encrypted_data)
+                    .await?
+            };
+
         // Decompress if needed
         self.decompress_data(&decrypted_data, &encrypted.metadata.compression)
     }
 
     /// Generate ephemeral DEK for single encryption operation
     async fn generate_ephemeral_dek(&self) -> Result<EphemeralDEK> {
-        let key = self.crypto_provider.generate_key(self.config.data_algorithm)?;
+        let key = self
+            .crypto_provider
+            .generate_key_with_algorithm(self.config.data_algorithm)?;
         let id = {
             let mut id_bytes = [0u8; 8];
             OsRng.fill_bytes(&mut id_bytes);
             u64::from_le_bytes(id_bytes)
         };
-        
+
         Ok(EphemeralDEK { key, id })
     }
 
@@ -252,18 +266,20 @@ impl EnvelopeEncryptionManager {
                     software_kek,
                     &dek.key.material,
                     &dek.id.to_le_bytes(),
-                    b"dek_encryption",
+                    Some(b"dek_encryption"),
                 )?;
-                
+
                 Ok(EnvelopeDEK::Software {
                     encrypted_key,
-                    kek_id: software_kek.id,
+                    kek_id: software_kek.id.parse::<u64>().unwrap_or(0),
                 })
             }
             EnvelopeKEK::HSM(hsm_handle) => {
                 if let Some(hsm) = &self.hsm_provider {
-                    let encrypted_key = hsm.encrypt(hsm_handle, &dek.key.material, Some(&dek.id.to_le_bytes())).await?;
-                    
+                    let encrypted_key = hsm
+                        .encrypt(&dek.key.material)
+                        .await?;
+
                     Ok(EnvelopeDEK::HSM {
                         encrypted_key,
                         kek_handle: hsm_handle.clone(),
@@ -276,21 +292,37 @@ impl EnvelopeEncryptionManager {
     }
 
     /// Decrypt DEK using KEK
-    async fn decrypt_dek(&self, encrypted_dek: &EnvelopeDEK, kek: &EnvelopeKEK) -> Result<EphemeralDEK> {
+    async fn decrypt_dek(
+        &self,
+        encrypted_dek: &EnvelopeDEK,
+        kek: &EnvelopeKEK,
+    ) -> Result<EphemeralDEK> {
         let (key_material, kek_id) = match (encrypted_dek, kek) {
-            (EnvelopeDEK::Software { encrypted_key, kek_id }, EnvelopeKEK::Software(software_kek)) => {
-                if software_kek.id != *kek_id {
+            (
+                EnvelopeDEK::Software {
+                    encrypted_key,
+                    kek_id,
+                },
+                EnvelopeKEK::Software(software_kek),
+            ) => {
+                if software_kek.id.parse::<u64>().unwrap_or(0) != *kek_id {
                     return Err(Error::Encryption("KEK ID mismatch".to_string()));
                 }
-                let material = self.crypto_provider.decrypt(software_kek, encrypted_key)?;
+                let material = self.crypto_provider.decrypt(software_kek, encrypted_key, &[], None)?;
                 (material, *kek_id)
             }
-            (EnvelopeDEK::HSM { encrypted_key, kek_handle }, EnvelopeKEK::HSM(hsm_handle)) => {
+            (
+                EnvelopeDEK::HSM {
+                    encrypted_key,
+                    kek_handle,
+                },
+                EnvelopeKEK::HSM(hsm_handle),
+            ) => {
                 if let Some(hsm) = &self.hsm_provider {
                     if kek_handle.id != hsm_handle.id {
                         return Err(Error::Encryption("HSM key handle mismatch".to_string()));
                     }
-                    let material = hsm.decrypt(hsm_handle, encrypted_key).await?;
+                    let material = hsm.decrypt(&encrypted_key.encrypted_data, hsm_handle).await?;
                     (material, 0) // HSM handles don't have numeric IDs
                 } else {
                     return Err(Error::Encryption("HSM provider not available".to_string()));
@@ -303,8 +335,9 @@ impl EnvelopeEncryptionManager {
 
         // Reconstruct DEK
         let key = SecureKey {
-            id: kek_id,
-            material: key_material,
+            id: kek_id.to_string(),
+            material: key_material.clone(),
+            key_material,
             algorithm: self.config.data_algorithm,
             created_at: std::time::SystemTime::now(),
         };
@@ -321,26 +354,26 @@ impl EnvelopeEncryptionManager {
     ) -> Result<EnvelopeDataPayload> {
         let mut chunks = Vec::new();
         let chunk_size = self.config.chunk_size;
-        
+
         for (index, chunk_data) in data.chunks(chunk_size).enumerate() {
             let chunk_context = format!("chunk_{}_{}", index, hex::encode(context)).into_bytes();
-            
+
             let encrypted_data = self.crypto_provider.encrypt(
                 dek,
                 chunk_data,
                 &index.to_le_bytes(),
-                &chunk_context,
+                Some(&chunk_context),
             )?;
-            
+
             let chunk_hash = blake3::hash(chunk_data).as_bytes().to_vec();
-            
+
             chunks.push(EnvelopeChunk {
                 index: index as u32,
                 encrypted_data,
                 chunk_hash,
             });
         }
-        
+
         Ok(EnvelopeDataPayload {
             chunks,
             total_size: data.len() as u64,
@@ -357,48 +390,52 @@ impl EnvelopeEncryptionManager {
     ) -> Result<EnvelopeDataPayload> {
         let chunk_size = self.config.chunk_size;
         let semaphore = Arc::new(tokio::sync::Semaphore::new(self.config.max_parallel_tasks));
-        
+
         let mut tasks = Vec::new();
-        
+
         for (index, chunk_data) in data.chunks(chunk_size).enumerate() {
             let permit = Arc::clone(&semaphore);
             let crypto_provider = Arc::clone(&self.crypto_provider);
             let dek_clone = dek.clone();
             let chunk_data = chunk_data.to_vec();
             let context = context.to_vec();
-            
+
             let task = task::spawn(async move {
                 let _permit = permit.acquire().await.unwrap();
-                
-                let chunk_context = format!("chunk_{}_{}", index, hex::encode(&context)).into_bytes();
-                
+
+                let chunk_context =
+                    format!("chunk_{}_{}", index, hex::encode(&context)).into_bytes();
+
                 let encrypted_data = crypto_provider.encrypt(
                     &dek_clone,
                     &chunk_data,
                     &index.to_le_bytes(),
-                    &chunk_context,
+                    Some(&chunk_context),
                 )?;
-                
+
                 let chunk_hash = blake3::hash(&chunk_data).as_bytes().to_vec();
-                
+
                 Ok::<_, Error>(EnvelopeChunk {
                     index: index as u32,
                     encrypted_data,
                     chunk_hash,
                 })
             });
-            
+
             tasks.push(task);
         }
-        
+
         let mut chunks = Vec::new();
         for task in tasks {
-            chunks.push(task.await.map_err(|e| Error::Encryption(format!("Task join error: {}", e)))??);
+            chunks.push(
+                task.await
+                    .map_err(|e| Error::Encryption(format!("Task join error: {}", e)))??,
+            );
         }
-        
+
         // Sort chunks by index to maintain order
         chunks.sort_by_key(|chunk| chunk.index);
-        
+
         Ok(EnvelopeDataPayload {
             chunks,
             total_size: data.len() as u64,
@@ -413,19 +450,25 @@ impl EnvelopeEncryptionManager {
         payload: &EnvelopeDataPayload,
     ) -> Result<Vec<u8>> {
         let mut result = Vec::with_capacity(payload.total_size as usize);
-        
+
         for chunk in &payload.chunks {
-            let decrypted = self.crypto_provider.decrypt(dek, &chunk.encrypted_data)?;
-            
+            let decrypted = self.crypto_provider.decrypt(dek, &chunk.encrypted_data, &[], None)?;
+
             // Verify chunk integrity
             let computed_hash = blake3::hash(&decrypted).as_bytes().to_vec();
-            if !self.crypto_provider.constant_time_compare(&chunk.chunk_hash, &computed_hash) {
-                return Err(Error::Encryption(format!("Chunk {} integrity check failed", chunk.index)));
+            if !self
+                .crypto_provider
+                .constant_time_compare(&chunk.chunk_hash, &computed_hash)
+            {
+                return Err(Error::Encryption(format!(
+                    "Chunk {} integrity check failed",
+                    chunk.index
+                )));
             }
-            
+
             result.extend_from_slice(&decrypted);
         }
-        
+
         Ok(result)
     }
 
@@ -437,43 +480,49 @@ impl EnvelopeEncryptionManager {
     ) -> Result<Vec<u8>> {
         let semaphore = Arc::new(tokio::sync::Semaphore::new(self.config.max_parallel_tasks));
         let mut tasks = Vec::new();
-        
+
         for chunk in &payload.chunks {
             let permit = Arc::clone(&semaphore);
             let crypto_provider = Arc::clone(&self.crypto_provider);
             let dek_clone = dek.clone();
             let chunk = chunk.clone();
-            
+
             let task = task::spawn(async move {
                 let _permit = permit.acquire().await.unwrap();
-                
-                let decrypted = crypto_provider.decrypt(&dek_clone, &chunk.encrypted_data)?;
-                
+
+                let decrypted = crypto_provider.decrypt(&dek_clone, &chunk.encrypted_data, &[], None)?;
+
                 // Verify chunk integrity
                 let computed_hash = blake3::hash(&decrypted).as_bytes().to_vec();
                 if !crypto_provider.constant_time_compare(&chunk.chunk_hash, &computed_hash) {
-                    return Err(Error::Encryption(format!("Chunk {} integrity check failed", chunk.index)));
+                    return Err(Error::Encryption(format!(
+                        "Chunk {} integrity check failed",
+                        chunk.index
+                    )));
                 }
-                
+
                 Ok::<_, Error>((chunk.index, decrypted))
             });
-            
+
             tasks.push(task);
         }
-        
+
         let mut chunks = Vec::new();
         for task in tasks {
-            chunks.push(task.await.map_err(|e| Error::Encryption(format!("Task join error: {}", e)))??);
+            chunks.push(
+                task.await
+                    .map_err(|e| Error::Encryption(format!("Task join error: {}", e)))??,
+            );
         }
-        
+
         // Sort chunks by index and reconstruct data
         chunks.sort_by_key(|(index, _)| *index);
-        
+
         let mut result = Vec::with_capacity(payload.total_size as usize);
         for (_, data) in chunks {
             result.extend_from_slice(&data);
         }
-        
+
         Ok(result)
     }
 
@@ -490,7 +539,7 @@ impl EnvelopeEncryptionManager {
         {
             let compressed = zstd::encode_all(data, 3) // Level 3 compression
                 .map_err(|e| Error::Encryption(format!("Compression failed: {}", e)))?;
-                
+
             // Only use compression if it actually reduces size
             if compressed.len() < data.len() {
                 Ok((compressed, Some(CompressionAlgorithm::Zstd)))
@@ -498,7 +547,7 @@ impl EnvelopeEncryptionManager {
                 Ok((data.to_vec(), Some(CompressionAlgorithm::None)))
             }
         }
-        
+
         #[cfg(not(feature = "zstd-compression"))]
         Ok((data.to_vec(), Some(CompressionAlgorithm::None)))
     }
@@ -512,50 +561,63 @@ impl EnvelopeEncryptionManager {
         match compression {
             Some(CompressionAlgorithm::None) | None => Ok(data.to_vec()),
             #[cfg(feature = "zstd-compression")]
-            Some(CompressionAlgorithm::Zstd) => {
-                zstd::decode_all(data)
-                    .map_err(|e| Error::Encryption(format!("Decompression failed: {}", e)))
-            }
+            Some(CompressionAlgorithm::Zstd) => zstd::decode_all(data)
+                .map_err(|e| Error::Encryption(format!("Decompression failed: {}", e))),
             #[cfg(not(feature = "zstd-compression"))]
-            Some(CompressionAlgorithm::Zstd) => {
-                Err(Error::Encryption("Zstd compression not available".to_string()))
-            }
-            Some(CompressionAlgorithm::LZ4) => {
-                Err(Error::Encryption("LZ4 compression not yet implemented".to_string()))
-            }
+            Some(CompressionAlgorithm::Zstd) => Err(Error::Encryption(
+                "Zstd compression not available".to_string(),
+            )),
+            Some(CompressionAlgorithm::LZ4) => Err(Error::Encryption(
+                "LZ4 compression not yet implemented".to_string(),
+            )),
         }
     }
 
     /// Sign envelope for integrity
-    async fn sign_envelope(&self, envelope: &EnvelopeEncryptedData, dek: &SecureKey) -> Result<Vec<u8>> {
+    async fn sign_envelope(
+        &self,
+        envelope: &EnvelopeEncryptedData,
+        dek: &SecureKey,
+    ) -> Result<Vec<u8>> {
         // Create signature over envelope metadata and encrypted DEK
         let mut sig_data = Vec::new();
-        
+
         // Serialize metadata
-        let metadata_bytes = bincode::encode_to_vec(&envelope.metadata, bincode::config::standard())
-            .map_err(|e| Error::Encryption(format!("Metadata serialization failed: {}", e)))?;
+        let metadata_bytes =
+            bincode::encode_to_vec(&envelope.metadata, bincode::config::standard())
+                .map_err(|e| Error::Encryption(format!("Metadata serialization failed: {}", e)))?;
         sig_data.extend_from_slice(&metadata_bytes);
-        
+
         // Add encrypted DEK info
         match &envelope.encrypted_dek {
-            EnvelopeDEK::Software { encrypted_key, kek_id } => {
+            EnvelopeDEK::Software {
+                encrypted_key,
+                kek_id,
+            } => {
                 sig_data.extend_from_slice(&kek_id.to_le_bytes());
                 sig_data.extend_from_slice(&encrypted_key.nonce);
                 sig_data.extend_from_slice(&encrypted_key.ciphertext);
             }
-            EnvelopeDEK::HSM { encrypted_key, kek_handle } => {
+            EnvelopeDEK::HSM {
+                encrypted_key,
+                kek_handle,
+            } => {
                 sig_data.extend_from_slice(kek_handle.id.to_string().as_bytes());
                 sig_data.extend_from_slice(&encrypted_key.ciphertext);
             }
         }
-        
+
         // Add chunk hashes
         for chunk in &envelope.encrypted_data.chunks {
             sig_data.extend_from_slice(&chunk.chunk_hash);
         }
-        
+
         // Sign with BLAKE3 keyed hash using DEK
-        let key_array: [u8; 32] = dek.material.clone().try_into().map_err(|_| Error::Encryption("Invalid key length".to_string()))?;
+        let key_array: [u8; 32] = dek
+            .material
+            .clone()
+            .try_into()
+            .map_err(|_| Error::Encryption("Invalid key length".to_string()))?;
         let hash = blake3::keyed_hash(&key_array, &sig_data);
         Ok(hash.as_bytes().to_vec())
     }
@@ -576,69 +638,75 @@ mod tests {
 
     #[tokio::test]
     async fn test_envelope_encryption_roundtrip() {
-        let crypto_provider = Arc::new(SecureCryptoProvider::new().unwrap());
+        let crypto_provider = Arc::new(SecureCryptoProvider::new(SecureAlgorithm::AES256GCM));
         let config = EnvelopeConfig::default();
-        
+
         let manager = EnvelopeEncryptionManager::new(crypto_provider.clone(), None, config);
-        
+
         // Generate KEK
-        let kek_key = crypto_provider.generate_key(SecureAlgorithm::Aes256Gcm).unwrap();
+        let kek_key = crypto_provider
+            .generate_key()
+            .unwrap();
         let kek = EnvelopeKEK::Software(kek_key);
-        
+
         // Test data
         let data = b"This is sensitive data that needs envelope encryption protection".repeat(1000);
         let context = b"test_context";
-        
+
         // Encrypt
         let encrypted = manager.encrypt(&data, &kek, context).await.unwrap();
-        
+
         // Decrypt
         let decrypted = manager.decrypt(&encrypted, &kek).await.unwrap();
-        
+
         assert_eq!(data, decrypted);
     }
 
     #[tokio::test]
     async fn test_large_data_parallel_encryption() {
-        let crypto_provider = Arc::new(SecureCryptoProvider::new().unwrap());
+        let crypto_provider = Arc::new(SecureCryptoProvider::new(SecureAlgorithm::AES256GCM));
         let mut config = EnvelopeConfig::default();
         config.chunk_size = 1024; // Small chunks for testing
         config.parallel_chunks = true;
-        
+
         let manager = EnvelopeEncryptionManager::new(crypto_provider.clone(), None, config);
-        
-        let kek_key = crypto_provider.generate_key(SecureAlgorithm::Aes256Gcm).unwrap();
+
+        let kek_key = crypto_provider
+            .generate_key()
+            .unwrap();
         let kek = EnvelopeKEK::Software(kek_key);
-        
+
         // Large test data (>10KB)
         let data = vec![42u8; 10240];
         let context = b"large_data_test";
-        
+
         let encrypted = manager.encrypt(&data, &kek, context).await.unwrap();
         let decrypted = manager.decrypt(&encrypted, &kek).await.unwrap();
-        
+
         assert_eq!(data, decrypted);
         assert!(encrypted.encrypted_data.chunks.len() > 1);
     }
 
     #[tokio::test]
     async fn test_envelope_integrity_protection() {
-        let crypto_provider = Arc::new(SecureCryptoProvider::new().unwrap());
+        let crypto_provider = Arc::new(SecureCryptoProvider::new(SecureAlgorithm::AES256GCM));
         let config = EnvelopeConfig::default();
-        
+
         let manager = EnvelopeEncryptionManager::new(crypto_provider.clone(), None, config);
-        
-        let kek_key = crypto_provider.generate_key(SecureAlgorithm::Aes256Gcm).unwrap();
+
+        let kek_key = crypto_provider
+            .generate_key()
+            .unwrap();
         let kek = EnvelopeKEK::Software(kek_key);
-        
+
         let data = b"sensitive data";
         let context = b"test";
-        
+
         let mut encrypted = manager.encrypt(data, &kek, context).await.unwrap();
-        
+
         // Tamper with signature
         encrypted.envelope_signature[0] ^= 0xFF;
-        
+
         // Decryption should fail
         assert!(manager.decrypt(&encrypted, &kek).await.is_err());
     }

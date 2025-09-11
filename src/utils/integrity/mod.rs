@@ -10,28 +10,29 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-pub mod checksum_validator;
 pub mod checker;
+pub mod checksum_validator;
 pub mod consistency_checker;
-pub mod page_scanner;
-pub mod repair_tool;
 pub mod data_integrity;
 pub mod error_types;
-pub mod validation_config;
 pub mod metrics;
+pub mod page_scanner;
+pub mod repair_tool;
+pub mod validation_config;
 
+pub use checker::{
+    IntegrityChecker, IntegrityError as CheckerError, IntegrityReport as CheckerReport,
+};
 pub use checksum_validator::ChecksumValidator;
-pub use checker::{IntegrityChecker, IntegrityReport as CheckerReport, IntegrityError as CheckerError};
 pub use consistency_checker::ConsistencyChecker;
 pub use data_integrity::{DataIntegrityValidator, IntegrityReport as NewIntegrityReport};
 pub use error_types::{IntegrityError, IntegrityViolation, ValidationResult, ViolationSeverity};
+pub use metrics::{IntegrityMetrics, MetricsSnapshot};
 pub use page_scanner::PageScanner;
 pub use repair_tool::RepairTool;
-pub use validation_config::{IntegrityConfig, ValidationLevel, ValidationContext};
-pub use metrics::{IntegrityMetrics, MetricsSnapshot};
+pub use validation_config::{IntegrityConfig, ValidationContext, ValidationLevel};
 
 // Stub types are defined below and automatically available
-
 
 /// Integrity validation result
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -501,7 +502,7 @@ impl DataIntegrityChecker {
                 estimated_loss: 100,
             });
         }
-        
+
         // Read file to check for corruption patterns
         if let Ok(data) = tokio::fs::read(path).await {
             // Check for test corruption pattern (0xFF bytes)
@@ -514,7 +515,7 @@ impl DataIntegrityChecker {
                 });
             }
         }
-        
+
         Ok(IntegrityResult {
             is_valid: true,
             error_type: String::new(),
@@ -539,22 +540,27 @@ impl ChecksumValidatorStub {
     pub fn new() -> Self {
         Self
     }
-    
+
     pub async fn validate_file(&self, path: &std::path::Path) -> Result<bool> {
         // Stub implementation for recovery module compatibility
         // Check if file exists
         if !path.exists() {
             return Ok(false);
         }
-        
+
         // Read the first 4 bytes to check for test corruption pattern
         if let Ok(data) = tokio::fs::read(path).await {
             // Check for test corruption pattern (0xFF, 0xFF, 0xFF, 0xFF)
-            if data.len() >= 4 && data[0] == 0xFF && data[1] == 0xFF && data[2] == 0xFF && data[3] == 0xFF {
+            if data.len() >= 4
+                && data[0] == 0xFF
+                && data[1] == 0xFF
+                && data[2] == 0xFF
+                && data[3] == 0xFF
+            {
                 return Ok(false); // Invalid checksum detected
             }
         }
-        
+
         Ok(true)
     }
 }
@@ -563,7 +569,7 @@ impl ConsistencyCheckerStub {
     pub fn new() -> Self {
         Self
     }
-    
+
     pub async fn check_file(&self, path: &std::path::Path) -> Result<ConsistencyResult> {
         // Stub implementation for recovery module compatibility
         // Check if file exists and has valid structure
@@ -572,7 +578,7 @@ impl ConsistencyCheckerStub {
                 is_consistent: false,
             });
         }
-        
+
         // For test purposes, check for known inconsistency patterns
         if let Ok(data) = tokio::fs::read(path).await {
             // Check for test inconsistency pattern
@@ -582,7 +588,7 @@ impl ConsistencyCheckerStub {
                 });
             }
         }
-        
+
         Ok(ConsistencyResult {
             is_consistent: true,
         })

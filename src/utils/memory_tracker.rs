@@ -7,21 +7,24 @@
 //! - Memory statistics reporting
 //! - Integration with existing profiling system
 
-use tracing::error;
 use std::{
-    sync::{Arc, Mutex, RwLock, atomic::{AtomicU64, AtomicBool, Ordering}},
-    time::{Duration, SystemTime, UNIX_EPOCH},
-    thread,
     alloc::{GlobalAlloc, Layout},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex, RwLock,
+    },
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tracing::error;
 
-use parking_lot::RwLock as ParkingRwLock;
 use dashmap::DashMap;
-use serde::{Serialize, Deserialize};
-use tracing::{warn, info};
+use parking_lot::RwLock as ParkingRwLock;
+use serde::{Deserialize, Serialize};
+use tracing::{info, warn};
 
 /// Global memory tracker instance
-pub static MEMORY_TRACKER: once_cell::sync::Lazy<Arc<MemoryTracker>> = 
+pub static MEMORY_TRACKER: once_cell::sync::Lazy<Arc<MemoryTracker>> =
     once_cell::sync::Lazy::new(|| Arc::new(MemoryTracker::new()));
 
 /// Configuration for memory tracking
@@ -133,7 +136,7 @@ pub struct MemoryTracker {
     allocation_sites: DashMap<String, AllocationSiteStats>,
     memory_history: Mutex<Vec<(u64, u64)>>, // (timestamp, usage)
     alerts: Mutex<Vec<(SystemTime, MemoryAlert)>>,
-    
+
     // Atomic counters for fast access
     total_allocated: AtomicU64,
     total_deallocated: AtomicU64,
@@ -141,7 +144,7 @@ pub struct MemoryTracker {
     peak_usage: AtomicU64,
     allocation_count: AtomicU64,
     deallocation_count: AtomicU64,
-    
+
     // Control flags
     enabled: AtomicBool,
     monitoring_thread: Mutex<Option<thread::JoinHandle<()>>>,
@@ -193,10 +196,10 @@ impl MemoryTracker {
         }
 
         info!("Starting memory tracker");
-        
+
         // Reset statistics
         self.reset_statistics();
-        
+
         // Start monitoring thread - need to get Arc reference to self
         // Since we're in the global MEMORY_TRACKER, we can safely clone the Arc
         let tracker_arc = MEMORY_TRACKER.clone();
@@ -212,17 +215,17 @@ impl MemoryTracker {
         }
 
         info!("Stopping memory tracker");
-        
+
         // Signal shutdown
         self.shutdown_flag.store(true, Ordering::SeqCst);
-        
+
         // Wait for monitoring thread
         if let Ok(mut guard) = self.monitoring_thread.lock() {
             if let Some(handle) = guard.take() {
                 let _ = handle.join();
             }
         }
-        
+
         self.shutdown_flag.store(false, Ordering::SeqCst);
     }
 
@@ -243,7 +246,7 @@ impl MemoryTracker {
             .as_nanos() as u64;
 
         let thread_id = self.get_thread_id();
-        
+
         // Create allocation record
         let record = AllocationRecord {
             address: addr,
@@ -268,7 +271,8 @@ impl MemoryTracker {
         }
 
         // Update statistics
-        self.total_allocated.fetch_add(size as u64, Ordering::Relaxed);
+        self.total_allocated
+            .fetch_add(size as u64, Ordering::Relaxed);
         let current = self.current_usage.fetch_add(size as u64, Ordering::Relaxed) + size as u64;
         self.allocation_count.fetch_add(1, Ordering::Relaxed);
 
@@ -276,7 +280,10 @@ impl MemoryTracker {
         let mut peak = self.peak_usage.load(Ordering::Relaxed);
         while current > peak {
             match self.peak_usage.compare_exchange_weak(
-                peak, current, Ordering::Relaxed, Ordering::Relaxed
+                peak,
+                current,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
             ) {
                 Ok(_) => break,
                 Err(new_peak) => peak = new_peak,
@@ -298,7 +305,7 @@ impl MemoryTracker {
         // Remove allocation record and get size
         if let Some((_, record)) = self.allocations.remove(&addr) {
             let size = record.size as u64;
-            
+
             // Update statistics
             self.total_deallocated.fetch_add(size, Ordering::Relaxed);
             self.current_usage.fetch_sub(size, Ordering::Relaxed);
@@ -313,8 +320,12 @@ impl MemoryTracker {
 
     /// Get current memory statistics
     pub fn get_statistics(&self) -> MemoryStats {
-        let mut stats = self.statistics.read().unwrap_or_else(|e| e.into_inner()).clone();
-        
+        let mut stats = self
+            .statistics
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+
         // Update with current atomic values
         stats.total_allocated = self.total_allocated.load(Ordering::Relaxed);
         stats.total_deallocated = self.total_deallocated.load(Ordering::Relaxed);
@@ -323,27 +334,31 @@ impl MemoryTracker {
         stats.allocation_count = self.allocation_count.load(Ordering::Relaxed);
         stats.deallocation_count = self.deallocation_count.load(Ordering::Relaxed);
         stats.live_allocations = self.allocations.len();
-        
+
         stats
     }
 
     /// Detect memory growth patterns
     pub fn detect_growth_pattern(&self) -> GrowthPattern {
-        let history = self.memory_history.lock().unwrap_or_else(|e| e.into_inner());
+        let history = self
+            .memory_history
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if history.len() < 3 {
             return GrowthPattern::Stable;
         }
 
         let window_start = history.len().saturating_sub(10);
         let recent_data: Vec<_> = history[window_start..].to_vec();
-        
+
         self.analyze_growth_pattern(&recent_data)
     }
 
     /// Get recent memory alerts
     pub fn get_alerts(&self, since: SystemTime) -> Vec<(SystemTime, MemoryAlert)> {
         let alerts = self.alerts.lock().unwrap_or_else(|e| e.into_inner());
-        alerts.iter()
+        alerts
+            .iter()
             .filter(|(timestamp, _)| *timestamp >= since)
             .cloned()
             .collect()
@@ -351,7 +366,8 @@ impl MemoryTracker {
 
     /// Get allocation site statistics
     pub fn get_allocation_sites(&self) -> Vec<AllocationSiteStats> {
-        self.allocation_sites.iter()
+        self.allocation_sites
+            .iter()
             .map(|entry| entry.value().clone())
             .collect()
     }
@@ -360,18 +376,19 @@ impl MemoryTracker {
     pub fn detect_potential_leaks(&self) -> Vec<String> {
         let mut potential_leaks = Vec::new();
         let config = self.config.read();
-        
+
         for entry in self.allocation_sites.iter() {
             let stats = entry.value();
-            
+
             // Check for sites with no deallocations
-            if stats.total_allocations > 100 && stats.current_allocations == stats.total_allocations {
+            if stats.total_allocations > 100 && stats.current_allocations == stats.total_allocations
+            {
                 potential_leaks.push(format!(
                     "Potential leak at {}: {} allocations, no deallocations",
                     stats.location, stats.total_allocations
                 ));
             }
-            
+
             // Check for rapidly growing sites
             if stats.growth_rate > config.growth_threshold as f64 {
                 potential_leaks.push(format!(
@@ -380,7 +397,7 @@ impl MemoryTracker {
                 ));
             }
         }
-        
+
         potential_leaks
     }
 
@@ -392,13 +409,14 @@ impl MemoryTracker {
             growth_pattern: self.detect_growth_pattern(),
             allocation_sites: self.get_allocation_sites(),
             potential_leaks: self.detect_potential_leaks(),
-            recent_alerts: self.get_alerts(
-                SystemTime::now() - Duration::from_secs(3600)
-            ),
+            recent_alerts: self.get_alerts(SystemTime::now() - Duration::from_secs(3600)),
             allocations: if include_allocations {
-                Some(self.allocations.iter()
-                    .map(|entry| entry.value().clone())
-                    .collect())
+                Some(
+                    self.allocations
+                        .iter()
+                        .map(|entry| entry.value().clone())
+                        .collect(),
+                )
             } else {
                 None
             },
@@ -410,9 +428,15 @@ impl MemoryTracker {
     fn reset_statistics(&self) {
         self.allocations.clear();
         self.allocation_sites.clear();
-        self.memory_history.lock().unwrap_or_else(|e| e.into_inner()).clear();
-        self.alerts.lock().unwrap_or_else(|e| e.into_inner()).clear();
-        
+        self.memory_history
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.alerts
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+
         self.total_allocated.store(0, Ordering::Relaxed);
         self.total_deallocated.store(0, Ordering::Relaxed);
         self.current_usage.store(0, Ordering::Relaxed);
@@ -430,16 +454,18 @@ impl MemoryTracker {
         // Use Arc directly - completely safe, no type punning needed
         let shutdown_flag = tracker_arc.shutdown_flag.clone();
         let tracker_for_thread = tracker_arc.clone();
-        
+
         let handle = thread::Builder::new()
             .name("memory-monitor".to_string())
             .spawn(move || {
                 Self::safe_monitoring_loop(tracker_for_thread, shutdown_flag, config);
             })
-            .map_err(|e| std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to start memory monitoring thread: {}", e)
-            ))?;
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to start memory monitoring thread: {}", e),
+                )
+            })?;
 
         // Store the handle safely
         if let Ok(mut monitoring_thread) = tracker_arc.monitoring_thread.lock() {
@@ -457,10 +483,10 @@ impl MemoryTracker {
         while !shutdown_flag.load(Ordering::Relaxed) {
             // Collect statistics
             tracker.collect_statistics();
-            
+
             // Check for alerts
             tracker.check_memory_alerts();
-            
+
             // Sleep
             thread::sleep(config.stats_interval);
         }
@@ -471,14 +497,17 @@ impl MemoryTracker {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos() as u64;
-        
+
         let current_usage = self.current_usage.load(Ordering::Relaxed);
-        
+
         // Add to history
         {
-            let mut history = self.memory_history.lock().unwrap_or_else(|e| e.into_inner());
+            let mut history = self
+                .memory_history
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             history.push((timestamp, current_usage));
-            
+
             // Keep last 1000 entries
             if history.len() > 1000 {
                 history.drain(..100);
@@ -495,26 +524,28 @@ impl MemoryTracker {
             stats.allocation_count = self.allocation_count.load(Ordering::Relaxed);
             stats.deallocation_count = self.deallocation_count.load(Ordering::Relaxed);
             stats.live_allocations = self.allocations.len();
-            
+
             // Calculate rates
-            let history = self.memory_history.lock().unwrap_or_else(|e| e.into_inner());
+            let history = self
+                .memory_history
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if history.len() >= 2 {
-                let time_diff = (timestamp - history[history.len()-2].0) as f64 / 1_000_000_000.0;
+                let time_diff = (timestamp - history[history.len() - 2].0) as f64 / 1_000_000_000.0;
                 if time_diff > 0.0 {
-                    let alloc_diff = stats.allocation_count as f64 - 
-                        history.get(history.len()-2).map(|_| 0.0).unwrap_or(0.0);
+                    let alloc_diff = stats.allocation_count as f64
+                        - history.get(history.len() - 2).map(|_| 0.0).unwrap_or(0.0);
                     stats.allocation_rate = alloc_diff / time_diff;
-                    
-                    let usage_diff = current_usage as f64 - history[history.len()-2].1 as f64;
+
+                    let usage_diff = current_usage as f64 - history[history.len() - 2].1 as f64;
                     stats.growth_rate = usage_diff / time_diff;
                 }
             }
-            
+
             // Calculate fragmentation ratio
             if stats.total_allocated > 0 {
-                stats.fragmentation_ratio = 
-                    (stats.total_allocated - stats.current_usage) as f64 / 
-                    stats.total_allocated as f64;
+                stats.fragmentation_ratio = (stats.total_allocated - stats.current_usage) as f64
+                    / stats.total_allocated as f64;
             }
         }
     }
@@ -560,8 +591,8 @@ impl MemoryTracker {
 
         // Check for potential leaks
         for site in self.get_allocation_sites() {
-            if site.growth_rate > config.growth_threshold as f64 && 
-               site.current_allocations > 1000 {
+            if site.growth_rate > config.growth_threshold as f64 && site.current_allocations > 1000
+            {
                 alerts.push(MemoryAlert::PotentialLeak {
                     site: site.location,
                     growth: site.current_bytes,
@@ -573,12 +604,12 @@ impl MemoryTracker {
         if !alerts.is_empty() {
             let timestamp = SystemTime::now();
             let mut alert_storage = self.alerts.lock().unwrap_or_else(|e| e.into_inner());
-            
+
             for alert in alerts {
                 warn!("Memory alert: {:?}", alert);
                 alert_storage.push((timestamp, alert));
             }
-            
+
             // Keep last 1000 alerts
             if alert_storage.len() > 1000 {
                 alert_storage.drain(..100);
@@ -588,8 +619,10 @@ impl MemoryTracker {
 
     fn update_allocation_site_stats(&self, site: &str, size: u64, is_allocation: bool) {
         let now = SystemTime::now();
-        
-        let mut entry = self.allocation_sites.entry(site.to_string())
+
+        let mut entry = self
+            .allocation_sites
+            .entry(site.to_string())
             .or_insert_with(|| AllocationSiteStats {
                 location: site.to_string(),
                 total_allocations: 0,
@@ -609,7 +642,7 @@ impl MemoryTracker {
             entry.total_bytes += size;
             entry.current_allocations += 1;
             entry.current_bytes += size;
-            
+
             if entry.current_allocations > entry.peak_allocations {
                 entry.peak_allocations = entry.current_allocations;
             }
@@ -642,9 +675,9 @@ impl MemoryTracker {
 
         let mut growth_rates = Vec::new();
         for i in 1..data.len() {
-            let time_diff = (data[i].0 - data[i-1].0) as f64 / 1_000_000_000.0;
+            let time_diff = (data[i].0 - data[i - 1].0) as f64 / 1_000_000_000.0;
             if time_diff > 0.0 {
-                let usage_diff = data[i].1 as f64 - data[i-1].1 as f64;
+                let usage_diff = data[i].1 as f64 - data[i - 1].1 as f64;
                 growth_rates.push(usage_diff / time_diff);
             }
         }
@@ -654,9 +687,11 @@ impl MemoryTracker {
         }
 
         let avg_rate = growth_rates.iter().sum::<f64>() / growth_rates.len() as f64;
-        let variance = growth_rates.iter()
+        let variance = growth_rates
+            .iter()
             .map(|rate| (rate - avg_rate).powi(2))
-            .sum::<f64>() / growth_rates.len() as f64;
+            .sum::<f64>()
+            / growth_rates.len() as f64;
 
         if avg_rate.abs() < 1024.0 && variance < 10000.0 {
             GrowthPattern::Stable
@@ -679,7 +714,7 @@ impl MemoryTracker {
     fn get_thread_id(&self) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         thread::current().id().hash(&mut hasher);
         hasher.finish()
@@ -811,7 +846,6 @@ pub fn get_memory_tracker() -> &'static Arc<MemoryTracker> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_memory_tracker_creation() {
@@ -842,15 +876,10 @@ mod tests {
     #[test]
     fn test_growth_pattern_detection() {
         let tracker = MemoryTracker::new();
-        
+
         // Simulate stable pattern
-        let stable_data = vec![
-            (1000, 100),
-            (2000, 102),
-            (3000, 98),
-            (4000, 101),
-        ];
-        
+        let stable_data = vec![(1000, 100), (2000, 102), (3000, 98), (4000, 101)];
+
         let pattern = tracker.analyze_growth_pattern(&stable_data);
         matches!(pattern, GrowthPattern::Stable);
     }

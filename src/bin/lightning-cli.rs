@@ -1,7 +1,7 @@
 use clap::{Arg, ArgMatches, Command};
-use lightning_db::{Database, LightningDbConfig};
 use lightning_db::features::backup::{BackupConfig, BackupManager};
 use lightning_db::utils::integrity::checker::{check_database_integrity, format_integrity_report};
+use lightning_db::{Database, LightningDbConfig};
 use std::io::{self, Write};
 use std::time::Instant;
 

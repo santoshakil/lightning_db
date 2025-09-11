@@ -267,7 +267,9 @@ impl CrashRecoveryManager {
                     return Err(Error::RecoveryStageDependencyFailed {
                         stage: stage.name().to_string(),
                         dependency: dep.name().to_string(),
-                        dependency_error: Box::new(Error::Generic("Dependency not completed".to_string())),
+                        dependency_error: Box::new(Error::Generic(
+                            "Dependency not completed".to_string(),
+                        )),
                     });
                 }
             }
@@ -282,12 +284,15 @@ impl CrashRecoveryManager {
                 }
                 Err(error) => {
                     error!("Recovery stage '{}' failed: {}", stage.name(), error);
-                    
+
                     // Handle failure based on stage criticality and rollback capability
                     if stage.is_critical() || !stage.supports_rollback() {
                         // Critical failure - cannot continue
                         return Err(Error::PartialRecoveryFailure {
-                            completed_stages: completed_stages.iter().map(|s| s.name().to_string()).collect(),
+                            completed_stages: completed_stages
+                                .iter()
+                                .map(|s| s.name().to_string())
+                                .collect(),
                             failed_stage: stage.name().to_string(),
                             cause: Box::new(error),
                             rollback_available: false,
@@ -295,8 +300,14 @@ impl CrashRecoveryManager {
                     }
                     // Non-critical failure - attempt rollback
                     warn!("Attempting rollback for failed stage: {}", stage.name());
-                    if let Err(rollback_error) = self.rollback_manager.rollback_stage(&self.state, stage) {
-                        error!("Rollback failed for stage '{}': {}", stage.name(), rollback_error);
+                    if let Err(rollback_error) =
+                        self.rollback_manager.rollback_stage(&self.state, stage)
+                    {
+                        error!(
+                            "Rollback failed for stage '{}': {}",
+                            stage.name(),
+                            rollback_error
+                        );
                         return Err(Error::RecoveryRollbackFailed {
                             stage: stage.name().to_string(),
                             reason: rollback_error.to_string(),
@@ -305,7 +316,10 @@ impl CrashRecoveryManager {
                     }
 
                     return Err(Error::PartialRecoveryFailure {
-                        completed_stages: completed_stages.iter().map(|s| s.name().to_string()).collect(),
+                        completed_stages: completed_stages
+                            .iter()
+                            .map(|s| s.name().to_string())
+                            .collect(),
                         failed_stage: stage.name().to_string(),
                         cause: Box::new(error),
                         rollback_available: true,
@@ -319,17 +333,21 @@ impl CrashRecoveryManager {
 
         // All stages completed successfully - open the database
         info!("All recovery stages completed successfully");
-        let database = Database::open(&self.db_path, self.config.clone())
-            .map_err(|e| Error::RecoveryVerificationFailed {
+        let database = Database::open(&self.db_path, self.config.clone()).map_err(|e| {
+            Error::RecoveryVerificationFailed {
                 check_name: "Database Open".to_string(),
                 details: e.to_string(),
                 critical: true,
-            })?;
+            }
+        })?;
 
         // Final verification
         self.verify_database_consistency(&database)?;
 
-        info!("Crash recovery completed successfully in {:?}", self.state.start_time.elapsed());
+        info!(
+            "Crash recovery completed successfully in {:?}",
+            self.state.start_time.elapsed()
+        );
         Ok(database)
     }
 
@@ -337,13 +355,14 @@ impl CrashRecoveryManager {
     fn execute_stage(&self, stage: &RecoveryStage) -> Result<RecoveryStageResult> {
         let stage_start = Instant::now();
         self.state.set_current_stage(stage.clone());
-        self.progress.set_phase(&format!("Executing {}", stage.name()));
+        self.progress
+            .set_phase(&format!("Executing {}", stage.name()));
 
         // Check for timeout before starting
         self.state.check_timeout(stage)?;
 
         info!("Executing recovery stage: {}", stage.name());
-        
+
         let result = match stage {
             RecoveryStage::Initialization => self.stage_initialization(),
             RecoveryStage::LockAcquisition => self.stage_lock_acquisition(),
@@ -360,7 +379,7 @@ impl CrashRecoveryManager {
         };
 
         let duration = stage_start.elapsed();
-        
+
         match result {
             Ok(metrics) => {
                 debug!("Stage '{}' completed in {:?}", stage.name(), duration);
@@ -374,7 +393,12 @@ impl CrashRecoveryManager {
                 })
             }
             Err(error) => {
-                error!("Stage '{}' failed after {:?}: {}", stage.name(), duration, error);
+                error!(
+                    "Stage '{}' failed after {:?}: {}",
+                    stage.name(),
+                    duration,
+                    error
+                );
                 Ok(RecoveryStageResult {
                     stage: stage.clone(),
                     success: false,
@@ -390,7 +414,7 @@ impl CrashRecoveryManager {
     /// Stage 1: Initialize recovery environment
     fn stage_initialization(&self) -> Result<HashMap<String, u64>> {
         debug!("Initializing recovery environment");
-        
+
         // Check if database directory exists
         if !self.db_path.exists() {
             return Err(Error::RecoveryImpossible {
@@ -411,7 +435,7 @@ impl CrashRecoveryManager {
     /// Stage 2: Acquire recovery lock to prevent concurrent recovery
     fn stage_lock_acquisition(&self) -> Result<HashMap<String, u64>> {
         debug!("Acquiring recovery lock");
-        
+
         match self.lock_manager.acquire_recovery_lock() {
             Ok(_) => {
                 let mut metrics = HashMap::new();
@@ -422,7 +446,8 @@ impl CrashRecoveryManager {
                 if let Some(lock_holder) = self.lock_manager.get_lock_holder() {
                     Err(Error::DatabaseLocked {
                         lock_holder,
-                        suggested_action: "Wait for other recovery to complete or remove stale lock".to_string(),
+                        suggested_action:
+                            "Wait for other recovery to complete or remove stale lock".to_string(),
                     })
                 } else {
                     Err(error)
@@ -434,7 +459,7 @@ impl CrashRecoveryManager {
     /// Stage 3: Validate recovery configuration
     fn stage_config_validation(&self) -> Result<HashMap<String, u64>> {
         debug!("Validating recovery configuration");
-        
+
         // Validate critical configuration settings
         if self.config.page_size == 0 {
             return Err(Error::RecoveryConfigurationError {
@@ -466,7 +491,7 @@ impl CrashRecoveryManager {
     /// Stage 5: Discover WAL files
     fn stage_wal_discovery(&self) -> Result<HashMap<String, u64>> {
         debug!("Discovering WAL files");
-        
+
         let wal_dir = self.db_path.join("wal");
         let wal_count = if wal_dir.exists() {
             std::fs::read_dir(&wal_dir)
@@ -496,7 +521,7 @@ impl CrashRecoveryManager {
     /// Stage 6: Validate WAL files
     fn stage_wal_validation(&self) -> Result<HashMap<String, u64>> {
         debug!("Validating WAL files");
-        
+
         // This would contain actual WAL validation logic
         // For now, return success with basic metrics
         let mut metrics = HashMap::new();
@@ -507,7 +532,7 @@ impl CrashRecoveryManager {
     /// Stage 7: Recover transactions from WAL
     fn stage_transaction_recovery(&self) -> Result<HashMap<String, u64>> {
         debug!("Recovering transactions");
-        
+
         // Create rollback data for this stage
         let rollback_data = RollbackData {
             stage: RecoveryStage::TransactionRecovery,
@@ -516,7 +541,8 @@ impl CrashRecoveryManager {
             modified_files: vec![],
             acquired_locks: vec![],
         };
-        self.state.add_rollback_data(RecoveryStage::TransactionRecovery, rollback_data);
+        self.state
+            .add_rollback_data(RecoveryStage::TransactionRecovery, rollback_data);
 
         // This would contain actual transaction recovery logic
         let mut metrics = HashMap::new();
@@ -527,7 +553,7 @@ impl CrashRecoveryManager {
     /// Stage 8: Reconstruct indexes
     fn stage_index_reconstruction(&self) -> Result<HashMap<String, u64>> {
         debug!("Reconstructing indexes");
-        
+
         // Create rollback data for this stage
         let rollback_data = RollbackData {
             stage: RecoveryStage::IndexReconstruction,
@@ -536,7 +562,8 @@ impl CrashRecoveryManager {
             modified_files: vec![],
             acquired_locks: vec![],
         };
-        self.state.add_rollback_data(RecoveryStage::IndexReconstruction, rollback_data);
+        self.state
+            .add_rollback_data(RecoveryStage::IndexReconstruction, rollback_data);
 
         let mut metrics = HashMap::new();
         metrics.insert("indexes_rebuilt".to_string(), 0);
@@ -546,7 +573,7 @@ impl CrashRecoveryManager {
     /// Stage 9: Validate database consistency
     fn stage_consistency_validation(&self) -> Result<HashMap<String, u64>> {
         debug!("Validating database consistency");
-        
+
         // This would contain actual consistency validation
         let mut metrics = HashMap::new();
         metrics.insert("consistency_checks_passed".to_string(), 1);
@@ -556,7 +583,7 @@ impl CrashRecoveryManager {
     /// Stage 10: Clean up temporary resources
     fn stage_resource_cleanup(&self) -> Result<HashMap<String, u64>> {
         debug!("Cleaning up temporary resources");
-        
+
         let mut metrics = HashMap::new();
         metrics.insert("temp_files_cleaned".to_string(), 0);
         Ok(metrics)
@@ -565,9 +592,9 @@ impl CrashRecoveryManager {
     /// Stage 11: Release recovery lock
     fn stage_database_unlock(&self) -> Result<HashMap<String, u64>> {
         debug!("Releasing database lock");
-        
+
         self.lock_manager.release_recovery_lock()?;
-        
+
         let mut metrics = HashMap::new();
         metrics.insert("lock_released".to_string(), 1);
         Ok(metrics)
@@ -576,9 +603,9 @@ impl CrashRecoveryManager {
     /// Stage 12: Finalize recovery
     fn stage_finalization(&self) -> Result<HashMap<String, u64>> {
         debug!("Finalizing recovery");
-        
+
         self.progress.set_phase("Recovery completed");
-        
+
         let mut metrics = HashMap::new();
         metrics.insert("finalization_complete".to_string(), 1);
         Ok(metrics)
@@ -587,7 +614,7 @@ impl CrashRecoveryManager {
     /// Verify database consistency after recovery
     fn verify_database_consistency(&self, _database: &Database) -> Result<()> {
         debug!("Verifying database consistency post-recovery");
-        
+
         // This would contain comprehensive consistency checks
         // For now, return success
         Ok(())
@@ -644,12 +671,17 @@ impl RecoveryLockManager {
         }
 
         // Create lock file
-        let lock_content = format!("PID: {}\nTime: {:?}\n", std::process::id(), std::time::SystemTime::now());
-        std::fs::write(&self.lock_file, lock_content)
-            .map_err(|e| Error::RecoveryPermissionError {
+        let lock_content = format!(
+            "PID: {}\nTime: {:?}\n",
+            std::process::id(),
+            std::time::SystemTime::now()
+        );
+        std::fs::write(&self.lock_file, lock_content).map_err(|e| {
+            Error::RecoveryPermissionError {
                 path: self.lock_file.to_string_lossy().to_string(),
                 required_permissions: format!("write access: {}", e),
-            })?;
+            }
+        })?;
 
         self.lock_acquired.store(true, Ordering::SeqCst);
         Ok(())
@@ -695,7 +727,10 @@ impl ResourceChecker {
 
         // Check disk space
         let available_bytes = self.check_disk_space()?;
-        metrics.insert("disk_space_available_mb".to_string(), available_bytes / (1024 * 1024));
+        metrics.insert(
+            "disk_space_available_mb".to_string(),
+            available_bytes / (1024 * 1024),
+        );
 
         // Check file handle limits
         self.check_file_handle_limits()?;
@@ -707,7 +742,7 @@ impl ResourceChecker {
     fn check_memory_availability(&self) -> Result<()> {
         // Get system memory info (simplified)
         let required_memory = self.config.cache_size;
-        
+
         // In a real implementation, you would check actual system memory
         // For now, assume we have enough memory
         if required_memory > 0 {
@@ -747,7 +782,7 @@ impl RollbackManager {
 
     pub fn rollback_stage(&self, state: &RecoveryState, stage: &RecoveryStage) -> Result<()> {
         info!("Rolling back stage: {}", stage.name());
-        
+
         let rollback_data = state.rollback_data.read();
         if let Some(data) = rollback_data.get(stage) {
             // Execute rollback actions
@@ -764,21 +799,19 @@ impl RollbackManager {
         match action {
             RollbackAction::DeleteFile(path) => {
                 if path.exists() {
-                    std::fs::remove_file(path)
-                        .map_err(|e| Error::RecoveryRollbackFailed {
-                            stage: "file_deletion".to_string(),
-                            reason: e.to_string(),
-                            manual_intervention_needed: false,
-                        })?;
-                }
-            }
-            RollbackAction::RestoreFile { path, content } => {
-                std::fs::write(path, content)
-                    .map_err(|e| Error::RecoveryRollbackFailed {
-                        stage: "file_restoration".to_string(),
+                    std::fs::remove_file(path).map_err(|e| Error::RecoveryRollbackFailed {
+                        stage: "file_deletion".to_string(),
                         reason: e.to_string(),
                         manual_intervention_needed: false,
                     })?;
+                }
+            }
+            RollbackAction::RestoreFile { path, content } => {
+                std::fs::write(path, content).map_err(|e| Error::RecoveryRollbackFailed {
+                    stage: "file_restoration".to_string(),
+                    reason: e.to_string(),
+                    manual_intervention_needed: false,
+                })?;
             }
             RollbackAction::ReleaseLock(lock_name) => {
                 debug!("Releasing lock: {}", lock_name);
@@ -808,11 +841,11 @@ mod tests {
     #[test]
     fn test_recovery_state_tracking() {
         let state = RecoveryState::new(Duration::from_secs(60));
-        
+
         // Test stage completion tracking
         let stage = RecoveryStage::Initialization;
         state.set_current_stage(stage.clone());
-        
+
         let result = RecoveryStageResult {
             stage: stage.clone(),
             success: true,
@@ -821,7 +854,7 @@ mod tests {
             rollback_data: None,
             metrics: HashMap::new(),
         };
-        
+
         state.complete_stage(stage.clone(), result);
         assert!(state.is_stage_completed(&stage));
     }
@@ -830,7 +863,7 @@ mod tests {
     fn test_resource_checker() {
         let config = LightningDbConfig::default();
         let checker = ResourceChecker::new(&config);
-        
+
         // This should pass with default config
         let result = checker.check_all_resources();
         assert!(result.is_ok());
@@ -840,7 +873,7 @@ mod tests {
     fn test_recovery_lock_manager() {
         let temp_dir = TempDir::new().unwrap();
         let lock_manager = RecoveryLockManager::new(temp_dir.path()).unwrap();
-        
+
         // Test lock acquisition and release
         assert!(lock_manager.acquire_recovery_lock().is_ok());
         assert!(lock_manager.release_recovery_lock().is_ok());

@@ -195,7 +195,7 @@ impl MemTable {
         let data = self.data.read();
         let start_key = Bytes::from(start.to_vec());
         let end_key = Bytes::from(end.to_vec());
-        
+
         data.range(start_key..end_key)
             .filter_map(|(k, entry)| match entry.entry_type {
                 EntryType::Put => entry.value.as_ref().map(|v| (k.clone(), v.clone())),
@@ -472,36 +472,41 @@ mod tests {
     fn test_memtable_concurrent_writes() {
         use std::sync::Arc;
         use std::thread;
-        
+
         let memtable = Arc::new(MemTable::new(10 * 1024 * 1024));
         let num_threads = 8;
         let entries_per_thread = 1000;
         let mut handles = vec![];
-        
+
         for thread_id in 0..num_threads {
             let memtable_clone = Arc::clone(&memtable);
             let handle = thread::spawn(move || {
                 for i in 0..entries_per_thread {
                     let key = format!("thread_{:02}_key_{:04}", thread_id, i);
                     let value = format!("thread_{:02}_value_{:04}", thread_id, i);
-                    memtable_clone.put(key.into_bytes(), value.into_bytes()).unwrap();
+                    memtable_clone
+                        .put(key.into_bytes(), value.into_bytes())
+                        .unwrap();
                 }
             });
             handles.push(handle);
         }
-        
+
         for handle in handles {
             handle.join().unwrap();
         }
-        
+
         // Verify all entries
         assert_eq!(memtable.num_entries(), num_threads * entries_per_thread);
-        
+
         for thread_id in 0..num_threads {
             for i in 0..entries_per_thread {
                 let key = format!("thread_{:02}_key_{:04}", thread_id, i);
                 let expected_value = format!("thread_{:02}_value_{:04}", thread_id, i);
-                assert_eq!(memtable.get(key.as_bytes()), Some(expected_value.into_bytes()));
+                assert_eq!(
+                    memtable.get(key.as_bytes()),
+                    Some(expected_value.into_bytes())
+                );
             }
         }
     }
@@ -510,17 +515,17 @@ mod tests {
     fn test_memtable_rotation() {
         let small_size = 512; // Small size to trigger rotations
         let manager = MemTableManager::new(small_size, 3);
-        
+
         // Fill up multiple memtables
         for i in 0..100 {
             let key = format!("key_{:04}", i);
             let value = vec![b'v'; 50]; // Each entry ~50 bytes
             manager.put(key.into_bytes(), value).unwrap();
         }
-        
+
         let stats = manager.stats();
         assert!(stats.num_immutable > 0);
-        
+
         // Should still be able to read all values
         for i in 0..100 {
             let key = format!("key_{:04}", i);
@@ -531,20 +536,20 @@ mod tests {
     #[test]
     fn test_memtable_memory_limit() {
         let memtable = MemTable::new(1024); // 1KB limit
-        
+
         // Add entries until we exceed the limit
         let mut added = 0;
         for i in 0..100 {
             let key = format!("key_{:04}", i);
             let value = vec![b'v'; 100]; // 100 bytes per value
-            
+
             if memtable.put(key.into_bytes(), value).is_ok() {
                 added += 1;
             } else {
                 break;
             }
         }
-        
+
         // Should have stopped before adding all 100 entries
         assert!(added < 100);
         assert!(memtable.size() <= 1024);
@@ -553,14 +558,14 @@ mod tests {
     #[test]
     fn test_memtable_flush_to_immutable() {
         let manager = MemTableManager::new(1024, 5);
-        
+
         // Fill the active memtable
         for i in 0..20 {
             let key = format!("key_{:02}", i);
             let value = vec![b'v'; 40];
             manager.put(key.into_bytes(), value).unwrap();
         }
-        
+
         // Force rotation by filling memtable
         // Add more data to trigger rotation
         for i in 20..100 {
@@ -570,10 +575,10 @@ mod tests {
                 break;
             }
         }
-        
+
         let stats = manager.stats();
         assert_eq!(stats.num_immutable, 1);
-        
+
         // Should still be able to read from immutable
         for i in 0..20 {
             let key = format!("key_{:02}", i);
@@ -584,19 +589,19 @@ mod tests {
     #[test]
     fn test_memtable_update_semantics() {
         let memtable = MemTable::new(1024 * 1024);
-        
+
         // Initial value
         memtable.put(b"key".to_vec(), b"value1".to_vec()).unwrap();
         assert_eq!(memtable.get(b"key"), Some(b"value1".to_vec()));
-        
+
         // Update value
         memtable.put(b"key".to_vec(), b"value2".to_vec()).unwrap();
         assert_eq!(memtable.get(b"key"), Some(b"value2".to_vec()));
-        
+
         // Delete then put
         memtable.delete(b"key".to_vec()).unwrap();
         assert_eq!(memtable.get(b"key"), None);
-        
+
         memtable.put(b"key".to_vec(), b"value3".to_vec()).unwrap();
         assert_eq!(memtable.get(b"key"), Some(b"value3".to_vec()));
     }
@@ -604,20 +609,20 @@ mod tests {
     #[test]
     fn test_memtable_tombstone_handling() {
         let memtable = MemTable::new(1024 * 1024);
-        
+
         // Put then delete
         memtable.put(b"key1".to_vec(), b"value1".to_vec()).unwrap();
         memtable.delete(b"key1".to_vec()).unwrap();
-        
+
         // The tombstone should be present in entries
         assert_eq!(memtable.num_entries(), 2); // Put + Delete tombstone
         assert_eq!(memtable.get(b"key1"), None);
-        
+
         // Range scan should handle tombstones correctly
         memtable.put(b"key2".to_vec(), b"value2".to_vec()).unwrap();
         memtable.delete(b"key2".to_vec()).unwrap();
         memtable.put(b"key3".to_vec(), b"value3".to_vec()).unwrap();
-        
+
         let range = memtable.range(b"key1", b"key4");
         // Should only return non-deleted entries
         assert_eq!(range.len(), 1);
@@ -627,21 +632,23 @@ mod tests {
     #[test]
     fn test_memtable_iterator_ordering() {
         let memtable = MemTable::new(1024 * 1024);
-        
+
         // Insert in random order
         let keys = vec!["zebra", "apple", "mango", "banana", "cherry"];
         for key in &keys {
-            memtable.put(key.as_bytes().to_vec(), b"value".to_vec()).unwrap();
+            memtable
+                .put(key.as_bytes().to_vec(), b"value".to_vec())
+                .unwrap();
         }
-        
+
         // Iterator should return in sorted order
         let mut sorted_keys: Vec<String> = keys.iter().map(|s| s.to_string()).collect();
         sorted_keys.sort();
-        
+
         // Use range to get all entries in sorted order
         let entries = memtable.range(b"", b"~");
         assert_eq!(entries.len(), keys.len());
-        
+
         for (i, (key, _)) in entries.iter().enumerate() {
             assert_eq!(key, sorted_keys[i].as_bytes());
         }
@@ -650,18 +657,28 @@ mod tests {
     #[test]
     fn test_memtable_prefix_scan() {
         let memtable = MemTable::new(1024 * 1024);
-        
+
         // Add entries with common prefixes
-        memtable.put(b"user:1:name".to_vec(), b"Alice".to_vec()).unwrap();
-        memtable.put(b"user:1:age".to_vec(), b"30".to_vec()).unwrap();
-        memtable.put(b"user:2:name".to_vec(), b"Bob".to_vec()).unwrap();
-        memtable.put(b"user:2:age".to_vec(), b"25".to_vec()).unwrap();
-        memtable.put(b"post:1:title".to_vec(), b"Hello".to_vec()).unwrap();
-        
+        memtable
+            .put(b"user:1:name".to_vec(), b"Alice".to_vec())
+            .unwrap();
+        memtable
+            .put(b"user:1:age".to_vec(), b"30".to_vec())
+            .unwrap();
+        memtable
+            .put(b"user:2:name".to_vec(), b"Bob".to_vec())
+            .unwrap();
+        memtable
+            .put(b"user:2:age".to_vec(), b"25".to_vec())
+            .unwrap();
+        memtable
+            .put(b"post:1:title".to_vec(), b"Hello".to_vec())
+            .unwrap();
+
         // Scan for user:1 prefix
         let range = memtable.range(b"user:1", b"user:1~"); // ~ is after all printable chars
         assert_eq!(range.len(), 2);
-        
+
         // Scan for all users
         let range = memtable.range(b"user:", b"user:~");
         assert_eq!(range.len(), 4);

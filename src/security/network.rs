@@ -51,34 +51,40 @@ impl NetworkSecurityManager {
 
     pub fn validate_incoming_connection(&self, addr: SocketAddr) -> SecurityResult<()> {
         let firewall = self.firewall_rules.read().unwrap();
-        
+
         if !firewall.blocked_ips.is_empty() && firewall.blocked_ips.contains(&addr.ip()) {
-            return Err(SecurityError::NetworkSecurityViolation(
-                format!("IP address {} is blocked", addr.ip())
-            ));
+            return Err(SecurityError::NetworkSecurityViolation(format!(
+                "IP address {} is blocked",
+                addr.ip()
+            )));
         }
 
         if !firewall.allowed_ips.is_empty() && !firewall.allowed_ips.contains(&addr.ip()) {
-            return Err(SecurityError::NetworkSecurityViolation(
-                format!("IP address {} is not in allow list", addr.ip())
-            ));
+            return Err(SecurityError::NetworkSecurityViolation(format!(
+                "IP address {} is not in allow list",
+                addr.ip()
+            )));
         }
 
         if !firewall.allowed_ports.contains(&addr.port()) {
-            return Err(SecurityError::NetworkSecurityViolation(
-                format!("Port {} is not allowed", addr.port())
-            ));
+            return Err(SecurityError::NetworkSecurityViolation(format!(
+                "Port {} is not allowed",
+                addr.port()
+            )));
         }
 
         let tracker = self.connection_tracker.read().unwrap();
-        let ip_connections = tracker.active_connections.iter()
+        let ip_connections = tracker
+            .active_connections
+            .iter()
             .filter(|(socket_addr, _)| socket_addr.ip() == addr.ip())
             .count();
 
         if ip_connections >= tracker.max_connections_per_ip {
-            return Err(SecurityError::NetworkSecurityViolation(
-                format!("Too many connections from IP {}", addr.ip())
-            ));
+            return Err(SecurityError::NetworkSecurityViolation(format!(
+                "Too many connections from IP {}",
+                addr.ip()
+            )));
         }
 
         Ok(())
@@ -87,7 +93,7 @@ impl NetworkSecurityManager {
     pub fn register_connection(&self, addr: SocketAddr, is_secure: bool) -> SecurityResult<()> {
         let mut tracker = self.connection_tracker.write().unwrap();
         let now = SystemTime::now();
-        
+
         let connection_info = ConnectionInfo {
             connected_at: now,
             last_activity: now,
@@ -105,7 +111,12 @@ impl NetworkSecurityManager {
         tracker.active_connections.remove(&addr);
     }
 
-    pub fn update_connection_activity(&self, addr: SocketAddr, bytes_sent: u64, bytes_received: u64) {
+    pub fn update_connection_activity(
+        &self,
+        addr: SocketAddr,
+        bytes_sent: u64,
+        bytes_received: u64,
+    ) {
         let mut tracker = self.connection_tracker.write().unwrap();
         if let Some(conn_info) = tracker.active_connections.get_mut(&addr) {
             conn_info.last_activity = SystemTime::now();
@@ -116,40 +127,46 @@ impl NetworkSecurityManager {
 
     pub fn add_firewall_rule(&self, rule: FirewallRule) -> SecurityResult<()> {
         let mut firewall = self.firewall_rules.write().unwrap();
-        
+
         match rule {
             FirewallRule::AllowIp(ip) => {
                 if !firewall.allowed_ips.contains(&ip) {
                     firewall.allowed_ips.push(ip);
                 }
-            },
+            }
             FirewallRule::BlockIp(ip) => {
                 if !firewall.blocked_ips.contains(&ip) {
                     firewall.blocked_ips.push(ip);
                 }
-            },
+            }
             FirewallRule::AllowPort(port) => {
                 if !firewall.allowed_ports.contains(&port) {
                     firewall.allowed_ports.push(port);
                 }
-            },
+            }
         }
-        
+
         Ok(())
     }
 
     pub fn get_connection_stats(&self) -> ConnectionStats {
         let tracker = self.connection_tracker.read().unwrap();
         let total_connections = tracker.active_connections.len();
-        let secure_connections = tracker.active_connections.values()
+        let secure_connections = tracker
+            .active_connections
+            .values()
             .filter(|conn| conn.is_secure)
             .count();
-        
-        let total_bytes_sent: u64 = tracker.active_connections.values()
+
+        let total_bytes_sent: u64 = tracker
+            .active_connections
+            .values()
             .map(|conn| conn.bytes_sent)
             .sum();
-        
-        let total_bytes_received: u64 = tracker.active_connections.values()
+
+        let total_bytes_received: u64 = tracker
+            .active_connections
+            .values()
             .map(|conn| conn.bytes_received)
             .sum();
 
@@ -165,9 +182,11 @@ impl NetworkSecurityManager {
         let mut tracker = self.connection_tracker.write().unwrap();
         let now = SystemTime::now();
         let connection_timeout = tracker.connection_timeout;
-        
+
         tracker.active_connections.retain(|_, conn_info| {
-            now.duration_since(conn_info.last_activity).unwrap_or(Duration::ZERO) <= connection_timeout
+            now.duration_since(conn_info.last_activity)
+                .unwrap_or(Duration::ZERO)
+                <= connection_timeout
         });
     }
 }
@@ -195,10 +214,12 @@ mod tests {
     #[test]
     fn test_firewall_rules() {
         let manager = NetworkSecurityManager::new().unwrap();
-        
+
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        manager.add_firewall_rule(FirewallRule::BlockIp(ip)).unwrap();
-        
+        manager
+            .add_firewall_rule(FirewallRule::BlockIp(ip))
+            .unwrap();
+
         let addr = SocketAddr::new(ip, 8080);
         assert!(manager.validate_incoming_connection(addr).is_err());
     }
@@ -206,10 +227,10 @@ mod tests {
     #[test]
     fn test_connection_tracking() {
         let manager = NetworkSecurityManager::new().unwrap();
-        
+
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         manager.register_connection(addr, true).unwrap();
-        
+
         let stats = manager.get_connection_stats();
         assert_eq!(stats.total_connections, 1);
         assert_eq!(stats.tls_connections, 1);

@@ -180,10 +180,6 @@ name = "lightning-cli"
 path = "src/bin/lightning-cli.rs"
 required-features = ["cli"]
 
-[[bin]]
-name = "lightning-admin"
-path = "src/bin/lightning-admin.rs"
-required-features = ["cli"]
 
 [[bin]]
 name = "lightning-admin-server"
@@ -215,10 +211,6 @@ name = "oltp_basic_benchmark"
 path = "examples/oltp_basic_benchmark.rs"
 required-features = ["integration_tests"]
 
-[[example]]
-name = "oltp_benchmark"
-path = "examples/oltp_benchmark.rs"
-required-features = ["integration_tests"]
 
 [[example]]
 name = "migration_example"
@@ -234,27 +226,13 @@ required-features = ["integration_tests"]
 name = "mmap_benchmark"
 harness = false
 
-[[bench]]
-name = "basic_benchmarks"
-harness = false
 
 [[bench]]
 name = "encryption_benchmarks"
 harness = false
 
 [[bench]]
-name = "performance_regression_suite"
-harness = false
-
-[[bench]]
-name = "production_benchmarks"
-harness = false
-
-
-[[bench]]
-name = "comprehensive_regression_suite"
-harness = false
-
-[[bench]]
 name = "comprehensive_benchmarks"
 harness = false
+
+

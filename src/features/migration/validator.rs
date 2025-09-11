@@ -1,10 +1,7 @@
-use std::{
-    collections::HashSet,
-    time::Duration,
-};
-use serde::{Deserialize, Serialize};
+use super::{Migration, MigrationContext, MigrationMode, MigrationType};
 use crate::core::error::DatabaseResult;
-use super::{Migration, MigrationContext, MigrationType, MigrationMode};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashSet, time::Duration};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidationResult {
@@ -27,7 +24,7 @@ impl ValidationResult {
             safety_level: SafetyLevel::Safe,
         }
     }
-    
+
     pub fn invalid(errors: Vec<ValidationError>) -> Self {
         Self {
             is_valid: false,
@@ -38,22 +35,22 @@ impl ValidationResult {
             safety_level: SafetyLevel::Unsafe,
         }
     }
-    
+
     pub fn with_warnings(mut self, warnings: Vec<ValidationWarning>) -> Self {
         self.warnings = warnings;
         self
     }
-    
+
     pub fn with_recommendations(mut self, recommendations: Vec<String>) -> Self {
         self.recommendations = recommendations;
         self
     }
-    
+
     pub fn with_duration(mut self, duration: Duration) -> Self {
         self.estimated_duration = Some(duration);
         self
     }
-    
+
     pub fn with_safety_level(mut self, level: SafetyLevel) -> Self {
         self.safety_level = level;
         self
@@ -110,12 +107,12 @@ impl MigrationValidator {
             rules: Vec::new(),
             safety_checks: Vec::new(),
         };
-        
+
         validator.add_default_rules();
         validator.add_default_safety_checks();
         validator
     }
-    
+
     fn add_default_rules(&mut self) {
         self.rules.push(Box::new(SyntaxValidationRule));
         self.rules.push(Box::new(DependencyValidationRule));
@@ -123,22 +120,22 @@ impl MigrationValidator {
         self.rules.push(Box::new(VersionValidationRule));
         self.rules.push(Box::new(ReversibilityValidationRule));
     }
-    
+
     fn add_default_safety_checks(&mut self) {
         self.safety_checks.push(Box::new(DataLossSafetyCheck));
         self.safety_checks.push(Box::new(PerformanceSafetyCheck));
         self.safety_checks.push(Box::new(CompatibilitySafetyCheck));
         self.safety_checks.push(Box::new(ResourceUsageSafetyCheck));
     }
-    
+
     pub fn add_rule(&mut self, rule: Box<dyn ValidationRule + Send + Sync>) {
         self.rules.push(rule);
     }
-    
+
     pub fn add_safety_check(&mut self, check: Box<dyn SafetyCheck + Send + Sync>) {
         self.safety_checks.push(check);
     }
-    
+
     pub fn validate_migration(
         &self,
         migration: &Migration,
@@ -147,14 +144,14 @@ impl MigrationValidator {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
         let mut recommendations = Vec::new();
-        
+
         for rule in &self.rules {
             match rule.validate(migration, ctx) {
                 Ok(rule_result) => {
                     errors.extend(rule_result.errors);
                     warnings.extend(rule_result.warnings);
                     recommendations.extend(rule_result.recommendations);
-                },
+                }
                 Err(e) => {
                     errors.push(ValidationError {
                         code: "VALIDATION_RULE_ERROR".to_string(),
@@ -166,9 +163,9 @@ impl MigrationValidator {
                 }
             }
         }
-        
+
         let mut safety_level = SafetyLevel::Safe;
-        
+
         for safety_check in &self.safety_checks {
             match safety_check.check(migration, ctx) {
                 Ok(check_result) => {
@@ -180,10 +177,10 @@ impl MigrationValidator {
                             _ => SafetyLevel::Safe,
                         };
                     }
-                    
+
                     warnings.extend(check_result.warnings);
                     recommendations.extend(check_result.recommendations);
-                },
+                }
                 Err(e) => {
                     warnings.push(ValidationWarning {
                         code: "SAFETY_CHECK_ERROR".to_string(),
@@ -193,13 +190,14 @@ impl MigrationValidator {
                 }
             }
         }
-        
-        let is_valid = errors.is_empty() || errors.iter().all(|e| 
-            matches!(e.severity, ErrorSeverity::Low | ErrorSeverity::Medium)
-        );
-        
+
+        let is_valid = errors.is_empty()
+            || errors
+                .iter()
+                .all(|e| matches!(e.severity, ErrorSeverity::Low | ErrorSeverity::Medium));
+
         let estimated_duration = self.estimate_migration_duration(migration, ctx);
-        
+
         Ok(ValidationResult {
             is_valid,
             errors,
@@ -209,7 +207,7 @@ impl MigrationValidator {
             safety_level,
         })
     }
-    
+
     pub fn validate_migration_sequence(
         &self,
         migrations: &[&Migration],
@@ -218,13 +216,16 @@ impl MigrationValidator {
         let mut sequence_errors = Vec::new();
         let mut sequence_warnings = Vec::new();
         let sequence_recommendations = Vec::new();
-        
+
         let mut versions = HashSet::new();
         for migration in migrations {
             if versions.contains(&migration.metadata.version) {
                 sequence_errors.push(ValidationError {
                     code: "DUPLICATE_VERSION".to_string(),
-                    message: format!("Duplicate migration version: {}", migration.metadata.version),
+                    message: format!(
+                        "Duplicate migration version: {}",
+                        migration.metadata.version
+                    ),
                     severity: ErrorSeverity::Critical,
                     line: None,
                     column: None,
@@ -232,10 +233,13 @@ impl MigrationValidator {
             }
             versions.insert(migration.metadata.version);
         }
-        
+
         for (i, migration) in migrations.iter().enumerate() {
             for dep_version in &migration.metadata.dependencies {
-                let dep_exists = migrations.iter().take(i).any(|m| m.metadata.version == *dep_version);
+                let dep_exists = migrations
+                    .iter()
+                    .take(i)
+                    .any(|m| m.metadata.version == *dep_version);
                 if !dep_exists {
                     sequence_errors.push(ValidationError {
                         code: "MISSING_DEPENDENCY".to_string(),
@@ -250,22 +254,25 @@ impl MigrationValidator {
                 }
             }
         }
-        
-        let total_duration = migrations.iter()
+
+        let total_duration = migrations
+            .iter()
             .filter_map(|m| m.metadata.estimated_duration)
             .fold(Duration::ZERO, |acc, d| acc + d);
-        
+
         if total_duration > Duration::from_secs(3600) {
             sequence_warnings.push(ValidationWarning {
                 code: "LONG_MIGRATION_SEQUENCE".to_string(),
-                message: format!("Migration sequence estimated to take {:.1} hours", 
-                    total_duration.as_secs_f64() / 3600.0),
+                message: format!(
+                    "Migration sequence estimated to take {:.1} hours",
+                    total_duration.as_secs_f64() / 3600.0
+                ),
                 recommendation: Some("Consider breaking into smaller batches".to_string()),
             });
         }
-        
+
         let is_valid = sequence_errors.is_empty();
-        
+
         Ok(ValidationResult {
             is_valid,
             errors: sequence_errors,
@@ -275,32 +282,37 @@ impl MigrationValidator {
             safety_level: SafetyLevel::Safe,
         })
     }
-    
-    fn estimate_migration_duration(&self, migration: &Migration, _ctx: &MigrationContext) -> Option<Duration> {
+
+    fn estimate_migration_duration(
+        &self,
+        migration: &Migration,
+        _ctx: &MigrationContext,
+    ) -> Option<Duration> {
         if let Some(estimated) = migration.metadata.estimated_duration {
             return Some(estimated);
         }
-        
+
         let script_lines = migration.up_script.lines().count();
         let base_duration = Duration::from_millis(script_lines as u64 * 10);
-        
+
         let type_multiplier = match migration.metadata.migration_type {
             MigrationType::Schema => 1.0,
             MigrationType::Data => 5.0,
             MigrationType::Index => 3.0,
             MigrationType::Maintenance => 0.5,
         };
-        
+
         let mode_multiplier = match migration.metadata.mode {
             MigrationMode::Online => 1.5,
             MigrationMode::Offline => 1.0,
             MigrationMode::ZeroDowntime => 2.0,
         };
-        
-        let total_millis = (base_duration.as_millis() as f64 * type_multiplier * mode_multiplier) as u64;
+
+        let total_millis =
+            (base_duration.as_millis() as f64 * type_multiplier * mode_multiplier) as u64;
         Some(Duration::from_millis(total_millis))
     }
-    
+
     pub fn dry_run_validation(
         &self,
         migration: &Migration,
@@ -308,17 +320,25 @@ impl MigrationValidator {
     ) -> DatabaseResult<ValidationResult> {
         let mut dry_run_ctx = ctx.clone();
         dry_run_ctx.dry_run = true;
-        
+
         self.validate_migration(migration, &dry_run_ctx)
     }
 }
 
 pub trait ValidationRule: std::fmt::Debug {
-    fn validate(&self, migration: &Migration, ctx: &MigrationContext) -> DatabaseResult<ValidationResult>;
+    fn validate(
+        &self,
+        migration: &Migration,
+        ctx: &MigrationContext,
+    ) -> DatabaseResult<ValidationResult>;
 }
 
 pub trait SafetyCheck: std::fmt::Debug {
-    fn check(&self, migration: &Migration, ctx: &MigrationContext) -> DatabaseResult<SafetyCheckResult>;
+    fn check(
+        &self,
+        migration: &Migration,
+        ctx: &MigrationContext,
+    ) -> DatabaseResult<SafetyCheckResult>;
 }
 
 #[derive(Debug)]
@@ -332,9 +352,13 @@ pub struct SafetyCheckResult {
 pub struct SyntaxValidationRule;
 
 impl ValidationRule for SyntaxValidationRule {
-    fn validate(&self, migration: &Migration, _ctx: &MigrationContext) -> DatabaseResult<ValidationResult> {
+    fn validate(
+        &self,
+        migration: &Migration,
+        _ctx: &MigrationContext,
+    ) -> DatabaseResult<ValidationResult> {
         let mut errors = Vec::new();
-        
+
         if migration.up_script.trim().is_empty() {
             errors.push(ValidationError {
                 code: "EMPTY_UP_SCRIPT".to_string(),
@@ -344,8 +368,13 @@ impl ValidationRule for SyntaxValidationRule {
                 column: None,
             });
         }
-        
-        if migration.metadata.reversible && migration.down_script.as_ref().is_none_or(|s| s.trim().is_empty()) {
+
+        if migration.metadata.reversible
+            && migration
+                .down_script
+                .as_ref()
+                .is_none_or(|s| s.trim().is_empty())
+        {
             errors.push(ValidationError {
                 code: "EMPTY_DOWN_SCRIPT".to_string(),
                 message: "Migration marked as reversible but down script is empty".to_string(),
@@ -354,13 +383,13 @@ impl ValidationRule for SyntaxValidationRule {
                 column: None,
             });
         }
-        
+
         self.validate_sql_syntax(&migration.up_script, &mut errors);
-        
+
         if let Some(ref down_script) = migration.down_script {
             self.validate_sql_syntax(down_script, &mut errors);
         }
-        
+
         if errors.is_empty() {
             Ok(ValidationResult::valid())
         } else {
@@ -372,14 +401,14 @@ impl ValidationRule for SyntaxValidationRule {
 impl SyntaxValidationRule {
     fn validate_sql_syntax(&self, script: &str, errors: &mut Vec<ValidationError>) {
         let lines: Vec<&str> = script.lines().collect();
-        
+
         for (line_no, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
-            
+
             if trimmed.is_empty() || trimmed.starts_with("--") {
                 continue;
             }
-            
+
             if trimmed.contains("DROP TABLE") && !trimmed.to_uppercase().contains("IF EXISTS") {
                 errors.push(ValidationError {
                     code: "UNSAFE_DROP_TABLE".to_string(),
@@ -389,7 +418,7 @@ impl SyntaxValidationRule {
                     column: None,
                 });
             }
-            
+
             if trimmed.contains("ALTER TABLE") && trimmed.contains("DROP COLUMN") {
                 errors.push(ValidationError {
                     code: "DATA_LOSS_WARNING".to_string(),
@@ -407,9 +436,13 @@ impl SyntaxValidationRule {
 pub struct DependencyValidationRule;
 
 impl ValidationRule for DependencyValidationRule {
-    fn validate(&self, migration: &Migration, _ctx: &MigrationContext) -> DatabaseResult<ValidationResult> {
+    fn validate(
+        &self,
+        migration: &Migration,
+        _ctx: &MigrationContext,
+    ) -> DatabaseResult<ValidationResult> {
         let mut errors = Vec::new();
-        
+
         for dep_version in &migration.metadata.dependencies {
             if *dep_version >= migration.metadata.version {
                 errors.push(ValidationError {
@@ -424,7 +457,7 @@ impl ValidationRule for DependencyValidationRule {
                 });
             }
         }
-        
+
         if errors.is_empty() {
             Ok(ValidationResult::valid())
         } else {
@@ -437,9 +470,13 @@ impl ValidationRule for DependencyValidationRule {
 pub struct ChecksumValidationRule;
 
 impl ValidationRule for ChecksumValidationRule {
-    fn validate(&self, migration: &Migration, _ctx: &MigrationContext) -> DatabaseResult<ValidationResult> {
+    fn validate(
+        &self,
+        migration: &Migration,
+        _ctx: &MigrationContext,
+    ) -> DatabaseResult<ValidationResult> {
         let calculated_checksum = super::calculate_checksum(&migration.up_script);
-        
+
         if calculated_checksum != migration.metadata.checksum {
             let error = ValidationError {
                 code: "CHECKSUM_MISMATCH".to_string(),
@@ -459,9 +496,13 @@ impl ValidationRule for ChecksumValidationRule {
 pub struct VersionValidationRule;
 
 impl ValidationRule for VersionValidationRule {
-    fn validate(&self, migration: &Migration, ctx: &MigrationContext) -> DatabaseResult<ValidationResult> {
+    fn validate(
+        &self,
+        migration: &Migration,
+        ctx: &MigrationContext,
+    ) -> DatabaseResult<ValidationResult> {
         let mut errors = Vec::new();
-        
+
         if migration.metadata.version <= ctx.current_version && !ctx.force {
             errors.push(ValidationError {
                 code: "VERSION_TOO_OLD".to_string(),
@@ -474,7 +515,7 @@ impl ValidationRule for VersionValidationRule {
                 column: None,
             });
         }
-        
+
         if errors.is_empty() {
             Ok(ValidationResult::valid())
         } else {
@@ -487,17 +528,23 @@ impl ValidationRule for VersionValidationRule {
 pub struct ReversibilityValidationRule;
 
 impl ValidationRule for ReversibilityValidationRule {
-    fn validate(&self, migration: &Migration, _ctx: &MigrationContext) -> DatabaseResult<ValidationResult> {
+    fn validate(
+        &self,
+        migration: &Migration,
+        _ctx: &MigrationContext,
+    ) -> DatabaseResult<ValidationResult> {
         let mut warnings = Vec::new();
-        
+
         if !migration.metadata.reversible {
             warnings.push(ValidationWarning {
                 code: "NON_REVERSIBLE_MIGRATION".to_string(),
                 message: "Migration is not reversible".to_string(),
-                recommendation: Some("Consider making migration reversible for safer rollbacks".to_string()),
+                recommendation: Some(
+                    "Consider making migration reversible for safer rollbacks".to_string(),
+                ),
             });
         }
-        
+
         Ok(ValidationResult::valid().with_warnings(warnings))
     }
 }
@@ -506,12 +553,16 @@ impl ValidationRule for ReversibilityValidationRule {
 pub struct DataLossSafetyCheck;
 
 impl SafetyCheck for DataLossSafetyCheck {
-    fn check(&self, migration: &Migration, _ctx: &MigrationContext) -> DatabaseResult<SafetyCheckResult> {
+    fn check(
+        &self,
+        migration: &Migration,
+        _ctx: &MigrationContext,
+    ) -> DatabaseResult<SafetyCheckResult> {
         let script = &migration.up_script.to_uppercase();
         let mut level = 0u8;
         let mut warnings = Vec::new();
         let mut recommendations = Vec::new();
-        
+
         if script.contains("DROP TABLE") || script.contains("DROP COLUMN") {
             level = 3;
             warnings.push(ValidationWarning {
@@ -521,7 +572,7 @@ impl SafetyCheck for DataLossSafetyCheck {
             });
             recommendations.push("Create backup before migration".to_string());
         }
-        
+
         if script.contains("TRUNCATE") || script.contains("DELETE FROM") {
             level = level.max(2);
             warnings.push(ValidationWarning {
@@ -530,7 +581,7 @@ impl SafetyCheck for DataLossSafetyCheck {
                 recommendation: None,
             });
         }
-        
+
         Ok(SafetyCheckResult {
             level,
             warnings,
@@ -543,12 +594,16 @@ impl SafetyCheck for DataLossSafetyCheck {
 pub struct PerformanceSafetyCheck;
 
 impl SafetyCheck for PerformanceSafetyCheck {
-    fn check(&self, migration: &Migration, _ctx: &MigrationContext) -> DatabaseResult<SafetyCheckResult> {
+    fn check(
+        &self,
+        migration: &Migration,
+        _ctx: &MigrationContext,
+    ) -> DatabaseResult<SafetyCheckResult> {
         let script = &migration.up_script.to_uppercase();
         let mut level = 0u8;
         let mut warnings = Vec::new();
         let recommendations = Vec::new();
-        
+
         if script.contains("CREATE INDEX") && !script.contains("CONCURRENTLY") {
             level = 2;
             warnings.push(ValidationWarning {
@@ -557,7 +612,7 @@ impl SafetyCheck for PerformanceSafetyCheck {
                 recommendation: Some("Consider using CREATE INDEX CONCURRENTLY".to_string()),
             });
         }
-        
+
         if script.contains("ALTER TABLE") && script.contains("ADD COLUMN") {
             level = level.max(1);
             warnings.push(ValidationWarning {
@@ -566,7 +621,7 @@ impl SafetyCheck for PerformanceSafetyCheck {
                 recommendation: Some("Consider running during maintenance window".to_string()),
             });
         }
-        
+
         Ok(SafetyCheckResult {
             level,
             warnings,
@@ -579,7 +634,11 @@ impl SafetyCheck for PerformanceSafetyCheck {
 pub struct CompatibilitySafetyCheck;
 
 impl SafetyCheck for CompatibilitySafetyCheck {
-    fn check(&self, _migration: &Migration, _ctx: &MigrationContext) -> DatabaseResult<SafetyCheckResult> {
+    fn check(
+        &self,
+        _migration: &Migration,
+        _ctx: &MigrationContext,
+    ) -> DatabaseResult<SafetyCheckResult> {
         Ok(SafetyCheckResult {
             level: 0,
             warnings: Vec::new(),
@@ -592,12 +651,16 @@ impl SafetyCheck for CompatibilitySafetyCheck {
 pub struct ResourceUsageSafetyCheck;
 
 impl SafetyCheck for ResourceUsageSafetyCheck {
-    fn check(&self, migration: &Migration, _ctx: &MigrationContext) -> DatabaseResult<SafetyCheckResult> {
+    fn check(
+        &self,
+        migration: &Migration,
+        _ctx: &MigrationContext,
+    ) -> DatabaseResult<SafetyCheckResult> {
         let script_size = migration.up_script.len();
         let mut level = 0u8;
         let mut warnings = Vec::new();
         let mut recommendations = Vec::new();
-        
+
         if script_size > 1_000_000 {
             level = 2;
             warnings.push(ValidationWarning {
@@ -607,7 +670,7 @@ impl SafetyCheck for ResourceUsageSafetyCheck {
             });
             recommendations.push("Monitor memory usage during migration".to_string());
         }
-        
+
         Ok(SafetyCheckResult {
             level,
             warnings,

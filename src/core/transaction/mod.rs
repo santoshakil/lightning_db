@@ -7,8 +7,8 @@ mod critical_fixes_tests;
 
 pub use fixed_version_store::FixedVersionStore;
 pub use unified_manager::{
-    TxState, ReadOp, WriteOp, TransactionMetrics, UnifiedTransactionManager,
-    UnifiedTransaction, TransactionSnapshot, TransactionPriority, UnifiedVersionStore,
-    VersionedValue, TransactionStats
+    ReadOp, TransactionMetrics, TransactionPriority, TransactionSnapshot, TransactionStats,
+    TxState, UnifiedTransaction, UnifiedTransactionManager, UnifiedVersionStore, VersionedValue,
+    WriteOp,
 };
-pub use version_cleanup::{VersionCleanupThread, TransactionCleanup};
+pub use version_cleanup::{TransactionCleanup, VersionCleanupThread};

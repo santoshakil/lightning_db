@@ -191,7 +191,6 @@ impl OptimizedBTreeNode {
     }
 
     /// Find the insertion point for a key using optimized binary search
-    #[allow(dead_code)]
     fn find_insertion_point(&self, key: &[u8]) -> usize {
         if self.header.key_count == 0 {
             return 0;
@@ -214,7 +213,6 @@ impl OptimizedBTreeNode {
     }
 
     /// Compare a key at given index with the provided key
-    #[allow(dead_code)]
     fn compare_key_at_index(&self, index: usize, key: &[u8]) -> std::cmp::Ordering {
         if index >= self.header.key_count as usize {
             return std::cmp::Ordering::Greater;
@@ -556,7 +554,8 @@ impl CompactRecord {
             let data_len = self.header.key_len as usize + self.header.value_len as usize;
             let data_slice = std::slice::from_raw_parts(data_ptr, data_len);
 
-            let calculated_checksum = crate::performance::optimizations::simd::safe::crc32(data_slice);
+            let calculated_checksum =
+                crate::performance::optimizations::simd::safe::crc32(data_slice);
             calculated_checksum == self.header.checksum
         }
     }

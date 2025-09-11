@@ -228,7 +228,9 @@ impl StreamingCompressor {
             current_level: CompressionLevel::Balanced,
             stats: RwLock::new(stats),
             sequence_counter: std::sync::atomic::AtomicU64::new(0),
-            last_evaluation: std::sync::atomic::AtomicU64::new(Instant::now().elapsed().as_nanos() as u64),
+            last_evaluation: std::sync::atomic::AtomicU64::new(
+                Instant::now().elapsed().as_nanos() as u64
+            ),
             data_type_detector: DataTypeDetector::new(1024),
         })
     }
@@ -344,7 +346,10 @@ impl StreamingCompressor {
         }
 
         while buffers.input_buffer.len() >= self.config.chunk_size {
-            let chunk_data: Vec<u8> = buffers.input_buffer.drain(..self.config.chunk_size).collect();
+            let chunk_data: Vec<u8> = buffers
+                .input_buffer
+                .drain(..self.config.chunk_size)
+                .collect();
             buffers.chunk_queue.push_back(chunk_data);
 
             if buffers.chunk_queue.len() >= self.config.max_buffered_chunks {
@@ -428,19 +433,30 @@ impl StreamingCompressor {
     /// Evaluate algorithm performance and switch if needed
     fn evaluate_algorithm_performance(&mut self) -> Result<()> {
         let now = Instant::now();
-        let last_eval_nanos = self.last_evaluation.load(std::sync::atomic::Ordering::Relaxed);
+        let last_eval_nanos = self
+            .last_evaluation
+            .load(std::sync::atomic::Ordering::Relaxed);
         let last_eval = Instant::now() - Duration::from_nanos(last_eval_nanos);
 
         if now.duration_since(last_eval) < self.config.evaluation_interval {
             return Ok(());
         }
 
-        self.last_evaluation.store(now.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+        self.last_evaluation.store(
+            now.elapsed().as_nanos() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
 
         // Analyze recent performance
         let recent_chunks: Vec<_> = {
             let buffers = self.buffers.lock();
-            buffers.processed_chunks.iter().rev().take(10).cloned().collect()
+            buffers
+                .processed_chunks
+                .iter()
+                .rev()
+                .take(10)
+                .cloned()
+                .collect()
         };
 
         if recent_chunks.len() < 5 {
@@ -465,8 +481,8 @@ impl StreamingCompressor {
                 data_type,
                 data_size: sample_data.len(),
                 entropy,
-                system_load: 0.5,                  // Implementation pending system load detection
-                available_memory_mb: 1024,         // Implementation pending memory detection
+                system_load: 0.5, // Implementation pending system load detection
+                available_memory_mb: 1024, // Implementation pending memory detection
                 storage_speed: StorageSpeed::Fast, // Implementation pending storage speed detection
                 time_constraint_ms: None,
                 min_compression_ratio: None,
@@ -837,8 +853,8 @@ impl Default for StreamingConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::AdaptiveCompressionEngine;
+    use super::*;
     use std::io::Cursor;
 
     #[test]

@@ -1,10 +1,10 @@
+use crate::core::error::{Error, Result};
+use bytes::Bytes;
+use dashmap::DashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::collections::{HashMap, HashSet, BTreeMap};
 use tokio::sync::RwLock;
-use bytes::Bytes;
-use crate::core::error::{Error, Result};
-use dashmap::DashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValidationResult {
@@ -331,7 +331,10 @@ impl OptimisticController {
             }),
             timestamp_oracle: Arc::new(TimestampOracle {
                 current_timestamp: Arc::new(std::sync::atomic::AtomicU64::new(
-                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis() as u64,
                 )),
                 timestamp_cache: Arc::new(DashMap::new()),
                 clock_skew_tolerance: Duration::from_millis(100),
@@ -358,11 +361,15 @@ impl OptimisticController {
     }
 
     pub async fn begin_transaction(&self, txn_id: super::TransactionId) -> Result<u64> {
-        let timestamp = self.timestamp_oracle.current_timestamp
+        let timestamp = self
+            .timestamp_oracle
+            .current_timestamp
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        
-        self.timestamp_oracle.timestamp_cache.insert(txn_id, timestamp);
-        
+
+        self.timestamp_oracle
+            .timestamp_cache
+            .insert(txn_id, timestamp);
+
         self.validation_engine.snapshot_validator.snapshots.insert(
             txn_id,
             TransactionSnapshot {
@@ -370,13 +377,17 @@ impl OptimisticController {
                 start_timestamp: timestamp,
                 read_set: HashSet::new(),
                 write_set: HashSet::new(),
-                snapshot_version: self.version_manager.global_version
+                snapshot_version: self
+                    .version_manager
+                    .global_version
                     .load(std::sync::atomic::Ordering::SeqCst),
             },
         );
-        
-        self.read_set_tracker.read_sets.insert(txn_id, HashSet::new());
-        
+
+        self.read_set_tracker
+            .read_sets
+            .insert(txn_id, HashSet::new());
+
         self.write_set_buffer.write_buffers.insert(
             txn_id,
             WriteBuffer {
@@ -386,20 +397,18 @@ impl OptimisticController {
                 created_at: Instant::now(),
             },
         );
-        
+
         Ok(timestamp)
     }
 
-    pub async fn read(
-        &self,
-        txn_id: super::TransactionId,
-        key: String,
-    ) -> Result<Option<Bytes>> {
-        let timestamp = self.timestamp_oracle.timestamp_cache
+    pub async fn read(&self, txn_id: super::TransactionId, key: String) -> Result<Option<Bytes>> {
+        let timestamp = self
+            .timestamp_oracle
+            .timestamp_cache
             .get(&txn_id)
             .map(|t| *t)
             .ok_or_else(|| Error::Custom("Transaction not found".to_string()))?;
-        
+
         if let Some(write_buffer) = self.write_set_buffer.write_buffers.get(&txn_id) {
             for write in write_buffer.writes.iter().rev() {
                 if write.key == key {
@@ -410,8 +419,10 @@ impl OptimisticController {
                 }
             }
         }
-        
-        let version_chain = self.version_manager.versions
+
+        let version_chain = self
+            .version_manager
+            .versions
             .entry(key.clone())
             .or_insert_with(|| VersionChain {
                 key: key.clone(),
@@ -419,14 +430,14 @@ impl OptimisticController {
                 latest_version: 0,
                 readers: HashSet::new(),
             });
-        
+
         let value = version_chain
             .versions
             .range(..=timestamp)
             .rev()
             .find(|(_, entry)| !entry.deleted)
             .map(|(_, entry)| entry.value.clone());
-        
+
         if let Some(ref val) = value {
             let read_item = TrackedRead {
                 key: key.clone(),
@@ -434,17 +445,22 @@ impl OptimisticController {
                 read_time: timestamp,
                 value_hash: self.hash_value(val),
             };
-            
+
             if let Some(mut read_set) = self.read_set_tracker.read_sets.get_mut(&txn_id) {
                 read_set.insert(read_item);
             }
-            
+
             let mut read_deps = self.read_set_tracker.read_dependencies.write().await;
-            read_deps.entry(key).or_insert_with(HashSet::new).insert(txn_id);
+            read_deps
+                .entry(key)
+                .or_insert_with(HashSet::new)
+                .insert(txn_id);
         }
-        
-        self.metrics.avg_read_set_size.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+
+        self.metrics
+            .avg_read_set_size
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         Ok(value)
     }
 
@@ -455,11 +471,13 @@ impl OptimisticController {
         value: Bytes,
         operation: WriteOperation,
     ) -> Result<()> {
-        let timestamp = self.timestamp_oracle.timestamp_cache
+        let timestamp = self
+            .timestamp_oracle
+            .timestamp_cache
             .get(&txn_id)
             .map(|t| *t)
             .ok_or_else(|| Error::Custom("Transaction not found".to_string()))?;
-        
+
         if let Some(mut write_buffer) = self.write_set_buffer.write_buffers.get_mut(&txn_id) {
             write_buffer.writes.push(BufferedWrite {
                 key,
@@ -469,25 +487,23 @@ impl OptimisticController {
             });
             write_buffer.estimated_size += std::mem::size_of::<BufferedWrite>();
         }
-        
-        self.metrics.avg_write_set_size.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+
+        self.metrics
+            .avg_write_set_size
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         Ok(())
     }
 
     pub async fn validate(&self, txn_id: super::TransactionId) -> Result<ValidationResult> {
-        self.metrics.total_validations.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        
+        self.metrics
+            .total_validations
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
         let result = match self.validation_engine.validation_strategy {
-            ValidationStrategy::Snapshot => {
-                self.validate_snapshot(txn_id).await?
-            }
-            ValidationStrategy::Serialization => {
-                self.validate_serialization(txn_id).await?
-            }
-            ValidationStrategy::Range => {
-                self.validate_range(txn_id).await?
-            }
+            ValidationStrategy::Snapshot => self.validate_snapshot(txn_id).await?,
+            ValidationStrategy::Serialization => self.validate_serialization(txn_id).await?,
+            ValidationStrategy::Range => self.validate_range(txn_id).await?,
             ValidationStrategy::Hybrid => {
                 let snapshot_valid = self.validate_snapshot(txn_id).await?;
                 if snapshot_valid != ValidationResult::Valid {
@@ -497,37 +513,48 @@ impl OptimisticController {
                 }
             }
         };
-        
+
         match result {
             ValidationResult::Valid => {
-                self.metrics.successful_validations.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.metrics
+                    .successful_validations
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             ValidationResult::Invalid => {
-                self.metrics.failed_validations.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                self.metrics.conflict_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.metrics
+                    .failed_validations
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.metrics
+                    .conflict_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             ValidationResult::Retry => {
-                self.metrics.retry_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.metrics
+                    .retry_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }
-        
+
         Ok(result)
     }
 
     async fn validate_snapshot(&self, txn_id: super::TransactionId) -> Result<ValidationResult> {
-        let snapshot = self.validation_engine.snapshot_validator.snapshots
+        let snapshot = self
+            .validation_engine
+            .snapshot_validator
+            .snapshots
             .get(&txn_id)
             .ok_or_else(|| Error::Custom("Snapshot not found".to_string()))?;
-        
+
         if let Some(read_set) = self.read_set_tracker.read_sets.get(&txn_id) {
             for read in read_set.iter() {
                 if let Some(version_chain) = self.version_manager.versions.get(&read.key) {
                     let current_version = version_chain.latest_version;
-                    
+
                     if current_version > read.version {
-                        if let Some(newer_entry) = version_chain.versions
-                            .range((read.read_time + 1)..) 
-                            .next() {
+                        if let Some(newer_entry) =
+                            version_chain.versions.range((read.read_time + 1)..).next()
+                        {
                             if newer_entry.1.timestamp < snapshot.start_timestamp {
                                 return Ok(ValidationResult::Invalid);
                             }
@@ -536,24 +563,40 @@ impl OptimisticController {
                 }
             }
         }
-        
+
         Ok(ValidationResult::Valid)
     }
 
-    async fn validate_serialization(&self, txn_id: super::TransactionId) -> Result<ValidationResult> {
-        let mut conflict_graph = self.validation_engine.serialization_validator
-            .conflict_graph.write().await;
-        
-        let read_set = self.read_set_tracker.read_sets
+    async fn validate_serialization(
+        &self,
+        txn_id: super::TransactionId,
+    ) -> Result<ValidationResult> {
+        let mut conflict_graph = self
+            .validation_engine
+            .serialization_validator
+            .conflict_graph
+            .write()
+            .await;
+
+        let read_set = self
+            .read_set_tracker
+            .read_sets
             .get(&txn_id)
             .map(|s| s.iter().map(|r| r.key.clone()).collect::<HashSet<_>>())
             .unwrap_or_default();
-        
-        let write_set = self.write_set_buffer.write_buffers
+
+        let write_set = self
+            .write_set_buffer
+            .write_buffers
             .get(&txn_id)
-            .map(|b| b.writes.iter().map(|w| w.key.clone()).collect::<HashSet<_>>())
+            .map(|b| {
+                b.writes
+                    .iter()
+                    .map(|w| w.key.clone())
+                    .collect::<HashSet<_>>()
+            })
             .unwrap_or_default();
-        
+
         conflict_graph.nodes.insert(
             txn_id,
             ConflictNode {
@@ -563,13 +606,13 @@ impl OptimisticController {
                 commit_timestamp: None,
             },
         );
-        
+
         let mut new_edges = Vec::new();
         for (other_txn, other_node) in &conflict_graph.nodes {
             if *other_txn == txn_id {
                 continue;
             }
-            
+
             for key in &write_set {
                 if other_node.read_set.contains(key) {
                     new_edges.push(ConflictEdge {
@@ -579,7 +622,7 @@ impl OptimisticController {
                     });
                 }
             }
-            
+
             for key in &read_set {
                 if other_node.write_set.contains(key) {
                     new_edges.push(ConflictEdge {
@@ -589,7 +632,7 @@ impl OptimisticController {
                     });
                 }
             }
-            
+
             for key in &write_set {
                 if other_node.write_set.contains(key) {
                     new_edges.push(ConflictEdge {
@@ -601,7 +644,7 @@ impl OptimisticController {
             }
         }
         conflict_graph.edges.extend(new_edges);
-        
+
         if self.has_cycle(&conflict_graph) {
             Ok(ValidationResult::Invalid)
         } else {
@@ -616,13 +659,13 @@ impl OptimisticController {
     fn has_cycle(&self, graph: &ConflictGraph) -> bool {
         let mut visited = HashSet::new();
         let mut rec_stack = HashSet::new();
-        
+
         for node in graph.nodes.keys() {
             if self.has_cycle_util(node, &graph, &mut visited, &mut rec_stack) {
                 return true;
             }
         }
-        
+
         false
     }
 
@@ -637,7 +680,7 @@ impl OptimisticController {
         if !visited.contains(node) {
             visited.insert(*node);
             rec_stack.insert(*node);
-            
+
             for edge in &graph.edges {
                 if edge.from == *node {
                     if !visited.contains(&edge.to) {
@@ -650,14 +693,14 @@ impl OptimisticController {
                 }
             }
         }
-        
+
         rec_stack.remove(node);
         false
     }
 
     pub async fn commit(&self, txn_id: super::TransactionId) -> Result<()> {
         let validation = self.validate(txn_id).await?;
-        
+
         match validation {
             ValidationResult::Valid => {
                 self.apply_writes(txn_id).await?;
@@ -676,12 +719,16 @@ impl OptimisticController {
     }
 
     async fn apply_writes(&self, txn_id: super::TransactionId) -> Result<()> {
-        let commit_timestamp = self.timestamp_oracle.current_timestamp
+        let commit_timestamp = self
+            .timestamp_oracle
+            .current_timestamp
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        
+
         if let Some((_, write_buffer)) = self.write_set_buffer.write_buffers.remove(&txn_id) {
             for write in write_buffer.writes {
-                let mut version_chain = self.version_manager.versions
+                let mut version_chain = self
+                    .version_manager
+                    .versions
                     .entry(write.key.clone())
                     .or_insert_with(|| VersionChain {
                         key: write.key.clone(),
@@ -689,10 +736,10 @@ impl OptimisticController {
                         latest_version: 0,
                         readers: HashSet::new(),
                     });
-                
+
                 let latest_version = version_chain.latest_version;
                 let new_version = latest_version + 1;
-                
+
                 version_chain.versions.insert(
                     commit_timestamp,
                     VersionEntry {
@@ -704,49 +751,58 @@ impl OptimisticController {
                         deleted: write.operation == WriteOperation::Delete,
                     },
                 );
-                
+
                 version_chain.latest_version = new_version;
             }
         }
-        
-        self.version_manager.global_version.store(
-            commit_timestamp,
-            std::sync::atomic::Ordering::SeqCst,
-        );
-        
+
+        self.version_manager
+            .global_version
+            .store(commit_timestamp, std::sync::atomic::Ordering::SeqCst);
+
         Ok(())
     }
 
     pub async fn abort(&self, txn_id: super::TransactionId) -> Result<()> {
-        self.metrics.abort_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
-        self.conflict_resolver.abort_manager.abort_list.insert(
-            txn_id,
-            AbortReason::ValidationFailed,
-        );
-        
+        self.metrics
+            .abort_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        self.conflict_resolver
+            .abort_manager
+            .abort_list
+            .insert(txn_id, AbortReason::ValidationFailed);
+
         self.cleanup_transaction(txn_id).await?;
-        
+
         Ok(())
     }
 
     async fn cleanup_transaction(&self, txn_id: super::TransactionId) -> Result<()> {
-        self.validation_engine.snapshot_validator.snapshots.remove(&txn_id);
+        self.validation_engine
+            .snapshot_validator
+            .snapshots
+            .remove(&txn_id);
         self.timestamp_oracle.timestamp_cache.remove(&txn_id);
         self.read_set_tracker.read_sets.remove(&txn_id);
         self.write_set_buffer.write_buffers.remove(&txn_id);
-        
+
         let mut read_deps = self.read_set_tracker.read_dependencies.write().await;
         for deps in read_deps.values_mut() {
             deps.remove(&txn_id);
         }
-        
+
         Ok(())
     }
 
     async fn schedule_retry(&self, txn_id: super::TransactionId) -> Result<()> {
-        let mut retry_queue = self.conflict_resolver.retry_manager.retry_queue.write().await;
-        
+        let mut retry_queue = self
+            .conflict_resolver
+            .retry_manager
+            .retry_queue
+            .write()
+            .await;
+
         let next_retry = match self.conflict_resolver.retry_manager.backoff_strategy {
             BackoffStrategy::Immediate => Instant::now(),
             BackoffStrategy::Linear { base } => Instant::now() + base,
@@ -756,21 +812,21 @@ impl OptimisticController {
             }
             BackoffStrategy::Adaptive => Instant::now() + Duration::from_millis(100),
         };
-        
+
         retry_queue.push_back(RetryRequest {
             txn_id,
             attempt: 1,
             last_failure: Instant::now(),
             next_retry,
         });
-        
+
         Ok(())
     }
 
     fn hash_value(&self, value: &Bytes) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         value.hash(&mut hasher);
         hasher.finish()
@@ -779,31 +835,35 @@ impl OptimisticController {
     pub async fn garbage_collect(&self) -> Result<()> {
         let now = Instant::now();
         let mut last_gc = self.version_manager.last_gc.write().await;
-        
+
         if now.duration_since(*last_gc) < self.version_manager.gc_threshold {
             return Ok(());
         }
-        
-        let min_timestamp = self.validation_engine.snapshot_validator.snapshots
+
+        let min_timestamp = self
+            .validation_engine
+            .snapshot_validator
+            .snapshots
             .iter()
             .map(|entry| entry.value().start_timestamp)
             .min()
             .unwrap_or(u64::MAX);
-        
+
         for mut version_chain in self.version_manager.versions.iter_mut() {
-            let keys_to_remove: Vec<u64> = version_chain.versions
+            let keys_to_remove: Vec<u64> = version_chain
+                .versions
                 .range(..min_timestamp)
                 .skip(1)
                 .map(|(k, _)| *k)
                 .collect();
-            
+
             for key in keys_to_remove {
                 version_chain.versions.remove(&key);
             }
         }
-        
+
         *last_gc = now;
-        
+
         Ok(())
     }
 }

@@ -45,7 +45,10 @@ impl LockUtils {
     }
 
     /// Acquire a read lock with timeout
-    pub fn read_with_timeout<T>(lock: &RwLock<T>, timeout: Duration) -> Result<RwLockReadGuard<'_, T>> {
+    pub fn read_with_timeout<T>(
+        lock: &RwLock<T>,
+        timeout: Duration,
+    ) -> Result<RwLockReadGuard<'_, T>> {
         let policy = RetryPolicy {
             max_attempts: (timeout.as_millis() / 10) as u32, // Try every 10ms
             initial_delay: Duration::from_millis(10),

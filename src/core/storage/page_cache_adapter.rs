@@ -1,10 +1,11 @@
+use super::{Page, PageManager};
 use crate::core::error::{Error, Result};
 use crate::performance::prefetch::PageCache;
-use super::{Page, PageManager};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Adapter to implement PageCache trait for the existing storage system
+#[derive(Debug)]
 pub struct PageCacheAdapter {
     page_manager: Arc<RwLock<PageManager>>,
 }

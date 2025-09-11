@@ -1,10 +1,10 @@
+use super::{Page, PageType, MAGIC, PAGE_SIZE};
 use crate::core::error::{Error, Result};
 use crate::utils::integrity::{
-    data_integrity::{DataIntegrityValidator, validators},
+    data_integrity::{validators, DataIntegrityValidator},
     error_types::{IntegrityError, ValidationResult, ViolationSeverity},
     validation_config::{IntegrityConfig, OperationType, ValidationContext},
 };
-use super::{Page, PageType, PAGE_SIZE, MAGIC};
 use std::sync::Arc;
 
 /// Enhanced Page with integrated integrity validation
@@ -25,7 +25,7 @@ impl ValidatedPage {
     /// Create from existing page with validation
     pub fn from_page(page: Page, config: IntegrityConfig) -> Result<Self> {
         let validator = Arc::new(DataIntegrityValidator::new(config));
-        
+
         // Validate the existing page
         validator.validate_critical_path(
             "page_creation",
@@ -133,7 +133,7 @@ impl ValidatedPage {
 
 impl std::ops::Deref for ValidatedPage {
     type Target = Page;
-    
+
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
@@ -188,7 +188,7 @@ fn validate_page_structure(page: &Page, _context: &ValidationContext) -> Validat
 /// Validate page before write operation
 fn validate_page_before_write(page: &Page, _context: &ValidationContext) -> ValidationResult<()> {
     let location = format!("page_{}_pre_write", page.id);
-    
+
     // Validate basic structure first
     let structure_result = validate_page_structure(page, _context);
     if !structure_result.is_valid() {
@@ -197,7 +197,7 @@ fn validate_page_before_write(page: &Page, _context: &ValidationContext) -> Vali
 
     // Additional pre-write validations
     let data = page.get_data();
-    
+
     // Ensure page is properly initialized
     if page.id == 0 && data.iter().all(|&b| b == 0) {
         let violation = crate::utils::integrity::error_types::create_violation(
@@ -218,7 +218,7 @@ fn validate_page_before_write(page: &Page, _context: &ValidationContext) -> Vali
 /// Validate page after read operation
 fn validate_page_after_read(page: &Page, _context: &ValidationContext) -> ValidationResult<()> {
     let location = format!("page_{}_post_read", page.id);
-    
+
     // Validate structure
     let structure_result = validate_page_structure(page, _context);
     if !structure_result.is_valid() {
@@ -239,7 +239,7 @@ fn validate_page_after_read(page: &Page, _context: &ValidationContext) -> Valida
 /// Validate page checksum
 fn validate_page_checksum(page: &Page, location: &str) -> ValidationResult<()> {
     let data = page.get_data();
-    
+
     if data.len() < 16 {
         let violation = crate::utils::integrity::error_types::create_critical_violation(
             IntegrityError::SizeViolation {
@@ -265,9 +265,12 @@ fn validate_page_checksum(page: &Page, location: &str) -> ValidationResult<()> {
 }
 
 /// Validate it's safe to mutate the page
-fn validate_page_mutation_safety(page: &Page, _context: &ValidationContext) -> ValidationResult<()> {
+fn validate_page_mutation_safety(
+    page: &Page,
+    _context: &ValidationContext,
+) -> ValidationResult<()> {
     let _location = format!("page_{}_mutation_safety", page.id);
-    
+
     // Check if page is in a valid state for mutation
     if page.id == 0 {
         // Header page - extra caution needed
@@ -281,7 +284,7 @@ fn validate_page_mutation_safety(page: &Page, _context: &ValidationContext) -> V
 /// Validate write operation succeeded
 fn validate_page_write_success(page: &Page, _context: &ValidationContext) -> ValidationResult<()> {
     let location = format!("page_{}_write_success", page.id);
-    
+
     // Re-validate the page structure after write
     let structure_result = validate_page_structure(page, _context);
     if !structure_result.is_valid() {
@@ -324,7 +327,8 @@ fn validate_page_comprehensive(page: &Page, context: &ValidationContext) -> Vali
     // Validate version field if present
     if data.len() >= 8 {
         let version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
-        if version == 0 || version > 1000 { // Reasonable version range
+        if version == 0 || version > 1000 {
+            // Reasonable version range
             violations.push(crate::utils::integrity::error_types::create_violation(
                 IntegrityError::RangeViolation {
                     value: version as u64,
@@ -341,7 +345,8 @@ fn validate_page_comprehensive(page: &Page, context: &ValidationContext) -> Vali
 
     // Check for data alignment issues
     let data_ptr = data.as_ptr() as usize;
-    if data_ptr % 8 != 0 { // Check 8-byte alignment
+    if data_ptr % 8 != 0 {
+        // Check 8-byte alignment
         violations.push(crate::utils::integrity::error_types::create_violation(
             IntegrityError::AlignmentViolation {
                 address: data_ptr,
@@ -379,7 +384,7 @@ pub mod page_validators {
                 OperationType::Read,
                 |context| validate_page_comprehensive(page, context),
             );
-            
+
             results.push(match result {
                 Ok(_) => ValidationResult::Valid(()),
                 Err(e) => ValidationResult::Error(IntegrityError::StructuralViolation {
@@ -420,42 +425,43 @@ pub mod page_validators {
         config: &IntegrityConfig,
     ) -> Result<ValidationResult<()>> {
         let validator = DataIntegrityValidator::new(config.clone());
-        
-        validator.validate_critical_path(
-            "deep_page_validation",
-            &format!("page_{}", page.id),
-            OperationType::Read,
-            |context| {
-                // Run comprehensive validation
-                let result = validate_page_comprehensive(page, context);
-                
-                // Add additional deep checks
-                if let ValidationResult::Valid(_) = result {
-                    deep_validate_page_content(page, context)
-                } else {
-                    result
-                }
-            },
-        ).map_err(|_| Error::ValidationFailed("Deep validation failed".to_string()))?;
-        
+
+        validator
+            .validate_critical_path(
+                "deep_page_validation",
+                &format!("page_{}", page.id),
+                OperationType::Read,
+                |context| {
+                    // Run comprehensive validation
+                    let result = validate_page_comprehensive(page, context);
+
+                    // Add additional deep checks
+                    if let ValidationResult::Valid(_) = result {
+                        deep_validate_page_content(page, context)
+                    } else {
+                        result
+                    }
+                },
+            )
+            .map_err(|_| Error::ValidationFailed("Deep validation failed".to_string()))?;
+
         Ok(ValidationResult::Valid(()))
     }
 
     /// Deep validation of page content structure
-    fn deep_validate_page_content(page: &Page, _context: &ValidationContext) -> ValidationResult<()> {
+    fn deep_validate_page_content(
+        page: &Page,
+        _context: &ValidationContext,
+    ) -> ValidationResult<()> {
         let data = page.get_data();
         let location = format!("page_{}_deep_content", page.id);
-        
+
         // Validate internal structure based on page type
         if data.len() >= 12 {
             if let Some(page_type) = PageType::from_byte(data[8]) {
                 match page_type {
-                    PageType::Data => {
-                        validate_btree_page_structure(page, &location)
-                    }
-                    PageType::Meta => {
-                        validate_header_page_structure(page, &location)
-                    }
+                    PageType::Data => validate_btree_page_structure(page, &location),
+                    PageType::Meta => validate_header_page_structure(page, &location),
                     _ => ValidationResult::Valid(()),
                 }
             } else {

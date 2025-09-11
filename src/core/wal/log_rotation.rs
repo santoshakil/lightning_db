@@ -1,13 +1,13 @@
-use crate::core::error::{Error, Result};
 use super::checkpoint_manager::CheckpointManager;
+use crate::core::error::{Error, Result};
 use std::collections::BTreeMap;
-use std::fs::{File, OpenOptions, rename, remove_file};
-use std::io::{BufWriter, Write, Read};
+use std::fs::{remove_file, rename, File, OpenOptions};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::{info, warn, debug};
+use tracing::{debug, info, warn};
 
 /// Configuration for WAL log rotation and archival
 #[derive(Debug, Clone)]
@@ -33,7 +33,7 @@ pub struct LogRotationConfig {
 impl Default for LogRotationConfig {
     fn default() -> Self {
         Self {
-            max_segment_size: 64 * 1024 * 1024,  // 64 MB
+            max_segment_size: 64 * 1024 * 1024, // 64 MB
             max_active_segments: 3,
             max_archive_age: Duration::from_secs(7 * 24 * 3600), // 1 week
             min_archive_count: 10,
@@ -96,7 +96,7 @@ impl LogRotationManager {
         checkpoint_manager: Arc<CheckpointManager>,
     ) -> Result<Self> {
         let base_directory = base_directory.as_ref().to_path_buf();
-        
+
         // Create directories
         std::fs::create_dir_all(&base_directory)
             .map_err(|e| Error::Io(format!("Failed to create WAL directory: {}", e)))?;
@@ -115,29 +115,31 @@ impl LogRotationManager {
 
         // Initialize by scanning existing segments
         manager.scan_existing_segments()?;
-        
+
         Ok(manager)
     }
 
     /// Scan for existing WAL segments and build metadata
     fn scan_existing_segments(&mut self) -> Result<()> {
         debug!("Scanning existing WAL segments");
-        
+
         let mut active_segments = BTreeMap::new();
         let mut archived_segments = BTreeMap::new();
         let mut max_segment_id = 0;
 
         // Scan active segments
         for entry in std::fs::read_dir(&self.base_directory)
-            .map_err(|e| Error::Io(format!("Failed to read WAL directory: {}", e)))? {
+            .map_err(|e| Error::Io(format!("Failed to read WAL directory: {}", e)))?
+        {
             let entry = entry.map_err(|e| Error::Io(e.to_string()))?;
             let path = entry.path();
-            
+
             if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
                 if filename.starts_with("wal_segment_") && filename.ends_with(".log") {
                     if let Some(segment_id_str) = filename
                         .strip_prefix("wal_segment_")
-                        .and_then(|s| s.strip_suffix(".log")) {
+                        .and_then(|s| s.strip_suffix(".log"))
+                    {
                         if let Ok(segment_id) = segment_id_str.parse::<u64>() {
                             match self.build_segment_metadata(segment_id, &path, false) {
                                 Ok(metadata) => {
@@ -157,15 +159,17 @@ impl LogRotationManager {
         // Scan archived segments
         if self.config.archive_directory.exists() {
             for entry in std::fs::read_dir(&self.config.archive_directory)
-                .map_err(|e| Error::Io(format!("Failed to read archive directory: {}", e)))? {
+                .map_err(|e| Error::Io(format!("Failed to read archive directory: {}", e)))?
+            {
                 let entry = entry.map_err(|e| Error::Io(e.to_string()))?;
                 let path = entry.path();
-                
+
                 if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
                     if filename.starts_with("wal_archive_") && filename.ends_with(".log") {
                         if let Some(segment_id_str) = filename
                             .strip_prefix("wal_archive_")
-                            .and_then(|s| s.strip_suffix(".log")) {
+                            .and_then(|s| s.strip_suffix(".log"))
+                        {
                             if let Ok(segment_id) = segment_id_str.parse::<u64>() {
                                 match self.build_segment_metadata(segment_id, &path, true) {
                                     Ok(metadata) => {
@@ -173,7 +177,10 @@ impl LogRotationManager {
                                         archived_segments.insert(segment_id, metadata);
                                     }
                                     Err(e) => {
-                                        warn!("Failed to read archived segment {}: {}", segment_id, e);
+                                        warn!(
+                                            "Failed to read archived segment {}: {}",
+                                            segment_id, e
+                                        );
                                     }
                                 }
                             }
@@ -183,43 +190,52 @@ impl LogRotationManager {
             }
         }
 
-        self.current_segment_id.store(max_segment_id + 1, Ordering::SeqCst);
+        self.current_segment_id
+            .store(max_segment_id + 1, Ordering::SeqCst);
         *self.active_segments.lock().unwrap() = active_segments;
         *self.archived_segments.lock().unwrap() = archived_segments;
-        
-        info!("Found {} active segments and {} archived segments", 
-              self.active_segments.lock().unwrap().len(),
-              self.archived_segments.lock().unwrap().len());
-        
+
+        info!(
+            "Found {} active segments and {} archived segments",
+            self.active_segments.lock().unwrap().len(),
+            self.archived_segments.lock().unwrap().len()
+        );
+
         Ok(())
     }
 
     /// Build metadata for a segment by reading its file
-    fn build_segment_metadata(&self, segment_id: u64, file_path: &Path, is_archived: bool) -> Result<SegmentMetadata> {
+    fn build_segment_metadata(
+        &self,
+        segment_id: u64,
+        file_path: &Path,
+        is_archived: bool,
+    ) -> Result<SegmentMetadata> {
         let file = File::open(file_path)
             .map_err(|e| Error::Io(format!("Failed to open segment file: {}", e)))?;
-            
-        let metadata = file.metadata()
+
+        let metadata = file
+            .metadata()
             .map_err(|e| Error::Io(format!("Failed to read file metadata: {}", e)))?;
-            
+
         let mut segment_metadata = SegmentMetadata::new(segment_id, 0, file_path.to_path_buf());
         segment_metadata.file_size = metadata.len();
         segment_metadata.created_at = metadata.created().unwrap_or_else(|_| SystemTime::now());
         segment_metadata.last_modified = metadata.modified().unwrap_or_else(|_| SystemTime::now());
         segment_metadata.is_archived = is_archived;
-        
+
         // Try to extract LSN range by scanning the file
         if let Ok((start_lsn, end_lsn, entry_count)) = self.scan_segment_for_lsn_range(&file_path) {
             segment_metadata.start_lsn = start_lsn;
             segment_metadata.end_lsn = end_lsn;
             segment_metadata.entry_count = entry_count;
         }
-        
+
         // Calculate checksum if verification is enabled
         if self.config.verify_on_rotate {
             segment_metadata.checksum = self.calculate_file_checksum(file_path)?;
         }
-        
+
         Ok(segment_metadata)
     }
 
@@ -234,7 +250,7 @@ impl LogRotationManager {
         loop {
             // Read entry length
             match file.read_exact(&mut buffer) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(Error::Io(e.to_string())),
             }
@@ -247,14 +263,16 @@ impl LogRotationManager {
             // Read entry data
             let mut entry_data = vec![0u8; length];
             match file.read_exact(&mut entry_data) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(Error::Io(e.to_string())),
             }
 
             // Try to deserialize and extract LSN
             if let Ok((entry, _)) = bincode::decode_from_slice::<super::WALEntry, _>(
-                &entry_data, bincode::config::standard()) {
+                &entry_data,
+                bincode::config::standard(),
+            ) {
                 start_lsn = start_lsn.min(entry.lsn);
                 end_lsn = end_lsn.max(entry.lsn);
                 entry_count += 1;
@@ -286,14 +304,20 @@ impl LogRotationManager {
 
     /// Check if current segment should be rotated
     pub fn should_rotate_segment(&self, current_segment_size: u64) -> bool {
-        current_segment_size >= self.config.max_segment_size ||
-        self.active_segments.lock().unwrap().len() >= self.config.max_active_segments
+        current_segment_size >= self.config.max_segment_size
+            || self.active_segments.lock().unwrap().len() >= self.config.max_active_segments
     }
 
     /// Rotate the current WAL segment
     pub fn rotate_segment(&self, current_lsn: u64) -> Result<u64> {
-        if self.is_rotating.compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed).is_err() {
-            return Err(Error::Generic("Another rotation is already in progress".to_string()));
+        if self
+            .is_rotating
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+            .is_err()
+        {
+            return Err(Error::Generic(
+                "Another rotation is already in progress".to_string(),
+            ));
         }
 
         let _guard = RotationGuard::new(&self.is_rotating);
@@ -301,7 +325,9 @@ impl LogRotationManager {
         info!("Starting WAL segment rotation at LSN {}", current_lsn);
 
         let new_segment_id = self.current_segment_id.fetch_add(1, Ordering::SeqCst);
-        let new_segment_path = self.base_directory.join(format!("wal_segment_{:08}.log", new_segment_id));
+        let new_segment_path = self
+            .base_directory
+            .join(format!("wal_segment_{:08}.log", new_segment_id));
 
         // Create new segment file
         {
@@ -313,7 +339,7 @@ impl LogRotationManager {
                 .map_err(|e| Error::Io(format!("Failed to create new segment: {}", e)))?;
 
             let mut writer = BufWriter::new(file);
-            
+
             // Write segment header
             writer.write_all(b"WALSEG\x01\x00")?; // Magic + version
             writer.write_all(&new_segment_id.to_le_bytes())?;
@@ -323,7 +349,7 @@ impl LogRotationManager {
                 .unwrap_or_default()
                 .as_secs();
             writer.write_all(&timestamp.to_le_bytes())?;
-            
+
             writer.flush()?;
             let file = writer.into_inner().map_err(|e| Error::Io(e.to_string()))?;
             file.sync_all().map_err(|e| Error::Io(e.to_string()))?;
@@ -332,7 +358,8 @@ impl LogRotationManager {
         // Add new segment to active segments
         {
             let mut active = self.active_segments.lock().unwrap();
-            let metadata = SegmentMetadata::new(new_segment_id, current_lsn, new_segment_path.clone());
+            let metadata =
+                SegmentMetadata::new(new_segment_id, current_lsn, new_segment_path.clone());
             active.insert(new_segment_id, metadata);
         }
 
@@ -344,7 +371,10 @@ impl LogRotationManager {
             self.cleanup_old_archives()?;
         }
 
-        info!("WAL segment rotation completed. New segment ID: {}", new_segment_id);
+        info!(
+            "WAL segment rotation completed. New segment ID: {}",
+            new_segment_id
+        );
         Ok(new_segment_id)
     }
 
@@ -361,8 +391,9 @@ impl LogRotationManager {
 
             // Find segments that can be archived (before last checkpoint)
             for (segment_id, metadata) in active.iter() {
-                if metadata.end_lsn <= checkpoint_lsn && segments_to_archive.len() < 
-                   (active.len() - self.config.max_active_segments) {
+                if metadata.end_lsn <= checkpoint_lsn
+                    && segments_to_archive.len() < (active.len() - self.config.max_active_segments)
+                {
                     segments_to_archive.push(*segment_id);
                 }
             }
@@ -381,12 +412,18 @@ impl LogRotationManager {
 
         let metadata = {
             let active = self.active_segments.lock().unwrap();
-            active.get(&segment_id).cloned()
-                .ok_or_else(|| Error::Generic(format!("Segment {} not found in active segments", segment_id)))?
+            active.get(&segment_id).cloned().ok_or_else(|| {
+                Error::Generic(format!(
+                    "Segment {} not found in active segments",
+                    segment_id
+                ))
+            })?
         };
 
         // Create archive path
-        let archive_path = self.config.archive_directory
+        let archive_path = self
+            .config
+            .archive_directory
             .join(format!("wal_archive_{:08}.log", segment_id));
 
         // Move file to archive location
@@ -402,7 +439,7 @@ impl LogRotationManager {
         {
             let mut active = self.active_segments.lock().unwrap();
             let mut archived = self.archived_segments.lock().unwrap();
-            
+
             active.remove(&segment_id);
             archived.insert(segment_id, archived_metadata);
         }
@@ -418,7 +455,7 @@ impl LogRotationManager {
 
         {
             let archived = self.archived_segments.lock().unwrap();
-            
+
             // Skip if we don't have enough archives to consider cleanup
             if archived.len() <= self.config.min_archive_count {
                 return Ok(());
@@ -436,11 +473,12 @@ impl LogRotationManager {
             // If we still have too many after age-based cleanup, remove oldest
             let remaining_count = archived.len() - archives_to_delete.len();
             if remaining_count > self.config.min_archive_count {
-                let mut sorted_archives: Vec<_> = archived.iter()
+                let mut sorted_archives: Vec<_> = archived
+                    .iter()
                     .filter(|(id, _)| !archives_to_delete.contains(id))
                     .collect();
                 sorted_archives.sort_by_key(|(_, metadata)| metadata.created_at);
-                
+
                 let excess_count = remaining_count - self.config.min_archive_count;
                 for (segment_id, _) in sorted_archives.into_iter().take(excess_count) {
                     archives_to_delete.push(*segment_id);
@@ -462,8 +500,9 @@ impl LogRotationManager {
 
         let file_path = {
             let mut archived = self.archived_segments.lock().unwrap();
-            let metadata = archived.remove(&segment_id)
-                .ok_or_else(|| Error::Generic(format!("Archived segment {} not found", segment_id)))?;
+            let metadata = archived.remove(&segment_id).ok_or_else(|| {
+                Error::Generic(format!("Archived segment {} not found", segment_id))
+            })?;
             metadata.file_path
         };
 
@@ -476,21 +515,41 @@ impl LogRotationManager {
 
     /// Get list of active segments
     pub fn get_active_segments(&self) -> Vec<SegmentMetadata> {
-        self.active_segments.lock().unwrap().values().cloned().collect()
+        self.active_segments
+            .lock()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect()
     }
 
     /// Get list of archived segments
     pub fn get_archived_segments(&self) -> Vec<SegmentMetadata> {
-        self.archived_segments.lock().unwrap().values().cloned().collect()
+        self.archived_segments
+            .lock()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect()
     }
 
     /// Get total storage used by WAL segments
     pub fn get_total_storage_usage(&self) -> (u64, u64) {
-        let active_usage: u64 = self.active_segments.lock().unwrap()
-            .values().map(|m| m.file_size).sum();
-        let archived_usage: u64 = self.archived_segments.lock().unwrap()
-            .values().map(|m| m.file_size).sum();
-        
+        let active_usage: u64 = self
+            .active_segments
+            .lock()
+            .unwrap()
+            .values()
+            .map(|m| m.file_size)
+            .sum();
+        let archived_usage: u64 = self
+            .archived_segments
+            .lock()
+            .unwrap()
+            .values()
+            .map(|m| m.file_size)
+            .sum();
+
         (active_usage, archived_usage)
     }
 

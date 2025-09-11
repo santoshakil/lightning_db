@@ -9,19 +9,22 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Weak, Mutex, RwLock, atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering}},
-    time::{Duration, SystemTime},
-    thread,
     hash::Hash,
     marker::PhantomData,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        Arc, Mutex, RwLock, Weak,
+    },
+    thread,
+    time::{Duration, SystemTime},
 };
 
 use dashmap::DashMap;
-use serde::{Serialize, Deserialize};
-use tracing::{warn, info};
+use serde::{Deserialize, Serialize};
+use tracing::{info, warn};
 
 /// Global leak detector instance
-pub static LEAK_DETECTOR: once_cell::sync::Lazy<Arc<LeakDetector>> = 
+pub static LEAK_DETECTOR: once_cell::sync::Lazy<Arc<LeakDetector>> =
     once_cell::sync::Lazy::new(|| Arc::new(LeakDetector::new()));
 
 /// Configuration for leak detection
@@ -179,15 +182,10 @@ impl<T> TrackedArc<T> {
     pub fn new(value: T, object_type: ObjectType) -> Self {
         let inner = Arc::new(value);
         let object_id = ObjectId::new();
-        
+
         // Register with leak detector
-        LEAK_DETECTOR.register_object(
-            object_id,
-            object_type,
-            std::mem::size_of::<T>(),
-            None,
-        );
-        
+        LEAK_DETECTOR.register_object(object_id, object_type, std::mem::size_of::<T>(), None);
+
         Self {
             inner,
             object_id,
@@ -211,7 +209,7 @@ impl<T> TrackedArc<T> {
 impl<T> Clone for TrackedArc<T> {
     fn clone(&self) -> Self {
         LEAK_DETECTOR.update_ref_count(self.object_id, self.strong_count() + 1, self.weak_count());
-        
+
         Self {
             inner: self.inner.clone(),
             object_id: self.object_id,
@@ -224,7 +222,7 @@ impl<T> Drop for TrackedArc<T> {
     fn drop(&mut self) {
         let new_strong_count = Arc::strong_count(&self.inner) - 1;
         LEAK_DETECTOR.update_ref_count(self.object_id, new_strong_count, self.weak_count());
-        
+
         if new_strong_count == 0 {
             LEAK_DETECTOR.unregister_object(self.object_id);
         }
@@ -233,7 +231,7 @@ impl<T> Drop for TrackedArc<T> {
 
 impl<T> std::ops::Deref for TrackedArc<T> {
     type Target = T;
-    
+
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
@@ -252,9 +250,9 @@ impl<T> TrackedWeak<T> {
             LEAK_DETECTOR.update_ref_count(
                 self.object_id,
                 Arc::strong_count(&inner),
-                Arc::weak_count(&inner)
+                Arc::weak_count(&inner),
             );
-            
+
             TrackedArc {
                 inner,
                 object_id: self.object_id,
@@ -267,12 +265,8 @@ impl<T> TrackedWeak<T> {
 impl<T> Clone for TrackedWeak<T> {
     fn clone(&self) -> Self {
         let weak_count = self.inner.weak_count() + 1;
-        LEAK_DETECTOR.update_ref_count(
-            self.object_id,
-            self.inner.strong_count(),
-            weak_count
-        );
-        
+        LEAK_DETECTOR.update_ref_count(self.object_id, self.inner.strong_count(), weak_count);
+
         Self {
             inner: self.inner.clone(),
             object_id: self.object_id,
@@ -284,11 +278,7 @@ impl<T> Clone for TrackedWeak<T> {
 impl<T> Drop for TrackedWeak<T> {
     fn drop(&mut self) {
         let weak_count = self.inner.weak_count() - 1;
-        LEAK_DETECTOR.update_ref_count(
-            self.object_id,
-            self.inner.strong_count(),
-            weak_count
-        );
+        LEAK_DETECTOR.update_ref_count(self.object_id, self.inner.strong_count(), weak_count);
     }
 }
 
@@ -297,12 +287,12 @@ pub struct LeakDetector {
     config: RwLock<LeakDetectionConfig>,
     tracked_objects: DashMap<ObjectId, TrackedObject>,
     object_references: DashMap<ObjectId, Vec<ObjectReference>>,
-    
+
     // Scanning state
     scan_thread: Mutex<Option<thread::JoinHandle<()>>>,
     shutdown_flag: Arc<AtomicBool>,
     last_scan: Mutex<Option<SystemTime>>,
-    
+
     // Statistics
     total_scans: AtomicU64,
     total_leaks_detected: AtomicU64,
@@ -333,12 +323,12 @@ impl LeakDetector {
     /// Start leak detection
     pub fn start(&self) {
         info!("Starting leak detector");
-        
+
         // Start scanning thread
         let config = self.config.read().unwrap().clone();
         let detector = Arc::new(self as *const _ as usize); // Unsafe but needed
         let shutdown_flag = self.shutdown_flag.clone();
-        
+
         let handle = thread::Builder::new()
             .name("leak-detector".to_string())
             .spawn(move || {
@@ -352,15 +342,15 @@ impl LeakDetector {
     /// Stop leak detection
     pub fn stop(&self) {
         info!("Stopping leak detector");
-        
+
         self.shutdown_flag.store(true, Ordering::SeqCst);
-        
+
         if let Ok(mut guard) = self.scan_thread.lock() {
             if let Some(handle) = guard.take() {
                 let _ = handle.join();
             }
         }
-        
+
         self.shutdown_flag.store(false, Ordering::SeqCst);
     }
 
@@ -373,7 +363,7 @@ impl LeakDetector {
         location: Option<String>,
     ) {
         let config = self.config.read().unwrap();
-        
+
         // Check capacity
         if self.tracked_objects.len() >= config.max_tracked_objects {
             self.cleanup_old_objects();
@@ -456,53 +446,54 @@ impl LeakDetector {
     pub fn scan_for_leaks(&self) -> LeakReport {
         let start_time = SystemTime::now();
         let scan_start = SystemTime::now();
-        
+
         info!("Starting leak detection scan");
-        
+
         let mut leaks = Vec::new();
         let objects_scanned = self.tracked_objects.len();
-        
+
         let config = self.config.read().unwrap();
-        
+
         // 1. Detect circular references
         if config.detect_cycles {
             leaks.extend(self.detect_circular_references());
         }
-        
+
         // 2. Detect orphaned objects
         if config.detect_orphans {
             leaks.extend(self.detect_orphaned_objects(&config));
         }
-        
+
         // 3. Validate reference counts
         if config.validate_ref_counts {
             leaks.extend(self.validate_reference_counts(&config));
         }
-        
+
         // 4. Check for weak reference issues
         leaks.extend(self.detect_weak_reference_issues());
-        
+
         let scan_duration = start_time.elapsed();
         let object_summary = self.generate_object_summary();
         let recommendations = self.generate_recommendations(&leaks);
-        
+
         self.total_scans.fetch_add(1, Ordering::Relaxed);
-        self.total_leaks_detected.fetch_add(leaks.len() as u64, Ordering::Relaxed);
+        self.total_leaks_detected
+            .fetch_add(leaks.len() as u64, Ordering::Relaxed);
         *self.last_scan.lock().unwrap() = Some(start_time);
-        
+
         info!(
             "Leak detection scan completed in {:?}, found {} potential leaks",
             scan_duration,
             leaks.len()
         );
-        
+
         if !leaks.is_empty() {
             warn!("Detected {} potential memory leaks", leaks.len());
             for leak in &leaks {
                 warn!("Leak detected: {:?}", leak);
             }
         }
-        
+
         LeakReport {
             timestamp: scan_start,
             scan_duration: scan_start.elapsed().unwrap_or_default(),
@@ -532,11 +523,11 @@ impl LeakDetector {
         config: LeakDetectionConfig,
     ) {
         let detector = unsafe { &*(detector_ptr.as_ref() as *const usize as *const LeakDetector) };
-        
+
         while !shutdown_flag.load(Ordering::Relaxed) {
             // Perform scan
             let _report = detector.scan_for_leaks();
-            
+
             // Sleep
             thread::sleep(config.scan_interval);
         }
@@ -551,21 +542,16 @@ impl LeakDetector {
         for entry in self.tracked_objects.iter() {
             let object_id = *entry.key();
             if !visited.contains(&object_id) {
-                if let Some(cycle) = self.dfs_cycle_detection(
-                    object_id,
-                    &mut visited,
-                    &mut in_stack,
-                    &mut stack,
-                ) {
-                    let total_size = cycle.iter()
+                if let Some(cycle) =
+                    self.dfs_cycle_detection(object_id, &mut visited, &mut in_stack, &mut stack)
+                {
+                    let total_size = cycle
+                        .iter()
                         .filter_map(|id| self.tracked_objects.get(id))
                         .map(|obj| obj.size)
                         .sum();
-                    
-                    cycles.push(LeakType::CircularReference {
-                        cycle,
-                        total_size,
-                    });
+
+                    cycles.push(LeakType::CircularReference { cycle, total_size });
                 }
             }
         }
@@ -587,13 +573,13 @@ impl LeakDetector {
         if let Some(object) = self.tracked_objects.get(&current) {
             for reference in &object.references_to {
                 let next = reference.to_object;
-                
+
                 if in_stack.contains(&next) {
                     // Found cycle - extract it from stack
                     let cycle_start = stack.iter().position(|&id| id == next)?;
                     return Some(stack[cycle_start..].to_vec());
                 }
-                
+
                 if !visited.contains(&next) {
                     if let Some(cycle) = self.dfs_cycle_detection(next, visited, in_stack, stack) {
                         return Some(cycle);
@@ -613,11 +599,12 @@ impl LeakDetector {
 
         for entry in self.tracked_objects.iter() {
             let object = entry.value();
-            
+
             if let Ok(age) = now.duration_since(object.created_at) {
-                if age > config.max_object_age &&
-                   object.references_from.is_empty() &&
-                   object.strong_ref_count <= 1 {
+                if age > config.max_object_age
+                    && object.references_from.is_empty()
+                    && object.strong_ref_count <= 1
+                {
                     orphans.push(LeakType::OrphanedObject {
                         object: object.id,
                         age,
@@ -635,12 +622,19 @@ impl LeakDetector {
 
         for entry in self.tracked_objects.iter() {
             let object = entry.value();
-            
+
             if object.strong_ref_count >= config.min_ref_count_threshold {
-                let expected_refs = object.references_from.iter()
-                    .filter(|r| matches!(r.reference_type, ReferenceType::Strong | ReferenceType::Shared))
+                let expected_refs = object
+                    .references_from
+                    .iter()
+                    .filter(|r| {
+                        matches!(
+                            r.reference_type,
+                            ReferenceType::Strong | ReferenceType::Shared
+                        )
+                    })
                     .count();
-                
+
                 if expected_refs != object.strong_ref_count && expected_refs > 0 {
                     mismatches.push(LeakType::RefCountMismatch {
                         object: object.id,
@@ -659,7 +653,7 @@ impl LeakDetector {
 
         for entry in self.tracked_objects.iter() {
             let object = entry.value();
-            
+
             // Check for objects with many weak references but no strong references
             if object.weak_ref_count > 10 && object.strong_ref_count == 0 {
                 issues.push(LeakType::WeakReferenceIssue {
@@ -685,12 +679,14 @@ impl LeakDetector {
 
         for entry in self.tracked_objects.iter() {
             let object = entry.value();
-            
+
             total_memory += object.size;
             reference_count += object.references_to.len();
-            
-            *objects_by_type.entry(object.object_type.clone()).or_insert(0) += 1;
-            
+
+            *objects_by_type
+                .entry(object.object_type.clone())
+                .or_insert(0) += 1;
+
             if let Ok(age) = now.duration_since(object.created_at) {
                 total_age += age;
                 if age > oldest_age {
@@ -724,9 +720,18 @@ impl LeakDetector {
     fn generate_recommendations(&self, leaks: &[LeakType]) -> Vec<String> {
         let mut recommendations = Vec::new();
 
-        let cycle_count = leaks.iter().filter(|l| matches!(l, LeakType::CircularReference { .. })).count();
-        let orphan_count = leaks.iter().filter(|l| matches!(l, LeakType::OrphanedObject { .. })).count();
-        let ref_count_issues = leaks.iter().filter(|l| matches!(l, LeakType::RefCountMismatch { .. })).count();
+        let cycle_count = leaks
+            .iter()
+            .filter(|l| matches!(l, LeakType::CircularReference { .. }))
+            .count();
+        let orphan_count = leaks
+            .iter()
+            .filter(|l| matches!(l, LeakType::OrphanedObject { .. }))
+            .count();
+        let ref_count_issues = leaks
+            .iter()
+            .filter(|l| matches!(l, LeakType::RefCountMismatch { .. }))
+            .count();
 
         if cycle_count > 0 {
             recommendations.push(format!(
@@ -750,7 +755,8 @@ impl LeakDetector {
         }
 
         if recommendations.is_empty() {
-            recommendations.push("No significant memory leaks detected. Continue monitoring.".to_string());
+            recommendations
+                .push("No significant memory leaks detected. Continue monitoring.".to_string());
         }
 
         recommendations
@@ -763,11 +769,12 @@ impl LeakDetector {
         // Remove objects older than 1 hour that have no references
         for entry in self.tracked_objects.iter() {
             let object = entry.value();
-            
+
             if let Ok(age) = now.duration_since(object.created_at) {
-                if age > Duration::from_secs(3600) && 
-                   object.references_from.is_empty() &&
-                   object.strong_ref_count == 0 {
+                if age > Duration::from_secs(3600)
+                    && object.references_from.is_empty()
+                    && object.strong_ref_count == 0
+                {
                     to_remove.push(object.id);
                 }
             }
@@ -781,11 +788,11 @@ impl LeakDetector {
 
     fn get_objects_by_type(&self) -> HashMap<ObjectType, usize> {
         let mut counts = HashMap::new();
-        
+
         for entry in self.tracked_objects.iter() {
             *counts.entry(entry.value().object_type.clone()).or_insert(0) += 1;
         }
-        
+
         counts
     }
 }
@@ -850,10 +857,10 @@ mod tests {
     fn test_object_registration() {
         let detector = LeakDetector::new();
         let id = ObjectId::new();
-        
+
         detector.register_object(id, ObjectType::BTreeNode, 1024, None);
         assert!(detector.tracked_objects.contains_key(&id));
-        
+
         detector.unregister_object(id);
         assert!(!detector.tracked_objects.contains_key(&id));
     }
@@ -861,20 +868,20 @@ mod tests {
     #[test]
     fn test_circular_reference_detection() {
         let detector = LeakDetector::new();
-        
+
         let id1 = ObjectId::new();
         let id2 = ObjectId::new();
-        
+
         detector.register_object(id1, ObjectType::BTreeNode, 1024, None);
         detector.register_object(id2, ObjectType::BTreeNode, 1024, None);
-        
+
         // Create circular reference
         detector.add_reference(id1, id2, ReferenceType::Strong, None);
         detector.add_reference(id2, id1, ReferenceType::Strong, None);
-        
+
         let leaks = detector.detect_circular_references();
         assert!(!leaks.is_empty());
-        
+
         if let LeakType::CircularReference { cycle, .. } = &leaks[0] {
             assert!(cycle.contains(&id1) || cycle.contains(&id2));
         }
@@ -885,10 +892,10 @@ mod tests {
         let arc = tracked_arc(42, ObjectType::Custom("test".to_string()));
         assert_eq!(*arc, 42);
         assert_eq!(arc.strong_count(), 1);
-        
+
         let weak = tracked_weak(&arc);
         assert!(weak.upgrade().is_some());
-        
+
         drop(arc);
         assert!(weak.upgrade().is_none());
     }

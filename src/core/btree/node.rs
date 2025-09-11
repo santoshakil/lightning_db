@@ -1,8 +1,10 @@
 use super::KeyEntry;
 use crate::core::error::{Error, Result};
-#[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
-use crate::performance::optimizations::simd::safe::{compare_keys as simd_compare_keys, search_prefix};
 use crate::core::storage::{Page, PAGE_SIZE};
+#[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
+use crate::performance::optimizations::simd::safe::{
+    compare_keys as simd_compare_keys, search_prefix,
+};
 use bytes::{Buf, BufMut, BytesMut};
 use smallvec::SmallVec;
 use std::io::{Cursor, Read};
@@ -17,9 +19,9 @@ pub enum NodeType {
 pub struct BTreeNode {
     pub page_id: u32,
     pub node_type: NodeType,
-    pub entries: SmallVec<[KeyEntry; 8]>,    // Most nodes have few entries
-    pub children: SmallVec<[u32; 9]>,        // Internal nodes have entries + 1 children
-    pub right_sibling: Option<u32>,          // Only used for leaf nodes
+    pub entries: SmallVec<[KeyEntry; 8]>, // Most nodes have few entries
+    pub children: SmallVec<[u32; 9]>,     // Internal nodes have entries + 1 children
+    pub right_sibling: Option<u32>,       // Only used for leaf nodes
     pub parent: Option<u32>,
 }
 
@@ -250,7 +252,7 @@ impl BTreeNode {
             match key.cmp(&entry.key) {
                 std::cmp::Ordering::Equal => return (true, i),
                 std::cmp::Ordering::Less => return (false, i),
-                std::cmp::Ordering::Greater => {},
+                std::cmp::Ordering::Greater => {}
             }
         }
         (false, self.entries.len())
@@ -303,7 +305,11 @@ impl BTreeNode {
         keys.iter()
             .map(|&key| {
                 let (found, pos) = self.find_key_position_simd(key);
-                if found { Some(pos) } else { None }
+                if found {
+                    Some(pos)
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -316,7 +322,9 @@ impl BTreeNode {
         }
 
         for i in 1..self.entries.len() {
-            if simd_compare_keys(&self.entries[i-1].key, &self.entries[i].key) != std::cmp::Ordering::Less {
+            if simd_compare_keys(&self.entries[i - 1].key, &self.entries[i].key)
+                != std::cmp::Ordering::Less
+            {
                 return false;
             }
         }

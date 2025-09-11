@@ -1,9 +1,9 @@
 use crate::security::{SecurityError, SecurityResult};
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RateLimitConfig {
@@ -54,57 +54,62 @@ impl TimingAttackRateLimiter {
 
     pub async fn check_and_record_attempt(&self, identifier: &str) -> SecurityResult<()> {
         self.cleanup_expired_records().await;
-        
+
         if let Some(global_limit) = self.config.global_rate_limit {
             self.check_global_rate_limit(global_limit).await?;
         }
-        
+
         let now = Instant::now();
-        let mut entry = self.attempts.entry(identifier.to_string()).or_insert_with(|| AttemptRecord {
-            count: 0,
-            first_attempt: now,
-            last_attempt: now,
-            locked_until: None,
-            lockout_count: 0,
-        });
-        
+        let mut entry = self
+            .attempts
+            .entry(identifier.to_string())
+            .or_insert_with(|| AttemptRecord {
+                count: 0,
+                first_attempt: now,
+                last_attempt: now,
+                locked_until: None,
+                lockout_count: 0,
+            });
+
         if let Some(locked_until) = entry.locked_until {
             if now < locked_until {
                 let remaining = locked_until.duration_since(now);
-                return Err(SecurityError::RateLimitExceeded(
-                    format!("Account locked for {} more seconds", remaining.as_secs())
-                ));
+                return Err(SecurityError::RateLimitExceeded(format!(
+                    "Account locked for {} more seconds",
+                    remaining.as_secs()
+                )));
             } else {
                 entry.locked_until = None;
                 entry.count = 0;
                 entry.first_attempt = now;
             }
         }
-        
+
         if now.duration_since(entry.first_attempt) > self.config.time_window {
             entry.count = 1;
             entry.first_attempt = now;
         } else {
             entry.count += 1;
         }
-        
+
         entry.last_attempt = now;
-        
+
         if entry.count > self.config.max_attempts {
             let lockout_duration = if self.config.exponential_backoff {
                 self.config.lockout_duration * 2_u32.pow(entry.lockout_count.min(5))
             } else {
                 self.config.lockout_duration
             };
-            
+
             entry.locked_until = Some(now + lockout_duration);
             entry.lockout_count += 1;
-            
-            return Err(SecurityError::RateLimitExceeded(
-                format!("Too many attempts. Locked for {} seconds", lockout_duration.as_secs())
-            ));
+
+            return Err(SecurityError::RateLimitExceeded(format!(
+                "Too many attempts. Locked for {} seconds",
+                lockout_duration.as_secs()
+            )));
         }
-        
+
         Ok(())
     }
 
@@ -122,15 +127,15 @@ impl TimingAttackRateLimiter {
             if record.locked_until.is_some() && Instant::now() < record.locked_until.unwrap() {
                 return 0;
             }
-            
+
             let window_elapsed = Instant::now().duration_since(record.first_attempt);
             if window_elapsed > self.config.time_window {
                 return self.config.max_attempts;
             }
-            
+
             return self.config.max_attempts.saturating_sub(record.count);
         }
-        
+
         self.config.max_attempts
     }
 
@@ -141,19 +146,19 @@ impl TimingAttackRateLimiter {
     async fn check_global_rate_limit(&self, limit: u32) -> SecurityResult<()> {
         let mut counter = self.global_counter.lock().await;
         let mut window_start = self.global_window_start.lock().await;
-        
+
         let now = Instant::now();
         if now.duration_since(*window_start) > Duration::from_secs(60) {
             *counter = 0;
             *window_start = now;
         }
-        
+
         if *counter >= limit {
             return Err(SecurityError::RateLimitExceeded(
-                "Global rate limit exceeded. Please try again later.".to_string()
+                "Global rate limit exceeded. Please try again later.".to_string(),
             ));
         }
-        
+
         *counter += 1;
         Ok(())
     }
@@ -161,7 +166,7 @@ impl TimingAttackRateLimiter {
     async fn cleanup_expired_records(&self) {
         let now = Instant::now();
         let cleanup_threshold = Duration::from_secs(3600);
-        
+
         self.attempts.retain(|_, record| {
             if let Some(locked_until) = record.locked_until {
                 now < locked_until + cleanup_threshold
@@ -172,7 +177,8 @@ impl TimingAttackRateLimiter {
     }
 
     pub fn get_stats(&self) -> RateLimiterStats {
-        let active_locks = self.attempts
+        let active_locks = self
+            .attempts
             .iter()
             .filter(|entry| {
                 if let Some(locked_until) = entry.locked_until {
@@ -251,12 +257,16 @@ impl AuthRateLimiter {
 
     pub async fn check_password_attempt(&self, username: &str, ip: &str) -> SecurityResult<()> {
         self.ip_limiter.check_and_record_attempt(ip).await?;
-        self.password_limiter.check_and_record_attempt(username).await
+        self.password_limiter
+            .check_and_record_attempt(username)
+            .await
     }
 
     pub async fn check_token_attempt(&self, token_prefix: &str, ip: &str) -> SecurityResult<()> {
         self.ip_limiter.check_and_record_attempt(ip).await?;
-        self.token_limiter.check_and_record_attempt(token_prefix).await
+        self.token_limiter
+            .check_and_record_attempt(token_prefix)
+            .await
     }
 
     pub async fn check_mfa_attempt(&self, username: &str, ip: &str) -> SecurityResult<()> {
@@ -307,19 +317,19 @@ mod tests {
             exponential_backoff: false,
             global_rate_limit: None,
         };
-        
+
         let limiter = TimingAttackRateLimiter::new(config);
         let identifier = "test_user";
 
         assert!(limiter.check_and_record_attempt(identifier).await.is_ok());
         assert!(limiter.check_and_record_attempt(identifier).await.is_ok());
         assert!(limiter.check_and_record_attempt(identifier).await.is_ok());
-        
+
         assert!(limiter.check_and_record_attempt(identifier).await.is_err());
         assert!(limiter.is_locked(identifier).await);
-        
+
         sleep(Duration::from_secs(6)).await;
-        
+
         assert!(!limiter.is_locked(identifier).await);
         assert!(limiter.check_and_record_attempt(identifier).await.is_ok());
     }
@@ -333,15 +343,15 @@ mod tests {
             exponential_backoff: false,
             global_rate_limit: None,
         };
-        
+
         let limiter = TimingAttackRateLimiter::new(config);
         let identifier = "test_user_2";
 
         assert!(limiter.check_and_record_attempt(identifier).await.is_ok());
         assert!(limiter.check_and_record_attempt(identifier).await.is_ok());
-        
+
         sleep(Duration::from_secs(2)).await;
-        
+
         assert!(limiter.check_and_record_attempt(identifier).await.is_ok());
     }
 
@@ -354,20 +364,20 @@ mod tests {
             exponential_backoff: true,
             global_rate_limit: None,
         };
-        
+
         let limiter = TimingAttackRateLimiter::new(config);
         let identifier = "test_user_3";
 
         assert!(limiter.check_and_record_attempt(identifier).await.is_ok());
         assert!(limiter.check_and_record_attempt(identifier).await.is_err());
-        
+
         sleep(Duration::from_millis(150)).await;
-        
+
         assert!(limiter.check_and_record_attempt(identifier).await.is_ok());
         assert!(limiter.check_and_record_attempt(identifier).await.is_err());
-        
+
         sleep(Duration::from_millis(250)).await;
-        
+
         assert!(!limiter.is_locked(identifier).await);
     }
 }

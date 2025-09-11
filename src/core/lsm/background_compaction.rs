@@ -1,6 +1,6 @@
-use crate::core::error::Result;
 use super::compaction::Compactor;
 use super::SSTable;
+use crate::core::error::Result;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
@@ -165,24 +165,24 @@ impl BackgroundCompactionScheduler {
                     // Wake up worker threads
                     let (lock, cvar) = &*wake_signal;
                     let mut wake = match lock.lock() {
-                Ok(w) => w,
-                Err(poisoned) => {
-                    warn!("Wake condition mutex poisoned, recovering");
-                    poisoned.into_inner()
-                }
-            };
+                        Ok(w) => w,
+                        Err(poisoned) => {
+                            warn!("Wake condition mutex poisoned, recovering");
+                            poisoned.into_inner()
+                        }
+                    };
                     *wake = true;
                     cvar.notify_all();
                 } else {
                     // Reset wake signal when no work is available to prevent spurious wakeups
                     let (lock, _cvar) = &*wake_signal;
                     let mut wake = match lock.lock() {
-                Ok(w) => w,
-                Err(poisoned) => {
-                    warn!("Wake condition mutex poisoned, recovering");
-                    poisoned.into_inner()
-                }
-            };
+                        Ok(w) => w,
+                        Err(poisoned) => {
+                            warn!("Wake condition mutex poisoned, recovering");
+                            poisoned.into_inner()
+                        }
+                    };
                     *wake = false;
                 }
 
@@ -259,12 +259,12 @@ impl BackgroundCompactionScheduler {
                     // No tasks available, wait for signal
                     let (lock, cvar) = &*wake_signal;
                     let mut wake = match lock.lock() {
-                Ok(w) => w,
-                Err(poisoned) => {
-                    warn!("Wake condition mutex poisoned, recovering");
-                    poisoned.into_inner()
-                }
-            };
+                        Ok(w) => w,
+                        Err(poisoned) => {
+                            warn!("Wake condition mutex poisoned, recovering");
+                            poisoned.into_inner()
+                        }
+                    };
                     while !*wake && running.load(Ordering::SeqCst) {
                         wake = match cvar.wait(wake) {
                             Ok(w) => w,

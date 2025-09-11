@@ -76,10 +76,7 @@ impl DataValidator {
     }
 
     pub fn with_config(database: Arc<Database>, config: ValidationConfig) -> Self {
-        Self {
-            database,
-            config,
-        }
+        Self { database, config }
     }
 
     pub async fn validate_full_database(&self) -> Result<ValidationResult> {
@@ -345,7 +342,10 @@ impl DataValidator {
                     pages_validated += 1;
                 }
                 Err(e) => {
-                    warnings.push(format!("Failed to validate cross-references for page {}: {}", page_id, e));
+                    warnings.push(format!(
+                        "Failed to validate cross-references for page {}: {}",
+                        page_id, e
+                    ));
                 }
             }
         }
@@ -376,7 +376,10 @@ impl DataValidator {
             }
 
             // Check if target page type is compatible
-            if !self.is_reference_type_compatible(page_id, target_page).await? {
+            if !self
+                .is_reference_type_compatible(page_id, target_page)
+                .await?
+            {
                 errors.push(ValidationError::CrossReferenceError {
                     source_page: page_id,
                     target_page,
@@ -403,7 +406,10 @@ impl DataValidator {
                     pages_validated += 1;
                 }
                 Err(e) => {
-                    warnings.push(format!("Failed to validate structure for page {}: {}", page_id, e));
+                    warnings.push(format!(
+                        "Failed to validate structure for page {}: {}",
+                        page_id, e
+                    ));
                 }
             }
         }
@@ -446,7 +452,10 @@ impl DataValidator {
         }
 
         // Validate internal structure based on page type
-        if let Err(e) = self.validate_page_internal_structure(page_id, &page_data).await {
+        if let Err(e) = self
+            .validate_page_internal_structure(page_id, &page_data)
+            .await
+        {
             errors.push(ValidationError::StructuralViolation {
                 page_id,
                 violation_type: "internal_structure".to_string(),
@@ -540,7 +549,11 @@ impl DataValidator {
         4096 // Standard page size
     }
 
-    async fn validate_page_internal_structure(&self, _page_id: u64, _page_data: &[u8]) -> Result<()> {
+    async fn validate_page_internal_structure(
+        &self,
+        _page_id: u64,
+        _page_data: &[u8],
+    ) -> Result<()> {
         Ok(()) // Simplified
     }
 
@@ -591,9 +604,9 @@ impl DataValidator {
         }
 
         // Check entry size field
-        let entry_size = u32::from_le_bytes([
-            entry_data[0], entry_data[1], entry_data[2], entry_data[3]
-        ]) as usize;
+        let entry_size =
+            u32::from_le_bytes([entry_data[0], entry_data[1], entry_data[2], entry_data[3]])
+                as usize;
 
         Ok(entry_size == entry_data.len() && entry_size <= 1024 * 1024)
     }

@@ -1,5 +1,5 @@
-use crate::{Database, DatabaseStats, LightningDbConfig};
 use crate::core::error::Result;
+use crate::{Database, DatabaseStats, LightningDbConfig};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::task;

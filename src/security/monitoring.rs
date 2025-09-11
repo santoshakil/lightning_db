@@ -179,13 +179,18 @@ impl SecurityMonitor {
             return Ok(());
         }
 
-        self.event_sender.send(event).await
-            .map_err(|e| SecurityError::PolicyViolation(format!("Failed to report security event: {}", e)))?;
+        self.event_sender.send(event).await.map_err(|e| {
+            SecurityError::PolicyViolation(format!("Failed to report security event: {}", e))
+        })?;
 
         Ok(())
     }
 
-    pub async fn report_failed_authentication(&self, ip: Option<IpAddr>, user_id: Option<String>) -> SecurityResult<()> {
+    pub async fn report_failed_authentication(
+        &self,
+        ip: Option<IpAddr>,
+        user_id: Option<String>,
+    ) -> SecurityResult<()> {
         let event = SecurityEvent {
             timestamp: Instant::now(),
             event_type: SecurityEventType::FailedAuthentication,
@@ -198,8 +203,12 @@ impl SecurityMonitor {
         self.report_event(event).await
     }
 
-    pub async fn report_unauthorized_access(&self, ip: Option<IpAddr>, user_id: Option<String>, 
-                                          resource: String) -> SecurityResult<()> {
+    pub async fn report_unauthorized_access(
+        &self,
+        ip: Option<IpAddr>,
+        user_id: Option<String>,
+        resource: String,
+    ) -> SecurityResult<()> {
         let mut details = HashMap::new();
         details.insert("resource".to_string(), resource);
 
@@ -215,7 +224,11 @@ impl SecurityMonitor {
         self.report_event(event).await
     }
 
-    pub async fn report_rate_limit_exceeded(&self, ip: Option<IpAddr>, user_id: Option<String>) -> SecurityResult<()> {
+    pub async fn report_rate_limit_exceeded(
+        &self,
+        ip: Option<IpAddr>,
+        user_id: Option<String>,
+    ) -> SecurityResult<()> {
         let event = SecurityEvent {
             timestamp: Instant::now(),
             event_type: SecurityEventType::RateLimitExceeded,
@@ -228,7 +241,11 @@ impl SecurityMonitor {
         self.report_event(event).await
     }
 
-    pub async fn scan_payload(&self, payload: &str, context: &str) -> SecurityResult<Vec<SecurityAlert>> {
+    pub async fn scan_payload(
+        &self,
+        payload: &str,
+        context: &str,
+    ) -> SecurityResult<Vec<SecurityAlert>> {
         if !self.config.intrusion_detection_enabled {
             return Ok(Vec::new());
         }
@@ -244,7 +261,10 @@ impl SecurityMonitor {
                         timestamp: SystemTime::now(),
                         alert_type: AlertType::IntrusionDetected,
                         severity: scanner.severity.clone(),
-                        description: format!("Malicious payload detected: {} in {}", signature, context),
+                        description: format!(
+                            "Malicious payload detected: {} in {}",
+                            signature, context
+                        ),
                         affected_resource: context.to_string(),
                         source_ip: None,
                         user_id: None,
@@ -274,7 +294,9 @@ impl SecurityMonitor {
             alert.acknowledged = true;
             Ok(())
         } else {
-            Err(SecurityError::PolicyViolation("Alert not found".to_string()))
+            Err(SecurityError::PolicyViolation(
+                "Alert not found".to_string(),
+            ))
         }
     }
 
@@ -315,7 +337,10 @@ impl SecurityMonitor {
         metrics
     }
 
-    fn start_event_processor(mut receiver: Receiver<SecurityEvent>, monitor: SecurityMonitor) -> SecurityResult<()> {
+    fn start_event_processor(
+        mut receiver: Receiver<SecurityEvent>,
+        monitor: SecurityMonitor,
+    ) -> SecurityResult<()> {
         tokio::spawn(async move {
             while let Some(event) = receiver.recv().await {
                 if let Err(e) = monitor.process_security_event(event).await {
@@ -330,7 +355,9 @@ impl SecurityMonitor {
         tokio::spawn(async move {
             while let Some(alert) = receiver.recv().await {
                 match alert.severity {
-                    EventSeverity::Critical => error!("CRITICAL SECURITY ALERT: {}", alert.description),
+                    EventSeverity::Critical => {
+                        error!("CRITICAL SECURITY ALERT: {}", alert.description)
+                    }
                     EventSeverity::High => warn!("HIGH SECURITY ALERT: {}", alert.description),
                     EventSeverity::Medium => warn!("MEDIUM SECURITY ALERT: {}", alert.description),
                     EventSeverity::Low => info!("LOW SECURITY ALERT: {}", alert.description),
@@ -346,15 +373,15 @@ impl SecurityMonitor {
                 if let Some(ip) = event.source_ip {
                     self.check_brute_force(ip).await?;
                 }
-            },
+            }
             SecurityEventType::AnomalousActivity => {
                 if self.config.anomaly_detection_enabled {
                     self.analyze_anomaly(&event).await?;
                 }
-            },
+            }
             SecurityEventType::MaliciousPayload => {
                 self.handle_malicious_payload(&event).await?;
-            },
+            }
             _ => {}
         }
 
@@ -367,15 +394,15 @@ impl SecurityMonitor {
             let now = Instant::now();
             let window = detector.window;
             let threshold = detector.threshold;
-            
+
             let attempts = detector.failed_attempts.entry(ip).or_default();
             attempts.push_back(now);
-            
+
             attempts.retain(|&time| now.duration_since(time) <= window);
-            
+
             attempts.len() >= threshold
         };
-        
+
         if should_alert {
             let alert = SecurityAlert {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -393,10 +420,10 @@ impl SecurityMonitor {
                 ],
                 acknowledged: false,
             };
-            
+
             self.add_alert(alert).await?;
         }
-        
+
         Ok(())
     }
 
@@ -421,17 +448,17 @@ impl SecurityMonitor {
             ],
             acknowledged: false,
         };
-        
+
         self.add_alert(alert).await
     }
 
     async fn add_alert(&self, alert: SecurityAlert) -> SecurityResult<()> {
         let alert_id = alert.id.clone();
-        
+
         {
             let mut alerts = self.active_alerts.write().unwrap();
             alerts.insert(alert_id, alert.clone());
-            
+
             if alerts.len() > self.config.max_alerts {
                 let oldest_id = alerts.keys().next().cloned();
                 if let Some(id) = oldest_id {
@@ -439,10 +466,12 @@ impl SecurityMonitor {
                 }
             }
         }
-        
-        self.alert_sender.send(alert).await
+
+        self.alert_sender
+            .send(alert)
+            .await
             .map_err(|e| SecurityError::PolicyViolation(format!("Failed to send alert: {}", e)))?;
-            
+
         Ok(())
     }
 

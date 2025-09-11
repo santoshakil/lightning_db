@@ -1,11 +1,11 @@
+use crate::core::error::{Error, Result};
+use async_trait::async_trait;
+use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use crate::core::error::{Error, Result};
-use dashmap::DashMap;
-use async_trait::async_trait;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum VoteDecision {
@@ -257,7 +257,7 @@ impl Participant {
             info.node_id.clone(),
             Duration::from_secs(5),
         ));
-        
+
         Self {
             info,
             state: Arc::new(RwLock::new(HashMap::new())),
@@ -299,27 +299,31 @@ impl Participant {
         operations: &[Operation],
     ) -> Result<Vec<String>> {
         let mut locked_keys = Vec::new();
-        
+
         for op in operations {
             let lock_type = match op.op_type {
                 OperationType::Read => LockType::Shared,
-                OperationType::Write | OperationType::Update | OperationType::Delete => LockType::Exclusive,
+                OperationType::Write | OperationType::Update | OperationType::Delete => {
+                    LockType::Exclusive
+                }
                 OperationType::Lock => LockType::Exclusive,
                 OperationType::Unlock => continue,
             };
-            
+
             if let Some(existing) = self.lock_manager.locks.get(&op.key) {
                 if existing.holder != txn_id && !self.can_grant_lock(&existing, lock_type) {
-                        self.metrics.lock_conflicts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        
-                        for key in &locked_keys {
-                            self.lock_manager.locks.remove(key);
-                        }
-                        
-                        return Err(Error::Custom("Lock conflict detected".to_string()));
+                    self.metrics
+                        .lock_conflicts
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                    for key in &locked_keys {
+                        self.lock_manager.locks.remove(key);
+                    }
+
+                    return Err(Error::Custom("Lock conflict detected".to_string()));
                 }
             }
-            
+
             self.lock_manager.locks.insert(
                 op.key.clone(),
                 LockInfo {
@@ -329,19 +333,21 @@ impl Participant {
                     waiters: Vec::new(),
                 },
             );
-            
+
             locked_keys.push(op.key.clone());
         }
-        
+
         Ok(locked_keys)
     }
 
     fn can_grant_lock(&self, existing: &LockInfo, requested: LockType) -> bool {
-        matches!((existing.lock_type, requested),
+        matches!(
+            (existing.lock_type, requested),
             (LockType::Shared, LockType::Shared)
-            | (LockType::Shared, LockType::IntentShared)
-            | (LockType::IntentShared, LockType::Shared)
-            | (LockType::IntentShared, LockType::IntentShared))
+                | (LockType::Shared, LockType::IntentShared)
+                | (LockType::IntentShared, LockType::Shared)
+                | (LockType::IntentShared, LockType::IntentShared)
+        )
     }
 
     async fn execute_operations(
@@ -350,17 +356,23 @@ impl Participant {
         operations: &[Operation],
     ) -> Result<Vec<UndoRecord>> {
         let mut undo_records = Vec::new();
-        
+
         for op in operations {
             let undo = match op.op_type {
                 OperationType::Write => {
-                    let old_value = self.storage.read_page(op.key.as_bytes().to_vec()).await.ok();
-                    
-                    self.storage.write_page(
-                        op.key.as_bytes().to_vec(),
-                        op.value.clone().unwrap_or_default().to_vec(),
-                    ).await?;
-                    
+                    let old_value = self
+                        .storage
+                        .read_page(op.key.as_bytes().to_vec())
+                        .await
+                        .ok();
+
+                    self.storage
+                        .write_page(
+                            op.key.as_bytes().to_vec(),
+                            op.value.clone().unwrap_or_default().to_vec(),
+                        )
+                        .await?;
+
                     UndoRecord {
                         key: op.key.clone(),
                         old_value,
@@ -374,12 +386,14 @@ impl Participant {
                 }
                 OperationType::Update => {
                     let old_value = self.storage.read_page(op.key.as_bytes().to_vec()).await?;
-                    
-                    self.storage.write_page(
-                        op.key.as_bytes().to_vec(),
-                        op.value.clone().unwrap_or_default().to_vec(),
-                    ).await?;
-                    
+
+                    self.storage
+                        .write_page(
+                            op.key.as_bytes().to_vec(),
+                            op.value.clone().unwrap_or_default().to_vec(),
+                        )
+                        .await?;
+
                     UndoRecord {
                         key: op.key.clone(),
                         old_value: Some(old_value),
@@ -393,9 +407,9 @@ impl Participant {
                 }
                 OperationType::Delete => {
                     let old_value = self.storage.read_page(op.key.as_bytes().to_vec()).await?;
-                    
+
                     self.storage.delete_page(op.key.as_bytes().to_vec()).await?;
-                    
+
                     UndoRecord {
                         key: op.key.clone(),
                         old_value: Some(old_value),
@@ -409,12 +423,12 @@ impl Participant {
                 }
                 _ => continue,
             };
-            
+
             undo_records.push(undo);
         }
-        
+
         self.undo_log.log.insert(txn_id, undo_records.clone());
-        
+
         Ok(undo_records)
     }
 
@@ -424,52 +438,54 @@ impl Participant {
                 match record.operation {
                     OperationType::Write | OperationType::Update => {
                         if let Some(old_value) = &record.old_value {
-                            self.storage.write_page(
-                                record.key.as_bytes().to_vec(),
-                                old_value.to_vec(),
-                            ).await?;
+                            self.storage
+                                .write_page(record.key.as_bytes().to_vec(), old_value.to_vec())
+                                .await?;
                         } else {
-                            self.storage.delete_page(record.key.as_bytes().to_vec()).await?;
+                            self.storage
+                                .delete_page(record.key.as_bytes().to_vec())
+                                .await?;
                         }
                     }
                     OperationType::Delete => {
                         if let Some(old_value) = &record.old_value {
-                            self.storage.write_page(
-                                record.key.as_bytes().to_vec(),
-                                old_value.to_vec(),
-                            ).await?;
+                            self.storage
+                                .write_page(record.key.as_bytes().to_vec(), old_value.to_vec())
+                                .await?;
                         }
                     }
                     _ => {}
                 }
             }
         }
-        
+
         Ok(())
     }
 
     async fn release_locks(&self, txn_id: super::TransactionId) {
         let mut locks_to_remove = Vec::new();
-        
+
         for entry in self.lock_manager.locks.iter() {
             if entry.value().holder == txn_id {
                 locks_to_remove.push(entry.key().clone());
             }
         }
-        
+
         for key in locks_to_remove {
             self.lock_manager.locks.remove(&key);
         }
     }
 
     pub async fn handle_recovery(&self) -> Result<Vec<super::TransactionId>> {
-        self.metrics.recovery_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+        self.metrics
+            .recovery_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         let mut recovered_txns = Vec::new();
-        
+
         for entry in self.recovery_log.prepared_txns.iter() {
             let log = entry.value();
-            
+
             if let Some(decision) = self.recovery_log.decision_log.get(&log.txn_id) {
                 if !decision.executed {
                     match decision.decision {
@@ -481,23 +497,26 @@ impl Participant {
                                     .unwrap()
                                     .as_secs(),
                                 decision: Decision::Commit,
-                            }).await?;
+                            })
+                            .await?;
                         }
                         Decision::Abort => {
                             self.abort(log.txn_id).await?;
                         }
                     }
-                    
-                    self.recovery_log.decision_log.alter(&log.txn_id, |_, mut v| {
-                        v.executed = true;
-                        v
-                    });
+
+                    self.recovery_log
+                        .decision_log
+                        .alter(&log.txn_id, |_, mut v| {
+                            v.executed = true;
+                            v
+                        });
                 }
             } else {
                 recovered_txns.push(log.txn_id);
             }
         }
-        
+
         Ok(recovered_txns)
     }
 }
@@ -505,9 +524,13 @@ impl Participant {
 #[async_trait]
 impl ParticipantProtocol for Participant {
     async fn prepare(&self, request: PrepareRequest) -> Result<PrepareResponse> {
-        self.metrics.total_prepares.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.metrics.active_txns.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+        self.metrics
+            .total_prepares
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.metrics
+            .active_txns
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         let mut state = self.state.write().await;
         state.insert(
             request.txn_id,
@@ -523,17 +546,22 @@ impl ParticipantProtocol for Participant {
             },
         );
         drop(state);
-        
-        let locked_keys = match self.acquire_locks(request.txn_id, &request.operations).await {
+
+        let locked_keys = match self
+            .acquire_locks(request.txn_id, &request.operations)
+            .await
+        {
             Ok(keys) => keys,
             Err(_e) => {
-                self.metrics.active_txns.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                self.metrics
+                    .active_txns
+                    .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 return Ok(PrepareResponse {
                     vote: VoteDecision::Abort,
                     prepared_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
                     undo_log: None,
                     locks_held: Vec::new(),
                     conflict_info: Some(ConflictInfo {
@@ -544,34 +572,39 @@ impl ParticipantProtocol for Participant {
                 });
             }
         };
-        
-        let undo_records = match self.execute_operations(request.txn_id, &request.operations).await {
+
+        let undo_records = match self
+            .execute_operations(request.txn_id, &request.operations)
+            .await
+        {
             Ok(records) => records,
             Err(_e) => {
                 self.release_locks(request.txn_id).await;
-                self.metrics.active_txns.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                self.metrics
+                    .active_txns
+                    .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 return Ok(PrepareResponse {
                     vote: VoteDecision::Abort,
                     prepared_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
                     undo_log: None,
                     locks_held: Vec::new(),
                     conflict_info: None,
                 });
             }
         };
-        
+
         let prepared_txn = PreparedTransaction {
             txn_id: request.txn_id,
             prepare_request: request.clone(),
             prepare_response: PrepareResponse {
                 vote: VoteDecision::Commit,
                 prepared_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
                 undo_log: Some(undo_records.clone()),
                 locks_held: locked_keys.clone(),
                 conflict_info: None,
@@ -580,9 +613,10 @@ impl ParticipantProtocol for Participant {
             coordinator_id: request.coordinator_id.clone(),
             timeout_at: Instant::now() + self.info.timeout,
         };
-        
-        self.prepared_txns.insert(request.txn_id, prepared_txn.clone());
-        
+
+        self.prepared_txns
+            .insert(request.txn_id, prepared_txn.clone());
+
         self.recovery_log.prepared_txns.insert(
             request.txn_id,
             PreparedTransactionLog {
@@ -596,7 +630,7 @@ impl ParticipantProtocol for Participant {
                     .as_secs(),
             },
         );
-        
+
         let mut state = self.state.write().await;
         if let Some(txn) = state.get_mut(&prepared_txn.txn_id) {
             txn.state = ParticipantState::Prepared;
@@ -604,20 +638,24 @@ impl ParticipantProtocol for Participant {
             txn.locks = locked_keys.iter().cloned().collect();
             txn.undo_records = undo_records;
         }
-        
-        self.metrics.prepared_txns.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+
+        self.metrics
+            .prepared_txns
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         Ok(prepared_txn.prepare_response)
     }
 
     async fn commit(&self, request: CommitRequest) -> Result<CommitResponse> {
-        self.metrics.total_commits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+        self.metrics
+            .total_commits
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         if let Some((_, _prepared)) = self.prepared_txns.remove(&request.txn_id) {
             self.undo_log.log.remove(&request.txn_id);
-            
+
             self.release_locks(request.txn_id).await;
-            
+
             self.recovery_log.decision_log.insert(
                 request.txn_id,
                 DecisionLog {
@@ -630,18 +668,22 @@ impl ParticipantProtocol for Participant {
                     executed: true,
                 },
             );
-            
+
             self.recovery_log.prepared_txns.remove(&request.txn_id);
-            
+
             let mut state = self.state.write().await;
             if let Some(txn) = state.get_mut(&request.txn_id) {
                 txn.state = ParticipantState::Committed;
                 txn.commit_time = Some(Instant::now());
             }
-            
-            self.metrics.prepared_txns.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-            self.metrics.active_txns.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-            
+
+            self.metrics
+                .prepared_txns
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            self.metrics
+                .active_txns
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+
             Ok(CommitResponse {
                 committed: true,
                 commit_time: std::time::SystemTime::now()
@@ -663,15 +705,17 @@ impl ParticipantProtocol for Participant {
     }
 
     async fn abort(&self, txn_id: super::TransactionId) -> Result<()> {
-        self.metrics.total_aborts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+        self.metrics
+            .total_aborts
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         self.rollback(txn_id).await?;
-        
+
         self.release_locks(txn_id).await;
-        
+
         self.prepared_txns.remove(&txn_id);
         self.undo_log.log.remove(&txn_id);
-        
+
         self.recovery_log.decision_log.insert(
             txn_id,
             DecisionLog {
@@ -684,25 +728,34 @@ impl ParticipantProtocol for Participant {
                 executed: true,
             },
         );
-        
+
         self.recovery_log.prepared_txns.remove(&txn_id);
-        
+
         let mut state = self.state.write().await;
         if let Some(txn) = state.get_mut(&txn_id) {
             txn.state = ParticipantState::Aborted;
         }
-        
-        if self.metrics.prepared_txns.load(std::sync::atomic::Ordering::Relaxed) > 0 {
-            self.metrics.prepared_txns.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+
+        if self
+            .metrics
+            .prepared_txns
+            .load(std::sync::atomic::Ordering::Relaxed)
+            > 0
+        {
+            self.metrics
+                .prepared_txns
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         }
-        self.metrics.active_txns.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-        
+        self.metrics
+            .active_txns
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+
         Ok(())
     }
 
     async fn query_status(&self, txn_id: super::TransactionId) -> Result<ParticipantState> {
         let state = self.state.read().await;
-        
+
         if let Some(txn) = state.get(&txn_id) {
             Ok(txn.state)
         } else if self.prepared_txns.contains_key(&txn_id) {

@@ -91,8 +91,10 @@ impl IoRecoveryManager {
     }
 
     pub async fn read_with_recovery<P: AsRef<Path>>(&self, path: P) -> Result<Vec<u8>> {
-        self.stats.operations_attempted.fetch_add(1, Ordering::SeqCst);
-        
+        self.stats
+            .operations_attempted
+            .fetch_add(1, Ordering::SeqCst);
+
         let path = path.as_ref();
         let retry_policy = RetryPolicy {
             max_attempts: self.config.max_retry_attempts,
@@ -100,18 +102,22 @@ impl IoRecoveryManager {
             ..Default::default()
         };
 
-        let result = retry_policy.execute_async(|| async {
-            self.read_with_validation(path).await
-        }).await;
+        let result = retry_policy
+            .execute_async(|| async { self.read_with_validation(path).await })
+            .await;
 
         match &result {
             Ok(data) => {
-                self.stats.operations_succeeded.fetch_add(1, Ordering::SeqCst);
-                self.stats.bytes_read.fetch_add(data.len() as u64, Ordering::SeqCst);
+                self.stats
+                    .operations_succeeded
+                    .fetch_add(1, Ordering::SeqCst);
+                self.stats
+                    .bytes_read
+                    .fetch_add(data.len() as u64, Ordering::SeqCst);
             }
             Err(_) => {
                 self.stats.operations_failed.fetch_add(1, Ordering::SeqCst);
-                
+
                 // Try fallback paths if enabled
                 if self.config.fallback_enabled {
                     if let Ok(data) = self.try_fallback_read(path).await {
@@ -126,8 +132,10 @@ impl IoRecoveryManager {
     }
 
     async fn read_with_validation(&self, path: &Path) -> Result<Vec<u8>> {
-        let data = async_fs::read(path).await.map_err(|e| self.handle_io_error(e, path))?;
-        
+        let data = async_fs::read(path)
+            .await
+            .map_err(|e| self.handle_io_error(e, path))?;
+
         if self.config.checksum_validation {
             self.validate_data_integrity(&data, path).await?;
         }
@@ -144,8 +152,10 @@ impl IoRecoveryManager {
         let calculated_checksum = crc32fast::hash(&data[4..]);
 
         if stored_checksum != calculated_checksum {
-            self.stats.corruptions_detected.fetch_add(1, Ordering::SeqCst);
-            
+            self.stats
+                .corruptions_detected
+                .fetch_add(1, Ordering::SeqCst);
+
             let mut corruption_map = self.corruption_map.write().await;
             let count = corruption_map.entry(path.to_path_buf()).or_insert(0);
             *count += 1;
@@ -176,24 +186,33 @@ impl IoRecoveryManager {
 
     async fn attempt_auto_repair(&self, path: &Path) -> Result<()> {
         warn!("Attempting auto-repair for corrupted file: {:?}", path);
-        
+
         // Try to repair from backup or redundant copy
         if let Ok(repaired_data) = self.find_backup_copy(path).await {
-            async_fs::write(path, repaired_data).await.map_err(|e| self.handle_io_error(e, path))?;
-            self.stats.corruptions_repaired.fetch_add(1, Ordering::SeqCst);
+            async_fs::write(path, repaired_data)
+                .await
+                .map_err(|e| self.handle_io_error(e, path))?;
+            self.stats
+                .corruptions_repaired
+                .fetch_add(1, Ordering::SeqCst);
             info!("Successfully auto-repaired file: {:?}", path);
             return Ok(());
         }
 
         // Try to repair from WAL or other recovery sources
         if let Ok(()) = self.repair_from_wal(path).await {
-            self.stats.corruptions_repaired.fetch_add(1, Ordering::SeqCst);
+            self.stats
+                .corruptions_repaired
+                .fetch_add(1, Ordering::SeqCst);
             info!("Successfully repaired file from WAL: {:?}", path);
             return Ok(());
         }
 
         error!("Failed to auto-repair file: {:?}", path);
-        Err(Error::CorruptionUnrecoverable(format!("Cannot repair file: {:?}", path)))
+        Err(Error::CorruptionUnrecoverable(format!(
+            "Cannot repair file: {:?}",
+            path
+        )))
     }
 
     async fn find_backup_copy(&self, _path: &Path) -> Result<Vec<u8>> {
@@ -204,15 +223,17 @@ impl IoRecoveryManager {
 
     async fn repair_from_wal(&self, _path: &Path) -> Result<()> {
         // Implementation would attempt to reconstruct file from WAL entries
-        Err(Error::NotImplemented("WAL-based repair not implemented".to_string()))
+        Err(Error::NotImplemented(
+            "WAL-based repair not implemented".to_string(),
+        ))
     }
 
     async fn try_fallback_read(&self, path: &Path) -> Result<Vec<u8>> {
         let fallback_paths = self.fallback_paths.read().await;
-        
+
         for fallback_base in fallback_paths.iter() {
             let fallback_path = fallback_base.join(path.file_name().unwrap_or_default());
-            
+
             if let Ok(data) = async_fs::read(&fallback_path).await {
                 info!("Successfully read from fallback path: {:?}", fallback_path);
                 return Ok(data);
@@ -223,10 +244,12 @@ impl IoRecoveryManager {
     }
 
     pub async fn write_with_recovery<P: AsRef<Path>>(&self, path: P, data: &[u8]) -> Result<()> {
-        self.stats.operations_attempted.fetch_add(1, Ordering::SeqCst);
-        
+        self.stats
+            .operations_attempted
+            .fetch_add(1, Ordering::SeqCst);
+
         let path = path.as_ref();
-        
+
         // Check disk space before writing
         self.check_disk_space(path).await?;
 
@@ -237,15 +260,19 @@ impl IoRecoveryManager {
         };
 
         let data_with_checksum = self.add_checksum(data);
-        
-        let result = retry_policy.execute_async(|| async {
-            self.write_with_sync(path, &data_with_checksum).await
-        }).await;
+
+        let result = retry_policy
+            .execute_async(|| async { self.write_with_sync(path, &data_with_checksum).await })
+            .await;
 
         match &result {
             Ok(_) => {
-                self.stats.operations_succeeded.fetch_add(1, Ordering::SeqCst);
-                self.stats.bytes_written.fetch_add(data.len() as u64, Ordering::SeqCst);
+                self.stats
+                    .operations_succeeded
+                    .fetch_add(1, Ordering::SeqCst);
+                self.stats
+                    .bytes_written
+                    .fetch_add(data.len() as u64, Ordering::SeqCst);
             }
             Err(_) => {
                 self.stats.operations_failed.fetch_add(1, Ordering::SeqCst);
@@ -270,20 +297,30 @@ impl IoRecoveryManager {
     async fn write_with_sync(&self, path: &Path, data: &[u8]) -> Result<()> {
         // Create parent directories if they don't exist
         if let Some(parent) = path.parent() {
-            async_fs::create_dir_all(parent).await.map_err(|e| self.handle_io_error(e, path))?;
+            async_fs::create_dir_all(parent)
+                .await
+                .map_err(|e| self.handle_io_error(e, path))?;
         }
 
         // Write to temporary file first for atomic operation
         let temp_path = path.with_extension("tmp");
-        
+
         {
-            let mut file = async_fs::File::create(&temp_path).await.map_err(|e| self.handle_io_error(e, path))?;
-            file.write_all(data).await.map_err(|e| self.handle_io_error(e, path))?;
-            file.sync_all().await.map_err(|e| self.handle_io_error(e, path))?
+            let mut file = async_fs::File::create(&temp_path)
+                .await
+                .map_err(|e| self.handle_io_error(e, path))?;
+            file.write_all(data)
+                .await
+                .map_err(|e| self.handle_io_error(e, path))?;
+            file.sync_all()
+                .await
+                .map_err(|e| self.handle_io_error(e, path))?
         }
 
         // Atomic move
-        async_fs::rename(&temp_path, path).await.map_err(|e| self.handle_io_error(e, path))?;
+        async_fs::rename(&temp_path, path)
+            .await
+            .map_err(|e| self.handle_io_error(e, path))?;
 
         Ok(())
     }
@@ -294,7 +331,7 @@ impl IoRecoveryManager {
             // to get actual disk space information
             let _ = metadata;
         }
-        
+
         // For now, assume disk space is available
         // Real implementation would use statvfs on Unix or GetDiskFreeSpace on Windows
         Ok(())
@@ -302,7 +339,7 @@ impl IoRecoveryManager {
 
     fn handle_io_error(&self, error: std::io::Error, path: &Path) -> Error {
         self.stats.retries_performed.fetch_add(1, Ordering::SeqCst);
-        
+
         match error.kind() {
             ErrorKind::NotFound => Error::DatabaseNotFound {
                 path: path.to_string_lossy().to_string(),
@@ -311,7 +348,9 @@ impl IoRecoveryManager {
                 path: path.to_string_lossy().to_string(),
                 required_permissions: "read/write access".to_string(),
             },
-            ErrorKind::InvalidData => Error::CorruptedDatabase(format!("Invalid data in file: {:?}", path)),
+            ErrorKind::InvalidData => {
+                Error::CorruptedDatabase(format!("Invalid data in file: {:?}", path))
+            }
             ErrorKind::UnexpectedEof => Error::WalPartialEntry {
                 offset: 0,
                 expected_size: 0,
@@ -325,7 +364,7 @@ impl IoRecoveryManager {
 
     pub async fn monitor_disk_health(&self) -> Result<DiskHealthReport> {
         let start_time = Instant::now();
-        
+
         // Collect metrics
         let operations_attempted = self.stats.operations_attempted.load(Ordering::SeqCst);
         let operations_succeeded = self.stats.operations_succeeded.load(Ordering::SeqCst);
@@ -400,10 +439,17 @@ pub struct ReliableFileHandle {
 }
 
 impl ReliableFileHandle {
-    pub async fn open<P: AsRef<Path>>(path: P, recovery_manager: Arc<IoRecoveryManager>) -> Result<Self> {
+    pub async fn open<P: AsRef<Path>>(
+        path: P,
+        recovery_manager: Arc<IoRecoveryManager>,
+    ) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
-        let file = Some(async_fs::File::open(&path).await.map_err(|e| recovery_manager.handle_io_error(e, &path))?);
-        
+        let file = Some(
+            async_fs::File::open(&path)
+                .await
+                .map_err(|e| recovery_manager.handle_io_error(e, &path))?,
+        );
+
         Ok(Self {
             path,
             recovery_manager,
@@ -411,15 +457,24 @@ impl ReliableFileHandle {
         })
     }
 
-    pub async fn create<P: AsRef<Path>>(path: P, recovery_manager: Arc<IoRecoveryManager>) -> Result<Self> {
+    pub async fn create<P: AsRef<Path>>(
+        path: P,
+        recovery_manager: Arc<IoRecoveryManager>,
+    ) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
-        
+
         if let Some(parent) = path.parent() {
-            async_fs::create_dir_all(parent).await.map_err(|e| recovery_manager.handle_io_error(e, &path))?;
+            async_fs::create_dir_all(parent)
+                .await
+                .map_err(|e| recovery_manager.handle_io_error(e, &path))?;
         }
-        
-        let file = Some(async_fs::File::create(&path).await.map_err(|e| recovery_manager.handle_io_error(e, &path))?);
-        
+
+        let file = Some(
+            async_fs::File::create(&path)
+                .await
+                .map_err(|e| recovery_manager.handle_io_error(e, &path))?,
+        );
+
         Ok(Self {
             path,
             recovery_manager,
@@ -429,7 +484,8 @@ impl ReliableFileHandle {
 
     pub async fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
         if let Some(ref mut file) = self.file {
-            tokio::io::AsyncReadExt::read_exact(file, buf).await
+            tokio::io::AsyncReadExt::read_exact(file, buf)
+                .await
                 .map_err(|e| self.recovery_manager.handle_io_error(e, &self.path))?;
         } else {
             return Err(Error::InvalidOperation {
@@ -441,7 +497,8 @@ impl ReliableFileHandle {
 
     pub async fn write_all(&mut self, buf: &[u8]) -> Result<()> {
         if let Some(ref mut file) = self.file {
-            tokio::io::AsyncWriteExt::write_all(file, buf).await
+            tokio::io::AsyncWriteExt::write_all(file, buf)
+                .await
                 .map_err(|e| self.recovery_manager.handle_io_error(e, &self.path))?;
         } else {
             return Err(Error::InvalidOperation {
@@ -453,7 +510,8 @@ impl ReliableFileHandle {
 
     pub async fn sync_all(&mut self) -> Result<()> {
         if let Some(ref mut file) = self.file {
-            file.sync_all().await
+            file.sync_all()
+                .await
                 .map_err(|e| self.recovery_manager.handle_io_error(e, &self.path))?;
         } else {
             return Err(Error::InvalidOperation {
@@ -474,16 +532,22 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = IoRecoveryConfig::default();
         let recovery_manager = IoRecoveryManager::new(config);
-        
+
         let test_file = temp_dir.path().join("test.dat");
         let test_data = b"Hello, World!";
-        
+
         // Write data
-        recovery_manager.write_with_recovery(&test_file, test_data).await.unwrap();
-        
+        recovery_manager
+            .write_with_recovery(&test_file, test_data)
+            .await
+            .unwrap();
+
         // Read data back
-        let read_data = recovery_manager.read_with_recovery(&test_file).await.unwrap();
-        
+        let read_data = recovery_manager
+            .read_with_recovery(&test_file)
+            .await
+            .unwrap();
+
         // Skip checksum bytes for comparison
         assert_eq!(&read_data[4..], test_data);
     }
@@ -493,29 +557,35 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = IoRecoveryConfig::default();
         let recovery_manager = IoRecoveryManager::new(config);
-        
+
         let test_file = temp_dir.path().join("test.dat");
         let test_data = b"Hello, World!";
-        
+
         // Write data with checksum
-        recovery_manager.write_with_recovery(&test_file, test_data).await.unwrap();
-        
+        recovery_manager
+            .write_with_recovery(&test_file, test_data)
+            .await
+            .unwrap();
+
         // Corrupt the file
         let mut corrupted_data = async_fs::read(&test_file).await.unwrap();
         corrupted_data[5] = !corrupted_data[5]; // Flip some bits
         async_fs::write(&test_file, corrupted_data).await.unwrap();
-        
+
         // Reading should detect corruption
         let result = recovery_manager.read_with_recovery(&test_file).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::ChecksumMismatch { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            Error::ChecksumMismatch { .. }
+        ));
     }
 
     #[tokio::test]
     async fn test_disk_health_monitoring() {
         let config = IoRecoveryConfig::default();
         let recovery_manager = IoRecoveryManager::new(config);
-        
+
         let report = recovery_manager.monitor_disk_health().await.unwrap();
         assert_eq!(report.status, DiskHealthStatus::Healthy);
     }

@@ -12,10 +12,17 @@ pub enum IntegrityError {
     },
 
     #[error("Structural violation in {structure}: {violation}")]
-    StructuralViolation { structure: String, violation: String },
+    StructuralViolation {
+        structure: String,
+        violation: String,
+    },
 
     #[error("Reference integrity violation from {from} to {to}: {issue}")]
-    ReferenceIntegrity { from: String, to: String, issue: String },
+    ReferenceIntegrity {
+        from: String,
+        to: String,
+        issue: String,
+    },
 
     #[error("Temporal inconsistency in {operation}: {details}")]
     TemporalInconsistency { operation: String, details: String },
@@ -27,7 +34,9 @@ pub enum IntegrityError {
         location: String,
     },
 
-    #[error("Alignment violation: address {address:08x} requires {required_alignment}-byte alignment")]
+    #[error(
+        "Alignment violation: address {address:08x} requires {required_alignment}-byte alignment"
+    )]
     AlignmentViolation {
         address: usize,
         required_alignment: usize,
@@ -175,14 +184,14 @@ impl<T> ValidationResult<T> {
                     "Called unwrap on Invalid ValidationResult with {} violations. Use unwrap_or, expect, or handle errors explicitly.",
                     violations.len()
                 )
-            },
+            }
             ValidationResult::Error(error) => {
                 tracing::error!("Called unwrap on Error ValidationResult: {:?}", error);
                 std::panic!(
                     "Called unwrap on Error ValidationResult: {}. Use unwrap_or, expect, or handle errors explicitly.",
                     error
                 )
-            },
+            }
         }
     }
 
@@ -193,15 +202,19 @@ impl<T> ValidationResult<T> {
     {
         match self {
             ValidationResult::Valid(value) => Ok(value),
-            ValidationResult::Invalid(violations) => Err(crate::core::error::Error::ValidationFailed(
-                format!("Validation failed with {} violations: {:?}", violations.len(), violations)
-            )),
+            ValidationResult::Invalid(violations) => {
+                Err(crate::core::error::Error::ValidationFailed(format!(
+                    "Validation failed with {} violations: {:?}",
+                    violations.len(),
+                    violations
+                )))
+            }
             ValidationResult::Error(error) => Err(crate::core::error::Error::ValidationFailed(
-                format!("Validation error: {}", error)
+                format!("Validation error: {}", error),
             )),
         }
     }
-    
+
     pub fn unwrap_or(self, default: T) -> T {
         match self {
             ValidationResult::Valid(value) => value,

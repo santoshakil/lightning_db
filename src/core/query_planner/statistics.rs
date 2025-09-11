@@ -1,8 +1,8 @@
+use crate::core::error::Error;
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use parking_lot::RwLock;
-use crate::core::error::Error;
-use serde::{Serialize, Deserialize};
 
 const HISTOGRAM_BUCKETS: usize = 256;
 const SAMPLE_SIZE: usize = 10000;
@@ -31,7 +31,8 @@ impl TableStatistics {
     }
 
     pub fn get_column(&self, table_name: &str, column_name: &str) -> Option<ColumnStatistics> {
-        self.columns.read()
+        self.columns
+            .read()
             .get(table_name)
             .and_then(|cols| cols.get(column_name).cloned())
     }
@@ -45,8 +46,14 @@ impl TableStatistics {
         *self.last_update.write() = std::time::SystemTime::now();
     }
 
-    pub fn update_column_stats(&self, table_name: String, column_name: String, stats: ColumnStatistics) {
-        self.columns.write()
+    pub fn update_column_stats(
+        &self,
+        table_name: String,
+        column_name: String,
+        stats: ColumnStatistics,
+    ) {
+        self.columns
+            .write()
             .entry(table_name)
             .or_insert_with(HashMap::new)
             .insert(column_name, stats);
@@ -56,7 +63,12 @@ impl TableStatistics {
         self.indexes.write().insert(index_name, stats);
     }
 
-    pub fn estimate_selectivity(&self, table_name: &str, column_name: &str, operator: &SelectivityOperator) -> f64 {
+    pub fn estimate_selectivity(
+        &self,
+        table_name: &str,
+        column_name: &str,
+        operator: &SelectivityOperator,
+    ) -> f64 {
         if let Some(col_stats) = self.get_column(table_name, column_name) {
             match operator {
                 SelectivityOperator::Equals(value) => {
@@ -67,28 +79,28 @@ impl TableStatistics {
                     } else {
                         0.1
                     }
-                },
+                }
                 SelectivityOperator::Range(low, high) => {
                     if let Some(histogram) = &col_stats.histogram {
                         histogram.estimate_range_selectivity(low, high)
                     } else {
                         0.3
                     }
-                },
+                }
                 SelectivityOperator::GreaterThan(value) => {
                     if let Some(histogram) = &col_stats.histogram {
                         histogram.estimate_greater_than_selectivity(value)
                     } else {
                         0.3
                     }
-                },
+                }
                 SelectivityOperator::LessThan(value) => {
                     if let Some(histogram) = &col_stats.histogram {
                         histogram.estimate_less_than_selectivity(value)
                     } else {
                         0.3
                     }
-                },
+                }
                 SelectivityOperator::In(values) => {
                     let single_selectivity = if let Some(distinct) = col_stats.distinct_count {
                         1.0 / distinct as f64
@@ -96,16 +108,14 @@ impl TableStatistics {
                         0.1
                     };
                     (single_selectivity * values.len() as f64).min(1.0)
-                },
-                SelectivityOperator::Like(pattern) => {
-                    self.estimate_like_selectivity(pattern)
-                },
+                }
+                SelectivityOperator::Like(pattern) => self.estimate_like_selectivity(pattern),
                 SelectivityOperator::IsNull => {
                     col_stats.null_fraction.unwrap_or(NULL_FRACTION_DEFAULT)
-                },
+                }
                 SelectivityOperator::IsNotNull => {
                     1.0 - col_stats.null_fraction.unwrap_or(NULL_FRACTION_DEFAULT)
-                },
+                }
             }
         } else {
             0.5
@@ -132,32 +142,34 @@ impl TableStatistics {
     ) -> usize {
         let left_stats = self.get_table(left_table);
         let right_stats = self.get_table(right_table);
-        
+
         if let (Some(left), Some(right)) = (left_stats, right_stats) {
             let left_rows = left.row_count;
             let right_rows = right.row_count;
-            
+
             let selectivity = if !join_keys.is_empty() {
                 let mut combined_selectivity = 1.0;
-                
+
                 for (left_col, right_col) in join_keys {
-                    let left_distinct = self.get_column(left_table, left_col)
+                    let left_distinct = self
+                        .get_column(left_table, left_col)
                         .and_then(|s| s.distinct_count)
                         .unwrap_or(left_rows);
-                    
-                    let right_distinct = self.get_column(right_table, right_col)
+
+                    let right_distinct = self
+                        .get_column(right_table, right_col)
                         .and_then(|s| s.distinct_count)
                         .unwrap_or(right_rows);
-                    
+
                     let selectivity = 1.0 / left_distinct.max(right_distinct) as f64;
                     combined_selectivity *= selectivity;
                 }
-                
+
                 combined_selectivity
             } else {
                 1.0
             };
-            
+
             (left_rows as f64 * right_rows as f64 * selectivity) as usize
         } else {
             1_000_000
@@ -241,7 +253,7 @@ pub enum HistogramType {
 impl Histogram {
     pub fn new(values: &[Vec<u8>], histogram_type: HistogramType) -> Self {
         let bucket_count = HISTOGRAM_BUCKETS.min(values.len() / 10).max(1);
-        
+
         match histogram_type {
             HistogramType::EquiHeight => Self::build_equi_height_histogram(values, bucket_count),
             HistogramType::EquiWidth => Self::build_equi_width_histogram(values, bucket_count),
@@ -252,14 +264,14 @@ impl Histogram {
     fn build_equi_height_histogram(values: &[Vec<u8>], bucket_count: usize) -> Self {
         let mut sorted_values = values.to_vec();
         sorted_values.sort();
-        
+
         let total_count = sorted_values.len();
         let bucket_size = total_count / bucket_count;
-        
+
         let mut bucket_boundaries = Vec::new();
         let mut bucket_counts = Vec::new();
         let mut bucket_distinct = Vec::new();
-        
+
         for i in 0..bucket_count {
             let start = i * bucket_size;
             let end = if i == bucket_count - 1 {
@@ -267,16 +279,16 @@ impl Histogram {
             } else {
                 (i + 1) * bucket_size
             };
-            
+
             if start < sorted_values.len() {
                 bucket_boundaries.push(sorted_values[end.min(sorted_values.len()) - 1].clone());
                 bucket_counts.push(end - start);
-                
+
                 let distinct: HashSet<_> = sorted_values[start..end].iter().collect();
                 bucket_distinct.push(distinct.len());
             }
         }
-        
+
         Self {
             bucket_boundaries,
             bucket_counts,
@@ -296,18 +308,18 @@ impl Histogram {
                 histogram_type: HistogramType::EquiWidth,
             };
         }
-        
+
         let _min_val = values.iter().min().unwrap();
         let max_val = values.iter().max().unwrap();
-        
+
         let mut bucket_boundaries = Vec::new();
         let mut bucket_counts = vec![0; bucket_count];
         let mut bucket_values: Vec<HashSet<Vec<u8>>> = vec![HashSet::new(); bucket_count];
-        
+
         for _ in 0..bucket_count {
             bucket_boundaries.push(max_val.clone());
         }
-        
+
         for value in values {
             let bucket_idx = Self::find_bucket_index(value, &bucket_boundaries);
             if bucket_idx < bucket_count {
@@ -315,9 +327,9 @@ impl Histogram {
                 bucket_values[bucket_idx].insert(value.clone());
             }
         }
-        
+
         let bucket_distinct: Vec<usize> = bucket_values.iter().map(|s| s.len()).collect();
-        
+
         Self {
             bucket_boundaries,
             bucket_counts,
@@ -338,14 +350,14 @@ impl Histogram {
 
     pub fn estimate_equals_selectivity(&self, value: &[u8]) -> f64 {
         let bucket_idx = Self::find_bucket_index(value, &self.bucket_boundaries);
-        
+
         if bucket_idx >= self.bucket_counts.len() {
             return 0.0;
         }
-        
+
         let bucket_count = self.bucket_counts[bucket_idx] as f64;
         let bucket_distinct = self.bucket_distinct[bucket_idx] as f64;
-        
+
         if bucket_distinct > 0.0 {
             (bucket_count / bucket_distinct) / self.total_count as f64
         } else {
@@ -356,34 +368,34 @@ impl Histogram {
     pub fn estimate_range_selectivity(&self, low: &[u8], high: &[u8]) -> f64 {
         let low_bucket = Self::find_bucket_index(low, &self.bucket_boundaries);
         let high_bucket = Self::find_bucket_index(high, &self.bucket_boundaries);
-        
+
         let mut count = 0;
         for i in low_bucket..=high_bucket.min(self.bucket_counts.len() - 1) {
             count += self.bucket_counts[i];
         }
-        
+
         count as f64 / self.total_count as f64
     }
 
     pub fn estimate_greater_than_selectivity(&self, value: &[u8]) -> f64 {
         let bucket_idx = Self::find_bucket_index(value, &self.bucket_boundaries);
-        
+
         let mut count = 0;
         for i in bucket_idx..self.bucket_counts.len() {
             count += self.bucket_counts[i];
         }
-        
+
         count as f64 / self.total_count as f64
     }
 
     pub fn estimate_less_than_selectivity(&self, value: &[u8]) -> f64 {
         let bucket_idx = Self::find_bucket_index(value, &self.bucket_boundaries);
-        
+
         let mut count = 0;
         for i in 0..=bucket_idx.min(self.bucket_counts.len() - 1) {
             count += self.bucket_counts[i];
         }
-        
+
         count as f64 / self.total_count as f64
     }
 }
@@ -441,7 +453,7 @@ impl StatisticsCollector {
         let row_count = self.estimate_row_count(table_name).await?;
         let avg_row_size = self.estimate_avg_row_size(table_name).await?;
         let total_pages = (row_count * avg_row_size) / 8192;
-        
+
         Ok(TableStats {
             row_count,
             total_pages,
@@ -460,28 +472,31 @@ impl StatisticsCollector {
         column_name: &str,
     ) -> Result<ColumnStatistics, Error> {
         let samples = self.sample_column_values(table_name, column_name).await?;
-        
+
         let null_count = samples.iter().filter(|v| v.is_empty()).count();
         let non_null_samples: Vec<_> = samples.iter().filter(|v| !v.is_empty()).cloned().collect();
-        
+
         let distinct: HashSet<_> = non_null_samples.iter().collect();
         let distinct_count = distinct.len();
-        
+
         let min_value = non_null_samples.iter().min().cloned();
         let max_value = non_null_samples.iter().max().cloned();
-        
+
         let histogram = if non_null_samples.len() > 100 {
             Some(Histogram::new(&non_null_samples, HistogramType::EquiHeight))
         } else {
             None
         };
-        
+
         Ok(ColumnStatistics {
             null_count: Some(null_count),
             distinct_count: Some(distinct_count),
             min_value,
             max_value,
-            avg_length: Some(non_null_samples.iter().map(|v| v.len()).sum::<usize>() / non_null_samples.len().max(1)),
+            avg_length: Some(
+                non_null_samples.iter().map(|v| v.len()).sum::<usize>()
+                    / non_null_samples.len().max(1),
+            ),
             null_fraction: Some(null_count as f64 / samples.len() as f64),
             correlation: None,
             histogram,
@@ -498,7 +513,11 @@ impl StatisticsCollector {
         Ok(100)
     }
 
-    async fn sample_column_values(&self, _table_name: &str, _column_name: &str) -> Result<Vec<Vec<u8>>, Error> {
+    async fn sample_column_values(
+        &self,
+        _table_name: &str,
+        _column_name: &str,
+    ) -> Result<Vec<Vec<u8>>, Error> {
         let mut samples = Vec::new();
         for i in 0..self.max_sample_size {
             samples.push(i.to_le_bytes().to_vec());
@@ -510,28 +529,28 @@ impl StatisticsCollector {
         if values.len() != positions.len() || values.len() < 2 {
             return 0.0;
         }
-        
+
         let n = values.len() as f64;
         let mean_val = values.iter().sum::<f64>() / n;
         let mean_pos = positions.iter().map(|&p| p as f64).sum::<f64>() / n;
-        
+
         let mut cov = 0.0;
         let mut var_val = 0.0;
         let mut var_pos = 0.0;
-        
+
         for i in 0..values.len() {
             let val_diff = values[i] - mean_val;
             let pos_diff = positions[i] as f64 - mean_pos;
-            
+
             cov += val_diff * pos_diff;
             var_val += val_diff * val_diff;
             var_pos += pos_diff * pos_diff;
         }
-        
+
         if var_val == 0.0 || var_pos == 0.0 {
             return 0.0;
         }
-        
+
         cov / (var_val * var_pos).sqrt()
     }
 }

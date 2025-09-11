@@ -1,14 +1,14 @@
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use std::collections::{HashMap, HashSet};
-use tokio::sync::{RwLock, Mutex, mpsc};
-use serde::{Serialize, Deserialize};
 use crate::core::error::{Error, Result};
 use dashmap::DashMap;
-use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::algo::tarjan_scc;
-use petgraph::Direction;
+use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
+use petgraph::Direction;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::{mpsc, Mutex, RwLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct DeadlockVictim {
@@ -144,7 +144,7 @@ struct DeadlockMetrics {
 impl DeadlockDetector {
     pub fn new(node_id: String, detection_interval: Duration) -> Self {
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
-        
+
         Self {
             node_id,
             wait_graph: Arc::new(RwLock::new(WaitForGraph {
@@ -186,7 +186,7 @@ impl DeadlockDetector {
         resource: String,
     ) -> Result<()> {
         let mut graph = self.wait_graph.write().await;
-        
+
         let waiter_idx = graph.node_map.get(&waiter).copied().unwrap_or_else(|| {
             let idx = graph.graph.add_node(WaitNode {
                 txn_id: waiter,
@@ -203,7 +203,7 @@ impl DeadlockDetector {
             graph.node_map.insert(waiter, idx);
             idx
         });
-        
+
         let holder_idx = graph.node_map.get(&holder).copied().unwrap_or_else(|| {
             let idx = graph.graph.add_node(WaitNode {
                 txn_id: holder,
@@ -220,10 +220,12 @@ impl DeadlockDetector {
             graph.node_map.insert(holder, idx);
             idx
         });
-        
-        graph.graph[waiter_idx].locks_waiting.insert(resource.clone());
+
+        graph.graph[waiter_idx]
+            .locks_waiting
+            .insert(resource.clone());
         graph.graph[holder_idx].locks_held.insert(resource.clone());
-        
+
         graph.graph.add_edge(
             waiter_idx,
             holder_idx,
@@ -237,13 +239,13 @@ impl DeadlockDetector {
                 timeout: Some(Duration::from_secs(30)),
             },
         );
-        
+
         graph.last_update = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
         graph.generation += 1;
-        
+
         self.metrics.graph_nodes.store(
             graph.graph.node_count() as u64,
             std::sync::atomic::Ordering::Relaxed,
@@ -252,17 +254,18 @@ impl DeadlockDetector {
             graph.graph.edge_count() as u64,
             std::sync::atomic::Ordering::Relaxed,
         );
-        
+
         Ok(())
     }
 
     pub async fn remove_transaction(&self, txn_id: super::TransactionId) -> Result<()> {
         let mut graph = self.wait_graph.write().await;
-        
+
         if let Some(node_idx) = graph.node_map.remove(&txn_id) {
             graph.graph.remove_node(node_idx);
-            
-            graph.node_map = graph.node_map
+
+            graph.node_map = graph
+                .node_map
                 .iter()
                 .filter_map(|(txn, idx)| {
                     if graph.graph.node_weight(*idx).is_some() {
@@ -273,73 +276,74 @@ impl DeadlockDetector {
                 })
                 .collect();
         }
-        
+
         graph.last_update = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
         graph.generation += 1;
-        
+
         Ok(())
     }
 
     pub async fn detect_deadlocks(&self) -> Result<Vec<DeadlockVictim>> {
         let start = Instant::now();
-        self.detection_running.store(true, std::sync::atomic::Ordering::SeqCst);
-        
+        self.detection_running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
         let graph = self.wait_graph.read().await;
-        
+
         let cycles = self.find_cycles(&graph);
         let cycles_count = cycles.len();
-        
+
         let mut victims = Vec::new();
-        
+
         for cycle in cycles {
             if let Some(victim) = self.select_victim(&graph, &cycle).await {
                 victims.push(victim);
-                self.metrics.victims_selected.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.metrics
+                    .victims_selected
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }
-        
-        self.metrics.cycles_detected.fetch_add(
-            cycles_count as u64,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        
+
+        self.metrics
+            .cycles_detected
+            .fetch_add(cycles_count as u64, std::sync::atomic::Ordering::Relaxed);
+
         let elapsed = start.elapsed().as_millis() as u64;
-        self.metrics.detection_time_ms.store(
-            elapsed,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        
-        self.detection_running.store(false, std::sync::atomic::Ordering::SeqCst);
-        
+        self.metrics
+            .detection_time_ms
+            .store(elapsed, std::sync::atomic::Ordering::Relaxed);
+
+        self.detection_running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+
         Ok(victims)
     }
 
     fn find_cycles(&self, graph: &WaitForGraph) -> Vec<Vec<super::TransactionId>> {
         let sccs = tarjan_scc(&graph.graph);
-        
+
         let mut cycles = Vec::new();
-        
+
         for scc in sccs {
             if scc.len() > 1 {
                 let cycle: Vec<super::TransactionId> = scc
                     .iter()
-                    .filter_map(|idx| {
-                        graph.graph.node_weight(*idx).map(|node| node.txn_id)
-                    })
+                    .filter_map(|idx| graph.graph.node_weight(*idx).map(|node| node.txn_id))
                     .collect();
-                
+
                 if !cycle.is_empty() {
                     cycles.push(cycle);
                 }
             } else if scc.len() == 1 {
                 let idx = scc[0];
-                let has_self_loop = graph.graph
+                let has_self_loop = graph
+                    .graph
                     .edges_directed(idx, Direction::Outgoing)
                     .any(|edge| edge.target() == idx);
-                
+
                 if has_self_loop {
                     if let Some(node) = graph.graph.node_weight(idx) {
                         cycles.push(vec![node.txn_id]);
@@ -347,7 +351,7 @@ impl DeadlockDetector {
                 }
             }
         }
-        
+
         cycles
     }
 
@@ -357,7 +361,7 @@ impl DeadlockDetector {
         cycle: &[super::TransactionId],
     ) -> Option<DeadlockVictim> {
         let mut candidates = Vec::new();
-        
+
         for txn_id in cycle {
             if let Some(node_idx) = graph.node_map.get(txn_id) {
                 if let Some(node) = graph.graph.node_weight(*node_idx) {
@@ -366,7 +370,7 @@ impl DeadlockDetector {
                         .unwrap()
                         .as_secs();
                     let age = Duration::from_secs(current_time.saturating_sub(node.start_time));
-                    
+
                     candidates.push(DeadlockVictim {
                         txn_id: *txn_id,
                         priority: node.priority,
@@ -377,11 +381,11 @@ impl DeadlockDetector {
                 }
             }
         }
-        
+
         if candidates.is_empty() {
             return None;
         }
-        
+
         match self.victim_selector.strategy {
             VictimSelectionStrategy::YoungestTransaction => {
                 candidates.sort_by_key(|v| v.age);
@@ -402,7 +406,7 @@ impl DeadlockDetector {
             VictimSelectionStrategy::Weighted => {
                 let mut best_victim = None;
                 let mut best_score = f64::MAX;
-                
+
                 for candidate in candidates {
                     let score = self.calculate_victim_score(&candidate);
                     if score < best_score {
@@ -410,7 +414,7 @@ impl DeadlockDetector {
                         best_victim = Some(candidate);
                     }
                 }
-                
+
                 best_victim
             }
         }
@@ -421,7 +425,7 @@ impl DeadlockDetector {
         let age_score = victim.age.as_secs_f64() * self.victim_selector.weight_age;
         let cost_score = victim.cost * self.victim_selector.weight_cost;
         let locks_score = victim.locks_held as f64 * self.victim_selector.weight_locks;
-        
+
         priority_score + age_score + cost_score + locks_score
     }
 
@@ -431,11 +435,11 @@ impl DeadlockDetector {
         let metrics = self.metrics.clone();
         let victim_selector = self.victim_selector.clone();
         let shutdown_rx = self.shutdown_rx.clone();
-        
+
         tokio::spawn(async move {
             let mut shutdown_rx = shutdown_rx.lock().await;
             let mut ticker = tokio::time::interval(interval);
-            
+
             loop {
                 tokio::select! {
                     _ = ticker.tick() => {
@@ -450,7 +454,7 @@ impl DeadlockDetector {
                             shutdown_tx: mpsc::channel(1).0,
                             shutdown_rx: Arc::new(Mutex::new(mpsc::channel(1).1)),
                         };
-                        
+
                         if let Ok(victims) = detector.detect_deadlocks().await {
                             for victim in victims {
                                 detector.handle_victim(victim).await;
@@ -468,14 +472,16 @@ impl DeadlockDetector {
     async fn handle_victim(&self, victim: DeadlockVictim) {
         // CRITICAL FIX: Properly abort the victim transaction
         tracing::warn!("Aborting deadlock victim transaction {:?}", victim.txn_id);
-        
+
         // Remove from wait graph
         self.remove_transaction(victim.txn_id).await.ok();
-        
+
         // Implementation pending transaction manager integration
         // This would require a callback mechanism or shared state
-        
-        self.metrics.victims_selected.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        self.metrics
+            .victims_selected
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub async fn enable_distributed_detection(
@@ -483,7 +489,7 @@ impl DeadlockDetector {
         peers: Vec<(String, String)>,
     ) -> Result<()> {
         let (probe_tx, probe_rx) = mpsc::channel(100);
-        
+
         let peer_nodes = Arc::new(DashMap::new());
         for (node_id, endpoint) in peers {
             peer_nodes.insert(
@@ -496,7 +502,7 @@ impl DeadlockDetector {
                 },
             );
         }
-        
+
         self.distributed_detector = Some(Arc::new(DistributedDeadlockDetector {
             local_node_id: self.node_id.clone(),
             peer_nodes,
@@ -508,7 +514,7 @@ impl DeadlockDetector {
             probe_sender: probe_tx,
             probe_receiver: Arc::new(Mutex::new(probe_rx)),
         }));
-        
+
         Ok(())
     }
 
@@ -524,30 +530,33 @@ impl DeadlockDetector {
                     .as_secs(),
                 ttl: 16,
             };
-            
-            dist.probe_sender.send(probe).await.map_err(|_| {
-                Error::Custom("Failed to send deadlock probe".to_string())
-            })?;
+
+            dist.probe_sender
+                .send(probe)
+                .await
+                .map_err(|_| Error::Custom("Failed to send deadlock probe".to_string()))?;
         }
-        
+
         Ok(())
     }
 
     pub async fn merge_global_graphs(&self) -> Result<()> {
         if let Some(dist) = &self.distributed_detector {
             let mut global = dist.global_wait_graph.write().await;
-            
+
             let local = self.wait_graph.read().await;
-            global.local_graphs.insert(self.node_id.clone(), local.clone());
-            
+            global
+                .local_graphs
+                .insert(self.node_id.clone(), local.clone());
+
             global.global_edges.clear();
-            
+
             let mut new_edges = Vec::new();
             for (node_id, graph) in &global.local_graphs {
                 for edge_ref in graph.graph.edge_references() {
                     let source_node = &graph.graph[edge_ref.source()];
                     let target_node = &graph.graph[edge_ref.target()];
-                    
+
                     new_edges.push(GlobalEdge {
                         from_node: node_id.clone(),
                         from_txn: source_node.txn_id,
@@ -558,29 +567,47 @@ impl DeadlockDetector {
                 }
             }
             global.global_edges.extend(new_edges);
-            
+
             global.last_merge = Instant::now();
         }
-        
+
         Ok(())
     }
 
     pub fn get_metrics(&self) -> DeadlockStatistics {
         DeadlockStatistics {
-            cycles_detected: self.metrics.cycles_detected.load(std::sync::atomic::Ordering::Relaxed),
-            victims_selected: self.metrics.victims_selected.load(std::sync::atomic::Ordering::Relaxed),
-            false_positives: self.metrics.false_positives.load(std::sync::atomic::Ordering::Relaxed),
-            avg_detection_time_ms: self.metrics.detection_time_ms.load(std::sync::atomic::Ordering::Relaxed),
+            cycles_detected: self
+                .metrics
+                .cycles_detected
+                .load(std::sync::atomic::Ordering::Relaxed),
+            victims_selected: self
+                .metrics
+                .victims_selected
+                .load(std::sync::atomic::Ordering::Relaxed),
+            false_positives: self
+                .metrics
+                .false_positives
+                .load(std::sync::atomic::Ordering::Relaxed),
+            avg_detection_time_ms: self
+                .metrics
+                .detection_time_ms
+                .load(std::sync::atomic::Ordering::Relaxed),
             graph_size: GraphSize {
-                nodes: self.metrics.graph_nodes.load(std::sync::atomic::Ordering::Relaxed),
-                edges: self.metrics.graph_edges.load(std::sync::atomic::Ordering::Relaxed),
+                nodes: self
+                    .metrics
+                    .graph_nodes
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                edges: self
+                    .metrics
+                    .graph_edges
+                    .load(std::sync::atomic::Ordering::Relaxed),
             },
         }
     }
 
     pub async fn add_transaction(&self, txn_id: super::TransactionId, priority: i32) -> Result<()> {
         let mut graph = self.wait_graph.write().await;
-        
+
         if !graph.node_map.contains_key(&txn_id) {
             let idx = graph.graph.add_node(WaitNode {
                 txn_id,
@@ -597,13 +624,13 @@ impl DeadlockDetector {
             graph.node_map.insert(txn_id, idx);
             graph.generation += 1;
         }
-        
+
         Ok(())
     }
 
     pub async fn add_lock(&self, txn_id: super::TransactionId, resource: String) -> Result<()> {
         let mut graph = self.wait_graph.write().await;
-        
+
         if let Some(&idx) = graph.node_map.get(&txn_id) {
             if let Some(node) = graph.graph.node_weight_mut(idx) {
                 node.locks_held.insert(resource);
@@ -629,7 +656,7 @@ impl DeadlockDetector {
             graph.node_map.insert(txn_id, idx);
             graph.generation += 1;
         }
-        
+
         Ok(())
     }
 

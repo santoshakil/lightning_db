@@ -1,12 +1,12 @@
-use crate::{Database, Error, Result};
 use super::{
-    scanner::ScanResult,
-    detector::{DetectionResult, CorruptionType, CorruptionSeverity},
+    detector::{CorruptionSeverity, CorruptionType, DetectionResult},
     recovery::RecoveryManager,
+    scanner::ScanResult,
 };
+use crate::{Database, Error, Result};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RepairStrategy {
@@ -56,9 +56,9 @@ pub struct RepairAction {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum RiskLevel {
-    Low,    // Safe operation, no data loss risk
-    Medium, // Minimal risk, may affect performance
-    High,   // Potential for data loss
+    Low,      // Safe operation, no data loss risk
+    Medium,   // Minimal risk, may affect performance
+    High,     // Potential for data loss
     Critical, // High risk of data loss or corruption
 }
 
@@ -131,7 +131,8 @@ impl AutoRepair {
 
         // Sort repair actions by risk level and estimated time
         repair_actions.sort_by(|a, b| {
-            a.risk_level.cmp(&b.risk_level)
+            a.risk_level
+                .cmp(&b.risk_level)
                 .then(a.estimated_time.cmp(&b.estimated_time))
         });
 
@@ -178,30 +179,43 @@ impl AutoRepair {
 
         for action in actions {
             let result = self.execute_single_repair_action(&action).await;
-            
+
             match result {
                 Ok(success) => {
                     if success {
                         successful_repairs += 1;
                         strategy_used = action.strategy;
-                        details.push_str(&format!("Successfully repaired using {:?}; ", action.strategy));
-                        
+                        details.push_str(&format!(
+                            "Successfully repaired using {:?}; ",
+                            action.strategy
+                        ));
+
                         // Update stats
                         let mut stats = self.repair_stats.lock().await;
                         stats.successful_repairs += 1;
-                        *stats.repairs_by_strategy.entry(action.strategy).or_insert(0) += 1;
-                        *stats.repairs_by_corruption_type.entry(action.target_corruption.corruption_type).or_insert(0) += 1;
+                        *stats
+                            .repairs_by_strategy
+                            .entry(action.strategy)
+                            .or_insert(0) += 1;
+                        *stats
+                            .repairs_by_corruption_type
+                            .entry(action.target_corruption.corruption_type)
+                            .or_insert(0) += 1;
                     } else {
                         failed_repairs += 1;
                         remaining_issues.push(action.target_corruption);
-                        details.push_str(&format!("Failed to repair using {:?}; ", action.strategy));
+                        details
+                            .push_str(&format!("Failed to repair using {:?}; ", action.strategy));
                     }
                 }
                 Err(e) => {
                     failed_repairs += 1;
                     remaining_issues.push(action.target_corruption);
-                    details.push_str(&format!("Error during repair with {:?}: {}; ", action.strategy, e));
-                    
+                    details.push_str(&format!(
+                        "Error during repair with {:?}: {}; ",
+                        action.strategy, e
+                    ));
+
                     // Update stats
                     let mut stats = self.repair_stats.lock().await;
                     stats.failed_repairs += 1;
@@ -250,9 +264,7 @@ impl AutoRepair {
             RepairStrategy::PartialReconstruction => {
                 self.partial_reconstruction(&action.target_corruption).await
             }
-            RepairStrategy::RebuildIndex => {
-                self.rebuild_index(&action.target_corruption).await
-            }
+            RepairStrategy::RebuildIndex => self.rebuild_index(&action.target_corruption).await,
             RepairStrategy::RebuildChecksum => {
                 self.rebuild_checksum(&action.target_corruption).await
             }
@@ -267,7 +279,11 @@ impl AutoRepair {
 
     async fn recover_from_wal(&self, corruption: &DetectionResult) -> Result<bool> {
         // Attempt to recover page from WAL
-        match self.recovery_manager.recover_page_from_wal(corruption.page_id).await {
+        match self
+            .recovery_manager
+            .recover_page_from_wal(corruption.page_id)
+            .await
+        {
             Ok(recovery_result) => Ok(recovery_result.success),
             Err(_) => Ok(false),
         }
@@ -275,7 +291,11 @@ impl AutoRepair {
 
     async fn recover_from_backup(&self, corruption: &DetectionResult) -> Result<bool> {
         // Attempt to recover page from backup
-        match self.recovery_manager.recover_page_from_backup(corruption.page_id).await {
+        match self
+            .recovery_manager
+            .recover_page_from_backup(corruption.page_id)
+            .await
+        {
             Ok(recovery_result) => Ok(recovery_result.success),
             Err(_) => Ok(false),
         }
@@ -335,12 +355,12 @@ impl AutoRepair {
 
     fn determine_repair_action(&self, corruption: &DetectionResult) -> Option<RepairAction> {
         let strategy = match corruption.corruption_type {
-            CorruptionType::ChecksumMismatch => {
-                match corruption.severity {
-                    CorruptionSeverity::Low | CorruptionSeverity::Medium => RepairStrategy::RebuildChecksum,
-                    _ => RepairStrategy::RecoverFromWal,
+            CorruptionType::ChecksumMismatch => match corruption.severity {
+                CorruptionSeverity::Low | CorruptionSeverity::Medium => {
+                    RepairStrategy::RebuildChecksum
                 }
-            }
+                _ => RepairStrategy::RecoverFromWal,
+            },
             CorruptionType::InvalidKeyOrder => RepairStrategy::PartialReconstruction,
             CorruptionType::IndexInconsistency => RepairStrategy::RebuildIndex,
             CorruptionType::WalInconsistency => RepairStrategy::RecoverFromBackup,
@@ -354,14 +374,20 @@ impl AutoRepair {
         Some(RepairAction {
             strategy,
             target_corruption: corruption.clone(),
-            expected_outcome: format!("Repair {} using {:?}", 
-                format!("{:?}", corruption.corruption_type), strategy),
+            expected_outcome: format!(
+                "Repair {} using {:?}",
+                format!("{:?}", corruption.corruption_type),
+                strategy
+            ),
             risk_level,
             estimated_time,
         })
     }
 
-    fn determine_repair_action_aggressive(&self, corruption: &DetectionResult) -> Option<RepairAction> {
+    fn determine_repair_action_aggressive(
+        &self,
+        corruption: &DetectionResult,
+    ) -> Option<RepairAction> {
         // More aggressive repair strategies for manual mode
         let strategy = match corruption.corruption_type {
             CorruptionType::InvalidPageHeader => RepairStrategy::RecoverFromBackup,
@@ -376,31 +402,40 @@ impl AutoRepair {
         Some(RepairAction {
             strategy,
             target_corruption: corruption.clone(),
-            expected_outcome: format!("Aggressively repair {} using {:?}", 
-                format!("{:?}", corruption.corruption_type), strategy),
+            expected_outcome: format!(
+                "Aggressively repair {} using {:?}",
+                format!("{:?}", corruption.corruption_type),
+                strategy
+            ),
             risk_level,
             estimated_time,
         })
     }
 
-    fn assess_risk_level(&self, corruption: &DetectionResult, strategy: RepairStrategy) -> RiskLevel {
+    fn assess_risk_level(
+        &self,
+        corruption: &DetectionResult,
+        strategy: RepairStrategy,
+    ) -> RiskLevel {
         match strategy {
             RepairStrategy::RebuildChecksum => RiskLevel::Low,
             RepairStrategy::RecoverFromWal | RepairStrategy::RecoverFromBackup => RiskLevel::Low,
             RepairStrategy::RebuildIndex => RiskLevel::Medium,
-            RepairStrategy::PartialReconstruction => {
-                match corruption.severity {
-                    CorruptionSeverity::Low => RiskLevel::Medium,
-                    CorruptionSeverity::Medium => RiskLevel::High,
-                    _ => RiskLevel::Critical,
-                }
-            }
+            RepairStrategy::PartialReconstruction => match corruption.severity {
+                CorruptionSeverity::Low => RiskLevel::Medium,
+                CorruptionSeverity::Medium => RiskLevel::High,
+                _ => RiskLevel::Critical,
+            },
             RepairStrategy::RemoveCorruptedData => RiskLevel::High,
             RepairStrategy::ManualIntervention => RiskLevel::Critical,
         }
     }
 
-    fn estimate_repair_time(&self, _corruption: &DetectionResult, strategy: RepairStrategy) -> std::time::Duration {
+    fn estimate_repair_time(
+        &self,
+        _corruption: &DetectionResult,
+        strategy: RepairStrategy,
+    ) -> std::time::Duration {
         match strategy {
             RepairStrategy::RebuildChecksum => std::time::Duration::from_millis(100),
             RepairStrategy::RecoverFromWal => std::time::Duration::from_millis(500),
@@ -414,32 +449,44 @@ impl AutoRepair {
 
     fn generate_manual_recommendations(&self, corruptions: &[DetectionResult]) -> Vec<String> {
         let mut recommendations = Vec::new();
-        
+
         for corruption in corruptions {
             match corruption.corruption_type {
                 CorruptionType::InvalidPageHeader => {
-                    recommendations.push("Page header corruption requires full page recovery from backup".to_string());
+                    recommendations.push(
+                        "Page header corruption requires full page recovery from backup"
+                            .to_string(),
+                    );
                 }
                 CorruptionType::BTreeStructureViolation => {
-                    recommendations.push("B+Tree structure corruption may require rebuilding the entire tree".to_string());
+                    recommendations.push(
+                        "B+Tree structure corruption may require rebuilding the entire tree"
+                            .to_string(),
+                    );
                 }
                 CorruptionType::MetadataCorruption => {
-                    recommendations.push("Metadata corruption requires careful manual reconstruction".to_string());
+                    recommendations.push(
+                        "Metadata corruption requires careful manual reconstruction".to_string(),
+                    );
                 }
                 _ => {
-                    recommendations.push(format!("Manual intervention needed for {:?}", corruption.corruption_type));
+                    recommendations.push(format!(
+                        "Manual intervention needed for {:?}",
+                        corruption.corruption_type
+                    ));
                 }
             }
         }
 
-        recommendations.push("Consider creating a full backup before attempting manual repairs".to_string());
+        recommendations
+            .push("Consider creating a full backup before attempting manual repairs".to_string());
         recommendations.push("Contact database administrator or technical support".to_string());
-        
+
         recommendations
     }
 
     // Helper repair methods
-    
+
     async fn fix_checksum_corruption(&self, _corruption: &DetectionResult) -> Result<bool> {
         // Implementation would fix checksum corruption
         Ok(true) // Simplified

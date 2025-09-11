@@ -6,8 +6,8 @@
 use super::tiered_storage::TierConfig;
 use super::{
     CompactionManager, CompactionStrategy, MemTableManager, SSTableBuilder, SSTableReader,
-    StorageTier, TieredStorageManager, WriteBatch, WriteEngineStats,
-    WriteOperation, WriteOptimizedConfig,
+    StorageTier, TieredStorageManager, WriteBatch, WriteEngineStats, WriteOperation,
+    WriteOptimizedConfig,
 };
 use crate::{Error, Result};
 use crossbeam_channel::{unbounded, Receiver, Sender};
@@ -106,7 +106,7 @@ impl WriteOptimizedEngine {
 
         // WAL creation deferred until unified WriteAheadLog is implemented
         // When implemented, should create WAL with:
-        // - wal_dir: config.data_dir.join("wal")  
+        // - wal_dir: config.data_dir.join("wal")
         // - file_size: 64MB per WAL file
         // - sync_mode: config.base.wal_sync_mode
 
@@ -192,11 +192,13 @@ impl WriteOptimizedEngine {
                                 &stats,
                                 &compaction_manager,
                                 &tiered_storage,
-                            ).is_err() {
+                            )
+                            .is_err()
+                            {
                                 // Log error but continue
                             }
                         }
-                        Err(_) => {}, // Timeout
+                        Err(_) => {} // Timeout
                     }
                 }
             })?;
@@ -332,7 +334,7 @@ impl WriteOptimizedEngine {
                                 .record_access(&file_name, true, latency_us);
                             return Ok(Some(value));
                         }
-                        Ok(None) => {},
+                        Ok(None) => {}
                         Err(e) => return Err(e),
                     }
                 }

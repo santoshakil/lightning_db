@@ -1,8 +1,8 @@
-use crate::{Database, Result};
 use super::checksum::ChecksumManager;
+use crate::{Database, Result};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CorruptionType {
@@ -57,7 +57,11 @@ impl CorruptionDetector {
         }
     }
 
-    pub async fn detect_page_corruption(&self, page_id: u64, page_data: &[u8]) -> Result<Vec<DetectionResult>> {
+    pub async fn detect_page_corruption(
+        &self,
+        page_id: u64,
+        page_data: &[u8],
+    ) -> Result<Vec<DetectionResult>> {
         let mut results = Vec::new();
 
         // Check if already marked as corrupted
@@ -66,7 +70,11 @@ impl CorruptionDetector {
         }
 
         // 1. Checksum validation
-        if let Some(checksum_error) = self.checksum_manager.verify_and_report(page_id, page_data).await? {
+        if let Some(checksum_error) = self
+            .checksum_manager
+            .verify_and_report(page_id, page_data)
+            .await?
+        {
             results.push(DetectionResult {
                 page_id,
                 corruption_type: CorruptionType::ChecksumMismatch,
@@ -106,7 +114,11 @@ impl CorruptionDetector {
         Ok(results)
     }
 
-    async fn validate_page_header(&self, page_id: u64, page_data: &[u8]) -> Result<Option<DetectionResult>> {
+    async fn validate_page_header(
+        &self,
+        page_id: u64,
+        page_data: &[u8],
+    ) -> Result<Option<DetectionResult>> {
         // Page header validation
         if page_data.len() < 32 {
             return Ok(Some(DetectionResult {
@@ -154,7 +166,11 @@ impl CorruptionDetector {
         Ok(None)
     }
 
-    async fn validate_page_structure(&self, page_id: u64, page_data: &[u8]) -> Result<Option<Vec<DetectionResult>>> {
+    async fn validate_page_structure(
+        &self,
+        page_id: u64,
+        page_data: &[u8],
+    ) -> Result<Option<Vec<DetectionResult>>> {
         let mut errors = Vec::new();
 
         // Extract key count from header
@@ -170,9 +186,8 @@ impl CorruptionDetector {
             }]));
         }
 
-        let key_count = u32::from_le_bytes([
-            page_data[8], page_data[9], page_data[10], page_data[11]
-        ]);
+        let key_count =
+            u32::from_le_bytes([page_data[8], page_data[9], page_data[10], page_data[11]]);
 
         // Validate key count is reasonable
         let max_keys_per_page = (page_data.len() - 32) / 16; // Minimum 16 bytes per key
@@ -198,7 +213,11 @@ impl CorruptionDetector {
         }
     }
 
-    async fn validate_btree_structure(&self, page_id: u64, page_data: &[u8]) -> Result<Option<Vec<DetectionResult>>> {
+    async fn validate_btree_structure(
+        &self,
+        page_id: u64,
+        page_data: &[u8],
+    ) -> Result<Option<Vec<DetectionResult>>> {
         let mut errors = Vec::new();
 
         // Validate B+Tree invariants
@@ -221,21 +240,26 @@ impl CorruptionDetector {
         }
     }
 
-    async fn validate_key_ordering(&self, page_id: u64, page_data: &[u8]) -> Result<Option<DetectionResult>> {
+    async fn validate_key_ordering(
+        &self,
+        page_id: u64,
+        page_data: &[u8],
+    ) -> Result<Option<DetectionResult>> {
         // Extract and validate key ordering
         let keys = self.extract_keys_from_page(page_data)?;
-        
+
         for i in 1..keys.len() {
-            if keys[i-1] >= keys[i] {
+            if keys[i - 1] >= keys[i] {
                 return Ok(Some(DetectionResult {
                     page_id,
                     corruption_type: CorruptionType::InvalidKeyOrder,
                     severity: CorruptionSeverity::High,
                     description: format!(
                         "Keys not in ascending order at positions {} and {}",
-                        i-1, i
+                        i - 1,
+                        i
                     ),
-                    affected_data: [&keys[i-1][..], &keys[i][..]].concat(),
+                    affected_data: [&keys[i - 1][..], &keys[i][..]].concat(),
                     recovery_hint: Some("Rebuild B+Tree structure".to_string()),
                     timestamp: std::time::SystemTime::now(),
                 }));
@@ -245,22 +269,23 @@ impl CorruptionDetector {
         Ok(None)
     }
 
-    async fn validate_child_pointers(&self, page_id: u64, page_data: &[u8]) -> Result<Option<Vec<DetectionResult>>> {
+    async fn validate_child_pointers(
+        &self,
+        page_id: u64,
+        page_data: &[u8],
+    ) -> Result<Option<Vec<DetectionResult>>> {
         let mut errors = Vec::new();
 
         // Extract child pointers and validate they're within valid range
         let pointers = self.extract_child_pointers(page_data)?;
-        
+
         for (idx, &pointer) in pointers.iter().enumerate() {
             if pointer == 0 || !self.is_valid_page_id(pointer).await? {
                 errors.push(DetectionResult {
                     page_id,
                     corruption_type: CorruptionType::InvalidPointer,
                     severity: CorruptionSeverity::High,
-                    description: format!(
-                        "Invalid child pointer {} at index {}",
-                        pointer, idx
-                    ),
+                    description: format!("Invalid child pointer {} at index {}", pointer, idx),
                     affected_data: pointer.to_le_bytes().to_vec(),
                     recovery_hint: Some("Rebuild page pointers from valid data".to_string()),
                     timestamp: std::time::SystemTime::now(),
@@ -275,7 +300,11 @@ impl CorruptionDetector {
         }
     }
 
-    async fn check_duplicate_keys(&self, page_id: u64, page_data: &[u8]) -> Result<Option<DetectionResult>> {
+    async fn check_duplicate_keys(
+        &self,
+        page_id: u64,
+        page_data: &[u8],
+    ) -> Result<Option<DetectionResult>> {
         let keys = self.extract_keys_from_page(page_data)?;
         let mut seen_keys = HashSet::new();
 
@@ -318,8 +347,10 @@ impl CorruptionDetector {
             }
 
             let entry_size = u32::from_le_bytes([
-                wal_data[offset], wal_data[offset+1],
-                wal_data[offset+2], wal_data[offset+3]
+                wal_data[offset],
+                wal_data[offset + 1],
+                wal_data[offset + 2],
+                wal_data[offset + 3],
             ]) as usize;
 
             if entry_size == 0 || entry_size > 1024 * 1024 {
@@ -328,7 +359,7 @@ impl CorruptionDetector {
                     corruption_type: CorruptionType::WalInconsistency,
                     severity: CorruptionSeverity::High,
                     description: format!("Invalid WAL entry size: {}", entry_size),
-                    affected_data: wal_data[offset..offset+4].to_vec(),
+                    affected_data: wal_data[offset..offset + 4].to_vec(),
                     recovery_hint: Some("Rebuild WAL from transaction log".to_string()),
                     timestamp: std::time::SystemTime::now(),
                 });
@@ -356,7 +387,11 @@ impl CorruptionDetector {
         Ok(results)
     }
 
-    pub async fn detect_transaction_corruption(&self, tx_id: u64, tx_data: &[u8]) -> Result<Vec<DetectionResult>> {
+    pub async fn detect_transaction_corruption(
+        &self,
+        tx_id: u64,
+        tx_data: &[u8],
+    ) -> Result<Vec<DetectionResult>> {
         let mut results = Vec::new();
 
         // Validate transaction structure
@@ -375,8 +410,8 @@ impl CorruptionDetector {
 
         // Check transaction header
         let stored_tx_id = u64::from_le_bytes([
-            tx_data[0], tx_data[1], tx_data[2], tx_data[3],
-            tx_data[4], tx_data[5], tx_data[6], tx_data[7],
+            tx_data[0], tx_data[1], tx_data[2], tx_data[3], tx_data[4], tx_data[5], tx_data[6],
+            tx_data[7],
         ]);
 
         if stored_tx_id != tx_id {
@@ -406,7 +441,7 @@ impl CorruptionDetector {
     }
 
     // Helper methods
-    
+
     fn is_btree_page(&self, page_data: &[u8]) -> bool {
         page_data.len() > 4 && page_data[4] == 1 // Assuming page type 1 is B+Tree
     }
@@ -418,33 +453,30 @@ impl CorruptionDetector {
     fn extract_keys_from_page(&self, page_data: &[u8]) -> Result<Vec<Vec<u8>>> {
         // Simplified key extraction logic
         let mut keys = Vec::new();
-        
+
         if page_data.len() < 32 {
             return Ok(keys);
         }
 
-        let key_count = u32::from_le_bytes([
-            page_data[8], page_data[9], page_data[10], page_data[11]
-        ]) as usize;
+        let key_count =
+            u32::from_le_bytes([page_data[8], page_data[9], page_data[10], page_data[11]]) as usize;
 
         let mut offset = 32; // Skip header
-        
+
         for _ in 0..key_count {
             if offset + 4 > page_data.len() {
                 break;
             }
-            
-            let key_len = u16::from_le_bytes([
-                page_data[offset], page_data[offset+1]
-            ]) as usize;
-            
+
+            let key_len = u16::from_le_bytes([page_data[offset], page_data[offset + 1]]) as usize;
+
             offset += 2;
-            
+
             if offset + key_len > page_data.len() {
                 break;
             }
-            
-            keys.push(page_data[offset..offset+key_len].to_vec());
+
+            keys.push(page_data[offset..offset + key_len].to_vec());
             offset += key_len;
         }
 
@@ -453,29 +485,34 @@ impl CorruptionDetector {
 
     fn extract_child_pointers(&self, page_data: &[u8]) -> Result<Vec<u64>> {
         let mut pointers = Vec::new();
-        
+
         if page_data.len() < 32 {
             return Ok(pointers);
         }
 
         // Extract pointers from internal nodes
-        let key_count = u32::from_le_bytes([
-            page_data[8], page_data[9], page_data[10], page_data[11]
-        ]) as usize;
+        let key_count =
+            u32::from_le_bytes([page_data[8], page_data[9], page_data[10], page_data[11]]) as usize;
 
         // Skip keys and extract pointers
         let mut offset = page_data.len().saturating_sub(8 * (key_count + 1));
-        
+
         for _ in 0..=key_count {
             if offset + 8 > page_data.len() {
                 break;
             }
-            
+
             let pointer = u64::from_le_bytes([
-                page_data[offset], page_data[offset+1], page_data[offset+2], page_data[offset+3],
-                page_data[offset+4], page_data[offset+5], page_data[offset+6], page_data[offset+7],
+                page_data[offset],
+                page_data[offset + 1],
+                page_data[offset + 2],
+                page_data[offset + 3],
+                page_data[offset + 4],
+                page_data[offset + 5],
+                page_data[offset + 6],
+                page_data[offset + 7],
             ]);
-            
+
             pointers.push(pointer);
             offset += 8;
         }

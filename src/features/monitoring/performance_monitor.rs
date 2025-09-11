@@ -3,8 +3,8 @@
 //! Real-time performance monitoring with trend analysis, benchmarking,
 //! and performance regression detection.
 
-use crate::Database;
 use crate::core::error::Result;
+use crate::Database;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{

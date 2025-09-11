@@ -366,19 +366,22 @@ impl BPlusTree {
                 parent_node.entries.remove(separator_index);
             }
             NodeType::Internal => {
-                // For internal nodes, include separator from parent  
+                // For internal nodes, include separator from parent
                 let separator = parent_node.entries.remove(separator_index);
                 left_node.entries.push(separator);
                 left_node.entries.extend(right_node.entries);
                 left_node.children.extend(right_node.children);
-                
+
                 // Update parent pointers for all children moved to left node
                 for &child_id in &left_node.children {
                     if let Ok(child_page) = self.page_manager.get_page(child_id) {
                         if let Ok(mut child_node) = BTreeNode::deserialize_from_page(&child_page) {
                             child_node.parent = Some(left_page_id);
                             let mut updated_child_page = crate::core::storage::Page::new(child_id);
-                            if child_node.serialize_to_page(&mut updated_child_page).is_ok() {
+                            if child_node
+                                .serialize_to_page(&mut updated_child_page)
+                                .is_ok()
+                            {
                                 let _ = self.page_manager.write_page(&updated_child_page);
                             }
                         }
@@ -437,7 +440,7 @@ impl BPlusTree {
         }
 
         // Only free the right page after all writes succeed
-        self.page_manager.free_page(right_page_id);
+        let _ = self.page_manager.free_page(right_page_id);
 
         Ok(())
     }
@@ -453,11 +456,13 @@ impl BPlusTree {
             && root_node.children.len() == 1
         {
             let new_root_id = root_node.children[0];
-            self.page_manager.free_page(self.root_page_id());
+            let _ = self.page_manager.free_page(self.root_page_id());
             // Update tree metadata atomically after structural change
-            self.root_page_id.store(new_root_id, AtomicOrdering::Release);
+            self.root_page_id
+                .store(new_root_id, AtomicOrdering::Release);
             let current_height = self.height.load(AtomicOrdering::Acquire);
-            self.height.store(current_height - 1, AtomicOrdering::Release);
+            self.height
+                .store(current_height - 1, AtomicOrdering::Release);
         }
 
         Ok(())

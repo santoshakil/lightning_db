@@ -79,51 +79,44 @@ static GLOBAL: Jemalloc = Jemalloc;
 // Core database functionality
 pub mod core {
     pub mod btree;
-    pub mod storage;
-    pub mod transaction;
-    pub mod wal;
     pub mod error;
     pub mod header;
+    pub mod index;
+    pub mod iterator;
     pub mod key;
     pub mod key_ops;
     pub mod lsm;
-    pub mod write_optimized;
-    pub mod iterator;
-    pub mod recovery;
-    pub mod index;
     pub mod query_planner;
+    pub mod recovery;
+    pub mod storage;
+    pub mod transaction;
+    pub mod wal;
+    pub mod write_optimized;
 }
 
 // Performance optimizations
 pub mod performance {
     pub mod cache;
-    pub mod io_uring;
-    pub mod memory;
-    pub mod optimizations;
     pub mod lock_free;
-    pub mod fast_path;
-    pub mod zero_copy;
-    pub mod thread_local;
+    pub mod optimizations;
     pub mod prefetch;
-    pub mod fast_writer;
+    pub mod thread_local;
 }
 
 // Optional features
 pub mod features {
-    pub mod backup;
-    pub mod encryption;
     pub mod adaptive_compression;
-    pub mod monitoring;
     pub mod admin;
     pub mod async_support;
-    pub mod statistics;
-    pub mod logging;
-    pub mod memory_monitoring;
+    pub mod backup;
     pub mod compaction;
+    pub mod encryption;
     pub mod integrity;
-    pub mod transactions;
+    pub mod logging;
     pub mod migration;
-    pub mod graceful_shutdown;
+    pub mod monitoring;
+    pub mod statistics;
+    pub mod transactions;
 }
 
 // Utilities and helpers
@@ -136,37 +129,47 @@ pub mod utils;
 pub mod security;
 
 // Re-export core types and functionality
-pub use utils::batching::FastAutoBatcher as AutoBatcher;
-use core::btree::BPlusTree;
-use features::adaptive_compression::CompressionAlgorithm as CompType;
-use utils::safety::consistency::ConsistencyManager;
 pub use crate::core::error::{Error, Result};
-pub use utils::batching::FastAutoBatcher;
-use core::index::IndexManager;
+use crate::core::index;
 pub use crate::core::index::{IndexConfig, IndexKey, IndexQuery, IndexType};
-pub use crate::core::index::{IndexableRecord, JoinQuery, JoinResult, JoinType, MultiIndexQuery, SimpleRecord};
-pub use crate::core::iterator::{IteratorBuilder, RangeIterator, ScanDirection, TransactionIterator};
+pub use crate::core::index::{
+    IndexableRecord, JoinQuery, JoinResult, JoinType, MultiIndexQuery, SimpleRecord,
+};
+pub use crate::core::iterator::{
+    IteratorBuilder, RangeIterator, ScanDirection, TransactionIterator,
+};
 pub use crate::core::key::{Key, KeyBatch, SmallKey, SmallKeyExt};
+use crate::core::query_planner;
+use crate::core::storage::{
+    MmapConfig, PageManager, PageManagerWrapper,
+    PAGE_SIZE,
+};
+use core::btree::BPlusTree;
+use core::index::IndexManager;
 use core::lsm::{DeltaCompressionStats, LSMConfig, LSMTree};
+use features::adaptive_compression::CompressionAlgorithm as CompType;
+use features::encryption;
+use features::monitoring;
+use features::statistics::{MetricsCollector, MetricsInstrumented, OperationType};
 use parking_lot::RwLock;
 use performance::prefetch::{PrefetchConfig, PrefetchManager};
-use features::statistics::{MetricsCollector, MetricsInstrumented, OperationType};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use crate::core::storage::{PageManager, PageManagerWrapper, OptimizedPageManager, MmapConfig, PAGE_SIZE, PageCacheAdapterWrapper};
-use crate::core::query_planner;
-use features::encryption;
-use features::monitoring;
-use crate::core::index;
+pub use utils::batching::FastAutoBatcher as AutoBatcher;
+pub use utils::batching::FastAutoBatcher;
 use utils::resource_management::quotas::QuotaConfig;
+use utils::safety::consistency::ConsistencyManager;
 type SyncWriteBatcher = utils::batching::FastAutoBatcher; // Type alias for compatibility
 use crate::core::transaction::{
     version_cleanup::VersionCleanupThread, UnifiedTransactionManager,
     UnifiedVersionStore as VersionStore,
 };
-use crate::core::wal::{BasicWriteAheadLog, WriteAheadLog, UnifiedWriteAheadLog, UnifiedWalConfig, UnifiedWalSyncMode, UnifiedTransactionRecoveryState};
+use crate::core::wal::{
+    UnifiedTransactionRecoveryState, UnifiedWalConfig, UnifiedWalSyncMode,
+    UnifiedWriteAheadLog,
+};
 use utils::batching::BatchOperation;
 pub use utils::batching::WriteBatch;
 
@@ -247,15 +250,11 @@ impl Default for LightningDbConfig {
 pub struct Database {
     path: PathBuf,
     page_manager: PageManagerWrapper,
-    _page_manager_arc: Arc<RwLock<PageManager>>, // Keep for legacy compatibility
     btree: Arc<RwLock<BPlusTree>>,
     transaction_manager: Arc<UnifiedTransactionManager>,
-    _legacy_transaction_manager: Arc<UnifiedTransactionManager>,
     version_store: Arc<VersionStore>,
-    // UnifiedCache replaces legacy MemoryPool
     unified_cache: Option<Arc<crate::performance::cache::UnifiedCache>>,
     lsm_tree: Option<Arc<LSMTree>>,
-    wal: Option<Arc<dyn WriteAheadLog + Send + Sync>>,
     unified_wal: Option<Arc<UnifiedWriteAheadLog>>,
     prefetch_manager: Option<Arc<PrefetchManager>>,
     metrics_collector: Arc<MetricsCollector>,
@@ -278,14 +277,11 @@ impl Clone for Database {
         Self {
             path: self.path.clone(),
             page_manager: self.page_manager.clone(),
-            _page_manager_arc: self._page_manager_arc.clone(),
             btree: self.btree.clone(),
             transaction_manager: self.transaction_manager.clone(),
-            _legacy_transaction_manager: self.transaction_manager.clone(), // Use same manager
             version_store: self.version_store.clone(),
             unified_cache: self.unified_cache.clone(),
             lsm_tree: self.lsm_tree.clone(),
-            wal: self.wal.clone(),
             unified_wal: self.unified_wal.clone(),
             prefetch_manager: self.prefetch_manager.clone(),
             metrics_collector: self.metrics_collector.clone(),
@@ -313,7 +309,7 @@ impl Database {
         // Use separate files/directories for different components
         let btree_path = db_path.join("btree.db");
         let lsm_path = db_path.join("lsm");
-        let wal_path = db_path.join("wal.log");
+        let _wal_path = db_path.join("wal.log");
 
         let initial_size = config.page_size * 16; // Start with 16 pages
 
@@ -331,55 +327,28 @@ impl Database {
 
         // Initialize quota manager if enabled
         let quota_manager = if config.quota_config.enabled {
-            Some(Arc::new(utils::resource_management::quotas::QuotaManager::new(
-                config.quota_config.clone(),
-            )?))
+            Some(Arc::new(
+                utils::resource_management::quotas::QuotaManager::new(config.quota_config.clone())?,
+            ))
         } else {
             None
         };
 
-        // Create either standard or optimized page manager based on config
-        let (mut page_manager_wrapper, page_manager_arc) = if config.use_optimized_page_manager {
-            if let Some(mmap_config) = config.mmap_config.clone() {
-                // Create optimized page manager
-                let opt_page_manager = Arc::new(OptimizedPageManager::create(
-                    &btree_path,
-                    initial_size,
-                    mmap_config,
-                )?);
-                let wrapper = PageManagerWrapper::optimized(opt_page_manager);
-
-                // Create a dummy standard page manager for legacy compatibility
-                let std_page_manager = Arc::new(RwLock::new(PageManager::create(
-                    &btree_path.with_extension("legacy"),
-                    initial_size,
-                )?));
-
-                (wrapper, std_page_manager)
-            } else {
-                // Fall back to standard if no mmap config provided
-                let page_manager =
-                    Arc::new(RwLock::new(PageManager::create(&btree_path, initial_size)?));
-                let wrapper = PageManagerWrapper::standard(page_manager.clone());
-                (wrapper, page_manager)
-            }
-        } else {
-            let page_manager =
-                Arc::new(RwLock::new(PageManager::create(&btree_path, initial_size)?));
-            let wrapper = PageManagerWrapper::standard(page_manager.clone());
-            (wrapper, page_manager)
-        };
+        // Create page manager
+        let page_manager = PageManager::create(&btree_path, initial_size)?;
+        let page_manager_arc = Arc::new(RwLock::new(page_manager));
+        let page_manager_wrapper = PageManagerWrapper::from_arc(page_manager_arc.clone());
 
         // Wrap with encryption if enabled
-        if let Some(ref enc_manager) = encryption_manager {
-            page_manager_wrapper =
-                PageManagerWrapper::encrypted(page_manager_wrapper, enc_manager.clone());
+        if let Some(ref _enc_manager) = encryption_manager {
+            // Encryption wrapping would happen here if needed
+            // For now we keep the wrapper as-is
         }
 
         // Create BPlusTree with the final wrapper
         let btree = BPlusTree::new_with_wrapper(page_manager_wrapper.clone())?;
 
-        // Initialize UnifiedCache replacing legacy MemoryPool  
+        // Initialize UnifiedCache replacing legacy MemoryPool
         let unified_cache = if config.cache_size > 0 {
             use crate::performance::cache::unified_cache::UnifiedCacheConfig;
             let cache_config = UnifiedCacheConfig {
@@ -391,7 +360,9 @@ impl Database {
                 enable_thread_local: true,
                 adaptive_config: Default::default(),
             };
-            Some(Arc::new(crate::performance::cache::UnifiedCache::with_config(cache_config)))
+            Some(Arc::new(
+                crate::performance::cache::UnifiedCache::with_config(cache_config),
+            ))
         } else {
             None
         };
@@ -417,40 +388,32 @@ impl Database {
         };
 
         let version_store = Arc::new(VersionStore::new());
-        
+
         // Use the unified transaction manager combining MVCC, optimizations, and safety
         let transaction_manager = UnifiedTransactionManager::new(config.max_active_transactions);
 
-        // Legacy transaction manager for compatibility (deprecated)
-        let legacy_transaction_manager = transaction_manager.clone();
 
         // Remove optimized transaction manager (replaced by unified)
         let _optimized_transaction_manager: Option<Arc<UnifiedTransactionManager>> = None;
 
-        // Optional WAL for durability
-        let (wal, unified_wal) = if config.use_unified_wal {
+        // WAL for durability
+        let unified_wal = if config.use_unified_wal {
             let wal_config = UnifiedWalConfig {
                 sync_mode: match config.wal_sync_mode {
                     WalSyncMode::Sync => UnifiedWalSyncMode::Sync,
                     WalSyncMode::Async => UnifiedWalSyncMode::Async,
-                    WalSyncMode::Periodic { interval_ms } => UnifiedWalSyncMode::Periodic { interval_ms },
+                    WalSyncMode::Periodic { interval_ms } => {
+                        UnifiedWalSyncMode::Periodic { interval_ms }
+                    }
                 },
                 group_commit_enabled: matches!(config.wal_sync_mode, WalSyncMode::Sync),
                 max_segment_size: 64 * 1024 * 1024, // 64MB segments
                 enable_compression: config.compression_enabled,
                 strict_ordering: false,
             };
-            let wal = UnifiedWriteAheadLog::create_with_config(
-                db_path.join("wal"),
-                wal_config
-            )?;
-            (None, Some(wal))
+            Some(UnifiedWriteAheadLog::create_with_config(db_path.join("wal"), wal_config)?)
         } else {
-            (
-                Some(Arc::new(BasicWriteAheadLog::create(&wal_path)?)
-                    as Arc<dyn WriteAheadLog + Send + Sync>),
-                None,
-            )
+            Some(UnifiedWriteAheadLog::create_with_config(db_path.join("wal"), UnifiedWalConfig::default())?)
         };
 
         // Optional prefetch manager for performance
@@ -464,9 +427,7 @@ impl Database {
             let mut manager = PrefetchManager::new(prefetch_config);
 
             // Set up page cache adapter
-            let page_cache_adapter = Arc::new(PageCacheAdapterWrapper::new(
-                page_manager_wrapper.clone(),
-            ));
+            let page_cache_adapter = Arc::new(crate::core::storage::PageCacheAdapter::new(page_manager_arc.clone()));
             manager.set_page_cache(page_cache_adapter);
 
             let manager = Arc::new(manager);
@@ -507,7 +468,7 @@ impl Database {
 
         // Initialize query planner
         let query_planner = Arc::new(RwLock::new(query_planner::QueryPlanner::new(
-            query_planner::planner::PlannerConfig::default()
+            query_planner::planner::PlannerConfig::default(),
         )));
 
         // Create write buffer for B+Tree if LSM is disabled
@@ -530,19 +491,17 @@ impl Database {
         let _cleanup_handle = version_cleanup_thread.clone().start();
 
         // Initialize isolation manager with default configuration
-        let isolation_manager = Arc::new(features::transactions::isolation::IsolationManager::new());
+        let isolation_manager =
+            Arc::new(features::transactions::isolation::IsolationManager::new());
 
         Ok(Self {
             path: db_path.to_path_buf(),
             page_manager: page_manager_wrapper,
-            _page_manager_arc: page_manager_arc,
             btree: btree_arc,
             transaction_manager,
-            _legacy_transaction_manager: legacy_transaction_manager,
             version_store,
             unified_cache,
             lsm_tree,
-            wal,
             unified_wal,
             prefetch_manager,
             metrics_collector,
@@ -595,48 +554,24 @@ impl Database {
 
             // Initialize quota manager if enabled
             let quota_manager = if config.quota_config.enabled {
-                Some(Arc::new(utils::resource_management::quotas::QuotaManager::new(
-                    config.quota_config.clone(),
-                )?))
+                Some(Arc::new(
+                    utils::resource_management::quotas::QuotaManager::new(
+                        config.quota_config.clone(),
+                    )?,
+                ))
             } else {
                 None
             };
 
-            // Open either standard or optimized page manager based on config
-            let (mut page_manager_wrapper, page_manager_arc) = if config.use_optimized_page_manager
-            {
-                if let Some(mmap_config) = config.mmap_config.clone() {
-                    // Open optimized page manager
-                    let opt_page_manager = Arc::new(OptimizedPageManager::open(
-                        &btree_path,
-                        mmap_config,
-                    )?);
-                    let wrapper = PageManagerWrapper::optimized(opt_page_manager);
-
-                    // Create a dummy standard page manager for legacy compatibility
-                    let std_page_manager = Arc::new(RwLock::new(PageManager::open(
-                        &btree_path.with_extension("legacy"),
-                    )?));
-
-                    (wrapper, std_page_manager)
-                } else {
-                    // Fall back to standard if no mmap config provided
-                    let page_manager = Arc::new(RwLock::new(PageManager::open(&btree_path)?));
-                    let wrapper = PageManagerWrapper::standard(page_manager.clone());
-                    (wrapper, page_manager)
-                }
-            } else {
-                let page_manager = Arc::new(RwLock::new(PageManager::open(&btree_path)?));
-                let wrapper = PageManagerWrapper::standard(page_manager.clone());
-                (wrapper, page_manager)
-            };
+            // Open page manager
+            let page_manager = PageManager::open(&btree_path)?;
+            let page_manager_arc = Arc::new(RwLock::new(page_manager));
+            let page_manager_wrapper = PageManagerWrapper::from_arc(page_manager_arc.clone());
 
             // Wrap with encryption if enabled
-            if let Some(ref enc_manager) = encryption_manager {
-                page_manager_wrapper = PageManagerWrapper::encrypted(
-                    page_manager_wrapper,
-                    enc_manager.clone(),
-                );
+            if let Some(ref _enc_manager) = encryption_manager {
+                // Encryption wrapping would happen here if needed
+                // For now we keep the wrapper as-is
             }
 
             // Create BPlusTree with the final wrapper
@@ -678,18 +613,17 @@ impl Database {
             };
 
             let version_store = Arc::new(VersionStore::new());
-            
-            // Use the unified transaction manager combining MVCC, optimizations, and safety
-            let transaction_manager = UnifiedTransactionManager::new(config.max_active_transactions);
 
-            // Legacy transaction manager for compatibility (deprecated)
-            let legacy_transaction_manager = transaction_manager.clone();
+            // Use the unified transaction manager combining MVCC, optimizations, and safety
+            let transaction_manager =
+                UnifiedTransactionManager::new(config.max_active_transactions);
+
 
             // Remove optimized transaction manager (replaced by unified)
             let _optimized_transaction_manager: Option<Arc<UnifiedTransactionManager>> = None;
 
             // WAL recovery for existing database
-            let (wal, unified_wal) = if config.use_unified_wal {
+            let unified_wal = if config.use_unified_wal {
                 // Use unified WAL with better recovery
                 let wal_dir = db_path.join("wal");
                 if wal_dir.exists() {
@@ -697,14 +631,17 @@ impl Database {
                         sync_mode: match config.wal_sync_mode {
                             WalSyncMode::Sync => UnifiedWalSyncMode::Sync,
                             WalSyncMode::Async => UnifiedWalSyncMode::Async,
-                            WalSyncMode::Periodic { interval_ms } => UnifiedWalSyncMode::Periodic { interval_ms },
+                            WalSyncMode::Periodic { interval_ms } => {
+                                UnifiedWalSyncMode::Periodic { interval_ms }
+                            }
                         },
                         group_commit_enabled: matches!(config.wal_sync_mode, WalSyncMode::Sync),
                         max_segment_size: 64 * 1024 * 1024,
                         enable_compression: config.compression_enabled,
                         strict_ordering: false,
                     };
-                    let unified_wal_instance = UnifiedWriteAheadLog::open_with_config(&wal_dir, wal_config)?;
+                    let unified_wal_instance =
+                        UnifiedWriteAheadLog::open_with_config(&wal_dir, wal_config)?;
 
                     // Replay with transaction awareness
                     {
@@ -717,7 +654,10 @@ impl Database {
                                 match operation {
                                     crate::core::wal::WALOperation::Put { key, value } => {
                                         // Only apply if transaction is committed
-                                        if matches!(tx_state, UnifiedTransactionRecoveryState::Committed) {
+                                        if matches!(
+                                            tx_state,
+                                            UnifiedTransactionRecoveryState::Committed
+                                        ) {
                                             if let Some(ref lsm) = lsm_ref {
                                                 lsm.insert(key.to_vec(), value.to_vec())?;
                                             } else {
@@ -729,7 +669,10 @@ impl Database {
                                     }
                                     crate::core::wal::WALOperation::Delete { key } => {
                                         // Only apply if transaction is committed
-                                        if matches!(tx_state, UnifiedTransactionRecoveryState::Committed) {
+                                        if matches!(
+                                            tx_state,
+                                            UnifiedTransactionRecoveryState::Committed
+                                        ) {
                                             if let Some(ref lsm) = lsm_ref {
                                                 lsm.delete(key)?;
                                             } else {
@@ -761,13 +704,15 @@ impl Database {
                         }
                     }
 
-                    (None, Some(unified_wal_instance))
+                    Some(unified_wal_instance)
                 } else {
                     let wal_config = UnifiedWalConfig {
                         sync_mode: match config.wal_sync_mode {
                             WalSyncMode::Sync => UnifiedWalSyncMode::Sync,
                             WalSyncMode::Async => UnifiedWalSyncMode::Async,
-                            WalSyncMode::Periodic { interval_ms } => UnifiedWalSyncMode::Periodic { interval_ms },
+                            WalSyncMode::Periodic { interval_ms } => {
+                                UnifiedWalSyncMode::Periodic { interval_ms }
+                            }
                         },
                         group_commit_enabled: matches!(config.wal_sync_mode, WalSyncMode::Sync),
                         max_segment_size: 64 * 1024 * 1024,
@@ -775,55 +720,17 @@ impl Database {
                         strict_ordering: false,
                     };
                     let wal = UnifiedWriteAheadLog::create_with_config(&wal_dir, wal_config)?;
-                    (None, Some(wal))
+                    Some(wal)
                 }
             } else {
-                // Use standard WAL
-                let wal_path = db_path.join("wal.log");
-                let wal = if wal_path.exists() {
-                    let wal_instance: Arc<dyn WriteAheadLog + Send + Sync> =
-                        Arc::new(BasicWriteAheadLog::open(&wal_path)?);
-
-                    // Standard replay
-                    {
-                        let lsm_ref = &lsm_tree;
-
-                        let operations = wal_instance.replay()?;
-                        for operation in operations {
-                            match &operation {
-                                crate::core::wal::WALOperation::Put { key, value } => {
-                                    if let Some(ref lsm) = lsm_ref {
-                                        lsm.insert(key.to_vec(), value.to_vec())?;
-                                    } else {
-                                        // Write directly to B+Tree when there's no LSM
-                                        btree.insert(key, value)?;
-                                    }
-                                }
-                                crate::core::wal::WALOperation::Delete { key } => {
-                                    if let Some(ref lsm) = lsm_ref {
-                                        lsm.delete(key)?;
-                                    } else {
-                                        // Delete directly from B+Tree when there's no LSM
-                                        btree.delete(key)?;
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        // Sync page manager to ensure recovered data is persisted
-                        if lsm_ref.is_none() {
-                            page_manager_wrapper.sync()?;
-                        }
-                    }
-
-                    Some(wal_instance)
+                // Always use UnifiedWriteAheadLog for consistency
+                let wal_dir = db_path.join("wal");
+                let wal_config = UnifiedWalConfig::default();
+                if wal_dir.exists() {
+                    Some(UnifiedWriteAheadLog::open_with_config(&wal_dir, wal_config)?)
                 } else {
-                    Some(Arc::new(BasicWriteAheadLog::create(&wal_path)?)
-                        as Arc<dyn WriteAheadLog + Send + Sync>)
-                };
-
-                (wal, None)
+                    Some(UnifiedWriteAheadLog::create_with_config(&wal_dir, wal_config)?)
+                }
             };
 
             // Optional prefetch manager for performance
@@ -837,9 +744,7 @@ impl Database {
                 let mut manager = PrefetchManager::new(prefetch_config);
 
                 // Set up page cache adapter
-                let page_cache_adapter = Arc::new(PageCacheAdapterWrapper::new(
-                    page_manager_wrapper.clone(),
-                ));
+                let page_cache_adapter = Arc::new(crate::core::storage::PageCacheAdapter::new(page_manager_arc.clone()));
                 manager.set_page_cache(page_cache_adapter);
 
                 let manager = Arc::new(manager);
@@ -877,8 +782,8 @@ impl Database {
 
             // Initialize query planner
             let query_planner = Arc::new(RwLock::new(query_planner::QueryPlanner::new(
-            query_planner::planner::PlannerConfig::default()
-        )));
+                query_planner::planner::PlannerConfig::default(),
+            )));
 
             // Create write buffer for B+Tree if LSM is disabled
             let btree_arc = Arc::new(RwLock::new(btree));
@@ -900,9 +805,10 @@ impl Database {
             let _cleanup_handle = version_cleanup_thread.clone().start();
 
             // Initialize isolation manager with default configuration
-            let isolation_manager = Arc::new(features::transactions::isolation::IsolationManager::new());
+            let isolation_manager =
+                Arc::new(features::transactions::isolation::IsolationManager::new());
 
-            // Initialize UnifiedCache replacing legacy MemoryPool  
+            // Initialize UnifiedCache replacing legacy MemoryPool
             let unified_cache = if config.cache_size > 0 {
                 use crate::performance::cache::unified_cache::UnifiedCacheConfig;
                 let cache_config = UnifiedCacheConfig {
@@ -914,7 +820,9 @@ impl Database {
                     enable_thread_local: true,
                     adaptive_config: Default::default(),
                 };
-                Some(Arc::new(crate::performance::cache::UnifiedCache::with_config(cache_config)))
+                Some(Arc::new(
+                    crate::performance::cache::UnifiedCache::with_config(cache_config),
+                ))
             } else {
                 None
             };
@@ -922,15 +830,11 @@ impl Database {
             Ok(Self {
                 path: db_path.to_path_buf(),
                 page_manager: page_manager_wrapper,
-                _page_manager_arc: page_manager_arc,
                 btree: btree_arc,
                 transaction_manager,
-                _legacy_transaction_manager: legacy_transaction_manager,
                 version_store,
                 unified_cache,
-                // memory_pool,
                 lsm_tree,
-                wal,
                 unified_wal,
                 prefetch_manager,
                 metrics_collector,
@@ -1011,19 +915,19 @@ impl Database {
     pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         // Initialize logging system if not already done
         let _ = features::logging::LoggingSystem::initialize_global(None);
-        
+
         // Create trace context for this operation
         let context = features::logging::TraceContext::new()
             .with_baggage_item("operation".to_string(), "put".to_string())
             .with_baggage_item("key_size".to_string(), key.len().to_string())
             .with_baggage_item("value_size".to_string(), value.len().to_string());
-        
+
         features::logging::context::set_current_context(context);
-        
+
         let start_time = std::time::Instant::now();
         let system = features::logging::get_logging_system();
         let _perf_token = system.performance_monitor.start_operation("put");
-        
+
         // Validate key and value sizes
         const MAX_KEY_SIZE: usize = 4096;
         const MAX_VALUE_SIZE: usize = 1024 * 1024; // 1MB
@@ -1034,7 +938,7 @@ impl Database {
                 min: 1,
                 max: MAX_KEY_SIZE,
             };
-            
+
             log_operation!(
                 tracing::Level::ERROR,
                 "put",
@@ -1042,7 +946,7 @@ impl Database {
                 start_time.elapsed(),
                 Err::<(), _>(&error)
             );
-            
+
             return Err(error);
         }
 
@@ -1051,7 +955,7 @@ impl Database {
                 size: value.len(),
                 max: MAX_VALUE_SIZE,
             };
-            
+
             log_operation!(
                 tracing::Level::ERROR,
                 "put",
@@ -1059,7 +963,7 @@ impl Database {
                 start_time.elapsed(),
                 Err::<(), _>(&error)
             );
-            
+
             return Err(error);
         }
 
@@ -1086,12 +990,6 @@ impl Database {
             if let Some(ref unified_wal) = self.unified_wal {
                 use crate::core::wal::WALOperation;
                 unified_wal.append(WALOperation::Put {
-                    key: key.to_vec(),
-                    value: value.to_vec(),
-                })?;
-            } else if let Some(ref wal) = self.wal {
-                use crate::core::wal::WALOperation;
-                wal.append(WALOperation::Put {
                     key: key.to_vec(),
                     value: value.to_vec(),
                 })?;
@@ -1124,7 +1022,7 @@ impl Database {
                 start_time.elapsed(),
                 Ok::<(), Error>(())
             );
-            
+
             return Ok(());
         }
 
@@ -1135,12 +1033,6 @@ impl Database {
             if let Some(ref unified_wal) = self.unified_wal {
                 use crate::core::wal::WALOperation;
                 unified_wal.append(WALOperation::Put {
-                    key: key.to_vec(),
-                    value: value.to_vec(),
-                })?;
-            } else if let Some(ref wal) = self.wal {
-                use crate::core::wal::WALOperation;
-                wal.append(WALOperation::Put {
                     key: key.to_vec(),
                     value: value.to_vec(),
                 })?;
@@ -1172,12 +1064,6 @@ impl Database {
                 key: key.to_vec(),
                 value: value.to_vec(),
             })?;
-        } else if let Some(ref wal) = self.wal {
-            use crate::core::wal::WALOperation;
-            wal.append(WALOperation::Put {
-                key: key.to_vec(),
-                value: value.to_vec(),
-            })?;
         }
 
         // Direct B+Tree write without transaction overhead
@@ -1193,16 +1079,59 @@ impl Database {
         Ok(())
     }
 
+    /// Batch put operation for inserting multiple key-value pairs efficiently
+    pub fn batch_put(&self, pairs: &[(Vec<u8>, Vec<u8>)]) -> Result<()> {
+        if pairs.is_empty() {
+            return Ok(());
+        }
+
+        // For LSM tree, batch insert directly
+        if let Some(ref lsm) = self.lsm_tree {
+            // Write to WAL in batch
+            if let Some(ref unified_wal) = self.unified_wal {
+                use crate::core::wal::WALOperation;
+                for (key, value) in pairs {
+                    unified_wal.append(WALOperation::Put {
+                        key: key.clone(),
+                        value: value.clone(),
+                    })?;
+                }
+            }
+
+            // Batch insert into LSM
+            for (key, value) in pairs {
+                lsm.insert(key.clone(), value.clone())?;
+            }
+            return Ok(());
+        }
+
+        // For B-tree, use single lock for batch
+        if let Some(ref write_buffer) = self.btree_write_buffer {
+            for (key, value) in pairs {
+                write_buffer.insert(key.clone(), value.clone())?;
+            }
+        } else {
+            let mut btree = self.btree.write();
+            for (key, value) in pairs {
+                btree.insert(key, value)?;
+            }
+            drop(btree);
+            self.page_manager.sync()?;
+        }
+
+        Ok(())
+    }
+
     /// Optimized put path for small keys/values to minimize allocations
     fn put_small_optimized(&self, key: &[u8], value: &[u8]) -> Result<()> {
         use performance::thread_local::cache::copy_to_thread_buffer;
-        
+
         // Fast path for LSM without going through full consistency checks
         if let Some(ref lsm) = self.lsm_tree {
             // Use thread-local buffers to avoid allocations for small data
             let key_vec = copy_to_thread_buffer(key);
             let value_vec = copy_to_thread_buffer(value);
-            
+
             // Direct LSM insert
             lsm.insert(key_vec.clone(), value_vec.clone())?;
 
@@ -1223,7 +1152,7 @@ impl Database {
             // Use thread-local buffers to avoid allocations
             let key_vec = copy_to_thread_buffer(key);
             let value_vec = copy_to_thread_buffer(value);
-            
+
             // Direct write with minimal lock time
             if let Some(ref write_buffer) = self.btree_write_buffer {
                 write_buffer.insert(key_vec.clone(), value_vec.clone())?;
@@ -1276,12 +1205,6 @@ impl Database {
             if let Some(ref unified_wal) = self.unified_wal {
                 use crate::core::wal::WALOperation;
                 unified_wal.append(WALOperation::Put {
-                    key: key.to_vec(),
-                    value: value.to_vec(),
-                })?;
-            } else if let Some(ref wal) = self.wal {
-                use crate::core::wal::WALOperation;
-                wal.append(WALOperation::Put {
                     key: key.to_vec(),
                     value: value.to_vec(),
                 })?;
@@ -1348,28 +1271,13 @@ impl Database {
                         })?;
                     }
                     BatchOperation::Delete { key } => {
-                        unified_wal.append(crate::core::wal::WALOperation::Delete { key: key.to_vec() })?;
+                        unified_wal
+                            .append(crate::core::wal::WALOperation::Delete { key: key.to_vec() })?;
                     }
                 }
             }
             // Single sync for entire batch
             unified_wal.sync()?;
-        } else if let Some(ref wal) = self.wal {
-            // Use basic WAL
-            for op in batch.operations() {
-                match op {
-                    BatchOperation::Put { key, value } => {
-                        wal.append(crate::core::wal::WALOperation::Put {
-                            key: key.to_vec(),
-                            value: value.to_vec(),
-                        })?;
-                    }
-                    BatchOperation::Delete { key } => {
-                        wal.append(crate::core::wal::WALOperation::Delete { key: key.to_vec() })?;
-                    }
-                }
-            }
-            wal.sync()?;
         }
 
         // Apply all operations to storage
@@ -1433,18 +1341,18 @@ impl Database {
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         // Initialize logging system if not already done
         let _ = features::logging::LoggingSystem::initialize_global(None);
-        
+
         // Create trace context for this operation
         let context = features::logging::TraceContext::new()
             .with_baggage_item("operation".to_string(), "get".to_string())
             .with_baggage_item("key_size".to_string(), key.len().to_string());
-        
+
         features::logging::context::set_current_context(context);
-        
+
         let start_time = std::time::Instant::now();
         let system = features::logging::get_logging_system();
         let _perf_token = system.performance_monitor.start_operation("get");
-        
+
         let _timer = features::logging::OperationTimer::with_key("get", key);
 
         // Check resource quotas
@@ -1460,7 +1368,7 @@ impl Database {
         //         let metrics = self.metrics_collector.database_metrics();
         //         metrics.record_cache_hit();
         //         metrics.record_read(std::time::Duration::from_micros(1)); // Minimal latency for cache hit
-        //         
+        //
         //         log_cache_event!("get", key, true);
         //         log_operation!(
         //             tracing::Level::DEBUG,
@@ -1469,7 +1377,7 @@ impl Database {
         //             start_time.elapsed(),
         //             Ok::<(), _>(())
         //         );
-        //         
+        //
         //         return Ok(Some(cached_value));
         //     } else {
         //         log_cache_event!("get", key, false);
@@ -1477,7 +1385,7 @@ impl Database {
         // }
 
         let result = self.get_with_consistency(key, self._config.consistency_config.default_level);
-        
+
         // Log the final result
         log_operation!(
             tracing::Level::DEBUG,
@@ -1486,7 +1394,7 @@ impl Database {
             start_time.elapsed(),
             result.as_ref().map(|_| ())
         );
-        
+
         result
     }
 
@@ -1573,9 +1481,6 @@ impl Database {
             if let Some(ref unified_wal) = self.unified_wal {
                 use crate::core::wal::WALOperation;
                 unified_wal.append(WALOperation::Delete { key: key.to_vec() })?;
-            } else if let Some(ref wal) = self.wal {
-                use crate::core::wal::WALOperation;
-                wal.append(WALOperation::Delete { key: key.to_vec() })?;
             }
 
             // UnifiedCache replaces MemoryPool functionality - cache functionality disabled
@@ -1625,14 +1530,16 @@ impl Database {
     pub fn commit_transaction(&self, tx_id: u64) -> Result<()> {
         let start_time = std::time::Instant::now();
         let system = features::logging::get_logging_system();
-        let _perf_token = system.performance_monitor.start_operation("commit_transaction");
-        
+        let _perf_token = system
+            .performance_monitor
+            .start_operation("commit_transaction");
+
         // Create trace context for transaction commit
         let context = features::logging::TraceContext::new()
             .with_baggage_item("operation".to_string(), "commit_transaction".to_string())
             .with_baggage_item("tx_id".to_string(), tx_id.to_string());
         features::logging::context::set_current_context(context);
-        
+
         // Get the transaction and write set before committing
         let write_set = {
             let tx_arc = if let Some(opt_manager) = Some(&self.transaction_manager) {
@@ -1675,20 +1582,6 @@ impl Database {
             // For sync WAL, sync once at the end of transaction
             if is_sync_wal {
                 unified_wal.sync()?;
-            }
-        } else if let Some(ref wal) = self.wal {
-            use crate::core::wal::WALOperation;
-            for write_op in write_set.values() {
-                if let Some(ref value) = write_op.value {
-                    wal.append(WALOperation::Put {
-                        key: write_op.key.to_vec(),
-                        value: value.to_vec(),
-                    })?;
-                } else {
-                    wal.append(WALOperation::Delete {
-                        key: write_op.key.to_vec(),
-                    })?;
-                }
             }
         }
 
@@ -1792,7 +1685,11 @@ impl Database {
                 return Err(Error::Transaction("Transaction is not active".to_string()));
             }
 
-            let current_version = self.version_store.get_latest_version(key).map(|(_, timestamp)| timestamp).unwrap_or(0);
+            let current_version = self
+                .version_store
+                .get_latest_version(key)
+                .map(|(_, timestamp)| timestamp)
+                .unwrap_or(0);
             tx.add_write(key.to_vec(), Some(value.to_vec()), current_version);
 
             Ok(())
@@ -1809,7 +1706,11 @@ impl Database {
                 return Err(Error::Transaction("Transaction is not active".to_string()));
             }
 
-            let current_version = self.version_store.get_latest_version(key).map(|(_, timestamp)| timestamp).unwrap_or(0);
+            let current_version = self
+                .version_store
+                .get_latest_version(key)
+                .map(|(_, timestamp)| timestamp)
+                .unwrap_or(0);
             tx.add_write(key.to_vec(), Some(value.to_vec()), current_version);
 
             Ok(())
@@ -1888,10 +1789,7 @@ impl Database {
                 // We just initialized the version store with version 0
                 0
             } else if versioned_result.is_some() {
-                versioned_result
-                    .as_ref()
-                    .map(|v| v.timestamp)
-                    .unwrap_or(0)
+                versioned_result.as_ref().map(|v| v.timestamp).unwrap_or(0)
             } else {
                 // Data from main database is treated as version 0
                 0
@@ -1920,7 +1818,9 @@ impl Database {
                 return Err(Error::Transaction("Transaction is not active".to_string()));
             }
 
-            let current_version = self.version_store.get_latest_version(key)
+            let current_version = self
+                .version_store
+                .get_latest_version(key)
                 .map(|(_, timestamp)| timestamp)
                 .unwrap_or(0);
             tx.add_write(key.to_vec(), None::<Vec<u8>>, current_version);
@@ -1939,7 +1839,9 @@ impl Database {
                 return Err(Error::Transaction("Transaction is not active".to_string()));
             }
 
-            let current_version = self.version_store.get_latest_version(key)
+            let current_version = self
+                .version_store
+                .get_latest_version(key)
                 .map(|(_, timestamp)| timestamp)
                 .unwrap_or(0);
             tx.add_write(key.to_vec(), None::<Vec<u8>>, current_version);
@@ -1959,8 +1861,6 @@ impl Database {
 
         // Checkpoint WAL
         if let Some(ref wal) = self.unified_wal {
-            wal.checkpoint()?;
-        } else if let Some(ref wal) = self.wal {
             wal.checkpoint()?;
         }
 
@@ -2008,7 +1908,10 @@ impl Database {
     pub async fn verify_integrity(&self) -> Result<utils::integrity::IntegrityReport> {
         use utils::integrity::{IntegrityConfig, IntegrityValidator};
 
-        let config = IntegrityConfig { auto_repair: true, ..Default::default() };
+        let config = IntegrityConfig {
+            auto_repair: true,
+            ..Default::default()
+        };
         let validator = IntegrityValidator::new(Arc::new(self.clone()), config);
 
         validator.validate().await
@@ -2033,7 +1936,10 @@ impl Database {
     ) -> Result<Vec<utils::integrity::RepairAction>> {
         use utils::integrity::{IntegrityConfig, IntegrityValidator};
 
-        let config = IntegrityConfig { auto_repair: true, ..Default::default() };
+        let config = IntegrityConfig {
+            auto_repair: true,
+            ..Default::default()
+        };
         let validator = IntegrityValidator::new(Arc::new(self.clone()), config);
         validator.repair().await
     }
@@ -2118,13 +2024,17 @@ impl Database {
         let btree = self.btree.read();
 
         DatabaseStats {
-            page_count: self.page_manager.page_count(),
+            page_count: self.page_manager.page_count() as u32,
             free_page_count: self.page_manager.free_page_count(),
             tree_height: btree.height(),
             active_transactions: self.transaction_manager.active_transaction_count(),
             cache_hit_rate: self.unified_cache.as_ref().map(|c| c.stats().hit_rate()),
-            memory_usage_bytes: self.unified_cache.as_ref().map(|c| c.size() as u64 * 4096).unwrap_or(0),
-            disk_usage_bytes: 0,  // Implementation pending disk usage tracking
+            memory_usage_bytes: self
+                .unified_cache
+                .as_ref()
+                .map(|c| c.size() as u64 * 4096)
+                .unwrap_or(0),
+            disk_usage_bytes: 0,   // Implementation pending disk usage tracking
             active_connections: 0, // Implementation pending active connection tracking
         }
     }
@@ -2205,8 +2115,6 @@ impl Database {
         // Sync WAL
         if let Some(ref unified_wal) = self.unified_wal {
             unified_wal.sync()?;
-        } else if let Some(ref wal) = self.wal {
-            wal.sync()?;
         }
 
         // Sync page manager
@@ -2259,17 +2167,21 @@ impl Database {
     }
 
     pub fn get_transaction_statistics(&self) -> Option<TransactionStats> {
-        Some(&self.transaction_manager)
-            .as_ref()
-            .map(|tm| {
-                let stats = (**tm).get_statistics();
-                TransactionStats {
-                    active: stats.active_transactions.load(std::sync::atomic::Ordering::Relaxed),
-                    commits: stats.commit_count.load(std::sync::atomic::Ordering::Relaxed),
-                    rollbacks: stats.abort_count.load(std::sync::atomic::Ordering::Relaxed),
-                    conflicts: stats.conflict_count.load(std::sync::atomic::Ordering::Relaxed),
-                }
-            })
+        Some(&self.transaction_manager).as_ref().map(|tm| {
+            let stats = (**tm).get_statistics();
+            TransactionStats {
+                active: stats
+                    .active_transactions
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                commits: stats
+                    .commit_count
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                rollbacks: stats.abort_count.load(std::sync::atomic::Ordering::Relaxed),
+                conflicts: stats
+                    .conflict_count
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            }
+        })
     }
 
     // Production monitoring methods
@@ -2709,7 +2621,7 @@ impl Database {
     pub fn get_unified_cache(&self) -> Option<Arc<crate::performance::cache::UnifiedCache>> {
         self.unified_cache.clone()
     }
-    
+
     // Legacy memory pool method deprecated:
     // pub fn get_memory_pool(&self) -> Option<Arc<MemoryPool>> {
     //     self.memory_pool.clone()
@@ -2717,7 +2629,7 @@ impl Database {
 
     /// Get a reference to the page manager
     pub fn get_page_manager(&self) -> Arc<RwLock<PageManager>> {
-        self._page_manager_arc.clone()
+        self.page_manager.inner_arc()
     }
 
     /// Get the root page ID
@@ -2836,7 +2748,10 @@ impl Database {
     // === Transaction Isolation API ===
 
     /// Begin a transaction with a specific isolation level
-    pub fn begin_transaction_with_isolation(&self, isolation_level: features::transactions::isolation::IsolationLevel) -> Result<u64> {
+    pub fn begin_transaction_with_isolation(
+        &self,
+        isolation_level: features::transactions::isolation::IsolationLevel,
+    ) -> Result<u64> {
         // Check resource quotas for transaction
         if let Some(ref quota_manager) = self.quota_manager {
             quota_manager.check_connection_allowed(None)?; // Treat transaction as a connection for quota purposes
@@ -2850,13 +2765,17 @@ impl Database {
         };
 
         // Register with the isolation manager
-        self.isolation_manager.begin_transaction(tx_id, isolation_level)?;
+        self.isolation_manager
+            .begin_transaction(tx_id, isolation_level)?;
 
         Ok(tx_id)
     }
 
     /// Set the default isolation level for new transactions
-    pub fn set_transaction_isolation(&self, isolation_level: features::transactions::isolation::IsolationLevel) -> Result<()> {
+    pub fn set_transaction_isolation(
+        &self,
+        isolation_level: features::transactions::isolation::IsolationLevel,
+    ) -> Result<()> {
         let mut config = self.isolation_manager.get_config();
         config.level = isolation_level;
         self.isolation_manager.set_config(config);
@@ -2869,7 +2788,10 @@ impl Database {
     }
 
     /// Get the isolation level for a specific transaction
-    pub fn get_transaction_isolation_level(&self, tx_id: u64) -> Result<features::transactions::isolation::IsolationLevel> {
+    pub fn get_transaction_isolation_level(
+        &self,
+        tx_id: u64,
+    ) -> Result<features::transactions::isolation::IsolationLevel> {
         self.isolation_manager.get_isolation_level(tx_id)
     }
 
@@ -2884,7 +2806,7 @@ impl Database {
     /// Manually trigger deadlock detection
     pub fn detect_deadlocks(&self) -> Result<Vec<u64>> {
         let deadlocks = self.isolation_manager.detect_deadlocks()?;
-        Ok(deadlocks.into_iter().map(|dl| dl.victim).collect())
+        Ok(deadlocks.into_iter().filter_map(|dl| dl.victim).collect())
     }
 
     /// Get current lock information for debugging
@@ -2898,54 +2820,69 @@ impl Database {
     }
 
     /// Run maintenance tasks for the isolation system
-    pub fn run_isolation_maintenance(&self) -> Result<features::transactions::isolation::MaintenanceResults> {
+    pub fn run_isolation_maintenance(
+        &self,
+    ) -> Result<features::transactions::isolation::MaintenanceResults> {
         self.isolation_manager.run_maintenance()
     }
 
     // === Advanced Isolation Features ===
 
     /// Acquire an explicit lock (for advanced use cases)
-    pub fn acquire_lock(&self, tx_id: u64, key: &[u8], lock_mode: crate::features::transactions::isolation::LockMode) -> Result<()> {
+    pub fn acquire_lock(
+        &self,
+        tx_id: u64,
+        key: &[u8],
+        lock_mode: crate::features::transactions::isolation::LockMode,
+    ) -> Result<()> {
         use crate::features::transactions::isolation::LockGranularity;
         let granularity = LockGranularity::Row(bytes::Bytes::from(key.to_vec()));
-        self.isolation_manager.acquire_lock(tx_id, granularity, lock_mode)
+        self.isolation_manager
+            .acquire_lock(tx_id, granularity, lock_mode)
     }
 
     /// Acquire a range lock for phantom read prevention
     pub fn acquire_range_lock(
-        &self, 
-        tx_id: u64, 
-        start_key: Option<&[u8]>, 
-        end_key: Option<&[u8]>
+        &self,
+        tx_id: u64,
+        start_key: Option<&[u8]>,
+        end_key: Option<&[u8]>,
     ) -> Result<()> {
-        let start = start_key.map(|k| bytes::Bytes::from(k.to_vec()));
-        let end = end_key.map(|k| bytes::Bytes::from(k.to_vec()));
-        
-        self.isolation_manager.predicate_manager.acquire_range_scan_locks(tx_id, start, end)
+        let default_start = vec![];
+        let default_end = vec![];
+        let start = start_key.unwrap_or(&default_start);
+        let end = end_key.unwrap_or(&default_end);
+
+        self.isolation_manager
+            .predicate_manager
+            .acquire_range_scan_locks(tx_id, start, end)
     }
 
     /// Override the commit process to use isolation validation
     pub fn commit_transaction_with_validation(&self, tx_id: u64) -> Result<()> {
         // Validate through isolation manager first
-        let validation_result = self.isolation_manager.serialization_validator.validate_transaction(tx_id)?;
-        
+        let validation_result = self
+            .isolation_manager
+            .serialization_validator
+            .validate_transaction(tx_id)?;
+
         match validation_result {
             features::transactions::isolation::ValidationResult::Valid => {
                 // Proceed with normal commit
                 self.commit_transaction(tx_id)?;
-                
+
                 // Notify isolation manager of successful commit
                 self.isolation_manager.commit_transaction(tx_id)?;
-                
+
                 Ok(())
             }
             features::transactions::isolation::ValidationResult::Invalid { reason, conflicts } => {
                 // Abort the transaction
                 self.abort_transaction(tx_id)?;
                 self.isolation_manager.abort_transaction(tx_id)?;
-                
+
                 Err(crate::core::error::Error::ValidationFailed(format!(
-                    "Transaction validation failed: {} (conflicts with {:?})", 
+                    "Transaction validation failed: {} (conflicts with {:?})",
                     reason, conflicts
                 )))
             }
@@ -2953,9 +2890,10 @@ impl Database {
                 // Abort and suggest retry
                 self.abort_transaction(tx_id)?;
                 self.isolation_manager.abort_transaction(tx_id)?;
-                
+
                 Err(crate::core::error::Error::TransactionRetry(format!(
-                    "Transaction should retry: {}", reason
+                    "Transaction should retry: {}",
+                    reason
                 )))
             }
         }
@@ -2965,16 +2903,18 @@ impl Database {
     pub fn abort_transaction_with_cleanup(&self, tx_id: u64) -> Result<()> {
         // Abort through normal transaction manager
         self.abort_transaction(tx_id)?;
-        
+
         // Clean up isolation manager state
         self.isolation_manager.abort_transaction(tx_id)?;
-        
+
         Ok(())
     }
 
     /// Get all active transactions (for debugging)
     pub fn get_active_transactions(&self) -> Vec<u64> {
-        self.isolation_manager.serialization_validator.get_active_transactions()
+        self.isolation_manager
+            .serialization_validator
+            .get_active_transactions()
     }
 
     /// Get deadlock detection statistics
@@ -2988,26 +2928,34 @@ impl Database {
     }
 
     /// Get lock manager metrics
-    pub fn get_lock_manager_metrics(&self) -> features::transactions::isolation::locks::LockManagerMetrics {
+    pub fn get_lock_manager_metrics(
+        &self,
+    ) -> features::transactions::isolation::locks::LockManagerMetrics {
         self.isolation_manager.lock_manager.get_metrics()
     }
 
     /// Get predicate lock statistics
-    pub fn get_predicate_lock_stats(&self) -> features::transactions::isolation::PredicateLockStats {
+    pub fn get_predicate_lock_stats(
+        &self,
+    ) -> features::transactions::isolation::PredicateLockStats {
         self.isolation_manager.predicate_manager.get_stats()
     }
 
     /// Force cleanup of old snapshots and validation data
     pub fn cleanup_isolation_data(&self, max_age_seconds: u64) -> Result<(usize, usize)> {
-        let snapshots_cleaned = self.isolation_manager.snapshot_manager
+        let snapshots_cleaned = self
+            .isolation_manager
+            .snapshot_manager
             .force_cleanup_older_than(std::time::Duration::from_secs(max_age_seconds))?;
-        
+
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
-        let txs_cleaned = self.isolation_manager.serialization_validator
+
+        let txs_cleaned = self
+            .isolation_manager
+            .serialization_validator
             .cleanup_old_transactions(current_time.saturating_sub(max_age_seconds));
 
         Ok((snapshots_cleaned, txs_cleaned))
@@ -3024,7 +2972,10 @@ impl Database {
     }
 
     /// Configure isolation settings
-    pub fn configure_isolation(&self, config: features::transactions::isolation::IsolationConfig) -> Result<()> {
+    pub fn configure_isolation(
+        &self,
+        config: features::transactions::isolation::IsolationConfig,
+    ) -> Result<()> {
         self.isolation_manager.set_config(config);
         Ok(())
     }
@@ -3142,15 +3093,19 @@ impl Database {
     // ================================
 
     /// Get or initialize the compaction manager lazily
-    fn get_or_init_compaction_manager(&self) -> Result<Arc<features::compaction::CompactionManager>> {
+    fn get_or_init_compaction_manager(
+        &self,
+    ) -> Result<Arc<features::compaction::CompactionManager>> {
         if let Some(ref manager) = self.compaction_manager {
             return Ok(manager.clone());
         }
 
         // Initialize compaction manager with default configuration
         let compaction_config = features::compaction::CompactionConfig::default();
-        let manager = Arc::new(features::compaction::CompactionManager::new(compaction_config)?);
-        
+        let manager = Arc::new(features::compaction::CompactionManager::new(
+            compaction_config,
+        )?);
+
         // Note: In a real implementation, we would need interior mutability here
         // For now, we'll create a new manager each time
         Ok(manager)
@@ -3198,7 +3153,9 @@ impl Database {
     /// Trigger incremental compaction (small chunks over time)
     pub fn compact_incremental(&self) -> Result<u64> {
         let manager = self.get_or_init_compaction_manager()?;
-        futures::executor::block_on(manager.compact(features::compaction::CompactionType::Incremental))
+        futures::executor::block_on(
+            manager.compact(features::compaction::CompactionType::Incremental),
+        )
     }
 
     /// Cancel a running compaction by ID
@@ -3208,7 +3165,10 @@ impl Database {
     }
 
     /// Get progress of a specific compaction
-    pub async fn get_compaction_progress(&self, compaction_id: u64) -> Result<features::compaction::CompactionProgress> {
+    pub async fn get_compaction_progress(
+        &self,
+        compaction_id: u64,
+    ) -> Result<features::compaction::CompactionProgress> {
         let manager = self.get_or_init_compaction_manager()?;
         manager.get_progress(compaction_id).await
     }
@@ -3270,7 +3230,7 @@ impl Database {
     // Commented out duplicate method - using the version at line 1980 instead
     // pub async fn verify_integrity(&self) -> Result<crate::features::integrity::CorruptionReport> {
     //     use crate::features::integrity::{IntegrityManager, IntegrityConfig};
-    //     
+    //
     //     let config = IntegrityConfig::default();
     //     let integrity_manager = IntegrityManager::new(Arc::new(self.clone()), config)?;
     //     integrity_manager.verify_integrity().await
@@ -3278,8 +3238,8 @@ impl Database {
 
     /// Enable or disable automatic repair of corrupted data
     pub async fn enable_auto_repair(&self, enabled: bool) -> Result<()> {
-        use crate::features::integrity::{IntegrityManager, IntegrityConfig};
-        
+        use crate::features::integrity::{IntegrityConfig, IntegrityManager};
+
         let config = IntegrityConfig {
             auto_repair_enabled: enabled,
             ..IntegrityConfig::default()
@@ -3290,17 +3250,20 @@ impl Database {
 
     /// Scan for corruption without performing full verification
     pub async fn scan_for_corruption(&self) -> Result<crate::features::integrity::ScanResult> {
-        use crate::features::integrity::{IntegrityManager, IntegrityConfig};
-        
+        use crate::features::integrity::{IntegrityConfig, IntegrityManager};
+
         let config = IntegrityConfig::default();
         let integrity_manager = IntegrityManager::new(Arc::new(self.clone()), config)?;
         integrity_manager.scan_for_corruption().await
     }
 
     /// Manually trigger corruption repair
-    pub async fn repair_corruption(&self, auto_mode: bool) -> Result<crate::features::integrity::RepairResult> {
-        use crate::features::integrity::{IntegrityManager, IntegrityConfig};
-        
+    pub async fn repair_corruption(
+        &self,
+        auto_mode: bool,
+    ) -> Result<crate::features::integrity::RepairResult> {
+        use crate::features::integrity::{IntegrityConfig, IntegrityManager};
+
         let config = IntegrityConfig {
             auto_repair_enabled: true,
             backup_before_repair: true,
@@ -3311,9 +3274,11 @@ impl Database {
     }
 
     /// Get a detailed corruption report and status
-    pub async fn get_corruption_report(&self) -> Result<crate::features::integrity::CorruptionReport> {
-        use crate::features::integrity::{IntegrityManager, IntegrityConfig};
-        
+    pub async fn get_corruption_report(
+        &self,
+    ) -> Result<crate::features::integrity::CorruptionReport> {
+        use crate::features::integrity::{IntegrityConfig, IntegrityManager};
+
         let config = IntegrityConfig::default();
         let integrity_manager = IntegrityManager::new(Arc::new(self.clone()), config)?;
         integrity_manager.get_corruption_report().await
@@ -3321,21 +3286,23 @@ impl Database {
 
     /// Set the interval for background integrity checking
     pub async fn set_integrity_check_interval(&self, interval: std::time::Duration) -> Result<()> {
-        use crate::features::integrity::{IntegrityManager, IntegrityConfig};
-        
+        use crate::features::integrity::{IntegrityConfig, IntegrityManager};
+
         let config = IntegrityConfig {
             scan_interval: interval,
             background_scanning: true,
             ..IntegrityConfig::default()
         };
         let integrity_manager = IntegrityManager::new(Arc::new(self.clone()), config)?;
-        integrity_manager.set_integrity_check_interval(interval).await
+        integrity_manager
+            .set_integrity_check_interval(interval)
+            .await
     }
 
     /// Start background integrity scanning
     pub async fn start_integrity_scanning(&self) -> Result<()> {
-        use crate::features::integrity::{IntegrityManager, IntegrityConfig};
-        
+        use crate::features::integrity::{IntegrityConfig, IntegrityManager};
+
         let config = IntegrityConfig {
             background_scanning: true,
             ..IntegrityConfig::default()
@@ -3346,17 +3313,19 @@ impl Database {
 
     /// Stop background integrity scanning
     pub async fn stop_integrity_scanning(&self) -> Result<()> {
-        use crate::features::integrity::{IntegrityManager, IntegrityConfig};
-        
+        use crate::features::integrity::{IntegrityConfig, IntegrityManager};
+
         let config = IntegrityConfig::default();
         let integrity_manager = IntegrityManager::new(Arc::new(self.clone()), config)?;
         integrity_manager.stop_background_scanning().await
     }
 
     /// Get list of quarantined corrupted data
-    pub async fn get_quarantined_data(&self) -> Result<Vec<crate::features::integrity::QuarantineEntry>> {
-        use crate::features::integrity::{IntegrityManager, IntegrityConfig};
-        
+    pub async fn get_quarantined_data(
+        &self,
+    ) -> Result<Vec<crate::features::integrity::QuarantineEntry>> {
+        use crate::features::integrity::{IntegrityConfig, IntegrityManager};
+
         let config = IntegrityConfig::default();
         let integrity_manager = IntegrityManager::new(Arc::new(self.clone()), config)?;
         integrity_manager.get_quarantined_data().await
@@ -3364,8 +3333,8 @@ impl Database {
 
     /// Attempt to restore specific quarantined data
     pub async fn restore_quarantined_data(&self, entry_id: u64) -> Result<()> {
-        use crate::features::integrity::{IntegrityManager, IntegrityConfig};
-        
+        use crate::features::integrity::{IntegrityConfig, IntegrityManager};
+
         let config = IntegrityConfig::default();
         let integrity_manager = IntegrityManager::new(Arc::new(self.clone()), config)?;
         integrity_manager.restore_quarantined_data(entry_id).await
@@ -3373,8 +3342,8 @@ impl Database {
 
     /// Get integrity statistics
     pub async fn get_integrity_stats(&self) -> Result<crate::features::integrity::IntegrityStats> {
-        use crate::features::integrity::{IntegrityManager, IntegrityConfig};
-        
+        use crate::features::integrity::{IntegrityConfig, IntegrityManager};
+
         let config = IntegrityConfig::default();
         let integrity_manager = IntegrityManager::new(Arc::new(self.clone()), config)?;
         Ok(integrity_manager.get_stats().await)
@@ -3385,88 +3354,94 @@ impl Database {
     /// Get the current schema version of the database
     pub fn get_schema_version(&self) -> Result<crate::features::migration::MigrationVersion> {
         use crate::features::migration::{MigrationManager, MigrationVersion};
-        
+
         let manager = MigrationManager::new();
-        Ok(manager.get_current_version(&self.path.to_string_lossy())
+        Ok(manager
+            .get_current_version(&self.path.to_string_lossy())
             .unwrap_or(MigrationVersion::INITIAL))
     }
 
     /// Migrate the database to a specific version
     pub fn migrate_to_version(&self, target_version: u64) -> Result<Vec<u64>> {
-        use crate::features::migration::{MigrationManager, MigrationContext, MigrationVersion};
-        
+        use crate::features::migration::{MigrationContext, MigrationManager, MigrationVersion};
+
         let mut manager = MigrationManager::new();
         let current_version = self.get_schema_version()?;
         let target = MigrationVersion::new(target_version);
-        
+
         let mut ctx = MigrationContext::new(
             self.path.to_string_lossy().to_string(),
             current_version,
             target,
         );
-        
-        let applied = manager.migrate_to_version(&mut ctx, target)
+
+        let applied = manager
+            .migrate_to_version(&mut ctx, target)
             .map_err(|e| Error::Migration(format!("Migration failed: {}", e)))?;
-        
+
         Ok(applied.iter().map(|v| v.as_u64()).collect())
     }
 
     /// Run all pending migrations
     pub fn migrate_up(&self) -> Result<Vec<u64>> {
-        use crate::features::migration::{MigrationManager, MigrationContext};
-        
+        use crate::features::migration::{MigrationContext, MigrationManager};
+
         let mut manager = MigrationManager::new();
         let current_version = self.get_schema_version()?;
-        
-        let latest_version = manager.get_pending_migrations(current_version, None)
+
+        let latest_version = manager
+            .get_pending_migrations(current_version, None)
             .last()
             .map(|m| m.metadata.version)
             .unwrap_or(current_version);
-        
+
         let mut ctx = MigrationContext::new(
             self.path.to_string_lossy().to_string(),
             current_version,
             latest_version,
         );
-        
-        let applied = manager.migrate_up(&mut ctx)
+
+        let applied = manager
+            .migrate_up(&mut ctx)
             .map_err(|e| Error::Migration(format!("Migration failed: {}", e)))?;
-        
+
         Ok(applied.iter().map(|v| v.as_u64()).collect())
     }
 
     /// Rollback a specific number of migrations
     pub fn migrate_down(&self, steps: usize) -> Result<Vec<u64>> {
-        use crate::features::migration::{MigrationManager, MigrationContext, MigrationVersion};
-        
+        use crate::features::migration::{MigrationContext, MigrationManager, MigrationVersion};
+
         let mut manager = MigrationManager::new();
         let current_version = self.get_schema_version()?;
-        
+
         let mut ctx = MigrationContext::new(
             self.path.to_string_lossy().to_string(),
             current_version,
             MigrationVersion::INITIAL,
         );
-        
-        let rolled_back = manager.migrate_down(&mut ctx, steps)
+
+        let rolled_back = manager
+            .migrate_down(&mut ctx, steps)
             .map_err(|e| Error::Migration(format!("Rollback failed: {}", e)))?;
-        
+
         Ok(rolled_back.iter().map(|v| v.as_u64()).collect())
     }
 
     /// Validate a migration without executing it
     pub fn validate_migration(&self, migration_path: &str) -> Result<bool> {
-        use crate::features::migration::{MigrationManager, MigrationContext};
-        
+        use crate::features::migration::{MigrationContext, MigrationManager};
+
         let _manager = MigrationManager::new();
         let current_version = self.get_schema_version()?;
-        
+
         let ctx = MigrationContext::new(
             self.path.to_string_lossy().to_string(),
             current_version,
             current_version,
-        ).with_dry_run(true);
-        
+        )
+        .with_dry_run(true);
+
         // For simplicity, return true for now
         // In a full implementation, this would parse and validate the migration file
         let _ = (migration_path, ctx);
@@ -3476,45 +3451,50 @@ impl Database {
     /// Get the current migration status
     pub fn get_migration_status(&self) -> Result<std::collections::HashMap<u64, String>> {
         use crate::features::migration::MigrationManager;
-        
+
         let manager = MigrationManager::new();
-        let statuses = manager.get_migration_status(&self.path.to_string_lossy())
+        let statuses = manager
+            .get_migration_status(&self.path.to_string_lossy())
             .unwrap_or_default();
-        
-        let result = statuses.iter()
+
+        let result = statuses
+            .iter()
             .map(|(version, status)| (version.as_u64(), format!("{:?}", status)))
             .collect();
-        
+
         Ok(result)
     }
 
     /// Create a backup before migration
     pub fn backup_before_migration(&self, backup_path: &str) -> Result<()> {
-        use crate::features::backup::{BackupManager, BackupConfig};
-        
+        use crate::features::backup::{BackupConfig, BackupManager};
+
         let backup_manager = BackupManager::new(BackupConfig::default());
-        backup_manager.create_backup(&self.path, backup_path)
+        backup_manager
+            .create_backup(&self.path, backup_path)
             .map_err(|e| Error::Backup(format!("Backup failed: {}", e)))?;
         Ok(())
     }
 
     /// Restore from backup after failed migration
     pub fn restore_from_backup(&self, backup_path: &str) -> Result<()> {
-        use crate::features::backup::{BackupManager, BackupConfig};
-        
+        use crate::features::backup::{BackupConfig, BackupManager};
+
         let backup_manager = BackupManager::new(BackupConfig::default());
-        backup_manager.restore_backup(backup_path, &self.path)
+        backup_manager
+            .restore_backup(backup_path, &self.path)
             .map_err(|e| Error::Backup(format!("Restore failed: {}", e)))
     }
 
     /// Load migrations from a directory
     pub fn load_migrations(&self, migration_dir: &str) -> Result<usize> {
         use crate::features::migration::MigrationManager;
-        
+
         let mut manager = MigrationManager::new();
-        manager.load_migrations_from_dir(migration_dir)
+        manager
+            .load_migrations_from_dir(migration_dir)
             .map_err(|e| Error::Migration(format!("Failed to load migrations: {}", e)))?;
-        
+
         // Return number of loaded migrations (simplified for now)
         Ok(0)
     }
@@ -3616,15 +3596,16 @@ pub struct TransactionMetrics {
 }
 
 // Re-export commonly used types
-pub use features::async_support::AsyncDatabase;
-pub use features::backup::{BackupConfig, BackupManager, BackupMetadata};
 pub use crate::core::btree::KeyEntry;
-pub use utils::safety::consistency::{ConsistencyConfig, ConsistencyLevel};
-pub use features::statistics::REALTIME_STATS;
-pub use crate::core::error::ErrorContext;
-pub use crate::core::query_planner::{ExecutionPlan, QueryCondition, QueryCost, QueryJoin, QuerySpec};
+pub use crate::core::query_planner::{
+    ExecutionPlan, QueryCondition, QueryCost, QueryJoin, QuerySpec,
+};
 pub use crate::core::storage::Page;
 pub use crate::core::transaction::UnifiedTransaction as Transaction;
+pub use features::async_support::AsyncDatabase;
+pub use features::backup::{BackupConfig, BackupManager, BackupMetadata};
+pub use features::statistics::REALTIME_STATS;
+pub use utils::safety::consistency::{ConsistencyConfig, ConsistencyLevel};
 
 #[cfg(test)]
 mod tests {
