@@ -302,7 +302,7 @@ impl SSTableBuilder {
         if self
             .min_key
             .as_ref()
-            .map_or(true, |min| key < min.as_slice())
+            .is_none_or(|min| key < min.as_slice())
         {
             self.min_key = Some(key.to_vec());
         }
@@ -496,7 +496,7 @@ impl SSTableReader {
         }
 
         let size = u32::from_le_bytes([
-            data.get(0).copied().unwrap_or(0),
+            data.first().copied().unwrap_or(0),
             data.get(1).copied().unwrap_or(0),
             data.get(2).copied().unwrap_or(0),
             data.get(3).copied().unwrap_or(0),

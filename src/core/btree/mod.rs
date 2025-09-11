@@ -397,7 +397,7 @@ impl BPlusTree {
             // Both halves must fit in a page
             if left_size <= PAGE_SIZE as u64 && right_size <= PAGE_SIZE as u64 {
                 // Prefer more balanced split
-                let imbalance = (left_size as i64 - right_size as i64).abs() as u64;
+                let imbalance = (left_size as i64 - right_size as i64).unsigned_abs();
                 if imbalance < best_left_size {
                     best_left_size = imbalance;
                     best_split_pos = split_pos;
@@ -493,10 +493,7 @@ impl BPlusTree {
         }
 
         // Allocate new root page
-        let new_root_id = match self.page_manager.allocate_page() {
-            Ok(id) => id,
-            Err(e) => return Err(e),
-        };
+        let new_root_id = self.page_manager.allocate_page()?;
 
         let mut new_root = BTreeNode::new_internal(new_root_id);
 

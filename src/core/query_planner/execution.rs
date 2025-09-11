@@ -725,7 +725,7 @@ struct MemoryAllocation<'a> {
     operator: String,
 }
 
-impl<'a> Drop for MemoryAllocation<'a> {
+impl Drop for MemoryAllocation<'_> {
     fn drop(&mut self) {
         *self.manager.used_memory.write() -= self.size;
         self.manager.allocations.write().remove(&self.operator);

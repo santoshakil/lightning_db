@@ -555,10 +555,8 @@ impl LockManager {
         let mut deadlocked = Vec::new();
 
         for &tx_id in wait_graph.keys() {
-            if !visited.contains(&tx_id) {
-                if self.dfs_cycle_detection(tx_id, wait_graph, &mut visited, &mut rec_stack) {
-                    deadlocked.push(tx_id);
-                }
+            if !visited.contains(&tx_id) && self.dfs_cycle_detection(tx_id, wait_graph, &mut visited, &mut rec_stack) {
+                deadlocked.push(tx_id);
             }
         }
 

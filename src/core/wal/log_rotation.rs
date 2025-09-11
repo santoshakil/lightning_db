@@ -571,7 +571,7 @@ impl<'a> RotationGuard<'a> {
     }
 }
 
-impl<'a> Drop for RotationGuard<'a> {
+impl Drop for RotationGuard<'_> {
     fn drop(&mut self) {
         self.is_rotating.store(false, Ordering::SeqCst);
     }

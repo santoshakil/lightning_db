@@ -31,7 +31,7 @@ pub trait CompressionAlgorithmTrait: Send + Sync {
     fn estimate_compression_ratio(&self, data: &[u8]) -> f64 {
         // Simple entropy-based estimation
         let entropy = calculate_entropy(data);
-        (entropy / 8.0).max(0.1).min(1.0)
+        (entropy / 8.0).clamp(0.1, 1.0)
     }
 }
 
