@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use crate::core::error::Error;
-use super::planner::{QueryPlan, PlanNode, Predicate, Expression, JoinNode, FilterNode};
-use super::statistics::TableStatistics;
 use super::cost_model::CostModel;
+use super::planner::{Expression, FilterNode, JoinNode, PlanNode, Predicate, QueryPlan};
+use super::statistics::TableStatistics;
+use crate::core::error::Error;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct QueryOptimizer {
@@ -84,34 +84,35 @@ impl QueryOptimizer {
         let mut current_plan = plan;
         let mut iterations = 0;
         const MAX_ITERATIONS: usize = 10;
-        
+
         loop {
             let initial_cost = current_plan.estimated_cost.total_cost;
             let mut improved = false;
-            
+
             for rule in &self.rules {
                 if rule.is_applicable(&current_plan) {
                     let optimized = rule.apply(current_plan.clone(), stats)?;
-                    
+
                     if self.is_better_plan(&optimized, &current_plan) {
                         current_plan = optimized;
                         improved = true;
                     }
                 }
             }
-            
+
             iterations += 1;
-            
+
             if !improved || iterations >= MAX_ITERATIONS {
                 break;
             }
-            
-            let cost_reduction = (initial_cost - current_plan.estimated_cost.total_cost) / initial_cost;
+
+            let cost_reduction =
+                (initial_cost - current_plan.estimated_cost.total_cost) / initial_cost;
             if cost_reduction < self.config.cost_threshold {
                 break;
             }
         }
-        
+
         Ok(current_plan)
     }
 
@@ -131,7 +132,7 @@ impl OptimizationRule for PredicatePushdown {
 
     fn apply(&self, plan: QueryPlan, _stats: &TableStatistics) -> Result<QueryPlan, Error> {
         let optimized_root = self.pushdown_predicates(plan.root)?;
-        
+
         Ok(QueryPlan {
             root: optimized_root,
             ..plan
@@ -145,65 +146,62 @@ impl PredicatePushdown {
         match node {
             PlanNode::Filter(filter) => {
                 matches!(filter.input.as_ref(), PlanNode::Join(_) | PlanNode::Scan(_))
-            },
+            }
             PlanNode::Join(join) => {
-                self.has_pushable_predicate(&join.left) || 
-                self.has_pushable_predicate(&join.right)
-            },
+                self.has_pushable_predicate(&join.left) || self.has_pushable_predicate(&join.right)
+            }
             _ => false,
         }
     }
 
     fn pushdown_predicates(&self, node: Box<PlanNode>) -> Result<Box<PlanNode>, Error> {
         match node.as_ref() {
-            PlanNode::Filter(filter) => {
-                match filter.input.as_ref() {
-                    PlanNode::Join(join) => {
-                        let (left_preds, right_preds, join_preds) = 
-                            self.split_join_predicates(&filter.predicate, join)?;
-                        
-                        let new_left = if !left_preds.is_empty() {
-                            Box::new(PlanNode::Filter(FilterNode {
-                                input: join.left.clone(),
-                                predicate: self.combine_predicates(left_preds),
-                                selectivity: 0.5,
-                                estimated_rows: join.left.as_ref().estimated_rows() / 2,
-                                estimated_cost: super::planner::CostEstimate::zero(),
-                            }))
-                        } else {
-                            join.left.clone()
-                        };
-                        
-                        let new_right = if !right_preds.is_empty() {
-                            Box::new(PlanNode::Filter(FilterNode {
-                                input: join.right.clone(),
-                                predicate: self.combine_predicates(right_preds),
-                                selectivity: 0.5,
-                                estimated_rows: join.right.as_ref().estimated_rows() / 2,
-                                estimated_cost: super::planner::CostEstimate::zero(),
-                            }))
-                        } else {
-                            join.right.clone()
-                        };
-                        
-                        let new_join = Box::new(PlanNode::Join(JoinNode {
-                            left: new_left,
-                            right: new_right,
-                            ..join.clone()
-                        }));
-                        
-                        if !join_preds.is_empty() {
-                            Ok(Box::new(PlanNode::Filter(FilterNode {
-                                input: new_join,
-                                predicate: self.combine_predicates(join_preds),
-                                ..filter.clone()
-                            })))
-                        } else {
-                            Ok(new_join)
-                        }
-                    },
-                    _ => Ok(node),
+            PlanNode::Filter(filter) => match filter.input.as_ref() {
+                PlanNode::Join(join) => {
+                    let (left_preds, right_preds, join_preds) =
+                        self.split_join_predicates(&filter.predicate, join)?;
+
+                    let new_left = if !left_preds.is_empty() {
+                        Box::new(PlanNode::Filter(FilterNode {
+                            input: join.left.clone(),
+                            predicate: self.combine_predicates(left_preds),
+                            selectivity: 0.5,
+                            estimated_rows: join.left.as_ref().estimated_rows() / 2,
+                            estimated_cost: super::planner::CostEstimate::zero(),
+                        }))
+                    } else {
+                        join.left.clone()
+                    };
+
+                    let new_right = if !right_preds.is_empty() {
+                        Box::new(PlanNode::Filter(FilterNode {
+                            input: join.right.clone(),
+                            predicate: self.combine_predicates(right_preds),
+                            selectivity: 0.5,
+                            estimated_rows: join.right.as_ref().estimated_rows() / 2,
+                            estimated_cost: super::planner::CostEstimate::zero(),
+                        }))
+                    } else {
+                        join.right.clone()
+                    };
+
+                    let new_join = Box::new(PlanNode::Join(JoinNode {
+                        left: new_left,
+                        right: new_right,
+                        ..join.clone()
+                    }));
+
+                    if !join_preds.is_empty() {
+                        Ok(Box::new(PlanNode::Filter(FilterNode {
+                            input: new_join,
+                            predicate: self.combine_predicates(join_preds),
+                            ..filter.clone()
+                        })))
+                    } else {
+                        Ok(new_join)
+                    }
                 }
+                _ => Ok(node),
             },
             _ => Ok(node),
         }
@@ -218,7 +216,7 @@ impl PredicatePushdown {
         let left_preds = Vec::new();
         let right_preds = Vec::new();
         let join_preds = vec![predicate.clone()];
-        
+
         Ok((left_preds, right_preds, join_preds))
     }
 
@@ -226,12 +224,12 @@ impl PredicatePushdown {
         if predicates.is_empty() {
             return Predicate::IsNotNull(Expression::Literal(super::planner::Value::Bool(true)));
         }
-        
+
         let mut result = predicates[0].clone();
         for pred in predicates.into_iter().skip(1) {
             result = Predicate::And(Box::new(result), Box::new(pred));
         }
-        
+
         result
     }
 }
@@ -247,14 +245,14 @@ impl OptimizationRule for JoinReordering {
 
     fn apply(&self, plan: QueryPlan, stats: &TableStatistics) -> Result<QueryPlan, Error> {
         let joins = self.extract_joins(&plan.root)?;
-        
+
         if joins.len() <= 1 {
             return Ok(plan);
         }
-        
+
         let best_order = self.find_best_join_order(joins, stats)?;
         let reordered_root = self.build_join_tree(best_order)?;
-        
+
         Ok(QueryPlan {
             root: reordered_root,
             ..plan
@@ -268,7 +266,7 @@ impl JoinReordering {
         match node {
             PlanNode::Join(join) => {
                 1 + self.count_joins(&join.left) + self.count_joins(&join.right)
-            },
+            }
             _ => 0,
         }
     }
@@ -279,7 +277,11 @@ impl JoinReordering {
         Ok(joins)
     }
 
-    fn extract_joins_recursive(&self, node: &PlanNode, joins: &mut Vec<JoinInfo>) -> Result<(), Error> {
+    fn extract_joins_recursive(
+        &self,
+        node: &PlanNode,
+        joins: &mut Vec<JoinInfo>,
+    ) -> Result<(), Error> {
         if let PlanNode::Join(join) = node {
             joins.push(JoinInfo {
                 left_table: self.get_table_name(&join.left)?,
@@ -301,7 +303,11 @@ impl JoinReordering {
         }
     }
 
-    fn find_best_join_order(&self, joins: Vec<JoinInfo>, _stats: &TableStatistics) -> Result<Vec<JoinInfo>, Error> {
+    fn find_best_join_order(
+        &self,
+        joins: Vec<JoinInfo>,
+        _stats: &TableStatistics,
+    ) -> Result<Vec<JoinInfo>, Error> {
         Ok(joins)
     }
 
@@ -330,7 +336,7 @@ impl OptimizationRule for ConstantFolding {
 
     fn apply(&self, plan: QueryPlan, _stats: &TableStatistics) -> Result<QueryPlan, Error> {
         let optimized_root = self.fold_constants(plan.root)?;
-        
+
         Ok(QueryPlan {
             root: optimized_root,
             ..plan
@@ -401,7 +407,7 @@ impl OptimizationRule for IndexSelection {
 
     fn apply(&self, plan: QueryPlan, stats: &TableStatistics) -> Result<QueryPlan, Error> {
         let optimized_root = self.select_indexes(plan.root, stats)?;
-        
+
         Ok(QueryPlan {
             root: optimized_root,
             ..plan
@@ -414,12 +420,16 @@ impl IndexSelection {
         match node {
             PlanNode::Filter(filter) => {
                 matches!(filter.input.as_ref(), PlanNode::Scan(_))
-            },
+            }
             _ => false,
         }
     }
 
-    fn select_indexes(&self, node: Box<PlanNode>, _stats: &TableStatistics) -> Result<Box<PlanNode>, Error> {
+    fn select_indexes(
+        &self,
+        node: Box<PlanNode>,
+        _stats: &TableStatistics,
+    ) -> Result<Box<PlanNode>, Error> {
         Ok(node)
     }
 }

@@ -25,13 +25,15 @@ fn test_basic_database_operations() {
     // Put a key-value pair
     let key = b"test_key";
     let value = b"test_value";
-    let result = unsafe { lightning_db_put(
-        db_handle,
-        key.as_ptr(),
-        key.len(),
-        value.as_ptr(),
-        value.len(),
-    ) };
+    let result = unsafe {
+        lightning_db_put(
+            db_handle,
+            key.as_ptr(),
+            key.len(),
+            value.as_ptr(),
+            value.len(),
+        )
+    };
     assert_eq!(result, 0);
 
     // Get the value back
@@ -78,13 +80,15 @@ fn test_transactions() {
     // Put within transaction
     let key = b"tx_key";
     let value = b"tx_value";
-    let result = unsafe { lightning_db_put_tx(
-        tx_handle,
-        key.as_ptr(),
-        key.len(),
-        value.as_ptr(),
-        value.len(),
-    ) };
+    let result = unsafe {
+        lightning_db_put_tx(
+            tx_handle,
+            key.as_ptr(),
+            key.len(),
+            value.as_ptr(),
+            value.len(),
+        )
+    };
     assert_eq!(result, 0);
 
     // Get within transaction

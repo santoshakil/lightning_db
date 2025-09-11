@@ -803,7 +803,9 @@ impl BackupManager {
 
         if self.config.compress {
             // Use LZ4 for incremental backups (faster)
-            use crate::features::adaptive_compression::algorithms::{CompressionAlgorithmTrait, LZ4Compression};
+            use crate::features::adaptive_compression::algorithms::{
+                CompressionAlgorithmTrait, LZ4Compression,
+            };
             use crate::features::adaptive_compression::CompressionLevel;
             let compressor = LZ4Compression::new();
             let compressed = compressor.compress(&buffer, CompressionLevel::Fast)?;

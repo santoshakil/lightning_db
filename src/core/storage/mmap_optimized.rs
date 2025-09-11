@@ -210,11 +210,10 @@ impl OptimizedMmapManager {
             // Align region to huge page boundary
             let huge_page_size = self.config.huge_page_size;
             let aligned_offset = (offset / huge_page_size as u64) * huge_page_size as u64;
-            let aligned_size = (region_size + huge_page_size - 1).div_ceil(huge_page_size) * huge_page_size;
-            
-            mmap_options
-                .offset(aligned_offset)
-                .len(aligned_size);
+            let aligned_size =
+                (region_size + huge_page_size - 1).div_ceil(huge_page_size) * huge_page_size;
+
+            mmap_options.offset(aligned_offset).len(aligned_size);
         }
 
         // SAFETY: Creating memory mapping from file descriptor
@@ -233,7 +232,7 @@ impl OptimizedMmapManager {
                 .len(region_size)
                 .map_mut(&*file)?
         };
-        
+
         // Apply huge pages hint on Linux
         #[cfg(target_os = "linux")]
         if self.config.enable_huge_pages || self.config.enable_transparent_huge_pages {
@@ -320,21 +319,26 @@ impl OptimizedMmapManager {
         }
 
         let duration = start.elapsed();
-        debug!("Prefaulted {} bytes with {}-byte pages in {:?}", mmap.len(), page_size, duration);
+        debug!(
+            "Prefaulted {} bytes with {}-byte pages in {:?}",
+            mmap.len(),
+            page_size,
+            duration
+        );
 
         self.page_faults
             .fetch_add(mmap.len() as u64 / page_size as u64, Ordering::Relaxed);
     }
-    
+
     #[cfg(target_os = "linux")]
     fn advise_huge_pages(&self, mmap: &mut MmapMut) {
         use std::os::raw::c_void;
-        
+
         // Use madvise to suggest huge pages
         const MADV_HUGEPAGE: i32 = 14;
         const MADV_SEQUENTIAL: i32 = 2;
         const MADV_WILLNEED: i32 = 3;
-        
+
         // SAFETY: Providing memory usage hints to kernel via madvise
         // Invariants:
         // 1. mmap points to valid memory-mapped region
@@ -346,32 +350,27 @@ impl OptimizedMmapManager {
         // - No memory corruption as these are hints only
         unsafe {
             // Advise kernel to use huge pages
-            libc::madvise(
-                mmap.as_mut_ptr() as *mut c_void,
-                mmap.len(),
-                MADV_HUGEPAGE,
-            );
-            
+            libc::madvise(mmap.as_mut_ptr() as *mut c_void, mmap.len(), MADV_HUGEPAGE);
+
             // Advise sequential access pattern
             libc::madvise(
                 mmap.as_mut_ptr() as *mut c_void,
                 mmap.len(),
                 MADV_SEQUENTIAL,
             );
-            
+
             // Advise that we'll need this memory soon
             if self.config.populate_on_map {
-                libc::madvise(
-                    mmap.as_mut_ptr() as *mut c_void,
-                    mmap.len(),
-                    MADV_WILLNEED,
-                );
+                libc::madvise(mmap.as_mut_ptr() as *mut c_void, mmap.len(), MADV_WILLNEED);
             }
         }
-        
-        debug!("Applied huge page and access pattern hints to {}-byte region", mmap.len());
+
+        debug!(
+            "Applied huge page and access pattern hints to {}-byte region",
+            mmap.len()
+        );
     }
-    
+
     #[cfg(not(target_os = "linux"))]
     fn advise_huge_pages(&self, _mmap: &mut MmapMut) {
         // No-op on non-Linux platforms
@@ -610,12 +609,14 @@ mod tests {
 
         // Test write
         let data = b"Hello, mmap!";
-        manager.write(0, data)
+        manager
+            .write(0, data)
             .expect("Failed to write data to mmap");
 
         // Test read
         let mut buf = vec![0u8; data.len()];
-        manager.read(0, &mut buf)
+        manager
+            .read(0, &mut buf)
             .expect("Failed to read data from mmap");
         assert_eq!(&buf, data);
 
@@ -640,11 +641,14 @@ mod tests {
             .expect("Failed to create mmap manager for eviction test");
 
         // Create 3 regions to trigger eviction
-        manager.write(0, b"region1")
+        manager
+            .write(0, b"region1")
             .expect("Failed to write region1");
-        manager.write(1024, b"region2")
+        manager
+            .write(1024, b"region2")
             .expect("Failed to write region2");
-        manager.write(2048, b"region3")
+        manager
+            .write(2048, b"region3")
             .expect("Failed to write region3");
 
         let stats = manager.get_statistics();

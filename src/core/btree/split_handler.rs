@@ -133,7 +133,6 @@ impl<'a> SplitHandler<'a> {
     }
 
     /// Handle split propagation up the tree
-    #[allow(dead_code)]
     pub fn propagate_split(
         &self,
         path: &[u32],
@@ -177,7 +176,7 @@ mod tests {
             &dir.path().join("test.db"),
             1024 * 1024,
         )?));
-        let wrapper = PageManagerWrapper::standard(page_manager);
+        let wrapper = PageManagerWrapper::from_arc(page_manager);
 
         let handler = SplitHandler::new(&wrapper);
 

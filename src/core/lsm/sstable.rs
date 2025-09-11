@@ -1,8 +1,8 @@
-use crate::features::adaptive_compression::{get_compressor, CompressionType};
-use crate::core::error::{Error, Result};
 use super::delta_compression::{DeltaCompressionConfig, DeltaCompressor};
-use bincode::{Decode, Encode};
+use crate::core::error::{Error, Result};
 use crate::core::write_optimized::bloom_filter::{BloomFilter, BloomFilterBuilder};
+use crate::features::adaptive_compression::{get_compressor, CompressionType};
+use bincode::{Decode, Encode};
 use bytes::{Buf, BufMut, BytesMut};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -111,6 +111,11 @@ impl SSTable {
     }
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        // Check bloom filter first for early termination
+        if !self.bloom_filter.may_contain(key) {
+            return Ok(None);
+        }
+
         // Binary search in index
         let index_entry = match self.index.find_entry(key) {
             Some(entry) => entry,
@@ -139,9 +144,13 @@ impl SSTable {
                     for entry in block.entries {
                         all_entries.push((entry.key, entry.value));
                     }
-                },
+                }
                 Err(e) => {
-                    tracing::warn!("Failed to read block at offset {}: {}", index_entry.offset, e);
+                    tracing::warn!(
+                        "Failed to read block at offset {}: {}",
+                        index_entry.offset,
+                        e
+                    );
                     // Continue with other blocks instead of failing completely
                 }
             }
@@ -290,7 +299,11 @@ impl SSTableBuilder {
 
     pub fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         // Update min/max keys
-        if self.min_key.as_ref().map_or(true, |min| key < min.as_slice()) {
+        if self
+            .min_key
+            .as_ref()
+            .map_or(true, |min| key < min.as_slice())
+        {
             self.min_key = Some(key.to_vec());
         }
         self.max_key = Some(key.to_vec());
@@ -477,21 +490,25 @@ pub struct SSTableReader;
 impl SSTableReader {
     fn deserialize_bloom_filter(data: &[u8]) -> Result<BloomFilter> {
         if data.len() < 4 {
-            return Err(Error::Serialization("Bloom filter data too small".to_string()));
+            return Err(Error::Serialization(
+                "Bloom filter data too small".to_string(),
+            ));
         }
-        
+
         let size = u32::from_le_bytes([
             data.get(0).copied().unwrap_or(0),
-            data.get(1).copied().unwrap_or(0), 
+            data.get(1).copied().unwrap_or(0),
             data.get(2).copied().unwrap_or(0),
-            data.get(3).copied().unwrap_or(0)
+            data.get(3).copied().unwrap_or(0),
         ]) as usize;
-        
+
         if data.len() < 4 + size {
-            return Err(Error::Serialization("Bloom filter data truncated".to_string()));
+            return Err(Error::Serialization(
+                "Bloom filter data truncated".to_string(),
+            ));
         }
-        
-        // For now, just create a new bloom filter - in production would properly deserialize  
+
+        // For now, just create a new bloom filter - in production would properly deserialize
         Ok(BloomFilterBuilder::new(10000, 0.01).build())
     }
 }
@@ -573,4 +590,3 @@ impl SSTableReader {
         })
     }
 }
-

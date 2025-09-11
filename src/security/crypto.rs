@@ -1,23 +1,25 @@
 use crate::security::{SecurityError, SecurityResult};
-use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::Aead;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
 use argon2::password_hash::{rand_core::OsRng, SaltString};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use blake3::{Hash, Hasher};
 use chacha20poly1305::{ChaCha20Poly1305, KeyInit as ChaChaKeyInit};
+use rand::{rng, RngCore};
 use ring::rand::{SecureRandom, SystemRandom};
 use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime, Instant};
-use rand::{RngCore, rng};
+use std::time::{Duration, Instant, SystemTime};
 
 const KEY_SIZE: usize = 32;
 const NONCE_SIZE: usize = 12;
 const SALT_SIZE: usize = 32;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, bincode::Encode, bincode::Decode,
+)]
 pub struct KeyId(pub String);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
@@ -99,8 +101,9 @@ impl CryptographicManager {
 
     pub fn generate_key(&self, algorithm: EncryptionAlgorithm) -> SecurityResult<KeyId> {
         let mut key_bytes = vec![0u8; KEY_SIZE];
-        self.rng.fill(&mut key_bytes)
-            .map_err(|e| SecurityError::CryptographicFailure(format!("Key generation failed: {:?}", e)))?;
+        self.rng.fill(&mut key_bytes).map_err(|e| {
+            SecurityError::CryptographicFailure(format!("Key generation failed: {:?}", e))
+        })?;
 
         let key_id = KeyId(self.generate_key_id()?);
         let key = EncryptionKey {
@@ -113,12 +116,16 @@ impl CryptographicManager {
             version: 1,
         };
 
-        let mut keys = self.keys.write()
-            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire keys write lock".to_string()))?;
+        let mut keys = self.keys.write().map_err(|_| {
+            SecurityError::CryptographicFailure("Failed to acquire keys write lock".to_string())
+        })?;
         keys.insert(key_id.clone(), key);
-        
-        let mut active_key = self.active_key.write()
-            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire active key write lock".to_string()))?;
+
+        let mut active_key = self.active_key.write().map_err(|_| {
+            SecurityError::CryptographicFailure(
+                "Failed to acquire active key write lock".to_string(),
+            )
+        })?;
         *active_key = Some(key_id.clone());
 
         Ok(key_id)
@@ -130,18 +137,23 @@ impl CryptographicManager {
             None => self.get_active_key_id()?,
         };
 
-        let keys = self.keys.read()
-            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire keys read lock".to_string()))?;
-        let key = keys.get(&key_id)
-            .ok_or_else(|| SecurityError::CryptographicFailure("Encryption key not found".to_string()))?;
+        let keys = self.keys.read().map_err(|_| {
+            SecurityError::CryptographicFailure("Failed to acquire keys read lock".to_string())
+        })?;
+        let key = keys.get(&key_id).ok_or_else(|| {
+            SecurityError::CryptographicFailure("Encryption key not found".to_string())
+        })?;
 
         if !key.active {
-            return Err(SecurityError::CryptographicFailure("Encryption key is inactive".to_string()));
+            return Err(SecurityError::CryptographicFailure(
+                "Encryption key is inactive".to_string(),
+            ));
         }
 
         let mut nonce = vec![0u8; NONCE_SIZE];
-        self.rng.fill(&mut nonce)
-            .map_err(|e| SecurityError::CryptographicFailure(format!("Nonce generation failed: {:?}", e)))?;
+        self.rng.fill(&mut nonce).map_err(|e| {
+            SecurityError::CryptographicFailure(format!("Nonce generation failed: {:?}", e))
+        })?;
 
         match key.algorithm {
             EncryptionAlgorithm::Aes256Gcm => self.encrypt_aes_gcm(data, key, &nonce),
@@ -150,10 +162,12 @@ impl CryptographicManager {
     }
 
     pub fn decrypt(&self, encrypted_data: &EncryptedData) -> SecurityResult<Vec<u8>> {
-        let keys = self.keys.read()
-            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire keys read lock".to_string()))?;
-        let key = keys.get(&encrypted_data.key_id)
-            .ok_or_else(|| SecurityError::CryptographicFailure("Decryption key not found".to_string()))?;
+        let keys = self.keys.read().map_err(|_| {
+            SecurityError::CryptographicFailure("Failed to acquire keys read lock".to_string())
+        })?;
+        let key = keys.get(&encrypted_data.key_id).ok_or_else(|| {
+            SecurityError::CryptographicFailure("Decryption key not found".to_string())
+        })?;
 
         match encrypted_data.algorithm {
             EncryptionAlgorithm::Aes256Gcm => self.decrypt_aes_gcm(encrypted_data, key),
@@ -164,28 +178,41 @@ impl CryptographicManager {
     pub fn hash_password(&self, password: &str) -> SecurityResult<String> {
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
-        
-        argon2.hash_password(password.as_bytes(), &salt)
+
+        argon2
+            .hash_password(password.as_bytes(), &salt)
             .map(|hash| hash.to_string())
-            .map_err(|e| SecurityError::CryptographicFailure(format!("Password hashing failed: {}", e)))
+            .map_err(|e| {
+                SecurityError::CryptographicFailure(format!("Password hashing failed: {}", e))
+            })
     }
 
     pub fn verify_password(&self, password: &str, hash: &str) -> SecurityResult<bool> {
-        let parsed_hash = PasswordHash::new(hash)
-            .map_err(|e| SecurityError::CryptographicFailure(format!("Invalid password hash: {}", e)))?;
+        let parsed_hash = PasswordHash::new(hash).map_err(|e| {
+            SecurityError::CryptographicFailure(format!("Invalid password hash: {}", e))
+        })?;
 
         let argon2 = Argon2::default();
-        Ok(argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok())
+        Ok(argon2
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .is_ok())
     }
 
-    pub async fn verify_password_constant_time(&self, password: &str, hash_opt: Option<&str>) -> SecurityResult<bool> {
+    pub async fn verify_password_constant_time(
+        &self,
+        password: &str,
+        hash_opt: Option<&str>,
+    ) -> SecurityResult<bool> {
         let start = Instant::now();
         let result = match hash_opt {
             Some(hash) => {
-                let parsed_hash = PasswordHash::new(hash)
-                    .map_err(|e| SecurityError::CryptographicFailure(format!("Invalid password hash: {}", e)))?;
+                let parsed_hash = PasswordHash::new(hash).map_err(|e| {
+                    SecurityError::CryptographicFailure(format!("Invalid password hash: {}", e))
+                })?;
                 let argon2 = Argon2::default();
-                argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok()
+                argon2
+                    .verify_password(password.as_bytes(), &parsed_hash)
+                    .is_ok()
             }
             None => {
                 let dummy_salt = SaltString::generate(&mut OsRng);
@@ -194,13 +221,13 @@ impl CryptographicManager {
                 false
             }
         };
-        
+
         let min_duration = Duration::from_millis(100);
         let elapsed = start.elapsed();
         if elapsed < min_duration {
             tokio::time::sleep(min_duration - elapsed).await;
         }
-        
+
         self.add_random_delay_async().await?;
         Ok(result)
     }
@@ -243,14 +270,16 @@ impl CryptographicManager {
         use subtle::ConstantTimeEq;
         let a_bytes = a.as_bytes();
         let b_bytes = b.as_bytes();
-        
+
         if a_bytes.len() != b_bytes.len() {
             let max_len = a_bytes.len().max(b_bytes.len()).min(256);
             let mut dummy_a = vec![0u8; max_len];
             let mut dummy_b = vec![0u8; max_len];
-            
-            dummy_a[..a_bytes.len().min(max_len)].copy_from_slice(&a_bytes[..a_bytes.len().min(max_len)]);
-            dummy_b[..b_bytes.len().min(max_len)].copy_from_slice(&b_bytes[..b_bytes.len().min(max_len)]);
+
+            dummy_a[..a_bytes.len().min(max_len)]
+                .copy_from_slice(&a_bytes[..a_bytes.len().min(max_len)]);
+            dummy_b[..b_bytes.len().min(max_len)]
+                .copy_from_slice(&b_bytes[..b_bytes.len().min(max_len)]);
             // Perform a constant-time compare to keep timing roughly consistent,
             // but ignore the result since lengths differ; always return false.
             let _ = subtle::ConstantTimeEq::ct_eq(&dummy_a[..], &dummy_b[..]);
@@ -262,25 +291,30 @@ impl CryptographicManager {
 
     pub fn generate_secure_random(&self, size: usize) -> SecurityResult<Vec<u8>> {
         let mut bytes = vec![0u8; size];
-        self.rng.fill(&mut bytes)
-            .map_err(|e| SecurityError::CryptographicFailure(format!("Random generation failed: {:?}", e)))?;
+        self.rng.fill(&mut bytes).map_err(|e| {
+            SecurityError::CryptographicFailure(format!("Random generation failed: {:?}", e))
+        })?;
         Ok(bytes)
     }
 
     pub fn rotate_keys(&self) -> SecurityResult<()> {
         let current_key_id = self.get_active_key_id()?;
         let new_key_id = self.generate_key(EncryptionAlgorithm::Aes256Gcm)?;
-        
+
         {
-            let mut keys = self.keys.write()
-            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire keys write lock".to_string()))?;
+            let mut keys = self.keys.write().map_err(|_| {
+                SecurityError::CryptographicFailure("Failed to acquire keys write lock".to_string())
+            })?;
             if let Some(old_key) = keys.get_mut(&current_key_id) {
                 old_key.active = false;
             }
         }
 
-        let mut active_key = self.active_key.write()
-            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire active key write lock".to_string()))?;
+        let mut active_key = self.active_key.write().map_err(|_| {
+            SecurityError::CryptographicFailure(
+                "Failed to acquire active key write lock".to_string(),
+            )
+        })?;
         *active_key = Some(new_key_id);
 
         self.cleanup_expired_keys()?;
@@ -288,10 +322,11 @@ impl CryptographicManager {
     }
 
     pub fn cleanup_expired_keys(&self) -> SecurityResult<()> {
-        let mut keys = self.keys.write()
-            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire keys write lock".to_string()))?;
+        let mut keys = self.keys.write().map_err(|_| {
+            SecurityError::CryptographicFailure("Failed to acquire keys write lock".to_string())
+        })?;
         let now = SystemTime::now();
-        
+
         keys.retain(|_, key| {
             if let Some(expires_at) = key.expires_at {
                 expires_at > now
@@ -299,13 +334,14 @@ impl CryptographicManager {
                 true
             }
         });
-        
+
         Ok(())
     }
 
     pub fn get_key_info(&self, key_id: &KeyId) -> Option<(EncryptionAlgorithm, SystemTime, bool)> {
         let keys = self.keys.read().ok()?;
-        keys.get(key_id).map(|key| (key.algorithm, key.created_at, key.active))
+        keys.get(key_id)
+            .map(|key| (key.algorithm, key.created_at, key.active))
     }
 
     pub fn list_keys(&self) -> Vec<(KeyId, EncryptionAlgorithm, SystemTime, bool)> {
@@ -321,28 +357,38 @@ impl CryptographicManager {
     }
 
     fn get_active_key_id(&self) -> SecurityResult<KeyId> {
-        let active_key = self.active_key.read()
-            .map_err(|_| SecurityError::CryptographicFailure("Failed to acquire active key read lock".to_string()))?;
-        active_key.as_ref()
-            .cloned()
-            .ok_or_else(|| SecurityError::CryptographicFailure("No active encryption key".to_string()))
+        let active_key = self.active_key.read().map_err(|_| {
+            SecurityError::CryptographicFailure(
+                "Failed to acquire active key read lock".to_string(),
+            )
+        })?;
+        active_key.as_ref().cloned().ok_or_else(|| {
+            SecurityError::CryptographicFailure("No active encryption key".to_string())
+        })
     }
 
     fn generate_key_id(&self) -> SecurityResult<String> {
         let mut bytes = [0u8; 16];
-        self.rng.fill(&mut bytes)
-            .map_err(|e| SecurityError::CryptographicFailure(format!("Key ID generation failed: {:?}", e)))?;
+        self.rng.fill(&mut bytes).map_err(|e| {
+            SecurityError::CryptographicFailure(format!("Key ID generation failed: {:?}", e))
+        })?;
         Ok(hex::encode(bytes))
     }
 
-    fn encrypt_aes_gcm(&self, data: &[u8], key: &EncryptionKey, nonce: &[u8]) -> SecurityResult<EncryptedData> {
+    fn encrypt_aes_gcm(
+        &self,
+        data: &[u8],
+        key: &EncryptionKey,
+        nonce: &[u8],
+    ) -> SecurityResult<EncryptedData> {
         let key_bytes = key.key_material.expose_secret();
         let cipher_key = Key::<Aes256Gcm>::from_slice(key_bytes);
         let cipher = Aes256Gcm::new(cipher_key);
         let nonce_array = Nonce::from_slice(nonce);
 
-        let ciphertext = cipher.encrypt(nonce_array, data)
-            .map_err(|e| SecurityError::CryptographicFailure(format!("AES-GCM encryption failed: {}", e)))?;
+        let ciphertext = cipher.encrypt(nonce_array, data).map_err(|e| {
+            SecurityError::CryptographicFailure(format!("AES-GCM encryption failed: {}", e))
+        })?;
 
         Ok(EncryptedData {
             key_id: key.id.clone(),
@@ -353,24 +399,38 @@ impl CryptographicManager {
         })
     }
 
-    fn decrypt_aes_gcm(&self, encrypted_data: &EncryptedData, key: &EncryptionKey) -> SecurityResult<Vec<u8>> {
+    fn decrypt_aes_gcm(
+        &self,
+        encrypted_data: &EncryptedData,
+        key: &EncryptionKey,
+    ) -> SecurityResult<Vec<u8>> {
         let key_bytes = key.key_material.expose_secret();
         let cipher_key = Key::<Aes256Gcm>::from_slice(key_bytes);
         let cipher = Aes256Gcm::new(cipher_key);
         let nonce_array = Nonce::from_slice(&encrypted_data.nonce);
 
-        cipher.decrypt(nonce_array, encrypted_data.ciphertext.as_ref())
-            .map_err(|e| SecurityError::CryptographicFailure(format!("AES-GCM decryption failed: {}", e)))
+        cipher
+            .decrypt(nonce_array, encrypted_data.ciphertext.as_ref())
+            .map_err(|e| {
+                SecurityError::CryptographicFailure(format!("AES-GCM decryption failed: {}", e))
+            })
     }
 
-    fn encrypt_chacha20(&self, data: &[u8], key: &EncryptionKey, nonce: &[u8]) -> SecurityResult<EncryptedData> {
+    fn encrypt_chacha20(
+        &self,
+        data: &[u8],
+        key: &EncryptionKey,
+        nonce: &[u8],
+    ) -> SecurityResult<EncryptedData> {
         let key_bytes = key.key_material.expose_secret();
-        let cipher = ChaCha20Poly1305::new_from_slice(key_bytes)
-            .map_err(|e| SecurityError::CryptographicFailure(format!("ChaCha20 key creation failed: {}", e)))?;
+        let cipher = ChaCha20Poly1305::new_from_slice(key_bytes).map_err(|e| {
+            SecurityError::CryptographicFailure(format!("ChaCha20 key creation failed: {}", e))
+        })?;
 
         let nonce_array = chacha20poly1305::Nonce::from_slice(nonce);
-        let ciphertext = cipher.encrypt(nonce_array, data)
-            .map_err(|e| SecurityError::CryptographicFailure(format!("ChaCha20 encryption failed: {}", e)))?;
+        let ciphertext = cipher.encrypt(nonce_array, data).map_err(|e| {
+            SecurityError::CryptographicFailure(format!("ChaCha20 encryption failed: {}", e))
+        })?;
 
         Ok(EncryptedData {
             key_id: key.id.clone(),
@@ -381,14 +441,22 @@ impl CryptographicManager {
         })
     }
 
-    fn decrypt_chacha20(&self, encrypted_data: &EncryptedData, key: &EncryptionKey) -> SecurityResult<Vec<u8>> {
+    fn decrypt_chacha20(
+        &self,
+        encrypted_data: &EncryptedData,
+        key: &EncryptionKey,
+    ) -> SecurityResult<Vec<u8>> {
         let key_bytes = key.key_material.expose_secret();
-        let cipher = ChaCha20Poly1305::new_from_slice(key_bytes)
-            .map_err(|e| SecurityError::CryptographicFailure(format!("ChaCha20 key creation failed: {}", e)))?;
+        let cipher = ChaCha20Poly1305::new_from_slice(key_bytes).map_err(|e| {
+            SecurityError::CryptographicFailure(format!("ChaCha20 key creation failed: {}", e))
+        })?;
 
         let nonce_array = chacha20poly1305::Nonce::from_slice(&encrypted_data.nonce);
-        cipher.decrypt(nonce_array, encrypted_data.ciphertext.as_ref())
-            .map_err(|e| SecurityError::CryptographicFailure(format!("ChaCha20 decryption failed: {}", e)))
+        cipher
+            .decrypt(nonce_array, encrypted_data.ciphertext.as_ref())
+            .map_err(|e| {
+                SecurityError::CryptographicFailure(format!("ChaCha20 decryption failed: {}", e))
+            })
     }
 }
 
@@ -437,19 +505,21 @@ mod tests {
     fn test_key_generation() {
         let crypto = CryptographicManager::new(Duration::from_secs(3600)).unwrap();
         let key_id = crypto.generate_key(EncryptionAlgorithm::Aes256Gcm).unwrap();
-        
+
         let keys = crypto.list_keys();
-        assert!(keys.iter().any(|(id, _, _, active)| id == &key_id && *active));
+        assert!(keys
+            .iter()
+            .any(|(id, _, _, active)| id == &key_id && *active));
     }
 
     #[test]
     fn test_encryption_decryption() {
         let crypto = CryptographicManager::new(Duration::from_secs(3600)).unwrap();
         let data = b"Hello, World!";
-        
+
         let encrypted = crypto.encrypt(data, None).unwrap();
         let decrypted = crypto.decrypt(&encrypted).unwrap();
-        
+
         assert_eq!(data.as_slice(), decrypted.as_slice());
     }
 
@@ -457,7 +527,7 @@ mod tests {
     fn test_password_hashing() {
         let crypto = CryptographicManager::new(Duration::from_secs(3600)).unwrap();
         let password = "test_password_123";
-        
+
         let hash = crypto.hash_password(password).unwrap();
         assert!(crypto.verify_password(password, &hash).unwrap());
         assert!(!crypto.verify_password("wrong_password", &hash).unwrap());
@@ -466,7 +536,7 @@ mod tests {
     #[test]
     fn test_secure_compare() {
         let crypto = CryptographicManager::new(Duration::from_secs(3600)).unwrap();
-        
+
         assert!(crypto.secure_compare(b"test", b"test"));
         assert!(!crypto.secure_compare(b"test", b"Test"));
         assert!(!crypto.secure_compare(b"test", b"testing"));
@@ -475,10 +545,10 @@ mod tests {
     #[test]
     fn test_secure_random() {
         let crypto = CryptographicManager::new(Duration::from_secs(3600)).unwrap();
-        
+
         let random1 = crypto.generate_secure_random(32).unwrap();
         let random2 = crypto.generate_secure_random(32).unwrap();
-        
+
         assert_eq!(random1.len(), 32);
         assert_eq!(random2.len(), 32);
         assert_ne!(random1, random2);

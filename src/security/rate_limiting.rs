@@ -2,7 +2,7 @@ use crate::security::{SecurityError, SecurityResult};
 use governor::{
     clock::DefaultClock,
     middleware::NoOpMiddleware,
-    state::{InMemoryState, NotKeyed, keyed::DashMapStateStore},
+    state::{keyed::DashMapStateStore, InMemoryState, NotKeyed},
     Quota, RateLimiter,
 };
 use ipnet::IpNet;
@@ -56,15 +56,15 @@ impl RateLimitingManager {
         max_connections_per_ip: usize,
         max_total_connections: usize,
     ) -> SecurityResult<Self> {
-        let global_quota = Quota::per_minute(
-            NonZeroU32::new(global_requests_per_minute)
-                .ok_or_else(|| SecurityError::InputValidationFailed("Invalid global rate limit".to_string()))?
-        );
-        
-        let _ip_quota = Quota::per_minute(
-            NonZeroU32::new(ip_requests_per_minute)
-                .ok_or_else(|| SecurityError::InputValidationFailed("Invalid IP rate limit".to_string()))?
-        );
+        let global_quota =
+            Quota::per_minute(NonZeroU32::new(global_requests_per_minute).ok_or_else(|| {
+                SecurityError::InputValidationFailed("Invalid global rate limit".to_string())
+            })?);
+
+        let _ip_quota =
+            Quota::per_minute(NonZeroU32::new(ip_requests_per_minute).ok_or_else(|| {
+                SecurityError::InputValidationFailed("Invalid IP rate limit".to_string())
+            })?);
 
         let global_limiter = RateLimiter::direct(global_quota);
 
@@ -97,20 +97,24 @@ impl RateLimitingManager {
         if self.global_limiter.check().is_ok() {
             Ok(())
         } else {
-            Err(SecurityError::RateLimitExceeded("Global rate limit exceeded".to_string()))
+            Err(SecurityError::RateLimitExceeded(
+                "Global rate limit exceeded".to_string(),
+            ))
         }
     }
 
     pub async fn check_ip_limit(&self, ip: IpAddr) -> SecurityResult<()> {
         if self.is_ip_blocked(ip)? {
-            return Err(SecurityError::RateLimitExceeded("IP address is blocked".to_string()));
+            return Err(SecurityError::RateLimitExceeded(
+                "IP address is blocked".to_string(),
+            ));
         }
 
         self.detect_ddos(ip)?;
 
         let mut limiters = self.ip_limiters.write().await;
         let key = ip.to_string();
-        
+
         if !limiters.contains_key(&key) {
             let quota = Quota::per_minute(NonZeroU32::new(100).unwrap());
             let limiter = RateLimiter::keyed(quota);
@@ -122,13 +126,16 @@ impl RateLimitingManager {
             Ok(())
         } else {
             self.handle_rate_limit_violation(ip).await?;
-            Err(SecurityError::RateLimitExceeded(format!("Rate limit exceeded for IP: {}", ip)))
+            Err(SecurityError::RateLimitExceeded(format!(
+                "Rate limit exceeded for IP: {}",
+                ip
+            )))
         }
     }
 
     pub async fn check_user_limit(&self, user_id: &str) -> SecurityResult<()> {
         let mut limiters = self.user_limiters.write().await;
-        
+
         if !limiters.contains_key(user_id) {
             let quota = Quota::per_minute(NonZeroU32::new(200).unwrap());
             let limiter = RateLimiter::direct(quota);
@@ -139,23 +146,29 @@ impl RateLimitingManager {
         if limiter.check().is_ok() {
             Ok(())
         } else {
-            Err(SecurityError::RateLimitExceeded(format!("Rate limit exceeded for user: {}", user_id)))
+            Err(SecurityError::RateLimitExceeded(format!(
+                "Rate limit exceeded for user: {}",
+                user_id
+            )))
         }
     }
 
     pub fn add_connection(&self, ip: IpAddr) -> SecurityResult<()> {
         let mut tracker = self.connection_tracker.write().unwrap();
-        
+
         if tracker.total_connections >= tracker.max_total_connections {
-            return Err(SecurityError::ResourceQuotaExceeded("Maximum total connections reached".to_string()));
+            return Err(SecurityError::ResourceQuotaExceeded(
+                "Maximum total connections reached".to_string(),
+            ));
         }
 
         let max_connections_per_ip = tracker.max_connections_per_ip;
         let ip_connections = tracker.connections_per_ip.entry(ip).or_insert(0);
         if *ip_connections >= max_connections_per_ip {
-            return Err(SecurityError::ResourceQuotaExceeded(
-                format!("Maximum connections per IP ({}) reached for {}", max_connections_per_ip, ip)
-            ));
+            return Err(SecurityError::ResourceQuotaExceeded(format!(
+                "Maximum connections per IP ({}) reached for {}",
+                max_connections_per_ip, ip
+            )));
         }
 
         *ip_connections += 1;
@@ -165,7 +178,7 @@ impl RateLimitingManager {
 
     pub fn remove_connection(&self, ip: IpAddr) {
         let mut tracker = self.connection_tracker.write().unwrap();
-        
+
         let mut should_decrement_total = false;
         let should_remove = if let Some(count) = tracker.connections_per_ip.get_mut(&ip) {
             if *count > 0 {
@@ -178,11 +191,11 @@ impl RateLimitingManager {
         } else {
             false
         };
-        
+
         if should_decrement_total {
             tracker.total_connections = tracker.total_connections.saturating_sub(1);
         }
-        
+
         if should_remove {
             tracker.connections_per_ip.remove(&ip);
         }
@@ -191,16 +204,16 @@ impl RateLimitingManager {
     pub fn block_ip(&self, ip: IpAddr, duration: Duration, reason: String) {
         let mut blocked = self.blocked_ips.write().unwrap();
         let now = Instant::now();
-        
+
         let block_count = blocked.get(&ip).map(|b| b.block_count + 1).unwrap_or(1);
-        
+
         let blocked_ip = BlockedIp {
             blocked_at: now,
             blocked_until: now + duration,
             reason,
             block_count,
         };
-        
+
         blocked.insert(ip, blocked_ip);
     }
 
@@ -252,28 +265,33 @@ impl RateLimitingManager {
     fn detect_ddos(&self, ip: IpAddr) -> SecurityResult<()> {
         let mut detector = self.ddos_detector.write().unwrap();
         let now = Instant::now();
-        
+
         let detection_window = detector.detection_window;
         let threshold = detector.threshold;
-        
+
         let history = detector.request_history.entry(ip).or_default();
         history.push(now);
         history.retain(|&time| now.duration_since(time) <= detection_window);
-        
+
         if history.len() > threshold {
             drop(detector);
-            self.block_ip(ip, Duration::from_secs(3600), "DDoS attack detected".to_string());
-            return Err(SecurityError::RateLimitExceeded(
-                format!("DDoS attack detected from IP: {}", ip)
-            ));
+            self.block_ip(
+                ip,
+                Duration::from_secs(3600),
+                "DDoS attack detected".to_string(),
+            );
+            return Err(SecurityError::RateLimitExceeded(format!(
+                "DDoS attack detected from IP: {}",
+                ip
+            )));
         }
-        
+
         Ok(())
     }
 
     async fn handle_rate_limit_violation(&self, ip: IpAddr) -> SecurityResult<()> {
         let mut blocked_ips = self.blocked_ips.write().unwrap();
-        
+
         if let Some(blocked_ip) = blocked_ips.get_mut(&ip) {
             if blocked_ip.block_count >= 3 {
                 blocked_ip.blocked_until = Instant::now() + Duration::from_secs(3600);
@@ -289,7 +307,7 @@ impl RateLimitingManager {
             };
             blocked_ips.insert(ip, blocked_ip);
         }
-        
+
         Ok(())
     }
 }
@@ -313,13 +331,13 @@ mod tests {
     #[tokio::test]
     async fn test_global_rate_limiting() {
         let manager = RateLimitingManager::new(1, 100, 100, 10, 1000).unwrap();
-        
+
         assert!(manager.check_global_limit().await.is_ok());
-        
+
         for _ in 0..60 {
             let _ = manager.check_global_limit().await;
         }
-        
+
         assert!(manager.check_global_limit().await.is_err());
     }
 
@@ -327,14 +345,14 @@ mod tests {
     async fn test_ip_rate_limiting() {
         let manager = RateLimitingManager::new(1000, 2, 100, 10, 1000).unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        
+
         assert!(manager.check_ip_limit(ip).await.is_ok());
         assert!(manager.check_ip_limit(ip).await.is_ok());
-        
+
         for _ in 0..60 {
             let _ = manager.check_ip_limit(ip).await;
         }
-        
+
         assert!(manager.check_ip_limit(ip).await.is_err());
     }
 
@@ -342,11 +360,11 @@ mod tests {
     fn test_connection_limiting() {
         let manager = RateLimitingManager::new(1000, 100, 100, 2, 10).unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        
+
         assert!(manager.add_connection(ip).is_ok());
         assert!(manager.add_connection(ip).is_ok());
         assert!(manager.add_connection(ip).is_err());
-        
+
         manager.remove_connection(ip);
         assert!(manager.add_connection(ip).is_ok());
     }
@@ -355,12 +373,12 @@ mod tests {
     fn test_ip_blocking() {
         let manager = RateLimitingManager::new(1000, 100, 100, 10, 1000).unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        
+
         assert!(!manager.is_ip_blocked(ip).unwrap());
-        
+
         manager.block_ip(ip, Duration::from_secs(60), "Test block".to_string());
         assert!(manager.is_ip_blocked(ip).unwrap());
-        
+
         manager.unblock_ip(ip);
         assert!(!manager.is_ip_blocked(ip).unwrap());
     }

@@ -3,8 +3,8 @@
 //! Comprehensive health monitoring including connectivity, performance,
 //! data integrity, and system resource health checks.
 
-use crate::Database;
 use crate::core::error::Result;
+use crate::Database;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

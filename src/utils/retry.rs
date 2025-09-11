@@ -164,8 +164,8 @@ impl RetryableOperations {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use crate::core::error::Error;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     #[test]
     fn test_retry_success() {

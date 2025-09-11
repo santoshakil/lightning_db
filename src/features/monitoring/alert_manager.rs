@@ -3,8 +3,8 @@
 //! Comprehensive alerting system with configurable conditions, severity levels,
 //! notification channels, and alert lifecycle management.
 
-use crate::{Database};
 use crate::core::error::{Error, Result};
+use crate::Database;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{

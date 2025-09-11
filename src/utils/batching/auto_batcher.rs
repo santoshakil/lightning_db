@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 fn likely(b: bool) -> bool {
     #[cold]
     fn cold() {}
-    
+
     if !b {
         cold();
     }
@@ -23,7 +23,7 @@ fn likely(b: bool) -> bool {
 fn unlikely(b: bool) -> bool {
     #[cold]
     fn cold() {}
-    
+
     if b {
         cold();
     }
@@ -31,9 +31,9 @@ fn unlikely(b: bool) -> bool {
 }
 
 // Optimized batch sizes for better amortization
-const DEFAULT_BATCH_SIZE: usize = 1024;  // Increased from typical 100-200
-const MAX_BATCH_SIZE: usize = 8192;     // Allow larger batches for better throughput
-const STACK_BUFFER_SIZE: usize = 64;    // For small key-value pairs
+const DEFAULT_BATCH_SIZE: usize = 1024; // Increased from typical 100-200
+const MAX_BATCH_SIZE: usize = 8192; // Allow larger batches for better throughput
+const STACK_BUFFER_SIZE: usize = 64; // For small key-value pairs
 
 /// Safe stack-like buffer for small batches to avoid heap allocations
 #[repr(align(64))]
@@ -55,7 +55,10 @@ impl Default for SafeStackBuffer {
 impl SafeStackBuffer {
     #[inline(always)]
     fn push(&mut self, key: Vec<u8>, value: Vec<u8>) {
-        debug_assert!(self.data.len() < self.capacity, "Stack buffer overflow - should check capacity before calling push");
+        debug_assert!(
+            self.data.len() < self.capacity,
+            "Stack buffer overflow - should check capacity before calling push"
+        );
         self.data.push((key, value));
     }
 
@@ -97,7 +100,7 @@ pub struct FastAutoBatcher {
 #[derive(Debug)]
 struct BatcherInner {
     pending: VecDeque<(Vec<u8>, Vec<u8>)>,
-    stack_buffer: SafeStackBuffer,  // For small fast batches
+    stack_buffer: SafeStackBuffer, // For small fast batches
     last_flush: Instant,
     batch_size: usize,
     max_delay: Duration,
@@ -115,7 +118,7 @@ struct BatcherStats {
 impl FastAutoBatcher {
     pub fn new(db: Arc<Database>, batch_size: usize, max_delay_ms: u64) -> Arc<Self> {
         let optimized_batch_size = batch_size.clamp(DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE);
-        
+
         let inner = Arc::new(Mutex::new(BatcherInner {
             pending: VecDeque::with_capacity(optimized_batch_size * 2),
             stack_buffer: SafeStackBuffer::default(),
@@ -153,7 +156,7 @@ impl FastAutoBatcher {
             // let _ = thread_priority::set_current_thread_priority(
             //     thread_priority::ThreadPriority::Max
             // );
-            
+
             while !shutdown_clone.load(Ordering::Relaxed) {
                 // Adaptive sleep based on workload
                 let sleep_duration = {
@@ -200,8 +203,11 @@ impl FastAutoBatcher {
         // Try stack buffer first for small items to reduce lock contention
         let total_size = key.len() + value.len();
         let mut inner = self.inner.lock();
-        
-        if total_size <= 256 && inner.write_combining_enabled && inner.stack_buffer.len() < inner.stack_buffer.capacity() {
+
+        if total_size <= 256
+            && inner.write_combining_enabled
+            && inner.stack_buffer.len() < inner.stack_buffer.capacity()
+        {
             // Stack buffer has space, add to it
             inner.stack_buffer.push(key, value);
         } else {
@@ -227,10 +233,10 @@ impl FastAutoBatcher {
     ) {
         let (writes, stack_writes) = {
             let mut inner = inner.lock();
-            
+
             // Collect stack buffer writes first - now completely safe
             let stack_writes: Vec<(Vec<u8>, Vec<u8>)> = inner.stack_buffer.drain().collect();
-            
+
             if inner.pending.is_empty() && stack_writes.is_empty() {
                 return;
             }
@@ -246,7 +252,7 @@ impl FastAutoBatcher {
         let mut all_writes = Vec::with_capacity(writes.len() + stack_writes.len());
         all_writes.extend(writes);
         all_writes.extend(stack_writes);
-        
+
         if all_writes.is_empty() {
             return;
         }
@@ -268,7 +274,10 @@ impl FastAutoBatcher {
     }
 
     /// Vectorized batch execution with optimized memory access patterns
-    fn execute_batch_transaction_vectorized(db: &Database, writes: Vec<(Vec<u8>, Vec<u8>)>) -> Result<u64> {
+    fn execute_batch_transaction_vectorized(
+        db: &Database,
+        writes: Vec<(Vec<u8>, Vec<u8>)>,
+    ) -> Result<u64> {
         if writes.is_empty() {
             return Ok(0);
         }
@@ -282,12 +291,12 @@ impl FastAutoBatcher {
                 // Use vectorized writes for better cache locality
                 let mut keys: Vec<Vec<u8>> = Vec::with_capacity(writes.len());
                 let mut values: Vec<Vec<u8>> = Vec::with_capacity(writes.len());
-                
+
                 for (key, value) in writes {
                     keys.push(key);
                     values.push(value);
                 }
-                
+
                 // Batch insert with prefetch hints for better cache performance
                 for (key, value) in keys.into_iter().zip(values.into_iter()) {
                     // Direct memtable insert without WAL logging
@@ -311,17 +320,17 @@ impl FastAutoBatcher {
         let tx_id = db.begin_transaction()?;
         let mut success_count = 0u64;
         let mut i = 0;
-        
+
         // Process writes in chunks of 4 for loop unrolling
         while i + 3 < writes.len() {
             // Unroll loop for better instruction-level parallelism
             let results = [
                 db.put_tx(tx_id, &writes[i].0, &writes[i].1),
-                db.put_tx(tx_id, &writes[i+1].0, &writes[i+1].1),
-                db.put_tx(tx_id, &writes[i+2].0, &writes[i+2].1),
-                db.put_tx(tx_id, &writes[i+3].0, &writes[i+3].1),
+                db.put_tx(tx_id, &writes[i + 1].0, &writes[i + 1].1),
+                db.put_tx(tx_id, &writes[i + 2].0, &writes[i + 2].1),
+                db.put_tx(tx_id, &writes[i + 3].0, &writes[i + 3].1),
             ];
-            
+
             for result in results {
                 match result {
                     Ok(_) => success_count += 1,
@@ -336,7 +345,7 @@ impl FastAutoBatcher {
             }
             i += 4;
         }
-        
+
         // Handle remaining writes
         for (key, value) in &writes[i..] {
             match db.put_tx(tx_id, key, value) {

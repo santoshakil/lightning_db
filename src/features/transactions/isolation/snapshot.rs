@@ -101,7 +101,7 @@ impl SnapshotManager {
         // Store snapshot and metadata
         self.snapshots.write().insert(snapshot_id, snapshot);
         self.metadata.write().insert(snapshot_id, metadata);
-        
+
         // Add initial reference
         self.references
             .write()
@@ -152,9 +152,12 @@ impl SnapshotManager {
                     meta.reference_count += 1;
                     meta.last_accessed = Instant::now();
                 }
-                
+
                 self.stats.write().total_references += 1;
-                debug!("Added reference to snapshot {} from transaction {}", snapshot_id, tx_id);
+                debug!(
+                    "Added reference to snapshot {} from transaction {}",
+                    snapshot_id, tx_id
+                );
             }
             Ok(())
         } else {
@@ -173,15 +176,18 @@ impl SnapshotManager {
                 if let Some(meta) = metadata.get_mut(&snapshot_id) {
                     meta.reference_count = meta.reference_count.saturating_sub(1);
                 }
-                
-                self.stats.write().total_references = 
+
+                self.stats.write().total_references =
                     self.stats.read().total_references.saturating_sub(1);
 
                 // If no more references, mark for cleanup
                 let should_cleanup = ref_set.is_empty();
                 if should_cleanup {
                     references.remove(&snapshot_id);
-                    debug!("Snapshot {} has no more references, marked for cleanup", snapshot_id);
+                    debug!(
+                        "Snapshot {} has no more references, marked for cleanup",
+                        snapshot_id
+                    );
                 }
 
                 Ok(should_cleanup)
@@ -237,7 +243,7 @@ impl SnapshotManager {
     /// Run cleanup to remove old and unused snapshots
     pub fn cleanup_snapshots(&self) -> Result<usize> {
         let now = Instant::now();
-        
+
         // Check if it's time to cleanup
         {
             let mut last_cleanup = self.last_cleanup.write();
@@ -248,14 +254,14 @@ impl SnapshotManager {
         }
 
         let mut to_destroy = Vec::new();
-        
+
         // Find snapshots to clean up
         {
             let metadata = self.metadata.read();
             let references = self.references.read();
 
             for (snapshot_id, meta) in metadata.iter() {
-                let should_cleanup = 
+                let should_cleanup =
                     // No references
                     !references.contains_key(snapshot_id) ||
                     references.get(snapshot_id).map_or(true, |refs| refs.is_empty()) ||
@@ -309,9 +315,7 @@ impl SnapshotManager {
         let metadata = self.metadata.read();
         metadata
             .iter()
-            .map(|(id, meta)| {
-                (*id, (meta.tx_id, meta.reference_count, meta.created_at))
-            })
+            .map(|(id, meta)| (*id, (meta.tx_id, meta.reference_count, meta.created_at)))
             .collect()
     }
 
@@ -327,7 +331,7 @@ impl SnapshotManager {
     pub fn force_cleanup_older_than(&self, max_age: Duration) -> Result<usize> {
         let now = Instant::now();
         let mut to_destroy = Vec::new();
-        
+
         {
             let metadata = self.metadata.read();
             for (snapshot_id, meta) in metadata.iter() {
@@ -345,7 +349,10 @@ impl SnapshotManager {
         }
 
         if cleaned > 0 {
-            warn!("Force cleaned {} snapshots older than {:?}", cleaned, max_age);
+            warn!(
+                "Force cleaned {} snapshots older than {:?}",
+                cleaned, max_age
+            );
         }
 
         Ok(cleaned)
@@ -359,7 +366,9 @@ impl SnapshotManager {
         committed_txs: HashSet<TxId>,
     ) -> Result<SnapshotId> {
         if tx_ids.is_empty() {
-            return Err(Error::InvalidArgument("No transaction IDs provided".to_string()));
+            return Err(Error::InvalidArgument(
+                "No transaction IDs provided".to_string(),
+            ));
         }
 
         let snapshot_id = self.next_snapshot_id.fetch_add(1, Ordering::Relaxed);
@@ -383,7 +392,7 @@ impl SnapshotManager {
         // Store snapshot and metadata
         self.snapshots.write().insert(snapshot_id, snapshot);
         self.metadata.write().insert(snapshot_id, metadata);
-        
+
         // Add references for all transactions
         self.references
             .write()
@@ -414,10 +423,7 @@ mod tests {
 
     #[test]
     fn test_snapshot_creation_and_retrieval() {
-        let manager = SnapshotManager::new(
-            Duration::from_secs(60),
-            Duration::from_secs(10),
-        );
+        let manager = SnapshotManager::new(Duration::from_secs(60), Duration::from_secs(10));
 
         let committed_txs: HashSet<TxId> = [1, 2, 3].iter().cloned().collect();
         let snapshot_id = manager
@@ -432,19 +438,14 @@ mod tests {
 
     #[test]
     fn test_reference_management() {
-        let manager = SnapshotManager::new(
-            Duration::from_secs(60),
-            Duration::from_secs(10),
-        );
+        let manager = SnapshotManager::new(Duration::from_secs(60), Duration::from_secs(10));
 
         let committed_txs = HashSet::new();
-        let snapshot_id = manager
-            .create_snapshot(100, 1000, committed_txs)
-            .unwrap();
+        let snapshot_id = manager.create_snapshot(100, 1000, committed_txs).unwrap();
 
         // Add reference
         manager.add_reference(snapshot_id, 200).unwrap();
-        
+
         // Remove references
         let should_cleanup = manager.remove_reference(snapshot_id, 100).unwrap();
         assert!(!should_cleanup); // Still has reference from tx 200
@@ -455,14 +456,11 @@ mod tests {
 
     #[test]
     fn test_shared_snapshot() {
-        let manager = SnapshotManager::new(
-            Duration::from_secs(60),
-            Duration::from_secs(10),
-        );
+        let manager = SnapshotManager::new(Duration::from_secs(60), Duration::from_secs(10));
 
         let tx_ids = vec![100, 200, 300];
         let committed_txs = HashSet::new();
-        
+
         let snapshot_id = manager
             .create_shared_snapshot(&tx_ids, 1000, committed_txs)
             .unwrap();
@@ -485,9 +483,7 @@ mod tests {
         );
 
         let committed_txs = HashSet::new();
-        let snapshot_id = manager
-            .create_snapshot(100, 1000, committed_txs)
-            .unwrap();
+        let snapshot_id = manager.create_snapshot(100, 1000, committed_txs).unwrap();
 
         // Remove reference to make it eligible for cleanup
         manager.remove_reference(snapshot_id, 100).unwrap();
@@ -495,7 +491,7 @@ mod tests {
         // Wait a bit and run cleanup
         std::thread::sleep(Duration::from_millis(10));
         let cleaned = manager.cleanup_snapshots().unwrap();
-        
+
         assert!(cleaned > 0);
         assert!(manager.get_snapshot(snapshot_id).is_none());
     }

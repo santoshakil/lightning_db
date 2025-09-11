@@ -67,7 +67,10 @@ impl LockMode {
     /// Check if this lock mode provides read access
     pub fn provides_read_access(self) -> bool {
         match self {
-            LockMode::Shared | LockMode::Exclusive | LockMode::SharedIntentionExclusive | LockMode::Update => true,
+            LockMode::Shared
+            | LockMode::Exclusive
+            | LockMode::SharedIntentionExclusive
+            | LockMode::Update => true,
             LockMode::IntentionShared | LockMode::IntentionExclusive => false,
         }
     }
@@ -103,7 +106,10 @@ pub enum LockGranularity {
     /// Row level lock
     Row(Bytes),
     /// Key range lock for phantom prevention
-    Range { start: Option<Bytes>, end: Option<Bytes> },
+    Range {
+        start: Option<Bytes>,
+        end: Option<Bytes>,
+    },
     /// Predicate lock for complex conditions
     Predicate(String),
 }
@@ -128,7 +134,11 @@ impl Lock {
     /// Check if a lock mode can be granted immediately
     pub fn can_grant(&self, mode: LockMode, tx_id: TxId) -> bool {
         // If we already have this lock for this transaction, it's fine
-        if self.requests.iter().any(|req| req.tx_id == tx_id && req.granted && req.mode == mode) {
+        if self
+            .requests
+            .iter()
+            .any(|req| req.tx_id == tx_id && req.granted && req.mode == mode)
+        {
             return true;
         }
 
@@ -161,14 +171,22 @@ impl Lock {
                 let can_grant = match req.mode {
                     LockMode::Shared => !self.granted_modes.contains(&LockMode::Exclusive),
                     LockMode::Exclusive => self.granted_modes.is_empty(),
-                    LockMode::Update => !self.granted_modes.contains(&LockMode::Exclusive) && 
-                                      !self.granted_modes.contains(&LockMode::Update),
+                    LockMode::Update => {
+                        !self.granted_modes.contains(&LockMode::Exclusive)
+                            && !self.granted_modes.contains(&LockMode::Update)
+                    }
                     LockMode::IntentionShared => true, // Intent locks are generally compatible
-                    LockMode::IntentionExclusive => !self.granted_modes.contains(&LockMode::Exclusive),
-                    LockMode::SharedIntentionExclusive => !self.granted_modes.contains(&LockMode::Exclusive) &&
-                                                          !self.granted_modes.contains(&LockMode::SharedIntentionExclusive),
+                    LockMode::IntentionExclusive => {
+                        !self.granted_modes.contains(&LockMode::Exclusive)
+                    }
+                    LockMode::SharedIntentionExclusive => {
+                        !self.granted_modes.contains(&LockMode::Exclusive)
+                            && !self
+                                .granted_modes
+                                .contains(&LockMode::SharedIntentionExclusive)
+                    }
                 };
-                
+
                 if can_grant {
                     indices_to_grant.push(idx);
                 }
@@ -264,16 +282,17 @@ impl LockManager {
         mode: LockMode,
     ) -> Result<()> {
         let timeout = Some(Instant::now() + self.lock_timeout);
-        
+
         // Get or create the lock
-        let lock_ref = self.locks
+        let lock_ref = self
+            .locks
             .entry(granularity.clone())
             .or_insert_with(|| Arc::new(Mutex::new(Lock::new(granularity.clone()))))
             .clone();
 
         let granted = {
             let mut lock = lock_ref.lock();
-            
+
             // Check if we can grant immediately
             if lock.can_grant(mode, tx_id) {
                 let request = LockRequest {
@@ -313,7 +332,10 @@ impl LockManager {
                 .insert(granularity.clone());
 
             self.metrics.lock().locks_acquired += 1;
-            debug!("Lock acquired: tx={}, granularity={:?}, mode={:?}", tx_id, granularity, mode);
+            debug!(
+                "Lock acquired: tx={}, granularity={:?}, mode={:?}",
+                tx_id, granularity, mode
+            );
             Ok(())
         } else {
             // Wait for lock or timeout
@@ -329,17 +351,22 @@ impl LockManager {
                 if let Some(lock_ref) = self.locks.get(&granularity) {
                     let mut lock = lock_ref.lock();
                     let released = lock.release_locks(tx_id);
-                    
+
                     if !released.is_empty() {
-                        debug!("Released locks: tx={}, granularity={:?}, modes={:?}", 
-                              tx_id, granularity, released);
+                        debug!(
+                            "Released locks: tx={}, granularity={:?}, modes={:?}",
+                            tx_id, granularity, released
+                        );
                         self.metrics.lock().locks_released += released.len() as u64;
                     }
 
                     // Try to grant pending requests
                     let granted = lock.try_grant_pending();
                     for (granted_tx, granted_mode) in granted {
-                        debug!("Granted pending lock: tx={}, mode={:?}", granted_tx, granted_mode);
+                        debug!(
+                            "Granted pending lock: tx={}, mode={:?}",
+                            granted_tx, granted_mode
+                        );
                     }
                 }
             }
@@ -360,9 +387,9 @@ impl LockManager {
     pub fn holds_lock(&self, tx_id: TxId, granularity: &LockGranularity, mode: LockMode) -> bool {
         if let Some(lock_ref) = self.locks.get(granularity) {
             let lock = lock_ref.lock();
-            lock.requests.iter().any(|req| {
-                req.tx_id == tx_id && req.granted && req.mode == mode
-            })
+            lock.requests
+                .iter()
+                .any(|req| req.tx_id == tx_id && req.granted && req.mode == mode)
         } else {
             false
         }
@@ -371,21 +398,21 @@ impl LockManager {
     /// Get lock information for debugging
     pub fn get_lock_info(&self) -> HashMap<String, Vec<(TxId, String, bool)>> {
         let mut info = HashMap::new();
-        
+
         for entry in self.locks.iter() {
             let granularity = entry.key();
             let lock = entry.value().lock();
-            
+
             let key = format!("{:?}", granularity);
             let mut requests = Vec::new();
-            
+
             for req in &lock.requests {
                 requests.push((req.tx_id, format!("{:?}", req.mode), req.granted));
             }
-            
+
             info.insert(key, requests);
         }
-        
+
         info
     }
 
@@ -405,9 +432,12 @@ impl LockManager {
 
         let wait_graph = self.wait_graph.lock();
         let deadlocked = self.find_cycles_in_wait_graph(&wait_graph);
-        
+
         if !deadlocked.is_empty() {
-            warn!("Detected deadlocks involving transactions: {:?}", deadlocked);
+            warn!(
+                "Detected deadlocks involving transactions: {:?}",
+                deadlocked
+            );
             self.metrics.lock().deadlocks_detected += deadlocked.len() as u64;
         }
 
@@ -428,7 +458,7 @@ impl LockManager {
         timeout: Option<Instant>,
     ) -> Result<()> {
         let start = Instant::now();
-        
+
         loop {
             // Check timeout
             if let Some(timeout_instant) = timeout {
@@ -444,25 +474,33 @@ impl LockManager {
             // Check if lock is now available
             if let Some(lock_ref) = self.locks.get(&granularity) {
                 let mut lock = lock_ref.lock();
-                
+
                 // Find our request and check if it can be granted
                 let can_grant = match mode {
                     LockMode::Shared => !lock.granted_modes.contains(&LockMode::Exclusive),
                     LockMode::Exclusive => lock.granted_modes.is_empty(),
-                    LockMode::Update => !lock.granted_modes.contains(&LockMode::Exclusive) && 
-                                      !lock.granted_modes.contains(&LockMode::Update),
+                    LockMode::Update => {
+                        !lock.granted_modes.contains(&LockMode::Exclusive)
+                            && !lock.granted_modes.contains(&LockMode::Update)
+                    }
                     LockMode::IntentionShared => true, // Intent locks are generally compatible
-                    LockMode::IntentionExclusive => !lock.granted_modes.contains(&LockMode::Exclusive),
-                    LockMode::SharedIntentionExclusive => !lock.granted_modes.contains(&LockMode::Exclusive) &&
-                                                          !lock.granted_modes.contains(&LockMode::SharedIntentionExclusive),
+                    LockMode::IntentionExclusive => {
+                        !lock.granted_modes.contains(&LockMode::Exclusive)
+                    }
+                    LockMode::SharedIntentionExclusive => {
+                        !lock.granted_modes.contains(&LockMode::Exclusive)
+                            && !lock
+                                .granted_modes
+                                .contains(&LockMode::SharedIntentionExclusive)
+                    }
                 };
-                
+
                 for req in &mut lock.requests {
                     if req.tx_id == tx_id && req.mode == mode && !req.granted {
                         if can_grant {
                             req.granted = true;
                             lock.granted_modes.insert(mode);
-                            
+
                             // Track the lock for this transaction
                             self.tx_locks
                                 .entry(tx_id)
@@ -483,7 +521,10 @@ impl LockManager {
             if self.enable_deadlock_detection {
                 let deadlocked = self.detect_deadlocks();
                 if deadlocked.contains(&tx_id) {
-                    return Err(Error::Deadlock(format!("Deadlock detected for tx={}", tx_id)));
+                    return Err(Error::Deadlock(format!(
+                        "Deadlock detected for tx={}",
+                        tx_id
+                    )));
                 }
             }
 
@@ -494,8 +535,9 @@ impl LockManager {
     /// Update wait graph for deadlock detection
     fn update_wait_graph(&self, waiting_tx: TxId, lock: &Lock) {
         let mut wait_graph = self.wait_graph.lock();
-        
-        let waiting_for: HashSet<TxId> = lock.requests
+
+        let waiting_for: HashSet<TxId> = lock
+            .requests
             .iter()
             .filter(|req| req.granted)
             .map(|req| req.tx_id)
@@ -558,7 +600,7 @@ mod tests {
     #[test]
     fn test_lock_compatibility() {
         use LockMode::*;
-        
+
         // Test shared lock compatibility
         assert!(Shared.is_compatible_with(Shared));
         assert!(!Shared.is_compatible_with(Exclusive));
@@ -572,20 +614,18 @@ mod tests {
 
     #[test]
     fn test_lock_manager() {
-        let lm = LockManager::new(
-            Duration::from_secs(1),
-            true,
-            Duration::from_millis(100),
-        );
+        let lm = LockManager::new(Duration::from_secs(1), true, Duration::from_millis(100));
 
         let granularity = LockGranularity::Row(Bytes::from("key1"));
 
         // Acquire shared lock
-        lm.acquire_lock(1, granularity.clone(), LockMode::Shared).unwrap();
+        lm.acquire_lock(1, granularity.clone(), LockMode::Shared)
+            .unwrap();
         assert!(lm.holds_lock(1, &granularity, LockMode::Shared));
 
         // Acquire another shared lock - should succeed
-        lm.acquire_lock(2, granularity.clone(), LockMode::Shared).unwrap();
+        lm.acquire_lock(2, granularity.clone(), LockMode::Shared)
+            .unwrap();
         assert!(lm.holds_lock(2, &granularity, LockMode::Shared));
 
         // Release locks

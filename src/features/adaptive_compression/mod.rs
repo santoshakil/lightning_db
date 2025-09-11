@@ -35,7 +35,7 @@ impl CompressionType {
             _ => CompressionAlgorithm::None,
         }
     }
-    
+
     pub fn to_u8(&self) -> u8 {
         match self {
             CompressionAlgorithm::None => 0,
@@ -50,7 +50,7 @@ impl CompressionType {
 // Helper functions for compatibility
 pub fn compress(data: &[u8], algorithm: CompressionType) -> Result<Vec<u8>> {
     use self::algorithms::*;
-    
+
     let compressor: Box<dyn CompressionAlgorithmTrait> = match algorithm {
         CompressionAlgorithm::None => Box::new(NoCompression::new()),
         CompressionAlgorithm::LZ4 => Box::new(LZ4Compression::new()),
@@ -58,13 +58,13 @@ pub fn compress(data: &[u8], algorithm: CompressionType) -> Result<Vec<u8>> {
         CompressionAlgorithm::Snappy => Box::new(SnappyCompression::new()),
         _ => Box::new(NoCompression::new()),
     };
-    
+
     compressor.compress(data, CompressionLevel::Fast)
 }
 
 pub fn decompress(data: &[u8], algorithm: CompressionType) -> Result<Vec<u8>> {
     use self::algorithms::*;
-    
+
     let decompressor: Box<dyn CompressionAlgorithmTrait> = match algorithm {
         CompressionAlgorithm::None => Box::new(NoCompression::new()),
         CompressionAlgorithm::LZ4 => Box::new(LZ4Compression::new()),
@@ -72,7 +72,7 @@ pub fn decompress(data: &[u8], algorithm: CompressionType) -> Result<Vec<u8>> {
         CompressionAlgorithm::Snappy => Box::new(SnappyCompression::new()),
         _ => Box::new(NoCompression::new()),
     };
-    
+
     decompressor.decompress(data)
 }
 
@@ -90,7 +90,7 @@ impl Compressor for CompressorImpl {
     fn compress(&self, data: &[u8]) -> Result<Vec<u8>> {
         compress(data, self.algorithm)
     }
-    
+
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>> {
         decompress(data, self.algorithm)
     }

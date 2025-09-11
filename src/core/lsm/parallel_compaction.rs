@@ -1,6 +1,6 @@
+use super::{Level, SSTable, SSTableBuilder};
 use crate::core::error::Result;
 use crate::performance::lock_free::WorkStealingQueue;
-use super::{Level, SSTable, SSTableBuilder};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use rayon::prelude::*;
@@ -210,13 +210,13 @@ impl ParallelCompactionCoordinator {
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         // CRITICAL FIX: Memory-bounded parallel processing
         const MAX_MEMORY_PER_CHUNK: usize = 32 * 1024 * 1024; // 32MB per chunk
-        
+
         // Calculate optimal chunk size based on memory constraints
         let estimated_entry_size = 100; // bytes
         let max_entries_per_chunk = MAX_MEMORY_PER_CHUNK / estimated_entry_size;
-        
+
         let mut all_entries = Vec::new();
-        
+
         // Process tables in memory-bounded batches
         for table_batch in tables.chunks(self.worker_count) {
             let batch_results: Vec<_> = table_batch
@@ -224,12 +224,15 @@ impl ParallelCompactionCoordinator {
                 .map(|table| -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
                     let mut entries = Vec::new();
                     let table_entries = table.iter()?;
-                    
+
                     // Limit entries per table to prevent OOM
                     for (i, entry) in table_entries.into_iter().enumerate() {
                         if i >= max_entries_per_chunk {
-                            tracing::warn!("Table {} too large, truncating at {} entries", 
-                                         table.id(), max_entries_per_chunk);
+                            tracing::warn!(
+                                "Table {} too large, truncating at {} entries",
+                                table.id(),
+                                max_entries_per_chunk
+                            );
                             break;
                         }
                         entries.push(entry);
@@ -237,14 +240,16 @@ impl ParallelCompactionCoordinator {
                     Ok(entries)
                 })
                 .collect::<Result<Vec<_>>>()?;
-            
+
             // Merge results from this batch
             for batch_entries in batch_results {
                 let entry_count = batch_entries.len();
                 all_entries.extend(batch_entries);
-                
+
                 // Periodic progress update
-                progress.processed_keys.fetch_add(entry_count, Ordering::Relaxed);
+                progress
+                    .processed_keys
+                    .fetch_add(entry_count, Ordering::Relaxed);
             }
         }
 

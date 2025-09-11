@@ -317,12 +317,14 @@ mod tests {
             ..Default::default()
         };
 
-        let key_manager = Arc::new(KeyManager::new(config.clone())
-            .expect("Failed to create key manager"));
+        let key_manager =
+            Arc::new(KeyManager::new(config.clone()).expect("Failed to create key manager"));
         let master_key = vec![0x42; 32];
-        key_manager.initialize_master_key(&master_key)
+        key_manager
+            .initialize_master_key(&master_key)
             .expect("Failed to initialize master key");
-        key_manager.generate_data_key()
+        key_manager
+            .generate_data_key()
             .expect("Failed to generate data key");
 
         let encryptor = PageEncryptor::new(key_manager.clone(), config.algorithm)
@@ -338,12 +340,14 @@ mod tests {
         let plaintext = b"This is a test database page with some data";
 
         // Encrypt
-        let encrypted = encryptor.encrypt_page(page_id, plaintext)
+        let encrypted = encryptor
+            .encrypt_page(page_id, plaintext)
             .expect("Failed to encrypt page");
         assert_ne!(encrypted, plaintext);
 
         // Decrypt
-        let decrypted = encryptor.decrypt_page(page_id, &encrypted)
+        let decrypted = encryptor
+            .decrypt_page(page_id, &encrypted)
             .expect("Failed to decrypt page");
         assert_eq!(decrypted, plaintext);
 
@@ -358,19 +362,29 @@ mod tests {
 
         let plaintext = b"Same data on different pages";
 
-        let encrypted1 = encryptor.encrypt_page(1, plaintext)
+        let encrypted1 = encryptor
+            .encrypt_page(1, plaintext)
             .expect("Failed to encrypt page 1");
-        let encrypted2 = encryptor.encrypt_page(2, plaintext)
+        let encrypted2 = encryptor
+            .encrypt_page(2, plaintext)
             .expect("Failed to encrypt page 2");
 
         // Same plaintext should produce different ciphertexts for different pages
         assert_ne!(encrypted1, encrypted2);
 
         // Both should decrypt correctly
-        assert_eq!(encryptor.decrypt_page(1, &encrypted1)
-            .expect("Failed to decrypt page 1"), plaintext);
-        assert_eq!(encryptor.decrypt_page(2, &encrypted2)
-            .expect("Failed to decrypt page 2"), plaintext);
+        assert_eq!(
+            encryptor
+                .decrypt_page(1, &encrypted1)
+                .expect("Failed to decrypt page 1"),
+            plaintext
+        );
+        assert_eq!(
+            encryptor
+                .decrypt_page(2, &encrypted2)
+                .expect("Failed to decrypt page 2"),
+            plaintext
+        );
     }
 
     #[test]
@@ -380,7 +394,8 @@ mod tests {
         let page_id = 123;
         let plaintext = b"Sensitive data";
 
-        let mut encrypted = encryptor.encrypt_page(page_id, plaintext)
+        let mut encrypted = encryptor
+            .encrypt_page(page_id, plaintext)
             .expect("Failed to encrypt page for tampering test");
 
         // Tamper with the ciphertext
@@ -396,7 +411,8 @@ mod tests {
         let (encryptor, _) = create_test_encryptor();
 
         let plaintext = b"Page data";
-        let encrypted = encryptor.encrypt_page(100, plaintext)
+        let encrypted = encryptor
+            .encrypt_page(100, plaintext)
             .expect("Failed to encrypt page for AAD test");
 
         // Try to decrypt with wrong page ID (AAD mismatch)

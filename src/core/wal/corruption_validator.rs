@@ -1,5 +1,5 @@
-use crate::core::error::Result;
 use super::{WALEntry, WALOperation};
+use crate::core::error::Result;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -143,7 +143,12 @@ impl WalCorruptionValidator {
         Ok(decision)
     }
 
-    fn check_checksum(&self, entry: &WALEntry, offset: u64, corruptions: &mut Vec<CorruptionReport>) {
+    fn check_checksum(
+        &self,
+        entry: &WALEntry,
+        offset: u64,
+        corruptions: &mut Vec<CorruptionReport>,
+    ) {
         if !entry.verify_checksum() {
             corruptions.push(CorruptionReport {
                 corruption_type: WalCorruptionType::ChecksumMismatch,
@@ -160,14 +165,19 @@ impl WalCorruptionValidator {
         }
     }
 
-    fn check_timestamp(&self, entry: &WALEntry, offset: u64, corruptions: &mut Vec<CorruptionReport>) {
+    fn check_timestamp(
+        &self,
+        entry: &WALEntry,
+        offset: u64,
+        corruptions: &mut Vec<CorruptionReport>,
+    ) {
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
 
         let entry_time = entry.timestamp;
-        
+
         if entry_time > current_time {
             let drift = Duration::from_millis(entry_time - current_time);
             if drift > self.config.allow_timestamp_drift {
@@ -178,7 +188,8 @@ impl WalCorruptionValidator {
                     lsn: Some(entry.lsn),
                     description: format!(
                         "Future timestamp detected: entry timestamp {} is {:.1}s ahead",
-                        entry_time, drift.as_secs_f64()
+                        entry_time,
+                        drift.as_secs_f64()
                     ),
                     recovery_action: RecoveryAction::Skip,
                 });
@@ -202,10 +213,15 @@ impl WalCorruptionValidator {
         }
     }
 
-    fn check_sequence_order(&self, entry: &WALEntry, offset: u64, corruptions: &mut Vec<CorruptionReport>) {
+    fn check_sequence_order(
+        &self,
+        entry: &WALEntry,
+        offset: u64,
+        corruptions: &mut Vec<CorruptionReport>,
+    ) {
         if let Some(last_lsn) = self.last_lsn {
             let gap = entry.lsn.saturating_sub(last_lsn);
-            
+
             if gap > self.config.max_sequence_gap {
                 corruptions.push(CorruptionReport {
                     corruption_type: WalCorruptionType::SequenceGap,
@@ -226,17 +242,19 @@ impl WalCorruptionValidator {
                     severity: CorruptionSeverity::Critical,
                     offset,
                     lsn: Some(entry.lsn),
-                    description: format!(
-                        "LSN out of order: {} <= {} (last)",
-                        entry.lsn, last_lsn
-                    ),
+                    description: format!("LSN out of order: {} <= {} (last)", entry.lsn, last_lsn),
                     recovery_action: RecoveryAction::Stop,
                 });
             }
         }
     }
 
-    fn check_duplicate_lsn(&self, entry: &WALEntry, offset: u64, corruptions: &mut Vec<CorruptionReport>) {
+    fn check_duplicate_lsn(
+        &self,
+        entry: &WALEntry,
+        offset: u64,
+        corruptions: &mut Vec<CorruptionReport>,
+    ) {
         if let Some(first_offset) = self.seen_lsns.get(&entry.lsn) {
             corruptions.push(CorruptionReport {
                 corruption_type: WalCorruptionType::DuplicateEntry,
@@ -252,7 +270,12 @@ impl WalCorruptionValidator {
         }
     }
 
-    fn check_operation_validity(&self, entry: &WALEntry, offset: u64, corruptions: &mut Vec<CorruptionReport>) {
+    fn check_operation_validity(
+        &self,
+        entry: &WALEntry,
+        offset: u64,
+        corruptions: &mut Vec<CorruptionReport>,
+    ) {
         match &entry.operation {
             WALOperation::Put { key, value } => {
                 if key.is_empty() {
@@ -265,7 +288,7 @@ impl WalCorruptionValidator {
                         recovery_action: RecoveryAction::Stop,
                     });
                 }
-                
+
                 if key.len() > 65536 || value.len() > 16_777_216 {
                     corruptions.push(CorruptionReport {
                         corruption_type: WalCorruptionType::InvalidOperation,
@@ -274,7 +297,8 @@ impl WalCorruptionValidator {
                         lsn: Some(entry.lsn),
                         description: format!(
                             "PUT operation with oversized data: key {} bytes, value {} bytes",
-                            key.len(), value.len()
+                            key.len(),
+                            value.len()
                         ),
                         recovery_action: RecoveryAction::Skip,
                     });
@@ -303,18 +327,20 @@ impl WalCorruptionValidator {
     }
 
     fn make_recovery_decision(&self, corruptions: &[CorruptionReport]) -> Result<RecoveryDecision> {
-        let critical_count = corruptions.iter()
+        let critical_count = corruptions
+            .iter()
             .filter(|c| c.severity == CorruptionSeverity::Critical)
             .count();
 
         if critical_count > 0 && self.config.fail_on_critical {
-            let critical = corruptions.iter()
+            let critical = corruptions
+                .iter()
                 .find(|c| c.severity == CorruptionSeverity::Critical)
                 .ok_or_else(|| crate::core::error::Error::WalCorruption {
                     offset: 0,
                     reason: "Critical corruption found but could not locate details".to_string(),
                 })?;
-            
+
             return Ok(RecoveryDecision {
                 action: RecoveryAction::Stop,
                 reason: format!("Critical corruption detected: {}", critical.description),
@@ -322,14 +348,18 @@ impl WalCorruptionValidator {
             });
         }
 
-        let major_count = corruptions.iter()
+        let major_count = corruptions
+            .iter()
             .filter(|c| c.severity == CorruptionSeverity::Major)
             .count();
 
         if major_count > 0 {
             return Ok(RecoveryDecision {
                 action: RecoveryAction::Skip,
-                reason: format!("Major corruption detected, skipping {} corruptions", major_count),
+                reason: format!(
+                    "Major corruption detected, skipping {} corruptions",
+                    major_count
+                ),
                 safe_to_continue: true,
             });
         }
@@ -379,14 +409,19 @@ mod tests {
     #[test]
     fn test_valid_entry_passes() {
         let mut validator = WalCorruptionValidator::with_default_config();
-        
-        let mut entry = WALEntry::new(1, WALOperation::Put {
-            key: b"test".to_vec(),
-            value: b"value".to_vec(),
-        });
+
+        let mut entry = WALEntry::new(
+            1,
+            WALOperation::Put {
+                key: b"test".to_vec(),
+                value: b"value".to_vec(),
+            },
+        );
         entry.calculate_checksum();
-        
-        let decision = validator.validate_entry(&entry, 0).expect("Validation should succeed for tests");
+
+        let decision = validator
+            .validate_entry(&entry, 0)
+            .expect("Validation should succeed for tests");
         assert!(matches!(decision.action, RecoveryAction::Skip));
         assert!(decision.safe_to_continue);
     }
@@ -394,15 +429,20 @@ mod tests {
     #[test]
     fn test_checksum_mismatch_detected() {
         let mut validator = WalCorruptionValidator::with_default_config();
-        
-        let mut entry = WALEntry::new(1, WALOperation::Put {
-            key: b"test".to_vec(),
-            value: b"value".to_vec(),
-        });
+
+        let mut entry = WALEntry::new(
+            1,
+            WALOperation::Put {
+                key: b"test".to_vec(),
+                value: b"value".to_vec(),
+            },
+        );
         entry.calculate_checksum();
         entry.checksum = 0; // Corrupt checksum
-        
-        let decision = validator.validate_entry(&entry, 0).expect("Validation should succeed for tests");
+
+        let decision = validator
+            .validate_entry(&entry, 0)
+            .expect("Validation should succeed for tests");
         assert!(matches!(decision.action, RecoveryAction::Stop));
         assert!(!decision.safe_to_continue);
     }
@@ -410,14 +450,19 @@ mod tests {
     #[test]
     fn test_empty_key_detected() {
         let mut validator = WalCorruptionValidator::with_default_config();
-        
-        let mut entry = WALEntry::new(1, WALOperation::Put {
-            key: Vec::new(),
-            value: b"value".to_vec(),
-        });
+
+        let mut entry = WALEntry::new(
+            1,
+            WALOperation::Put {
+                key: Vec::new(),
+                value: b"value".to_vec(),
+            },
+        );
         entry.calculate_checksum();
-        
-        let decision = validator.validate_entry(&entry, 0).expect("Validation should succeed for tests");
+
+        let decision = validator
+            .validate_entry(&entry, 0)
+            .expect("Validation should succeed for tests");
         assert!(matches!(decision.action, RecoveryAction::Stop));
     }
 }

@@ -127,8 +127,8 @@ impl TransactionCleanup {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::UnifiedVersionStore;
+    use super::*;
 
     #[test]
     fn test_version_cleanup() {

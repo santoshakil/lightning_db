@@ -2,11 +2,11 @@
 //!
 //! Provides async methods for page operations needed by integrity validation.
 
-use super::{Page, PageId, PageManager, page::PAGE_SIZE};
+use super::{page::PAGE_SIZE, Page, PageId, PageManager};
 use crate::core::error::Result;
+use async_trait::async_trait;
 use parking_lot::RwLock;
 use std::sync::Arc;
-use async_trait::async_trait;
 
 /// Async trait for PageManager operations
 #[async_trait]
@@ -82,13 +82,15 @@ impl PageManagerAsync for Arc<RwLock<PageManager>> {
         // Convert key to page_id if possible, or use a default implementation
         if key.len() >= 8 {
             let page_id = u64::from_le_bytes(key[..8].try_into().map_err(|_| {
-                crate::core::error::Error::InvalidArgument("Invalid key format for page ID".to_string())
+                crate::core::error::Error::InvalidArgument(
+                    "Invalid key format for page ID".to_string(),
+                )
             })?);
             let page = self.load_page(page_id).await?;
             Ok(page.data().to_vec())
         } else {
             Err(crate::core::error::Error::InvalidArgument(
-                "Invalid key for page read".to_string()
+                "Invalid key for page read".to_string(),
             ))
         }
     }
@@ -97,7 +99,9 @@ impl PageManagerAsync for Arc<RwLock<PageManager>> {
         // Convert key to page_id if possible, or use a default implementation
         if key.len() >= 8 {
             let page_id = u64::from_le_bytes(key[..8].try_into().map_err(|_| {
-                crate::core::error::Error::InvalidArgument("Invalid key format for page ID".to_string())
+                crate::core::error::Error::InvalidArgument(
+                    "Invalid key format for page ID".to_string(),
+                )
             })?) as PageId;
             let mut page = Page::new(page_id);
             // Copy data to page (handling size mismatch)
@@ -105,9 +109,13 @@ impl PageManagerAsync for Arc<RwLock<PageManager>> {
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     data.as_ptr(),
-                    Arc::get_mut(&mut page.data).ok_or_else(|| {
-                        crate::core::error::Error::Internal("Page data is shared and cannot be mutated".to_string())
-                    })?.as_mut_ptr(),
+                    Arc::get_mut(&mut page.data)
+                        .ok_or_else(|| {
+                            crate::core::error::Error::Internal(
+                                "Page data is shared and cannot be mutated".to_string(),
+                            )
+                        })?
+                        .as_mut_ptr(),
                     data_len,
                 );
             }
@@ -115,7 +123,7 @@ impl PageManagerAsync for Arc<RwLock<PageManager>> {
             self.save_page(&page).await
         } else {
             Err(crate::core::error::Error::InvalidArgument(
-                "Invalid key for page write".to_string()
+                "Invalid key for page write".to_string(),
             ))
         }
     }
@@ -124,12 +132,14 @@ impl PageManagerAsync for Arc<RwLock<PageManager>> {
         // Convert key to page_id if possible
         if key.len() >= 8 {
             let page_id = u64::from_le_bytes(key[..8].try_into().map_err(|_| {
-                crate::core::error::Error::InvalidArgument("Invalid key format for page ID".to_string())
+                crate::core::error::Error::InvalidArgument(
+                    "Invalid key format for page ID".to_string(),
+                )
             })?);
             self.free_page(page_id).await
         } else {
             Err(crate::core::error::Error::InvalidArgument(
-                "Invalid key for page delete".to_string()
+                "Invalid key for page delete".to_string(),
             ))
         }
     }

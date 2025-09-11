@@ -1,37 +1,27 @@
-pub mod recovery_fixes;
-pub mod corruption_validator;
-pub mod safe_recovery;
-pub mod unified_wal;
-pub mod optimized_wal;
-pub mod atomic_wal;
 pub mod checkpoint_manager;
+pub mod corruption_validator;
 pub mod log_rotation;
-pub mod group_commit_wal;
+pub mod unified_wal;
 
-pub use recovery_fixes::WALRecoveryContext;
+pub use checkpoint_manager::{
+    CheckpointConfig, CheckpointInfo, CheckpointManager, CheckpointMetadata,
+};
 pub use corruption_validator::{
-    WalCorruptionValidator, ValidationConfig, CorruptionReport, WalCorruptionType,
-    CorruptionSeverity, RecoveryAction, RecoveryDecision, ValidationStats,
+    CorruptionReport, CorruptionSeverity, RecoveryAction, RecoveryDecision, ValidationConfig,
+    ValidationStats, WalCorruptionType, WalCorruptionValidator,
 };
-pub use safe_recovery::{
-    SafeWalRecovery, RecoveryReport, RecoveryConfig, CorruptionDetails, 
-    RecoveryStatus, DataLossAssessment, ImpactAssessment,
-};
+pub use log_rotation::{LogRotationConfig, LogRotationManager, SegmentMetadata};
 pub use unified_wal::{
-    UnifiedWriteAheadLog, UnifiedWalConfig, WalSyncMode as UnifiedWalSyncMode,
-    TransactionRecoveryState as UnifiedTransactionRecoveryState,
     RecoveryInfo as UnifiedRecoveryInfo,
+    TransactionRecoveryState as UnifiedTransactionRecoveryState, UnifiedWalConfig,
+    UnifiedWriteAheadLog, WalSyncMode as UnifiedWalSyncMode,
 };
-pub use atomic_wal::{AtomicWriteAheadLog, AtomicWalConfig};
-pub use checkpoint_manager::{CheckpointManager, CheckpointConfig, CheckpointMetadata, CheckpointInfo};
-pub use log_rotation::{LogRotationManager, LogRotationConfig, SegmentMetadata};
-pub use group_commit_wal::GroupCommitWAL;
 
 pub type LogSequenceNumber = u64;
 pub type WalEntry = WALEntry;
 
 // Re-export unified WAL types for compatibility
-pub use unified_wal::{WALOperation, WALEntry, WriteAheadLog as UnifiedWriteAheadLogTrait};
+pub use unified_wal::{WALEntry, WALOperation, WriteAheadLog as UnifiedWriteAheadLogTrait};
 
 use crate::core::error::{Error, Result};
 
@@ -100,7 +90,7 @@ impl BasicWriteAheadLog {
         let mut length_buf = [0u8; 4];
         loop {
             match file.read_exact(&mut length_buf) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(crate::core::error::Error::Io(e.to_string())),
             }
@@ -113,20 +103,23 @@ impl BasicWriteAheadLog {
 
             let mut data = vec![0u8; length];
             match file.read_exact(&mut data) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                     // Partial write detected - truncate file to last valid entry
-                    let current_pos = file.stream_position()
+                    let current_pos = file
+                        .stream_position()
                         .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
                     file.set_len(current_pos - 4)
                         .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
                     break;
-                },
+                }
                 Err(e) => return Err(crate::core::error::Error::Io(e.to_string())),
             }
 
             // Try to deserialize and get LSN
-            if let Ok((entry, _)) = bincode::decode_from_slice::<WALEntry, _>(&data, bincode::config::standard()) {
+            if let Ok((entry, _)) =
+                bincode::decode_from_slice::<WALEntry, _>(&data, bincode::config::standard())
+            {
                 if entry.verify_checksum() {
                     max_lsn = max_lsn.max(entry.lsn);
                 } else {
@@ -171,14 +164,14 @@ impl WriteAheadLog for BasicWriteAheadLog {
             .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
         file.write_all(&data)
             .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
-        
+
         // Use fdatasync when available for better performance while maintaining durability
         #[cfg(unix)]
         {
             use std::os::unix::io::AsRawFd;
             let fd = file.as_raw_fd();
             match unsafe { libc::fsync(fd) } {
-                0 => {},
+                0 => {}
                 _ => {
                     // Fallback to sync_all on fdatasync failure
                     file.sync_all()
@@ -199,14 +192,14 @@ impl WriteAheadLog for BasicWriteAheadLog {
         let file = self.file.lock().map_err(|_| Error::LockFailed {
             resource: "WAL file mutex".to_string(),
         })?;
-        
+
         // Use fdatasync for better performance while maintaining durability
         #[cfg(unix)]
         {
             use std::os::unix::io::AsRawFd;
             let fd = file.as_raw_fd();
             match unsafe { libc::fsync(fd) } {
-                0 => {},
+                0 => {}
                 _ => {
                     // Fallback to sync_all on fdatasync failure
                     file.sync_all()

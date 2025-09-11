@@ -137,7 +137,7 @@ impl TransactionRecoveryManager {
     pub async fn begin_transaction(&self) -> Result<u64> {
         let tx_id = self.next_tx_id.fetch_add(1, Ordering::SeqCst);
         let now = Instant::now();
-        
+
         let tx_info = TransactionInfo {
             id: tx_id,
             state: TransactionState::Active,
@@ -154,9 +154,11 @@ impl TransactionRecoveryManager {
             transactions.insert(tx_id, tx_info);
         }
 
-        self.stats.transactions_started.fetch_add(1, Ordering::SeqCst);
+        self.stats
+            .transactions_started
+            .fetch_add(1, Ordering::SeqCst);
         info!("Started transaction: {}", tx_id);
-        
+
         Ok(tx_id)
     }
 
@@ -178,15 +180,16 @@ impl TransactionRecoveryManager {
         };
 
         // Apply commit with timeout
-        let commit_result = timeout(
-            self.config.transaction_timeout,
-            self.apply_commit(tx_id)
-        ).await;
+        let commit_result =
+            timeout(self.config.transaction_timeout, self.apply_commit(tx_id)).await;
 
         match commit_result {
             Ok(Ok(_)) => {
-                self.cleanup_transaction(tx_id, TransactionState::Committed).await;
-                self.stats.transactions_committed.fetch_add(1, Ordering::SeqCst);
+                self.cleanup_transaction(tx_id, TransactionState::Committed)
+                    .await;
+                self.stats
+                    .transactions_committed
+                    .fetch_add(1, Ordering::SeqCst);
                 info!("Committed transaction: {}", tx_id);
                 Ok(())
             }
@@ -197,7 +200,10 @@ impl TransactionRecoveryManager {
             Err(_) => {
                 self.stats.timeouts.fetch_add(1, Ordering::SeqCst);
                 self.rollback_transaction(tx_id).await?;
-                Err(Error::Timeout(format!("Transaction {} commit timeout", tx_id)))
+                Err(Error::Timeout(format!(
+                    "Transaction {} commit timeout",
+                    tx_id
+                )))
             }
         }
     }
@@ -226,10 +232,15 @@ impl TransactionRecoveryManager {
             }
         }
 
-        self.cleanup_transaction(tx_id, TransactionState::Aborted).await;
-        self.stats.transactions_aborted.fetch_add(1, Ordering::SeqCst);
-        self.stats.rollbacks_performed.fetch_add(1, Ordering::SeqCst);
-        
+        self.cleanup_transaction(tx_id, TransactionState::Aborted)
+            .await;
+        self.stats
+            .transactions_aborted
+            .fetch_add(1, Ordering::SeqCst);
+        self.stats
+            .rollbacks_performed
+            .fetch_add(1, Ordering::SeqCst);
+
         info!("Rolled back transaction: {}", tx_id);
         Ok(())
     }
@@ -237,10 +248,12 @@ impl TransactionRecoveryManager {
     async fn apply_commit(&self, tx_id: u64) -> Result<()> {
         // This would integrate with the actual storage engine
         // For now, we simulate the commit process
-        
+
         let tx_info = {
             let transactions = self.transactions.read().await;
-            transactions.get(&tx_id).cloned()
+            transactions
+                .get(&tx_id)
+                .cloned()
                 .ok_or(Error::TransactionNotFound { id: tx_id })?
         };
 
@@ -304,7 +317,7 @@ impl TransactionRecoveryManager {
         {
             let mut wait_graph = self.wait_graph.write().await;
             wait_graph.remove(&tx_id);
-            
+
             // Remove this transaction from other wait lists
             for wait_list in wait_graph.values_mut() {
                 wait_list.remove(&tx_id);
@@ -324,9 +337,10 @@ impl TransactionRecoveryManager {
         // Check if transaction exists and is active
         {
             let transactions = self.transactions.read().await;
-            let tx = transactions.get(&tx_id)
+            let tx = transactions
+                .get(&tx_id)
                 .ok_or(Error::TransactionNotFound { id: tx_id })?;
-            
+
             if tx.state != TransactionState::Active {
                 return Err(Error::TransactionInvalidState {
                     id: tx_id,
@@ -336,12 +350,18 @@ impl TransactionRecoveryManager {
         }
 
         // Attempt to acquire lock with deadlock detection
-        self.acquire_lock_with_deadlock_detection(tx_id, key, exclusive).await
+        self.acquire_lock_with_deadlock_detection(tx_id, key, exclusive)
+            .await
     }
 
-    async fn acquire_lock_with_deadlock_detection(&self, tx_id: u64, key: &str, exclusive: bool) -> Result<()> {
+    async fn acquire_lock_with_deadlock_detection(
+        &self,
+        tx_id: u64,
+        key: &str,
+        exclusive: bool,
+    ) -> Result<()> {
         let start_time = Instant::now();
-        
+
         loop {
             // Try to acquire lock
             match self.try_acquire_lock(tx_id, key, exclusive).await {
@@ -357,7 +377,10 @@ impl TransactionRecoveryManager {
                     // Check timeout
                     if start_time.elapsed() > self.config.deadlock_timeout {
                         self.stats.timeouts.fetch_add(1, Ordering::SeqCst);
-                        return Err(Error::Timeout(format!("Lock acquisition timeout for key: {}", key)));
+                        return Err(Error::Timeout(format!(
+                            "Lock acquisition timeout for key: {}",
+                            key
+                        )));
                     }
 
                     // Wait a bit before retrying
@@ -370,29 +393,34 @@ impl TransactionRecoveryManager {
 
     async fn try_acquire_lock(&self, tx_id: u64, key: &str, _exclusive: bool) -> Result<()> {
         let mut lock_table = self.lock_table.write().await;
-        
-        let lock_holders = lock_table.entry(key.to_string()).or_insert_with(HashSet::new);
-        
+
+        let lock_holders = lock_table
+            .entry(key.to_string())
+            .or_insert_with(HashSet::new);
+
         if lock_holders.is_empty() || lock_holders.contains(&tx_id) {
             // Can acquire lock
             lock_holders.insert(tx_id);
-            
+
             // Update transaction info
             let mut transactions = self.transactions.write().await;
             if let Some(tx) = transactions.get_mut(&tx_id) {
                 tx.locks_held.insert(key.to_string());
                 tx.last_activity = Instant::now();
             }
-            
+
             Ok(())
         } else {
             // Lock is held by another transaction
             let blocking_tx = *lock_holders.iter().next().unwrap();
-            
+
             // Update wait graph
             {
                 let mut wait_graph = self.wait_graph.write().await;
-                wait_graph.entry(tx_id).or_insert_with(HashSet::new).insert(blocking_tx);
+                wait_graph
+                    .entry(tx_id)
+                    .or_insert_with(HashSet::new)
+                    .insert(blocking_tx);
             }
 
             // Update transaction waiting info
@@ -413,51 +441,66 @@ impl TransactionRecoveryManager {
     async fn detect_deadlock(&self, tx_id: u64) -> Option<Vec<u64>> {
         let mut detector = self.deadlock_detector.lock().await;
         let wait_graph = self.wait_graph.read().await;
-        
+
         detector.detect_cycle(&wait_graph, tx_id)
     }
 
     async fn resolve_deadlock(&self, deadlock_cycle: Vec<u64>) -> Result<()> {
         self.stats.deadlocks_detected.fetch_add(1, Ordering::SeqCst);
-        warn!("Deadlock detected involving transactions: {:?}", deadlock_cycle);
+        warn!(
+            "Deadlock detected involving transactions: {:?}",
+            deadlock_cycle
+        );
 
         // Choose victim based on strategy
         let victim = self.choose_deadlock_victim(&deadlock_cycle).await;
-        
+
         // Abort victim transaction
         self.rollback_transaction(victim).await?;
         self.stats.deadlocks_resolved.fetch_add(1, Ordering::SeqCst);
-        
+
         info!("Resolved deadlock by aborting transaction: {}", victim);
-        
-        Err(Error::Deadlock(format!("Transaction {} was aborted to resolve deadlock", victim)))
+
+        Err(Error::Deadlock(format!(
+            "Transaction {} was aborted to resolve deadlock",
+            victim
+        )))
     }
 
     async fn choose_deadlock_victim(&self, deadlock_cycle: &[u64]) -> u64 {
         let transactions = self.transactions.read().await;
-        
+
         match self.config.conflict_resolution_strategy {
-            ConflictResolutionStrategy::OldestFirst => {
-                deadlock_cycle.iter()
-                    .min_by_key(|&&tx_id| {
-                        transactions.get(&tx_id).map(|tx| tx.start_time).unwrap_or_else(Instant::now)
-                    })
-                    .copied().unwrap_or(deadlock_cycle[0])
-            }
-            ConflictResolutionStrategy::NewestFirst => {
-                deadlock_cycle.iter()
-                    .max_by_key(|&&tx_id| {
-                        transactions.get(&tx_id).map(|tx| tx.start_time).unwrap_or_else(Instant::now)
-                    })
-                    .copied().unwrap_or(deadlock_cycle[0])
-            }
-            ConflictResolutionStrategy::SmallestFirst => {
-                deadlock_cycle.iter()
-                    .min_by_key(|&&tx_id| {
-                        transactions.get(&tx_id).map(|tx| tx.operations.len()).unwrap_or(0)
-                    })
-                    .copied().unwrap_or(deadlock_cycle[0])
-            }
+            ConflictResolutionStrategy::OldestFirst => deadlock_cycle
+                .iter()
+                .min_by_key(|&&tx_id| {
+                    transactions
+                        .get(&tx_id)
+                        .map(|tx| tx.start_time)
+                        .unwrap_or_else(Instant::now)
+                })
+                .copied()
+                .unwrap_or(deadlock_cycle[0]),
+            ConflictResolutionStrategy::NewestFirst => deadlock_cycle
+                .iter()
+                .max_by_key(|&&tx_id| {
+                    transactions
+                        .get(&tx_id)
+                        .map(|tx| tx.start_time)
+                        .unwrap_or_else(Instant::now)
+                })
+                .copied()
+                .unwrap_or(deadlock_cycle[0]),
+            ConflictResolutionStrategy::SmallestFirst => deadlock_cycle
+                .iter()
+                .min_by_key(|&&tx_id| {
+                    transactions
+                        .get(&tx_id)
+                        .map(|tx| tx.operations.len())
+                        .unwrap_or(0)
+                })
+                .copied()
+                .unwrap_or(deadlock_cycle[0]),
             ConflictResolutionStrategy::RandomAbort => {
                 deadlock_cycle[0] // Simple choice for now
             }
@@ -466,7 +509,8 @@ impl TransactionRecoveryManager {
 
     async fn release_all_locks(&self, tx_id: u64) {
         let mut lock_table = self.lock_table.write().await;
-        let locks_to_release: Vec<String> = lock_table.iter()
+        let locks_to_release: Vec<String> = lock_table
+            .iter()
             .filter_map(|(key, holders)| {
                 if holders.contains(&tx_id) {
                     Some(key.clone())
@@ -505,12 +549,18 @@ impl TransactionRecoveryManager {
 
     pub async fn recover_incomplete_transactions(&self) -> Result<Vec<u64>> {
         info!("Starting recovery of incomplete transactions");
-        
+
         let mut recovered = Vec::new();
         let transactions_to_process: Vec<(u64, TransactionInfo)> = {
             let transactions = self.transactions.read().await;
-            transactions.iter()
-                .filter(|(_, tx)| matches!(tx.state, TransactionState::Active | TransactionState::Preparing))
+            transactions
+                .iter()
+                .filter(|(_, tx)| {
+                    matches!(
+                        tx.state,
+                        TransactionState::Active | TransactionState::Preparing
+                    )
+                })
                 .map(|(&id, tx)| (id, tx.clone()))
                 .collect()
         };
@@ -532,8 +582,11 @@ impl TransactionRecoveryManager {
                     warn!("Attempting to complete preparing transaction: {}", tx_id);
                     match self.apply_commit(tx_id).await {
                         Ok(_) => {
-                            self.cleanup_transaction(tx_id, TransactionState::Committed).await;
-                            self.stats.transactions_committed.fetch_add(1, Ordering::SeqCst);
+                            self.cleanup_transaction(tx_id, TransactionState::Committed)
+                                .await;
+                            self.stats
+                                .transactions_committed
+                                .fetch_add(1, Ordering::SeqCst);
                             recovered.push(tx_id);
                         }
                         Err(_) => {
@@ -555,11 +608,13 @@ impl TransactionRecoveryManager {
 
     pub async fn get_transaction_health_report(&self) -> TransactionHealthReport {
         let transactions = self.transactions.read().await;
-        let active_count = transactions.values()
+        let active_count = transactions
+            .values()
             .filter(|tx| tx.state == TransactionState::Active)
             .count();
-        
-        let long_running_count = transactions.values()
+
+        let long_running_count = transactions
+            .values()
             .filter(|tx| tx.start_time.elapsed() > Duration::from_secs(300))
             .count();
 
@@ -621,10 +676,14 @@ impl DeadlockDetector {
         }
     }
 
-    fn detect_cycle(&mut self, wait_graph: &HashMap<u64, HashSet<u64>>, start_tx: u64) -> Option<Vec<u64>> {
+    fn detect_cycle(
+        &mut self,
+        wait_graph: &HashMap<u64, HashSet<u64>>,
+        start_tx: u64,
+    ) -> Option<Vec<u64>> {
         self.visited.clear();
         self.path.clear();
-        
+
         if self.dfs(wait_graph, start_tx, start_tx) {
             Some(self.path.clone())
         } else {
@@ -672,10 +731,10 @@ mod tests {
     async fn test_transaction_lifecycle() {
         let config = TransactionRecoveryConfig::default();
         let manager = TransactionRecoveryManager::new(config);
-        
+
         let tx_id = manager.begin_transaction().await.unwrap();
         assert!(tx_id > 0);
-        
+
         manager.commit_transaction(tx_id).await.unwrap();
     }
 
@@ -683,18 +742,18 @@ mod tests {
     async fn test_deadlock_detection() {
         let config = TransactionRecoveryConfig::default();
         let manager = TransactionRecoveryManager::new(config);
-        
+
         let tx1 = manager.begin_transaction().await.unwrap();
         let tx2 = manager.begin_transaction().await.unwrap();
-        
+
         // Create potential deadlock scenario
         manager.acquire_lock(tx1, "key1", true).await.unwrap();
         manager.acquire_lock(tx2, "key2", true).await.unwrap();
-        
+
         // This should detect deadlock when both try to acquire each other's lock
         let result1 = manager.acquire_lock(tx1, "key2", true).await;
         let result2 = manager.acquire_lock(tx2, "key1", true).await;
-        
+
         // At least one should fail due to deadlock detection
         assert!(result1.is_err() || result2.is_err());
     }
@@ -703,16 +762,16 @@ mod tests {
     async fn test_transaction_rollback() {
         let config = TransactionRecoveryConfig::default();
         let manager = TransactionRecoveryManager::new(config);
-        
+
         let tx_id = manager.begin_transaction().await.unwrap();
-        
+
         let operation = TransactionOperation {
             operation_type: OperationType::Write,
             key: "test_key".to_string(),
             timestamp: Instant::now(),
             rollback_data: Some(b"original_value".to_vec()),
         };
-        
+
         manager.add_operation(tx_id, operation).await.unwrap();
         manager.rollback_transaction(tx_id).await.unwrap();
     }
@@ -724,9 +783,9 @@ mod tests {
             ..Default::default()
         };
         let manager = TransactionRecoveryManager::new(config);
-        
+
         let tx_id = manager.begin_transaction().await.unwrap();
-        
+
         // Simulate incomplete transaction
         let recovered = manager.recover_incomplete_transactions().await.unwrap();
         assert!(recovered.contains(&tx_id));

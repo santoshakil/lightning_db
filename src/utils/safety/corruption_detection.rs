@@ -410,7 +410,7 @@ fn heal_corruption(
 
         HealingStrategy::RestoreFromWAL => {
             // Restore from write-ahead log
-            if db.unified_wal.is_some() || db.wal.is_some() {
+            if db.unified_wal.is_some() {
                 // In a real implementation, replay WAL entries
                 warn!("WAL restore healing not implemented");
                 Err(Error::NotImplemented("WAL restore healing".to_string()))

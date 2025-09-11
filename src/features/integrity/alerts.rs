@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{mpsc, RwLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum AlertSeverity {
@@ -139,7 +139,7 @@ struct AlertCounters {
 impl AlertManager {
     pub fn new(thresholds: AlertThresholds) -> Self {
         let (sender, mut receiver) = mpsc::unbounded_channel();
-        
+
         // Spawn background task to handle alerts
         tokio::spawn(async move {
             while let Some(alert) = receiver.recv().await {
@@ -178,8 +178,8 @@ impl AlertManager {
                 super::detector::CorruptionType::ChecksumMismatch => {
                     counters.checksum_errors += 1;
                 }
-                super::detector::CorruptionType::InvalidPageHeader |
-                super::detector::CorruptionType::BTreeStructureViolation => {
+                super::detector::CorruptionType::InvalidPageHeader
+                | super::detector::CorruptionType::BTreeStructureViolation => {
                     counters.structure_errors += 1;
                 }
                 _ => {}
@@ -208,7 +208,11 @@ impl AlertManager {
             let escalated_alert = Alert::critical(format!(
                 "Checksum error threshold exceeded: {} errors detected",
                 counters.checksum_errors
-            )).with_tags(vec!["threshold_exceeded".to_string(), "checksum_errors".to_string()]);
+            ))
+            .with_tags(vec![
+                "threshold_exceeded".to_string(),
+                "checksum_errors".to_string(),
+            ]);
 
             // Send escalated alert (but don't count it to avoid recursion)
             if let Some(sender) = &self.alert_sender {
@@ -221,7 +225,11 @@ impl AlertManager {
             let escalated_alert = Alert::critical(format!(
                 "Structure error threshold exceeded: {} errors detected",
                 counters.structure_errors
-            )).with_tags(vec!["threshold_exceeded".to_string(), "structure_errors".to_string()]);
+            ))
+            .with_tags(vec![
+                "threshold_exceeded".to_string(),
+                "structure_errors".to_string(),
+            ]);
 
             if let Some(sender) = &self.alert_sender {
                 let _ = sender.send(escalated_alert);
@@ -230,14 +238,20 @@ impl AlertManager {
 
         // Check corruption percentage
         if counters.total_pages_scanned > 0 {
-            let corruption_percentage = ((counters.checksum_errors + counters.structure_errors) as f64 
-                / counters.total_pages_scanned as f64) * 100.0;
-            
+            let corruption_percentage = ((counters.checksum_errors + counters.structure_errors)
+                as f64
+                / counters.total_pages_scanned as f64)
+                * 100.0;
+
             if corruption_percentage >= self.thresholds.corruption_percentage {
                 let escalated_alert = Alert::emergency(format!(
                     "Corruption percentage threshold exceeded: {:.2}% of pages corrupted",
                     corruption_percentage
-                )).with_tags(vec!["threshold_exceeded".to_string(), "corruption_percentage".to_string()]);
+                ))
+                .with_tags(vec![
+                    "threshold_exceeded".to_string(),
+                    "corruption_percentage".to_string(),
+                ]);
 
                 if let Some(sender) = &self.alert_sender {
                     let _ = sender.send(escalated_alert);
@@ -281,7 +295,9 @@ impl AlertManager {
     }
 
     pub async fn list_unacknowledged_alerts(&self) -> Vec<Alert> {
-        self.alerts.read().await
+        self.alerts
+            .read()
+            .await
             .values()
             .filter(|alert| !alert.acknowledged)
             .cloned()
@@ -289,7 +305,9 @@ impl AlertManager {
     }
 
     pub async fn list_unresolved_alerts(&self) -> Vec<Alert> {
-        self.alerts.read().await
+        self.alerts
+            .read()
+            .await
             .values()
             .filter(|alert| !alert.resolved)
             .cloned()
@@ -297,7 +315,9 @@ impl AlertManager {
     }
 
     pub async fn list_alerts_by_severity(&self, severity: AlertSeverity) -> Vec<Alert> {
-        self.alerts.read().await
+        self.alerts
+            .read()
+            .await
             .values()
             .filter(|alert| alert.severity == severity)
             .cloned()
@@ -313,9 +333,7 @@ impl AlertManager {
         let initial_count = alerts.len();
 
         // Remove old resolved alerts
-        alerts.retain(|_, alert| {
-            !alert.resolved || alert.timestamp > cutoff_time
-        });
+        alerts.retain(|_, alert| !alert.resolved || alert.timestamp > cutoff_time);
 
         Ok(initial_count - alerts.len())
     }
@@ -389,7 +407,11 @@ impl AlertManager {
             let alert = Alert::critical(format!(
                 "Recovery failure threshold exceeded: {} failures",
                 counters.recovery_failures
-            )).with_tags(vec!["threshold_exceeded".to_string(), "recovery_failures".to_string()]);
+            ))
+            .with_tags(vec![
+                "threshold_exceeded".to_string(),
+                "recovery_failures".to_string(),
+            ]);
 
             if let Some(sender) = &self.alert_sender {
                 let _ = sender.send(alert);

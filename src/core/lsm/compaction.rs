@@ -1,6 +1,6 @@
-use crate::features::adaptive_compression::CompressionType;
-use crate::core::error::Result;
 use super::{Level, SSTable};
+use crate::core::error::Result;
+use crate::features::adaptive_compression::CompressionType;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::info;
@@ -43,7 +43,7 @@ impl CompactionStrategy for LeveledCompaction {
         if levels.is_empty() {
             return None;
         }
-        
+
         let mut max_score = 1.0; // Only compact if score > 1.0
         let mut compact_level = None;
 
@@ -51,7 +51,7 @@ impl CompactionStrategy for LeveledCompaction {
         for i in 0..(levels.len().saturating_sub(1)) {
             let level = &levels[i];
             let score = self.score_level(level);
-            
+
             if score > max_score {
                 max_score = score;
                 compact_level = Some(i);
@@ -67,7 +67,7 @@ impl CompactionStrategy for LeveledCompaction {
         }
 
         let source_sstables = &levels[source_level].sstables;
-        
+
         if source_sstables.is_empty() {
             return None;
         }
@@ -77,7 +77,7 @@ impl CompactionStrategy for LeveledCompaction {
             let max_compaction_size = 64 * 1024 * 1024; // 64MB limit
             let mut selected = Vec::new();
             let mut total_size = 0;
-            
+
             for sstable in source_sstables {
                 if total_size + sstable.size_bytes() > max_compaction_size && !selected.is_empty() {
                     break;

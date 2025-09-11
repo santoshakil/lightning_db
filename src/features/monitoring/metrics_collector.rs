@@ -3,8 +3,8 @@
 //! Comprehensive metrics collection covering operations, performance, resources,
 //! and business metrics with OpenTelemetry integration.
 
-use crate::Database;
 use crate::core::error::Result;
+use crate::Database;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{
@@ -385,7 +385,10 @@ impl MetricsCollector {
 
     /// Get current metrics snapshot
     pub fn get_current_metrics(&self) -> DatabaseMetrics {
-        self.current_metrics.read().map(|m| m.clone()).unwrap_or_default()
+        self.current_metrics
+            .read()
+            .map(|m| m.clone())
+            .unwrap_or_default()
     }
 
     /// Get metrics history

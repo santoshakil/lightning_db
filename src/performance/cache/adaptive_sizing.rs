@@ -13,10 +13,10 @@ pub enum WorkloadType {
     Analytical,
     Sequential,
     Random,
-    OLTP,     // Online Transaction Processing
-    OLAP,     // Online Analytical Processing
-    Cache,    // Cache-oriented workload
-    KeyValue, // Key-value store workload
+    OLTP,       // Online Transaction Processing
+    OLAP,       // Online Analytical Processing
+    Cache,      // Cache-oriented workload
+    KeyValue,   // Key-value store workload
     TimeSeries, // Time-series workload
 }
 
@@ -24,18 +24,18 @@ pub enum WorkloadType {
 pub struct HardwareInfo {
     pub cpu_cores: usize,
     pub total_memory: usize,
-    pub total_memory_mb: usize,  // Memory in MB for compatibility
+    pub total_memory_mb: usize, // Memory in MB for compatibility
     pub cache_sizes: Vec<usize>,
 }
 use crate::core::error::{Error, Result};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
 
 // SIMD-optimized statistical calculations
 #[cfg(target_arch = "x86_64")]
@@ -44,10 +44,10 @@ fn simd_mean_f64(values: &[f64]) -> f64 {
     if values.is_empty() {
         return 0.0;
     }
-    
+
     let mut sum = 0.0;
     let mut i = 0;
-    
+
     unsafe {
         // Process 2 f64 values at a time with SSE2
         while i + 2 <= values.len() {
@@ -57,13 +57,13 @@ fn simd_mean_f64(values: &[f64]) -> f64 {
             sum += result;
             i += 2;
         }
-        
+
         // Handle remaining values
         for j in i..values.len() {
             sum += values[j];
         }
     }
-    
+
     sum / values.len() as f64
 }
 
@@ -82,13 +82,13 @@ fn simd_variance_f64(values: &[f64], mean: f64) -> f64 {
     if values.len() <= 1 {
         return 0.0;
     }
-    
+
     let mut sum_sq_diff = 0.0;
     let mut i = 0;
-    
+
     unsafe {
         let mean_v = _mm_set1_pd(mean);
-        
+
         // Process 2 f64 values at a time with SSE2
         while i + 2 <= values.len() {
             let v = _mm_loadu_pd(values.as_ptr().add(i));
@@ -98,14 +98,14 @@ fn simd_variance_f64(values: &[f64], mean: f64) -> f64 {
             sum_sq_diff += result;
             i += 2;
         }
-        
+
         // Handle remaining values
         for j in i..values.len() {
             let diff = values[j] - mean;
             sum_sq_diff += diff * diff;
         }
     }
-    
+
     sum_sq_diff / (values.len() - 1) as f64
 }
 
@@ -115,11 +115,9 @@ fn simd_variance_f64(values: &[f64], mean: f64) -> f64 {
     if values.len() <= 1 {
         return 0.0;
     }
-    
-    let sum_sq_diff: f64 = values.iter()
-        .map(|&v| (v - mean).powi(2))
-        .sum();
-    
+
+    let sum_sq_diff: f64 = values.iter().map(|&v| (v - mean).powi(2)).sum();
+
     sum_sq_diff / (values.len() - 1) as f64
 }
 
@@ -899,7 +897,7 @@ impl AdaptiveCacheSizer {
 
         // Higher hit rates generally indicate better temporal locality
         let recent_hit_rates: Vec<f64> = history.iter().rev().take(5).map(|m| m.hit_rate).collect();
-        
+
         // Use SIMD-optimized mean calculation
         // Convert hit rate to locality score
         simd_mean_f64(&recent_hit_rates)
@@ -917,7 +915,7 @@ impl AdaptiveCacheSizer {
         // High eviction rates with low hit rates suggest scan workloads
         let eviction_rates: Vec<f64> = recent_metrics.iter().map(|m| m.eviction_rate).collect();
         let hit_rates: Vec<f64> = recent_metrics.iter().map(|m| m.hit_rate).collect();
-        
+
         // Use SIMD-optimized calculations
         let avg_eviction_rate = simd_mean_f64(&eviction_rates);
         let avg_hit_rate = simd_mean_f64(&hit_rates);
@@ -937,7 +935,7 @@ impl AdaptiveCacheSizer {
 
         // Calculate coefficient of variation in throughput
         let throughputs: Vec<f64> = history.iter().map(|m| m.throughput_ops_per_sec).collect();
-        
+
         // Use SIMD-optimized statistical calculations
         let mean = simd_mean_f64(&throughputs);
 
@@ -1041,7 +1039,9 @@ mod tests {
         let sizer = AdaptiveCacheSizer::new(config).expect("Failed to create adaptive cache sizer");
 
         // Simulate read-heavy workload
-        sizer.analyze_workload(5000.0, 0.9).expect("Failed to analyze workload");
+        sizer
+            .analyze_workload(5000.0, 0.9)
+            .expect("Failed to analyze workload");
         let pattern = sizer.current_pattern.read();
         assert_eq!(pattern.workload_type, WorkloadType::ReadHeavy);
     }

@@ -73,7 +73,7 @@ impl VisibilityEngine {
     /// Begin a new transaction
     pub fn begin_transaction(&self, tx_id: TxId, isolation_level: IsolationLevel) -> Result<()> {
         let start_timestamp = self.get_next_timestamp();
-        
+
         let snapshot_id = if isolation_level.uses_snapshot_isolation() {
             let snapshot = self.create_snapshot(tx_id, start_timestamp)?;
             Some(snapshot.id)
@@ -93,7 +93,10 @@ impl VisibilityEngine {
         let mut transactions = self.transactions.write();
         transactions.insert(tx_id, tx_info);
 
-        debug!("Started transaction {} with isolation level {:?}", tx_id, isolation_level);
+        debug!(
+            "Started transaction {} with isolation level {:?}",
+            tx_id, isolation_level
+        );
         Ok(())
     }
 
@@ -117,7 +120,10 @@ impl VisibilityEngine {
                 }
             }
 
-            debug!("Committed transaction {} at timestamp {}", tx_id, commit_timestamp);
+            debug!(
+                "Committed transaction {} at timestamp {}",
+                tx_id, commit_timestamp
+            );
         } else {
             return Err(Error::TransactionNotFound { id: tx_id });
         }
@@ -159,7 +165,7 @@ impl VisibilityEngine {
         version: Version,
     ) -> Result<()> {
         let timestamp = self.get_next_timestamp();
-        
+
         let version_info = VersionInfo {
             version,
             tx_id,
@@ -174,7 +180,12 @@ impl VisibilityEngine {
             .or_insert_with(BTreeMap::new)
             .insert(version, version_info);
 
-        trace!("Added version {} for key {:?} by transaction {}", version, key, tx_id);
+        trace!(
+            "Added version {} for key {:?} by transaction {}",
+            version,
+            key,
+            tx_id
+        );
         Ok(())
     }
 
@@ -269,8 +280,8 @@ impl VisibilityEngine {
                 // Check if another transaction has written to this key after our start time
                 if version_info.tx_id != tx_id
                     && version_info.timestamp > tx_info.start_timestamp
-                    && (version_info.is_committed || 
-                        self.is_transaction_committed(version_info.tx_id))
+                    && (version_info.is_committed
+                        || self.is_transaction_committed(version_info.tx_id))
                 {
                     return Ok(true); // Conflict detected
                 }
@@ -298,7 +309,7 @@ impl VisibilityEngine {
         }
 
         let versions = self.versions.read();
-        
+
         for (key, version_map) in versions.iter() {
             // Check if key is in range
             if let Some(start) = start_key {
@@ -316,8 +327,8 @@ impl VisibilityEngine {
             for version_info in version_map.values() {
                 if version_info.tx_id != tx_id
                     && version_info.timestamp > tx_info.start_timestamp
-                    && (version_info.is_committed || 
-                        self.is_transaction_committed(version_info.tx_id))
+                    && (version_info.is_committed
+                        || self.is_transaction_committed(version_info.tx_id))
                 {
                     return Ok(true); // Phantom read detected
                 }
@@ -334,7 +345,7 @@ impl VisibilityEngine {
 
         for version_map in versions.values_mut() {
             let original_len = version_map.len();
-            
+
             // Keep only the latest committed version and any uncommitted versions
             let mut to_keep = BTreeMap::new();
             let mut latest_committed = None;
@@ -405,8 +416,7 @@ impl VisibilityEngine {
                     self.is_version_in_snapshot(version_info, snapshot_id)
                 } else {
                     // Fallback to timestamp-based visibility
-                    version_info.is_committed 
-                        && version_info.timestamp <= tx_info.start_timestamp
+                    version_info.is_committed && version_info.timestamp <= tx_info.start_timestamp
                 }
             }
             IsolationLevel::Snapshot => {
@@ -432,13 +442,16 @@ impl VisibilityEngine {
     /// Create a snapshot for a transaction
     fn create_snapshot(&self, tx_id: TxId, start_timestamp: u64) -> Result<Snapshot> {
         let snapshot_id = self.next_snapshot_id.fetch_add(1, Ordering::Relaxed);
-        
+
         // Get list of committed transactions at this point
-        let committed_txs: HashSet<TxId> = self.transactions
+        let committed_txs: HashSet<TxId> = self
+            .transactions
             .read()
             .values()
-            .filter(|tx| tx.state == TxState::Committed && 
-                    tx.commit_timestamp.unwrap_or(0) <= start_timestamp)
+            .filter(|tx| {
+                tx.state == TxState::Committed
+                    && tx.commit_timestamp.unwrap_or(0) <= start_timestamp
+            })
             .map(|tx| tx.tx_id)
             .collect();
 
@@ -450,9 +463,13 @@ impl VisibilityEngine {
         };
 
         self.snapshots.write().insert(snapshot_id, snapshot.clone());
-        
-        debug!("Created snapshot {} for transaction {} with {} committed transactions",
-               snapshot_id, tx_id, snapshot.committed_txs.len());
+
+        debug!(
+            "Created snapshot {} for transaction {} with {} committed transactions",
+            snapshot_id,
+            tx_id,
+            snapshot.committed_txs.len()
+        );
 
         Ok(snapshot)
     }
@@ -489,16 +506,22 @@ mod tests {
     #[test]
     fn test_read_committed_visibility() {
         let engine = VisibilityEngine::new();
-        
+
         // Start two transactions
-        engine.begin_transaction(1, IsolationLevel::ReadCommitted).unwrap();
-        engine.begin_transaction(2, IsolationLevel::ReadCommitted).unwrap();
+        engine
+            .begin_transaction(1, IsolationLevel::ReadCommitted)
+            .unwrap();
+        engine
+            .begin_transaction(2, IsolationLevel::ReadCommitted)
+            .unwrap();
 
         let key = Bytes::from("test_key");
-        
+
         // Transaction 1 writes a value
-        engine.add_version(key.clone(), Some(Bytes::from("value1")), 1, 1).unwrap();
-        
+        engine
+            .add_version(key.clone(), Some(Bytes::from("value1")), 1, 1)
+            .unwrap();
+
         // Transaction 2 should not see uncommitted write
         let visible = engine.get_visible_version(2, &key).unwrap();
         assert!(visible.is_none());
@@ -515,15 +538,21 @@ mod tests {
     #[test]
     fn test_repeatable_read_isolation() {
         let engine = VisibilityEngine::new();
-        
+
         // Start transaction with repeatable read
-        engine.begin_transaction(1, IsolationLevel::RepeatableRead).unwrap();
-        engine.begin_transaction(2, IsolationLevel::ReadCommitted).unwrap();
+        engine
+            .begin_transaction(1, IsolationLevel::RepeatableRead)
+            .unwrap();
+        engine
+            .begin_transaction(2, IsolationLevel::ReadCommitted)
+            .unwrap();
 
         let key = Bytes::from("test_key");
-        
+
         // Initial value
-        engine.add_version(key.clone(), Some(Bytes::from("initial")), 2, 1).unwrap();
+        engine
+            .add_version(key.clone(), Some(Bytes::from("initial")), 2, 1)
+            .unwrap();
         engine.commit_transaction(2).unwrap();
 
         // Transaction 1 reads the value
@@ -531,8 +560,12 @@ mod tests {
         assert!(visible1.is_some());
 
         // Another transaction modifies the value
-        engine.begin_transaction(3, IsolationLevel::ReadCommitted).unwrap();
-        engine.add_version(key.clone(), Some(Bytes::from("modified")), 3, 2).unwrap();
+        engine
+            .begin_transaction(3, IsolationLevel::ReadCommitted)
+            .unwrap();
+        engine
+            .add_version(key.clone(), Some(Bytes::from("modified")), 3, 2)
+            .unwrap();
         engine.commit_transaction(3).unwrap();
 
         // Transaction 1 should still see the original value (repeatable read)
@@ -544,15 +577,23 @@ mod tests {
     #[test]
     fn test_write_conflict_detection() {
         let engine = VisibilityEngine::new();
-        
-        engine.begin_transaction(1, IsolationLevel::RepeatableRead).unwrap();
-        engine.begin_transaction(2, IsolationLevel::RepeatableRead).unwrap();
+
+        engine
+            .begin_transaction(1, IsolationLevel::RepeatableRead)
+            .unwrap();
+        engine
+            .begin_transaction(2, IsolationLevel::RepeatableRead)
+            .unwrap();
 
         let key = Bytes::from("conflict_key");
-        
+
         // Both transactions try to write to the same key
-        engine.add_version(key.clone(), Some(Bytes::from("value1")), 1, 1).unwrap();
-        engine.add_version(key.clone(), Some(Bytes::from("value2")), 2, 2).unwrap();
+        engine
+            .add_version(key.clone(), Some(Bytes::from("value1")), 1, 1)
+            .unwrap();
+        engine
+            .add_version(key.clone(), Some(Bytes::from("value2")), 2, 2)
+            .unwrap();
 
         // Commit transaction 1
         engine.commit_transaction(1).unwrap();

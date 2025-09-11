@@ -1,8 +1,8 @@
-use std::sync::Arc;
 use crate::core::error::Error;
 use crate::core::index::IndexKey;
 use parking_lot::RwLock;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ExecutionStep {
@@ -42,15 +42,44 @@ pub struct QuerySpec {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum QueryCondition {
-    Equals { field: String, value: Vec<u8> },
-    GreaterThan { field: String, value: Vec<u8> },
-    LessThan { field: String, value: Vec<u8> },
-    GreaterOrEqual { field: String, value: Vec<u8> },
-    LessOrEqual { field: String, value: Vec<u8> },
-    NotEquals { field: String, value: Vec<u8> },
-    In { field: String, values: Vec<Vec<u8>> },
-    Between { field: String, low: Vec<u8>, high: Vec<u8> },
-    Range { field: String, start: Vec<u8>, end: Vec<u8> },
+    Equals {
+        field: String,
+        value: Vec<u8>,
+    },
+    GreaterThan {
+        field: String,
+        value: Vec<u8>,
+    },
+    LessThan {
+        field: String,
+        value: Vec<u8>,
+    },
+    GreaterOrEqual {
+        field: String,
+        value: Vec<u8>,
+    },
+    LessOrEqual {
+        field: String,
+        value: Vec<u8>,
+    },
+    NotEquals {
+        field: String,
+        value: Vec<u8>,
+    },
+    In {
+        field: String,
+        values: Vec<Vec<u8>>,
+    },
+    Between {
+        field: String,
+        low: Vec<u8>,
+        high: Vec<u8>,
+    },
+    Range {
+        field: String,
+        start: Vec<u8>,
+        end: Vec<u8>,
+    },
     And(Box<QueryCondition>, Box<QueryCondition>),
     Or(Box<QueryCondition>, Box<QueryCondition>),
     Not(Box<QueryCondition>),
@@ -157,7 +186,6 @@ pub enum PlanNode {
     Exchange(ExchangeNode),
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanNode {
     pub table_name: String,
@@ -176,7 +204,6 @@ pub enum ScanType {
     Bitmap,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FilterNode {
     pub input: Box<PlanNode>,
@@ -186,7 +213,6 @@ pub struct FilterNode {
     pub estimated_cost: CostEstimate,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectNode {
     pub input: Box<PlanNode>,
@@ -194,7 +220,6 @@ pub struct ProjectNode {
     pub estimated_rows: usize,
     pub estimated_cost: CostEstimate,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JoinNode {
@@ -206,7 +231,6 @@ pub struct JoinNode {
     pub estimated_rows: usize,
     pub estimated_cost: CostEstimate,
 }
-
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum JoinStrategy {
@@ -224,7 +248,6 @@ pub struct JoinCondition {
     pub additional_predicate: Option<Predicate>,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AggregateNode {
     pub input: Box<PlanNode>,
@@ -233,7 +256,6 @@ pub struct AggregateNode {
     pub estimated_rows: usize,
     pub estimated_cost: CostEstimate,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SortNode {
@@ -251,7 +273,6 @@ pub struct OrderByExpr {
     pub nulls_first: bool,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LimitNode {
     pub input: Box<PlanNode>,
@@ -259,7 +280,6 @@ pub struct LimitNode {
     pub offset: Option<usize>,
     pub estimated_cost: CostEstimate,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnionNode {
@@ -275,7 +295,6 @@ pub enum UnionType {
     Distinct,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexNode {
     pub table_name: String,
@@ -286,7 +305,6 @@ pub struct IndexNode {
     pub estimated_cost: CostEstimate,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MaterializedViewNode {
     pub view_name: String,
@@ -295,7 +313,6 @@ pub struct MaterializedViewNode {
     pub estimated_rows: usize,
     pub estimated_cost: CostEstimate,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HashAggregateNode {
@@ -306,7 +323,6 @@ pub struct HashAggregateNode {
     pub estimated_cost: CostEstimate,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowFunctionNode {
     pub input: Box<PlanNode>,
@@ -316,7 +332,6 @@ pub struct WindowFunctionNode {
     pub estimated_rows: usize,
     pub estimated_cost: CostEstimate,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExchangeNode {
@@ -501,15 +516,16 @@ impl QueryPlanner {
     pub fn plan_query(&self, query_spec: &QuerySpec) -> Result<ExecutionPlan, Error> {
         let query = self.convert_spec_to_query(query_spec)?;
         let logical_plan = self.build_logical_plan(query)?;
-        
+
         let optimized_plan = if self.config.enable_cost_based_optimization {
-            self.optimizer.optimize(logical_plan, &self.statistics.read())?
+            self.optimizer
+                .optimize(logical_plan, &self.statistics.read())?
         } else {
             logical_plan
         };
-        
+
         let physical_plan = self.generate_physical_plan(optimized_plan)?;
-        
+
         let exec_plan = ExecutionPlan {
             root_node: physical_plan.root.as_ref().clone(),
             steps: Vec::new(), // TODO: Extract steps from physical plan
@@ -523,17 +539,17 @@ impl QueryPlanner {
             estimated_rows: physical_plan.estimated_rows,
             optimization_hints: Vec::new(),
         };
-        
+
         Ok(exec_plan)
     }
-    
+
     fn convert_spec_to_query(&self, spec: &QuerySpec) -> Result<Query, Error> {
         let table_name = if !spec.joins.is_empty() {
             spec.joins[0].left_table.clone()
         } else {
             "default_table".to_string()
         };
-        
+
         let mut query = Query {
             select_columns: spec.projections.clone(),
             from_table: table_name,
@@ -541,16 +557,20 @@ impl QueryPlanner {
             where_clause: self.convert_conditions_to_predicate(&spec.conditions)?,
             group_by: Vec::new(),
             having: None,
-            order_by: spec.order_by.iter().map(|o| OrderByExpr {
-                expression: Expression::Column(o.field.clone()),
-                descending: !o.ascending,
-                nulls_first: false,
-            }).collect(),
+            order_by: spec
+                .order_by
+                .iter()
+                .map(|o| OrderByExpr {
+                    expression: Expression::Column(o.field.clone()),
+                    descending: !o.ascending,
+                    nulls_first: false,
+                })
+                .collect(),
             limit: spec.limit,
             offset: spec.offset,
             aggregates: Vec::new(),
         };
-        
+
         for join in &spec.joins {
             query.joins.push(JoinClause {
                 join_type: join.join_type,
@@ -562,41 +582,38 @@ impl QueryPlanner {
                 },
             });
         }
-        
+
         Ok(query)
     }
-    
-    fn convert_conditions_to_predicate(&self, conditions: &[QueryCondition]) -> Result<Option<Predicate>, Error> {
+
+    fn convert_conditions_to_predicate(
+        &self,
+        conditions: &[QueryCondition],
+    ) -> Result<Option<Predicate>, Error> {
         if conditions.is_empty() {
             return Ok(None);
         }
-        
+
         let mut predicates = Vec::new();
         for condition in conditions {
             let pred = match condition {
-                QueryCondition::Equals { field, value } => {
-                    Predicate::Equals(
-                        Expression::Column(field.clone()),
-                        Expression::Literal(Value::Binary(value.clone())),
-                    )
-                },
-                QueryCondition::GreaterThan { field, value } => {
-                    Predicate::GreaterThan(
-                        Expression::Column(field.clone()),
-                        Expression::Literal(Value::Binary(value.clone())),
-                    )
-                },
-                QueryCondition::LessThan { field, value } => {
-                    Predicate::LessThan(
-                        Expression::Column(field.clone()),
-                        Expression::Literal(Value::Binary(value.clone())),
-                    )
-                },
+                QueryCondition::Equals { field, value } => Predicate::Equals(
+                    Expression::Column(field.clone()),
+                    Expression::Literal(Value::Binary(value.clone())),
+                ),
+                QueryCondition::GreaterThan { field, value } => Predicate::GreaterThan(
+                    Expression::Column(field.clone()),
+                    Expression::Literal(Value::Binary(value.clone())),
+                ),
+                QueryCondition::LessThan { field, value } => Predicate::LessThan(
+                    Expression::Column(field.clone()),
+                    Expression::Literal(Value::Binary(value.clone())),
+                ),
                 _ => continue,
             };
             predicates.push(pred);
         }
-        
+
         if predicates.is_empty() {
             Ok(None)
         } else if predicates.len() == 1 {
@@ -612,23 +629,23 @@ impl QueryPlanner {
 
     fn build_logical_plan(&self, query: Query) -> Result<QueryPlan, Error> {
         let mut plan = self.build_scan_nodes(&query)?;
-        
+
         if let Some(predicate) = query.where_clause {
             plan = self.add_filter_node(plan, predicate)?;
         }
-        
+
         if !query.group_by.is_empty() {
             plan = self.add_aggregate_node(plan, query.group_by, query.aggregates)?;
         }
-        
+
         if !query.order_by.is_empty() {
             plan = self.add_sort_node(plan, query.order_by)?;
         }
-        
+
         if let Some(limit) = query.limit {
             plan = self.add_limit_node(plan, limit, query.offset)?;
         }
-        
+
         Ok(plan)
     }
 
@@ -641,7 +658,7 @@ impl QueryPlanner {
             estimated_cost: CostEstimate::new(100.0, 1000.0, 0.0, 100.0),
             scan_type: ScanType::FullTable,
         });
-        
+
         Ok(QueryPlan {
             root: Box::new(scan_node),
             estimated_cost: CostEstimate::new(100.0, 1000.0, 0.0, 100.0),
@@ -654,7 +671,7 @@ impl QueryPlanner {
     fn add_filter_node(&self, input: QueryPlan, predicate: Predicate) -> Result<QueryPlan, Error> {
         let selectivity = self.estimate_selectivity(&predicate)?;
         let estimated_rows = (input.estimated_rows as f64 * selectivity) as usize;
-        
+
         let filter_node = PlanNode::Filter(FilterNode {
             input: input.root,
             predicate,
@@ -662,7 +679,7 @@ impl QueryPlanner {
             estimated_rows,
             estimated_cost: input.estimated_cost.scale(selectivity),
         });
-        
+
         Ok(QueryPlan {
             root: Box::new(filter_node),
             estimated_cost: input.estimated_cost.scale(selectivity),
@@ -679,7 +696,7 @@ impl QueryPlanner {
         aggregates: Vec<AggregateFunction>,
     ) -> Result<QueryPlan, Error> {
         let estimated_groups = self.estimate_distinct_values(&group_by, input.estimated_rows)?;
-        
+
         let agg_node = PlanNode::HashAggregate(HashAggregateNode {
             input: input.root,
             group_by,
@@ -692,7 +709,7 @@ impl QueryPlanner {
                 estimated_groups as f64 * 100.0,
             ),
         });
-        
+
         Ok(QueryPlan {
             root: Box::new(agg_node),
             estimated_cost: input.estimated_cost.add(&CostEstimate::new(
@@ -707,14 +724,18 @@ impl QueryPlanner {
         })
     }
 
-    fn add_sort_node(&self, input: QueryPlan, order_by: Vec<OrderByExpr>) -> Result<QueryPlan, Error> {
+    fn add_sort_node(
+        &self,
+        input: QueryPlan,
+        order_by: Vec<OrderByExpr>,
+    ) -> Result<QueryPlan, Error> {
         let sort_cost = CostEstimate::new(
             input.estimated_rows as f64 * (input.estimated_rows as f64).log2(),
             0.0,
             0.0,
             input.estimated_rows as f64 * 8.0,
         );
-        
+
         let sort_node = PlanNode::Sort(SortNode {
             input: input.root,
             order_by,
@@ -722,7 +743,7 @@ impl QueryPlanner {
             estimated_rows: input.estimated_rows,
             estimated_cost: sort_cost,
         });
-        
+
         Ok(QueryPlan {
             root: Box::new(sort_node),
             estimated_cost: input.estimated_cost.add(&sort_cost),
@@ -744,7 +765,7 @@ impl QueryPlanner {
             offset,
             estimated_cost: CostEstimate::zero(),
         });
-        
+
         Ok(QueryPlan {
             root: Box::new(limit_node),
             estimated_cost: input.estimated_cost,
@@ -764,14 +785,14 @@ impl QueryPlanner {
 
     fn parallelize_plan(&self, plan: QueryPlan) -> Result<QueryPlan, Error> {
         let parallel_degree = self.determine_parallel_degree(&plan)?;
-        
+
         let exchange_node = PlanNode::Exchange(ExchangeNode {
             input: plan.root,
             exchange_type: ExchangeType::Gather,
             partition_keys: Vec::new(),
             estimated_cost: CostEstimate::new(0.0, 0.0, 100.0, 0.0),
         });
-        
+
         Ok(QueryPlan {
             root: Box::new(exchange_node),
             estimated_cost: plan.estimated_cost.scale(1.0 / parallel_degree as f64),
@@ -785,7 +806,7 @@ impl QueryPlanner {
         let cpu_count = num_cpus::get();
         let data_size = plan.estimated_rows * 100;
         let chunk_size = 1024 * 1024;
-        
+
         let ideal_parallelism = (data_size / chunk_size).max(1).min(cpu_count);
         Ok(ideal_parallelism)
     }
@@ -804,25 +825,29 @@ impl QueryPlanner {
                 let left_sel = self.estimate_selectivity(left)?;
                 let right_sel = self.estimate_selectivity(right)?;
                 Ok(left_sel * right_sel)
-            },
+            }
             Predicate::Or(left, right) => {
                 let left_sel = self.estimate_selectivity(left)?;
                 let right_sel = self.estimate_selectivity(right)?;
                 Ok(left_sel + right_sel - left_sel * right_sel)
-            },
+            }
             Predicate::Not(inner) => {
                 let inner_sel = self.estimate_selectivity(inner)?;
                 Ok(1.0 - inner_sel)
-            },
+            }
             _ => Ok(0.5),
         }
     }
 
-    fn estimate_distinct_values(&self, exprs: &[Expression], total_rows: usize) -> Result<usize, Error> {
+    fn estimate_distinct_values(
+        &self,
+        exprs: &[Expression],
+        total_rows: usize,
+    ) -> Result<usize, Error> {
         if exprs.is_empty() {
             return Ok(1);
         }
-        
+
         let estimated = (total_rows as f64 * 0.1).max(1.0).min(total_rows as f64) as usize;
         Ok(estimated)
     }

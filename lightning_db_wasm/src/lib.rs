@@ -1,8 +1,8 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::js_sys::Promise;
-use serde::{Serialize, Deserialize};
-use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
 
 // Using the default allocator; remove unused wee_alloc cfg to avoid warnings.
 
@@ -104,98 +104,108 @@ impl LightningDB {
     #[wasm_bindgen(constructor)]
     pub fn new(config: &Config) -> Result<LightningDB, JsValue> {
         console_error_panic_hook::set_once();
-        
-        console_log!("Creating Lightning DB with config: cache_size={}, compression={}, sync_mode={}", 
-                   config.cache_size, config.compression_enabled, config.sync_mode);
-        
+
+        console_log!(
+            "Creating Lightning DB with config: cache_size={}, compression={}, sync_mode={}",
+            config.cache_size,
+            config.compression_enabled,
+            config.sync_mode
+        );
+
         Ok(LightningDB {
             data: Arc::new(Mutex::new(HashMap::new())),
             transactions: Arc::new(Mutex::new(HashMap::new())),
             next_tx_id: Arc::new(Mutex::new(1)),
         })
     }
-    
+
     /// Put a key-value pair
     pub fn put(&self, key: &str, value: &[u8]) -> Result<(), JsValue> {
         let mut data = self.data.lock().unwrap();
         data.insert(key.to_string(), value.to_vec());
         Ok(())
     }
-    
+
     /// Get a value by key
     pub fn get(&self, key: &str) -> Result<Option<Vec<u8>>, JsValue> {
         let data = self.data.lock().unwrap();
         Ok(data.get(key).cloned())
     }
-    
+
     /// Delete a key
     pub fn delete(&self, key: &str) -> Result<(), JsValue> {
         let mut data = self.data.lock().unwrap();
         data.remove(key);
         Ok(())
     }
-    
+
     /// Begin a transaction
     pub fn begin_transaction(&self) -> Result<u64, JsValue> {
         let mut next_id = self.next_tx_id.lock().unwrap();
         let tx_id = *next_id;
         *next_id += 1;
-        
+
         let mut transactions = self.transactions.lock().unwrap();
-        transactions.insert(tx_id, Transaction {
-            id: tx_id,
-            operations: Vec::new(),
-            committed: false,
-        });
-        
+        transactions.insert(
+            tx_id,
+            Transaction {
+                id: tx_id,
+                operations: Vec::new(),
+                committed: false,
+            },
+        );
+
         Ok(tx_id)
     }
-    
+
     /// Put within a transaction
     pub fn tx_put(&self, tx_id: u64, key: &str, value: &[u8]) -> Result<(), JsValue> {
         let mut transactions = self.transactions.lock().unwrap();
-        let tx = transactions.get_mut(&tx_id)
+        let tx = transactions
+            .get_mut(&tx_id)
             .ok_or_else(|| JsValue::from_str("Transaction not found"))?;
-        
+
         if tx.committed {
             return Err(JsValue::from_str("Transaction already committed"));
         }
-        
+
         tx.operations.push(Operation::Put {
             key: key.to_string(),
             value: value.to_vec(),
         });
-        
+
         Ok(())
     }
-    
+
     /// Delete within a transaction
     pub fn tx_delete(&self, tx_id: u64, key: &str) -> Result<(), JsValue> {
         let mut transactions = self.transactions.lock().unwrap();
-        let tx = transactions.get_mut(&tx_id)
+        let tx = transactions
+            .get_mut(&tx_id)
             .ok_or_else(|| JsValue::from_str("Transaction not found"))?;
-        
+
         if tx.committed {
             return Err(JsValue::from_str("Transaction already committed"));
         }
-        
+
         tx.operations.push(Operation::Delete {
             key: key.to_string(),
         });
-        
+
         Ok(())
     }
-    
+
     /// Commit a transaction
     pub fn commit_transaction(&self, tx_id: u64) -> Result<(), JsValue> {
         let mut transactions = self.transactions.lock().unwrap();
-        let tx = transactions.get_mut(&tx_id)
+        let tx = transactions
+            .get_mut(&tx_id)
             .ok_or_else(|| JsValue::from_str("Transaction not found"))?;
-        
+
         if tx.committed {
             return Err(JsValue::from_str("Transaction already committed"));
         }
-        
+
         // Apply all operations
         let mut data = self.data.lock().unwrap();
         for op in &tx.operations {
@@ -208,43 +218,44 @@ impl LightningDB {
                 }
             }
         }
-        
+
         tx.committed = true;
         transactions.remove(&tx_id);
-        
+
         Ok(())
     }
-    
+
     /// Rollback a transaction
     pub fn rollback_transaction(&self, tx_id: u64) -> Result<(), JsValue> {
         let mut transactions = self.transactions.lock().unwrap();
         transactions.remove(&tx_id);
         Ok(())
     }
-    
+
     /// Get all keys with a prefix
     pub fn keys_with_prefix(&self, prefix: &str) -> Result<Vec<String>, JsValue> {
         let data = self.data.lock().unwrap();
-        let keys: Vec<String> = data.keys()
+        let keys: Vec<String> = data
+            .keys()
             .filter(|k| k.starts_with(prefix))
             .cloned()
             .collect();
         Ok(keys)
     }
-    
+
     /// Get database statistics
     pub fn get_stats(&self) -> Result<Stats, JsValue> {
         let data = self.data.lock().unwrap();
         let total_size: usize = data.values().map(|v| v.len()).sum();
-        
+
         Ok(Stats {
             total_keys: data.len() as u32,
             total_size: total_size as u32,
-            cache_hit_rate: 0.95, // Simulated
+            cache_hit_rate: 0.95,   // Simulated
             compression_ratio: 0.5, // Simulated
         })
     }
-    
+
     /// Clear all data
     pub fn clear(&self) -> Result<(), JsValue> {
         let mut data = self.data.lock().unwrap();
@@ -264,7 +275,7 @@ impl LightningDB {
             Ok(JsValue::undefined())
         })
     }
-    
+
     /// Async get operation
     pub fn get_async(&self, key: String) -> Promise {
         let db = self.clone();
@@ -275,7 +286,7 @@ impl LightningDB {
             }
         })
     }
-    
+
     /// Async delete operation
     pub fn delete_async(&self, key: String) -> Promise {
         let db = self.clone();
@@ -305,8 +316,7 @@ pub fn string_to_bytes(s: &str) -> Vec<u8> {
 
 #[wasm_bindgen]
 pub fn bytes_to_string(bytes: &[u8]) -> Result<String, JsValue> {
-    String::from_utf8(bytes.to_vec())
-        .map_err(|e| JsValue::from_str(&format!("UTF-8 error: {}", e)))
+    String::from_utf8(bytes.to_vec()).map_err(|e| JsValue::from_str(&format!("UTF-8 error: {}", e)))
 }
 
 // Benchmark utilities
@@ -325,23 +335,23 @@ pub fn benchmark_writes(db: &LightningDB, count: u32) -> Result<BenchmarkResult,
         .performance()
         .ok_or_else(|| JsValue::from_str("No performance"))?
         .now();
-    
+
     for i in 0..count {
         let key = format!("bench_key_{}", i);
         let value = format!("bench_value_{}", i);
         db.put(&key, value.as_bytes())?;
     }
-    
+
     let end = web_sys::window()
         .ok_or_else(|| JsValue::from_str("No window"))?
         .performance()
         .ok_or_else(|| JsValue::from_str("No performance"))?
         .now();
-    
+
     let duration_ms = end - start;
     let ops_per_sec = (count as f64 / duration_ms) * 1000.0;
     let avg_latency_us = (duration_ms * 1000.0) / count as f64;
-    
+
     Ok(BenchmarkResult {
         operations: count,
         duration_ms,
@@ -357,22 +367,22 @@ pub fn benchmark_reads(db: &LightningDB, count: u32) -> Result<BenchmarkResult, 
         .performance()
         .ok_or_else(|| JsValue::from_str("No performance"))?
         .now();
-    
+
     for i in 0..count {
         let key = format!("bench_key_{}", i);
         let _ = db.get(&key)?;
     }
-    
+
     let end = web_sys::window()
         .ok_or_else(|| JsValue::from_str("No window"))?
         .performance()
         .ok_or_else(|| JsValue::from_str("No performance"))?
         .now();
-    
+
     let duration_ms = end - start;
     let ops_per_sec = (count as f64 / duration_ms) * 1000.0;
     let avg_latency_us = (duration_ms * 1000.0) / count as f64;
-    
+
     Ok(BenchmarkResult {
         operations: count,
         duration_ms,
@@ -385,38 +395,38 @@ pub fn benchmark_reads(db: &LightningDB, count: u32) -> Result<BenchmarkResult, 
 mod tests {
     use super::*;
     use wasm_bindgen_test::*;
-    
+
     wasm_bindgen_test_configure!(run_in_browser);
-    
+
     #[wasm_bindgen_test]
     fn test_basic_operations() {
         let config = Config::new();
         let db = LightningDB::new(&config).unwrap();
-        
+
         // Put and get
         db.put("key1", b"value1").unwrap();
         let value = db.get("key1").unwrap();
         assert_eq!(value, Some(b"value1".to_vec()));
-        
+
         // Delete
         db.delete("key1").unwrap();
         let value = db.get("key1").unwrap();
         assert_eq!(value, None);
     }
-    
+
     #[wasm_bindgen_test]
     fn test_transactions() {
         let config = Config::new();
         let db = LightningDB::new(&config).unwrap();
-        
+
         let tx_id = db.begin_transaction().unwrap();
         db.tx_put(tx_id, "tx_key", b"tx_value").unwrap();
-        
+
         // Value shouldn't be visible before commit
         assert_eq!(db.get("tx_key").unwrap(), None);
-        
+
         db.commit_transaction(tx_id).unwrap();
-        
+
         // Value should be visible after commit
         assert_eq!(db.get("tx_key").unwrap(), Some(b"tx_value".to_vec()));
     }

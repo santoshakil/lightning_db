@@ -1,6 +1,6 @@
 use clap::{Arg, Command};
-use lightning_db::{Database, LightningDbConfig};
 use lightning_db::features::admin::http_server::SimpleAdminServer;
+use lightning_db::{Database, LightningDbConfig};
 use std::path::Path;
 use std::sync::Arc;
 

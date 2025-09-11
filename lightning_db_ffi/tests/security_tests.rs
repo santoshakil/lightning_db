@@ -4,10 +4,10 @@
 //! security vulnerabilities and attack vectors.
 
 use lightning_db_ffi::{
-    lightning_db_close, lightning_db_create, lightning_db_create_with_config,
-    lightning_db_delete, lightning_db_free_bytes, lightning_db_get,
-    lightning_db_put, lightning_db_get_last_error, lightning_db_clear_error,
-    ErrorCode, CompressionType, WalSyncMode,
+    lightning_db_clear_error, lightning_db_close, lightning_db_create,
+    lightning_db_create_with_config, lightning_db_delete, lightning_db_free_bytes,
+    lightning_db_get, lightning_db_get_last_error, lightning_db_put, CompressionType, ErrorCode,
+    WalSyncMode,
 };
 use std::ffi::CString;
 use std::ptr;
@@ -54,19 +54,19 @@ fn test_buffer_overflow_protection() {
     // Test with maximum buffer size + 1 (should fail)
     let max_size = 100 * 1024 * 1024; // MAX_FFI_BUFFER_SIZE
     let oversized_len = max_size + 1;
-    
+
     let key = b"test_key";
     let value = vec![0u8; 1024]; // Small actual buffer
-    
+
     // This should be rejected due to oversized length parameter
-    let result = unsafe { 
+    let result = unsafe {
         lightning_db_put(
-            db_handle, 
-            key.as_ptr(), 
+            db_handle,
+            key.as_ptr(),
             key.len(),
-            value.as_ptr(), 
-            oversized_len  // Malicious length
-        ) 
+            value.as_ptr(),
+            oversized_len, // Malicious length
+        )
     };
     assert_ne!(result, 0);
 
@@ -85,7 +85,7 @@ fn test_integer_overflow_protection() {
 
     // Test cache size validation
     let mut db_handle = 0u64;
-    
+
     // Test with zero cache size (should fail)
     let result = unsafe {
         lightning_db_create_with_config(
@@ -131,7 +131,7 @@ fn test_string_validation() {
     // Test with invalid UTF-8 sequence
     let invalid_utf8 = vec![0xFF, 0xFE, 0x00]; // Invalid UTF-8
     let invalid_path = invalid_utf8.as_ptr() as *const i8;
-    
+
     let mut db_handle = 0u64;
     let result = unsafe { lightning_db_create(invalid_path, &mut db_handle) };
     assert_ne!(result, 0);
@@ -169,7 +169,8 @@ fn test_invalid_handle_protection() {
 
     // Test with extremely large handle (potential corruption)
     let suspicious_handle = u64::MAX - 100;
-    let result = unsafe { lightning_db_put(suspicious_handle, b"key".as_ptr(), 3, b"value".as_ptr(), 5) };
+    let result =
+        unsafe { lightning_db_put(suspicious_handle, b"key".as_ptr(), 3, b"value".as_ptr(), 5) };
     assert_ne!(result, 0);
 }
 
@@ -213,19 +214,11 @@ fn test_memory_alignment() {
     // Create a misaligned pointer (should be rejected)
     let data = [1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8];
     let misaligned_ptr = unsafe { data.as_ptr().add(1) }; // Offset by 1 byte
-    
+
     // Depending on the system, this might or might not be misaligned
     // The validation should handle it gracefully either way
     let mut db_handle = 1; // Use valid handle for this test
-    let result = unsafe { 
-        lightning_db_put(
-            db_handle, 
-            misaligned_ptr, 
-            3,
-            b"value".as_ptr(), 
-            5
-        ) 
-    };
+    let result = unsafe { lightning_db_put(db_handle, misaligned_ptr, 3, b"value".as_ptr(), 5) };
     // Should either work or fail gracefully (not crash)
     // The exact result depends on the system alignment requirements
 }
@@ -239,12 +232,12 @@ fn test_error_message_safety() {
 
     // Get error message
     let error_ptr = unsafe { lightning_db_get_last_error() };
-    
+
     if !error_ptr.is_null() {
         // Error message should be safe to read
         let error_cstr = unsafe { std::ffi::CStr::from_ptr(error_ptr) };
         let error_str = error_cstr.to_str().unwrap();
-        
+
         // Error message should be sanitized (no sensitive information)
         assert!(!error_str.contains("/home/"));
         assert!(!error_str.contains("0x"));
@@ -253,7 +246,7 @@ fn test_error_message_safety() {
 
     // Clear error
     unsafe { lightning_db_clear_error() };
-    
+
     let error_ptr = unsafe { lightning_db_get_last_error() };
     assert!(error_ptr.is_null());
 }
@@ -271,14 +264,14 @@ fn test_resource_cleanup() {
     assert_ne!(db_handle, 0);
 
     // Cause an error in a database operation
-    let result = unsafe { 
+    let result = unsafe {
         lightning_db_put(
-            db_handle, 
-            ptr::null(),  // Invalid key pointer
-            5, 
-            b"value".as_ptr(), 
-            5
-        ) 
+            db_handle,
+            ptr::null(), // Invalid key pointer
+            5,
+            b"value".as_ptr(),
+            5,
+        )
     };
     assert_ne!(result, 0);
 
@@ -298,9 +291,7 @@ fn test_double_free_protection() {
     assert_eq!(result, 0);
 
     // Put some data
-    let result = unsafe { 
-        lightning_db_put(db_handle, b"key".as_ptr(), 3, b"value".as_ptr(), 5) 
-    };
+    let result = unsafe { lightning_db_put(db_handle, b"key".as_ptr(), 3, b"value".as_ptr(), 5) };
     assert_eq!(result, 0);
 
     // Get data
@@ -326,18 +317,12 @@ fn test_double_free_protection() {
 fn test_panic_prevention() {
     // All the above tests should never panic even with malicious input
     // This is verified by the fact that all tests run without crashing
-    
+
     // Test with extreme values that might cause panics in unprotected code
-    let extreme_values = [
-        (u64::MAX, usize::MAX),
-        (0, usize::MAX),
-        (u64::MAX, 0),
-    ];
+    let extreme_values = [(u64::MAX, usize::MAX), (0, usize::MAX), (u64::MAX, 0)];
 
     for (handle, len) in extreme_values.iter() {
-        let result = unsafe { 
-            lightning_db_get(*handle, b"test".as_ptr(), *len) 
-        };
+        let result = unsafe { lightning_db_get(*handle, b"test".as_ptr(), *len) };
         // Should return error, not panic
         assert_ne!(result.error_code, 0);
     }
@@ -346,8 +331,8 @@ fn test_panic_prevention() {
 /// Test concurrent access safety
 #[test]
 fn test_concurrent_safety() {
-    use std::thread;
     use std::sync::Arc;
+    use std::thread;
 
     let temp_dir = TempDir::new().unwrap();
     let path = CString::new(temp_dir.path().to_str().unwrap()).unwrap();
@@ -365,7 +350,7 @@ fn test_concurrent_safety() {
         let handle = thread::spawn(move || {
             let key = format!("key_{}", i);
             let value = format!("value_{}", i);
-            
+
             // Multiple operations from different threads
             for _j in 0..10 {
                 let result = unsafe {
@@ -378,10 +363,8 @@ fn test_concurrent_safety() {
                     )
                 };
                 // Should either succeed or fail gracefully
-                
-                let result = unsafe { 
-                    lightning_db_get(*db_handle, key.as_ptr(), key.len()) 
-                };
+
+                let result = unsafe { lightning_db_get(*db_handle, key.as_ptr(), key.len()) };
                 if result.error_code == 0 {
                     unsafe { lightning_db_free_bytes(result.data, result.len) };
                 }
@@ -409,21 +392,15 @@ fn test_zero_length_data() {
     assert_eq!(result, 0);
 
     // Test with zero-length key and value
-    let result = unsafe { 
-        lightning_db_put(db_handle, ptr::null(), 0, ptr::null(), 0) 
-    };
+    let result = unsafe { lightning_db_put(db_handle, ptr::null(), 0, ptr::null(), 0) };
     // Should handle gracefully (empty key might not be valid)
-    
+
     // Test with zero-length key but valid value
-    let result = unsafe { 
-        lightning_db_put(db_handle, ptr::null(), 0, b"value".as_ptr(), 5) 
-    };
+    let result = unsafe { lightning_db_put(db_handle, ptr::null(), 0, b"value".as_ptr(), 5) };
     // Should handle gracefully
 
     // Test with valid key but zero-length value
-    let result = unsafe { 
-        lightning_db_put(db_handle, b"key".as_ptr(), 3, ptr::null(), 0) 
-    };
+    let result = unsafe { lightning_db_put(db_handle, b"key".as_ptr(), 3, ptr::null(), 0) };
     // Should handle gracefully
 
     unsafe { lightning_db_close(db_handle) };

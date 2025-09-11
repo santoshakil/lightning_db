@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use crate::core::error::Error;
-use super::planner::{PlanNode, CostEstimate, ScanType, JoinStrategy};
+use super::planner::{CostEstimate, JoinStrategy, PlanNode, ScanType};
 use super::statistics::TableStatistics;
+use crate::core::error::Error;
+use std::collections::HashMap;
 
 const CPU_TUPLE_COST: f64 = 0.01;
 const SEQ_PAGE_COST: f64 = 1.0;
@@ -60,7 +60,11 @@ impl CostModel {
         }
     }
 
-    pub fn estimate_cost(&self, node: &PlanNode, stats: &TableStatistics) -> Result<CostEstimate, Error> {
+    pub fn estimate_cost(
+        &self,
+        node: &PlanNode,
+        stats: &TableStatistics,
+    ) -> Result<CostEstimate, Error> {
         match node {
             PlanNode::Scan(scan) => self.estimate_scan_cost(scan, stats),
             PlanNode::Filter(filter) => self.estimate_filter_cost(filter, stats),
@@ -78,9 +82,13 @@ impl CostModel {
         scan: &super::planner::ScanNode,
         stats: &TableStatistics,
     ) -> Result<CostEstimate, Error> {
-        let table_stats = stats.get_table(&scan.table_name)
-            .ok_or(Error::InvalidInput(format!("No stats for table {}", scan.table_name)))?;
-        
+        let table_stats = stats
+            .get_table(&scan.table_name)
+            .ok_or(Error::InvalidInput(format!(
+                "No stats for table {}",
+                scan.table_name
+            )))?;
+
         let (io_cost, cpu_cost) = match scan.scan_type {
             ScanType::FullTable => {
                 let pages = table_stats.total_pages;
@@ -89,7 +97,7 @@ impl CostModel {
                     pages as f64 * self.config.seq_page_cost,
                     tuples as f64 * self.config.cpu_tuple_cost,
                 )
-            },
+            }
             ScanType::Index => {
                 let index_pages = table_stats.index_pages.unwrap_or(100);
                 let tuples = scan.estimated_rows;
@@ -97,7 +105,7 @@ impl CostModel {
                     index_pages as f64 * INDEX_SCAN_COST,
                     tuples as f64 * self.config.cpu_tuple_cost,
                 )
-            },
+            }
             ScanType::Range => {
                 let selectivity = scan.estimated_rows as f64 / table_stats.row_count as f64;
                 let pages = (table_stats.total_pages as f64 * selectivity).max(1.0);
@@ -105,14 +113,14 @@ impl CostModel {
                     pages * self.config.random_page_cost,
                     scan.estimated_rows as f64 * self.config.cpu_tuple_cost,
                 )
-            },
+            }
             ScanType::Bitmap => {
                 let pages = (scan.estimated_rows as f64 / 100.0).max(1.0);
                 (
                     pages * self.config.random_page_cost * 0.5,
                     scan.estimated_rows as f64 * self.config.cpu_tuple_cost,
                 )
-            },
+            }
         };
 
         Ok(CostEstimate::new(cpu_cost, io_cost, 0.0, 0.0))
@@ -124,9 +132,9 @@ impl CostModel {
         stats: &TableStatistics,
     ) -> Result<CostEstimate, Error> {
         let input_cost = self.estimate_cost(&filter.input, stats)?;
-        
+
         let filter_cpu = filter.estimated_rows as f64 * self.config.cpu_tuple_cost * 2.0;
-        
+
         Ok(input_cost.add(&CostEstimate::new(filter_cpu, 0.0, 0.0, 0.0)))
     }
 
@@ -137,40 +145,40 @@ impl CostModel {
     ) -> Result<CostEstimate, Error> {
         let left_cost = self.estimate_cost(&join.left, stats)?;
         let right_cost = self.estimate_cost(&join.right, stats)?;
-        
+
         let left_rows = self.estimate_rows(&join.left, stats)?;
         let right_rows = self.estimate_rows(&join.right, stats)?;
-        
+
         let join_cost = match join.strategy {
             JoinStrategy::NestedLoop => {
                 let cpu = left_rows as f64 * right_rows as f64 * self.config.cpu_tuple_cost;
                 CostEstimate::new(cpu, 0.0, 0.0, 0.0)
-            },
+            }
             JoinStrategy::HashJoin => {
                 let build_cost = right_rows as f64 * HASH_BUILD_COST;
                 let probe_cost = left_rows as f64 * self.config.cpu_tuple_cost * 2.0;
                 let memory = right_rows as f64 * 100.0 * self.config.memory_cost;
                 CostEstimate::new(build_cost + probe_cost, 0.0, 0.0, memory)
-            },
+            }
             JoinStrategy::MergeJoin => {
                 let sort_left = left_rows as f64 * (left_rows as f64).log2() * SORT_COST_FACTOR;
                 let sort_right = right_rows as f64 * (right_rows as f64).log2() * SORT_COST_FACTOR;
                 let merge = (left_rows + right_rows) as f64 * self.config.cpu_tuple_cost;
                 CostEstimate::new(sort_left + sort_right + merge, 0.0, 0.0, 0.0)
-            },
+            }
             JoinStrategy::IndexJoin => {
                 let index_lookups = left_rows as f64;
                 let cpu = index_lookups * INDEX_SCAN_COST * self.config.cpu_tuple_cost;
                 let io = index_lookups * self.config.random_page_cost;
                 CostEstimate::new(cpu, io, 0.0, 0.0)
-            },
+            }
             JoinStrategy::BroadcastJoin => {
                 let broadcast = right_rows as f64 * self.config.network_cost;
                 let join_cpu = left_rows as f64 * self.config.cpu_tuple_cost * 3.0;
                 CostEstimate::new(join_cpu, 0.0, broadcast, 0.0)
-            },
+            }
         };
-        
+
         Ok(left_cost.add(&right_cost).add(&join_cost))
     }
 
@@ -181,12 +189,12 @@ impl CostModel {
     ) -> Result<CostEstimate, Error> {
         let input_cost = self.estimate_cost(&agg.input, stats)?;
         let input_rows = self.estimate_rows(&agg.input, stats)?;
-        
-        let agg_cpu = input_rows as f64 * self.config.cpu_tuple_cost * 
-                      (agg.aggregates.len() as f64 + 1.0);
-        
+
+        let agg_cpu =
+            input_rows as f64 * self.config.cpu_tuple_cost * (agg.aggregates.len() as f64 + 1.0);
+
         let memory = agg.estimated_rows as f64 * 100.0 * self.config.memory_cost;
-        
+
         Ok(input_cost.add(&CostEstimate::new(agg_cpu, 0.0, 0.0, memory)))
     }
 
@@ -197,16 +205,16 @@ impl CostModel {
     ) -> Result<CostEstimate, Error> {
         let input_cost = self.estimate_cost(&sort.input, stats)?;
         let rows = sort.estimated_rows;
-        
+
         let sort_cpu = rows as f64 * (rows as f64).log2() * SORT_COST_FACTOR;
         let memory = rows as f64 * 100.0 * self.config.memory_cost;
-        
+
         let spill_io = if rows > 1_000_000 {
             rows as f64 * 0.01
         } else {
             0.0
         };
-        
+
         Ok(input_cost.add(&CostEstimate::new(sort_cpu, spill_io, 0.0, memory)))
     }
 
@@ -215,13 +223,17 @@ impl CostModel {
         index: &super::planner::IndexNode,
         stats: &TableStatistics,
     ) -> Result<CostEstimate, Error> {
-        let table_stats = stats.get_table(&index.table_name)
-            .ok_or(Error::InvalidInput(format!("No stats for table {}", index.table_name)))?;
-        
+        let table_stats = stats
+            .get_table(&index.table_name)
+            .ok_or(Error::InvalidInput(format!(
+                "No stats for table {}",
+                index.table_name
+            )))?;
+
         let index_height = ((table_stats.row_count as f64).log2() / 100.0).max(1.0) as usize;
         let io_cost = index_height as f64 * self.config.random_page_cost;
         let cpu_cost = index.estimated_rows as f64 * self.config.cpu_tuple_cost;
-        
+
         Ok(CostEstimate::new(cpu_cost, io_cost, 0.0, 0.0))
     }
 
@@ -232,14 +244,19 @@ impl CostModel {
     ) -> Result<CostEstimate, Error> {
         let input_cost = self.estimate_cost(&hash_agg.input, stats)?;
         let input_rows = self.estimate_rows(&hash_agg.input, stats)?;
-        
+
         let hash_build = input_rows as f64 * HASH_BUILD_COST;
-        let agg_compute = input_rows as f64 * self.config.cpu_tuple_cost * 
-                         hash_agg.aggregates.len() as f64;
-        
+        let agg_compute =
+            input_rows as f64 * self.config.cpu_tuple_cost * hash_agg.aggregates.len() as f64;
+
         let memory = hash_agg.estimated_groups as f64 * 200.0 * self.config.memory_cost;
-        
-        Ok(input_cost.add(&CostEstimate::new(hash_build + agg_compute, 0.0, 0.0, memory)))
+
+        Ok(input_cost.add(&CostEstimate::new(
+            hash_build + agg_compute,
+            0.0,
+            0.0,
+            memory,
+        )))
     }
 
     fn estimate_rows(&self, node: &PlanNode, _stats: &TableStatistics) -> Result<usize, Error> {
@@ -257,7 +274,7 @@ impl CostModel {
     pub fn calibrate(&mut self, operation: &str, actual_time: f64, estimated_cost: f64) {
         let ratio = actual_time / estimated_cost;
         self.calibration_data.insert(operation.to_string(), ratio);
-        
+
         if self.calibration_data.len() > 100 {
             self.apply_calibration();
         }
@@ -267,24 +284,28 @@ impl CostModel {
         if let Some(&cpu_ratio) = self.calibration_data.get("cpu") {
             self.config.cpu_tuple_cost *= cpu_ratio;
         }
-        
+
         if let Some(&io_ratio) = self.calibration_data.get("io") {
             self.config.seq_page_cost *= io_ratio;
             self.config.random_page_cost *= io_ratio;
         }
-        
+
         self.calibration_data.clear();
     }
 
-    pub fn adjust_for_parallelism(&self, cost: CostEstimate, parallel_degree: usize) -> CostEstimate {
+    pub fn adjust_for_parallelism(
+        &self,
+        cost: CostEstimate,
+        parallel_degree: usize,
+    ) -> CostEstimate {
         if parallel_degree <= 1 {
             return cost;
         }
-        
+
         let speedup = 1.0 / (parallel_degree as f64).sqrt();
-        let parallel_overhead = self.config.parallel_setup_cost + 
-                               self.config.parallel_tuple_cost * parallel_degree as f64;
-        
+        let parallel_overhead = self.config.parallel_setup_cost
+            + self.config.parallel_tuple_cost * parallel_degree as f64;
+
         CostEstimate::new(
             cost.cpu_cost * speedup + parallel_overhead,
             cost.io_cost,

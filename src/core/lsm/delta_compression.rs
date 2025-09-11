@@ -1,5 +1,5 @@
-use crate::core::error::{Error, Result};
 use super::sstable::SSTable;
+use crate::core::error::{Error, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -400,10 +400,10 @@ impl DeltaCompressor {
         } else {
             (data2, data1, len2, len1)
         };
-        
+
         let mut prev_row = vec![0; short_len + 1];
         let mut curr_row = vec![0; short_len + 1];
-        
+
         for i in 1..=long_len {
             for j in 1..=short_len {
                 if long_data[i - 1] == short_data[j - 1] {
@@ -414,7 +414,7 @@ impl DeltaCompressor {
             }
             std::mem::swap(&mut prev_row, &mut curr_row);
         }
-        
+
         let lcs_length = prev_row[short_len];
         lcs_length as f64 / len1.max(len2) as f64
     }

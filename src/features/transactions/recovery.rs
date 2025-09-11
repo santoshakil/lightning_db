@@ -1,11 +1,11 @@
+use crate::core::error::{Error, Result};
+use bytes::Bytes;
+use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::collections::HashMap;
 use tokio::sync::RwLock;
-use bytes::Bytes;
-use serde::{Serialize, Deserialize};
-use crate::core::error::{Error, Result};
-use dashmap::DashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RecoveryStrategy {
@@ -270,8 +270,10 @@ impl RecoveryManager {
 
     pub async fn recover(&self) -> Result<RecoveryResult> {
         let start_time = Instant::now();
-        self.metrics.recovery_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+        self.metrics
+            .recovery_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         let result = match self.strategy {
             RecoveryStrategy::ARIES => self.aries_recover().await?,
             RecoveryStrategy::ShadowPaging => self.shadow_recover().await?,
@@ -279,10 +281,12 @@ impl RecoveryManager {
             RecoveryStrategy::Checkpointing => self.checkpoint_recover().await?,
             RecoveryStrategy::Hybrid => self.hybrid_recover().await?,
         };
-        
+
         let elapsed = start_time.elapsed().as_millis() as u64;
-        self.metrics.recovery_time_ms.store(elapsed, std::sync::atomic::Ordering::Relaxed);
-        
+        self.metrics
+            .recovery_time_ms
+            .store(elapsed, std::sync::atomic::Ordering::Relaxed);
+
         Ok(result)
     }
 
@@ -291,28 +295,37 @@ impl RecoveryManager {
         state.phase = RecoveryPhase::Analysis;
         state.start_time = Instant::now();
         drop(state);
-        
+
         let checkpoint_lsn = self.find_last_checkpoint().await?;
-        
+
         self.aries_analysis(checkpoint_lsn).await?;
-        
-        let redo_lsn = self.aries_recovery.analysis_phase.redo_lsn
+
+        let redo_lsn = self
+            .aries_recovery
+            .analysis_phase
+            .redo_lsn
             .load(std::sync::atomic::Ordering::SeqCst);
-        
+
         self.aries_redo(redo_lsn).await?;
-        
+
         self.aries_undo().await?;
-        
+
         let mut state = self.aries_recovery.recovery_state.write().await;
         state.phase = RecoveryPhase::Complete;
-        
+
         Ok(RecoveryResult {
             recovered_transactions: self.get_recovered_transactions().await,
-            recovered_pages: self.metrics.pages_recovered.load(std::sync::atomic::Ordering::Relaxed),
+            recovered_pages: self
+                .metrics
+                .pages_recovered
+                .load(std::sync::atomic::Ordering::Relaxed),
             recovery_time: state.start_time.elapsed(),
             recovery_point: RecoveryPoint {
                 lsn: redo_lsn,
-                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
                 active_transactions: Vec::new(),
                 dirty_pages: Vec::new(),
                 checkpoint_lsn,
@@ -324,7 +337,7 @@ impl RecoveryManager {
         let mut state = self.aries_recovery.recovery_state.write().await;
         state.phase = RecoveryPhase::Analysis;
         drop(state);
-        
+
         if checkpoint_lsn > 0 {
             if let Some(checkpoint) = self.checkpoint_manager.checkpoints.get(&checkpoint_lsn) {
                 for (txn_id, snapshot) in &checkpoint.transaction_table {
@@ -338,7 +351,7 @@ impl RecoveryManager {
                         },
                     );
                 }
-                
+
                 for (page_id, entry) in &checkpoint.dirty_page_table {
                     self.aries_recovery.analysis_phase.dirty_page_table.insert(
                         *page_id,
@@ -350,31 +363,35 @@ impl RecoveryManager {
                 }
             }
         }
-        
-        let log_records = self.transaction_log
+
+        let log_records = self
+            .transaction_log
             .recover(Some(checkpoint_lsn))
             .await?
             .transactions_recovered;
-        
+
         self.metrics.transactions_recovered.store(
             log_records.len() as u64,
             std::sync::atomic::Ordering::Relaxed,
         );
-        
-        let min_recovery_lsn = self.aries_recovery.analysis_phase.dirty_page_table
+
+        let min_recovery_lsn = self
+            .aries_recovery
+            .analysis_phase
+            .dirty_page_table
             .iter()
             .map(|entry| entry.value().recovery_lsn)
             .min()
             .unwrap_or(checkpoint_lsn);
-        
-        self.aries_recovery.analysis_phase.redo_lsn.store(
-            min_recovery_lsn,
-            std::sync::atomic::Ordering::SeqCst,
-        );
-        
+
+        self.aries_recovery
+            .analysis_phase
+            .redo_lsn
+            .store(min_recovery_lsn, std::sync::atomic::Ordering::SeqCst);
+
         let mut state = self.aries_recovery.recovery_state.write().await;
         state.analysis_complete = true;
-        
+
         Ok(())
     }
 
@@ -382,22 +399,27 @@ impl RecoveryManager {
         let mut state = self.aries_recovery.recovery_state.write().await;
         state.phase = RecoveryPhase::Redo;
         drop(state);
-        
+
         let recovery_info = self.transaction_log.recover(Some(redo_lsn)).await?;
-        
+
         for redo_op in recovery_info.redo_operations {
-            if let Some(dirty_page) = self.aries_recovery.analysis_phase
-                .dirty_page_table.get(&redo_op.page_id) {
-                
-                let page_data = self.storage.read_page(
-                    redo_op.key.as_bytes().to_vec()
-                ).await.unwrap_or_default();
-                
+            if let Some(dirty_page) = self
+                .aries_recovery
+                .analysis_phase
+                .dirty_page_table
+                .get(&redo_op.page_id)
+            {
+                let page_data = self
+                    .storage
+                    .read_page(redo_op.key.as_bytes().to_vec())
+                    .await
+                    .unwrap_or_default();
+
                 let page_lsn = self.get_page_lsn(&page_data);
-                
+
                 if page_lsn < dirty_page.recovery_lsn {
                     self.apply_redo_operation(&redo_op).await?;
-                    
+
                     self.aries_recovery.redo_phase.pages_recovered.insert(
                         redo_op.page_id,
                         PageRecoveryInfo {
@@ -407,16 +429,20 @@ impl RecoveryManager {
                             recovery_time: Instant::now(),
                         },
                     );
-                    
-                    self.metrics.pages_recovered.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    self.metrics.redo_operations.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                    self.metrics
+                        .pages_recovered
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    self.metrics
+                        .redo_operations
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
             }
         }
-        
+
         let mut state = self.aries_recovery.recovery_state.write().await;
         state.redo_complete = true;
-        
+
         Ok(())
     }
 
@@ -424,74 +450,74 @@ impl RecoveryManager {
         let mut state = self.aries_recovery.recovery_state.write().await;
         state.phase = RecoveryPhase::Undo;
         drop(state);
-        
+
         let mut undo_list = Vec::new();
         for entry in self.aries_recovery.analysis_phase.transaction_table.iter() {
-            if entry.value().state == TransactionRecoveryState::Active ||
-               entry.value().state == TransactionRecoveryState::Aborting {
+            if entry.value().state == TransactionRecoveryState::Active
+                || entry.value().state == TransactionRecoveryState::Aborting
+            {
                 undo_list.push(*entry.key());
             }
         }
-        
+
         *self.aries_recovery.undo_phase.undo_list.write().await = undo_list.clone();
-        
+
         while !undo_list.is_empty() {
             let mut max_lsn = 0;
             let mut max_txn = None;
-            
+
             for txn_id in &undo_list {
-                if let Some(txn) = self.aries_recovery.analysis_phase.transaction_table.get(txn_id) {
+                if let Some(txn) = self
+                    .aries_recovery
+                    .analysis_phase
+                    .transaction_table
+                    .get(txn_id)
+                {
                     if txn.last_lsn > max_lsn {
                         max_lsn = txn.last_lsn;
                         max_txn = Some(*txn_id);
                     }
                 }
             }
-            
+
             if let Some(txn_id) = max_txn {
                 let recovery_info = self.transaction_log.recover(Some(max_lsn)).await?;
-                
+
                 for undo_op in recovery_info.undo_operations {
                     self.apply_undo_operation(&undo_op).await?;
-                    
+
                     self.write_compensation_log(txn_id, max_lsn).await?;
-                    
-                    self.metrics.undo_operations.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                    self.metrics
+                        .undo_operations
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
-                
+
                 undo_list.retain(|&id| id != txn_id);
             } else {
                 break;
             }
         }
-        
+
         let mut state = self.aries_recovery.recovery_state.write().await;
         state.undo_complete = true;
-        
+
         Ok(())
     }
 
-    async fn apply_redo_operation(
-        &self,
-        op: &super::transaction_log::RedoOperation,
-    ) -> Result<()> {
-        self.storage.write_page(
-            op.key.as_bytes().to_vec(),
-            vec![],
-        ).await?;
-        
+    async fn apply_redo_operation(&self, op: &super::transaction_log::RedoOperation) -> Result<()> {
+        self.storage
+            .write_page(op.key.as_bytes().to_vec(), vec![])
+            .await?;
+
         Ok(())
     }
 
-    async fn apply_undo_operation(
-        &self,
-        op: &super::transaction_log::UndoOperation,
-    ) -> Result<()> {
-        self.storage.write_page(
-            op.key.as_bytes().to_vec(),
-            vec![],
-        ).await?;
-        
+    async fn apply_undo_operation(&self, op: &super::transaction_log::UndoOperation) -> Result<()> {
+        self.storage
+            .write_page(op.key.as_bytes().to_vec(), vec![])
+            .await?;
+
         Ok(())
     }
 
@@ -500,24 +526,27 @@ impl RecoveryManager {
         txn_id: super::TransactionId,
         compensated_lsn: u64,
     ) -> Result<()> {
-        let clr_lsn = self.transaction_log.write(
-            super::transaction_log::LogType::Compensation,
-            txn_id,
-            super::transaction_log::LogData::Compensation {
-                compensated_lsn,
-                operation: super::transaction_log::CompensationOperation {
-                    original_operation: super::transaction_log::UndoOperation {
-                        key: String::new(),
-                        operation_type: super::participant::OperationType::Write,
-                        page_id: 0,
-                        offset: 0,
-                        length: 0,
+        let clr_lsn = self
+            .transaction_log
+            .write(
+                super::transaction_log::LogType::Compensation,
+                txn_id,
+                super::transaction_log::LogData::Compensation {
+                    compensated_lsn,
+                    operation: super::transaction_log::CompensationOperation {
+                        original_operation: super::transaction_log::UndoOperation {
+                            key: String::new(),
+                            operation_type: super::participant::OperationType::Write,
+                            page_id: 0,
+                            offset: 0,
+                            length: 0,
+                        },
+                        compensation_type: super::transaction_log::CompensationType::Logical,
                     },
-                    compensation_type: super::transaction_log::CompensationType::Logical,
                 },
-            },
-        ).await?;
-        
+            )
+            .await?;
+
         self.aries_recovery.undo_phase.compensation_log.insert(
             clr_lsn,
             CompensationLogRecord {
@@ -527,7 +556,7 @@ impl RecoveryManager {
                 compensated_lsn,
             },
         );
-        
+
         Ok(())
     }
 
@@ -540,12 +569,15 @@ impl RecoveryManager {
     }
 
     async fn find_last_checkpoint(&self) -> Result<u64> {
-        let checkpoints: Vec<_> = self.checkpoint_manager.checkpoints
+        let checkpoints: Vec<_> = self
+            .checkpoint_manager
+            .checkpoints
             .iter()
             .map(|entry| (*entry.key(), entry.value().clone()))
             .collect();
-        
-        Ok(checkpoints.iter()
+
+        Ok(checkpoints
+            .iter()
             .filter(|(_, cp)| cp.completed)
             .map(|(lsn, _)| *lsn)
             .max()
@@ -554,26 +586,28 @@ impl RecoveryManager {
 
     async fn shadow_recover(&self) -> Result<RecoveryResult> {
         let directory = self.shadow_paging.shadow_directory.read().await;
-        
+
         let mut recovered_pages = 0;
         for mapping in directory.page_mappings.values() {
             if mapping.version < directory.current_version {
                 recovered_pages += 1;
             }
         }
-        
-        self.metrics.pages_recovered.store(
-            recovered_pages,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        
+
+        self.metrics
+            .pages_recovered
+            .store(recovered_pages, std::sync::atomic::Ordering::Relaxed);
+
         Ok(RecoveryResult {
             recovered_transactions: Vec::new(),
             recovered_pages,
             recovery_time: Duration::from_secs(0),
             recovery_point: RecoveryPoint {
                 lsn: 0,
-                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
                 active_transactions: Vec::new(),
                 dirty_pages: Vec::new(),
                 checkpoint_lsn: 0,
@@ -583,14 +617,17 @@ impl RecoveryManager {
 
     async fn log_based_recover(&self) -> Result<RecoveryResult> {
         let recovery_info = self.transaction_log.recover(None).await?;
-        
+
         Ok(RecoveryResult {
             recovered_transactions: recovery_info.transactions_recovered,
             recovered_pages: 0,
             recovery_time: Duration::from_secs(0),
             recovery_point: RecoveryPoint {
                 lsn: recovery_info.end_lsn,
-                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
                 active_transactions: Vec::new(),
                 dirty_pages: Vec::new(),
                 checkpoint_lsn: recovery_info.start_lsn,
@@ -600,10 +637,10 @@ impl RecoveryManager {
 
     async fn checkpoint_recover(&self) -> Result<RecoveryResult> {
         let checkpoint_lsn = self.find_last_checkpoint().await?;
-        
+
         if let Some(checkpoint) = self.checkpoint_manager.checkpoints.get(&checkpoint_lsn) {
             let recovered_txns: Vec<_> = checkpoint.transaction_table.keys().cloned().collect();
-            
+
             Ok(RecoveryResult {
                 recovered_transactions: recovered_txns,
                 recovered_pages: checkpoint.dirty_page_table.len() as u64,
@@ -624,7 +661,7 @@ impl RecoveryManager {
     async fn hybrid_recover(&self) -> Result<RecoveryResult> {
         let checkpoint_result = self.checkpoint_recover().await?;
         let aries_result = self.aries_recover().await?;
-        
+
         Ok(RecoveryResult {
             recovered_transactions: aries_result.recovered_transactions,
             recovered_pages: aries_result.recovered_pages + checkpoint_result.recovered_pages,
@@ -634,7 +671,9 @@ impl RecoveryManager {
     }
 
     async fn get_recovered_transactions(&self) -> Vec<super::TransactionId> {
-        self.aries_recovery.analysis_phase.transaction_table
+        self.aries_recovery
+            .analysis_phase
+            .transaction_table
             .iter()
             .map(|entry| *entry.key())
             .collect()
@@ -643,30 +682,36 @@ impl RecoveryManager {
 
 impl CheckpointManager {
     pub async fn create_checkpoint(&self) -> Result<u64> {
-        if self.checkpoint_in_progress.compare_exchange(
-            false,
-            true,
-            std::sync::atomic::Ordering::SeqCst,
-            std::sync::atomic::Ordering::Relaxed,
-        ).is_err() {
+        if self
+            .checkpoint_in_progress
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .is_err()
+        {
             return Err(Error::Custom("Checkpoint already in progress".to_string()));
         }
-        
+
         let checkpoint_id = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
-        let transaction_table: HashMap<_, _> = self.active_transactions
+
+        let transaction_table: HashMap<_, _> = self
+            .active_transactions
             .iter()
             .map(|entry| (*entry.key(), entry.value().clone()))
             .collect();
-        
-        let dirty_page_table: HashMap<_, _> = self.dirty_page_table
+
+        let dirty_page_table: HashMap<_, _> = self
+            .dirty_page_table
             .iter()
             .map(|entry| (*entry.key(), entry.value().clone()))
             .collect();
-        
+
         let checkpoint = Checkpoint {
             checkpoint_id,
             begin_lsn: 0,
@@ -676,17 +721,18 @@ impl CheckpointManager {
             dirty_page_table,
             completed: false,
         };
-        
+
         self.checkpoints.insert(checkpoint_id, checkpoint);
-        
+
         self.checkpoints.alter(&checkpoint_id, |_, mut cp| {
             cp.completed = true;
             cp
         });
-        
+
         *self.last_checkpoint.write().await = Instant::now();
-        self.checkpoint_in_progress.store(false, std::sync::atomic::Ordering::SeqCst);
-        
+        self.checkpoint_in_progress
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+
         Ok(checkpoint_id)
     }
 }

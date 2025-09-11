@@ -499,7 +499,7 @@ impl CompactionManager {
                                     }
                                 }
                             }
-                            Err(_) => {}, // Timeout, check running flag
+                            Err(_) => {} // Timeout, check running flag
                         }
                     }
                 })?;

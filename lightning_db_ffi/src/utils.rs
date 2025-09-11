@@ -81,11 +81,11 @@ pub unsafe extern "C" fn lightning_db_free_bytes(ptr: *mut u8, len: usize) {
     if ptr.is_null() {
         return;
     }
-    
+
     if len == 0 {
         return;
     }
-    
+
     // Additional safety: check for reasonable length values
     if len > crate::validation::MAX_FFI_BUFFER_SIZE {
         eprintln!("Attempted to free buffer with suspicious length: {}", len);

@@ -1,28 +1,28 @@
 use crate::{Database, Error, Result};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::{RwLock, Mutex};
-use serde::{Deserialize, Serialize};
+use tokio::sync::{Mutex, RwLock};
 
+pub mod alerts;
 pub mod checksum;
 pub mod detector;
-pub mod validator;
-pub mod scanner;
 pub mod quarantine;
-pub mod repair;
 pub mod recovery;
-pub mod alerts;
+pub mod repair;
 pub mod report;
+pub mod scanner;
+pub mod validator;
 
-pub use checksum::{ChecksumManager, ChecksumType, ChecksumError};
-pub use detector::{CorruptionDetector, DetectionResult, CorruptionType};
-pub use validator::{DataValidator, ValidationResult, ValidationError};
+pub use alerts::{Alert, AlertManager, AlertSeverity};
+pub use checksum::{ChecksumError, ChecksumManager, ChecksumType};
+pub use detector::{CorruptionDetector, CorruptionType, DetectionResult};
+pub use quarantine::{QuarantineEntry, QuarantineManager, QuarantineStatus};
+pub use recovery::{RecoveryManager, RecoveryResult, RecoveryStrategy};
+pub use repair::{AutoRepair, RepairResult, RepairStrategy};
+pub use report::{CorruptionReport, ReportFormat, ReportGenerator};
 pub use scanner::{IntegrityScanner, ScanConfig, ScanResult};
-pub use quarantine::{QuarantineManager, QuarantineEntry, QuarantineStatus};
-pub use repair::{AutoRepair, RepairStrategy, RepairResult};
-pub use recovery::{RecoveryManager, RecoveryStrategy, RecoveryResult};
-pub use alerts::{AlertManager, Alert, AlertSeverity};
-pub use report::{ReportGenerator, CorruptionReport, ReportFormat};
+pub use validator::{DataValidator, ValidationError, ValidationResult};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IntegrityConfig {
@@ -101,7 +101,10 @@ pub struct IntegrityStats {
 impl IntegrityManager {
     pub fn new(database: Arc<Database>, config: IntegrityConfig) -> Result<Self> {
         let checksum_manager = Arc::new(ChecksumManager::new(config.checksum_algorithm));
-        let detector = Arc::new(CorruptionDetector::new(database.clone(), checksum_manager.clone()));
+        let detector = Arc::new(CorruptionDetector::new(
+            database.clone(),
+            checksum_manager.clone(),
+        ));
         let validator = Arc::new(DataValidator::new(database.clone()));
         let quarantine = Arc::new(QuarantineManager::new(config.max_quarantine_size));
         let recovery = Arc::new(RecoveryManager::new(database.clone()));
@@ -147,8 +150,10 @@ impl IntegrityManager {
             scan_config,
         );
 
-        scanner.start_background_scan(self.config.scan_interval).await?;
-        
+        scanner
+            .start_background_scan(self.config.scan_interval)
+            .await?;
+
         *self.scanner.write().await = Some(scanner);
         Ok(())
     }
@@ -162,7 +167,7 @@ impl IntegrityManager {
 
     pub async fn verify_integrity(&self) -> Result<CorruptionReport> {
         let start_time = SystemTime::now();
-        
+
         let scan_config = ScanConfig {
             batch_size: self.config.scan_batch_size,
             parallel: self.config.parallel_scanning,
@@ -177,13 +182,16 @@ impl IntegrityManager {
         );
 
         let scan_result = scanner.full_scan().await?;
-        
+
         let mut stats = self.stats.lock().await;
         stats.total_scans += 1;
         stats.last_scan = Some(start_time);
         stats.scan_duration = SystemTime::now().duration_since(start_time).ok();
 
-        let report = self.report_generator.generate_report(&scan_result, &*stats).await?;
+        let report = self
+            .report_generator
+            .generate_report(&scan_result, &*stats)
+            .await?;
 
         if scan_result.has_corruption() {
             self.handle_corruption_detected(&scan_result).await?;
@@ -217,7 +225,7 @@ impl IntegrityManager {
         }
 
         let scan_result = self.scan_for_corruption().await?;
-        
+
         if !scan_result.has_corruption() {
             return Ok(RepairResult::NoCorruptionFound);
         }
@@ -233,15 +241,17 @@ impl IntegrityManager {
         };
 
         self.update_repair_stats(&repair_result).await;
-        
+
         Ok(repair_result)
     }
 
     pub async fn get_corruption_report(&self) -> Result<CorruptionReport> {
         let stats = self.stats.lock().await;
         let quarantine_stats = self.quarantine.get_stats().await?;
-        
-        self.report_generator.generate_status_report(&*stats, &quarantine_stats).await
+
+        self.report_generator
+            .generate_status_report(&*stats, &quarantine_stats)
+            .await
     }
 
     pub async fn set_integrity_check_interval(&self, interval: Duration) -> Result<()> {
@@ -249,7 +259,7 @@ impl IntegrityManager {
         if let Some(scanner) = scanner_opt.as_ref() {
             scanner.update_scan_interval(interval).await?;
         }
-        
+
         Ok(())
     }
 
@@ -264,9 +274,9 @@ impl IntegrityManager {
 
     pub async fn restore_quarantined_data(&self, entry_id: u64) -> Result<()> {
         let entry = self.quarantine.get_entry(entry_id).await?;
-        
+
         let recovery_result = self.recovery.recover_from_quarantine(&entry).await?;
-        
+
         if recovery_result.success {
             self.quarantine.remove_entry(entry_id).await?;
         }
@@ -277,13 +287,13 @@ impl IntegrityManager {
     async fn handle_corruption_detected(&self, scan_result: &ScanResult) -> Result<()> {
         for corruption in &scan_result.corruptions {
             self.quarantine.quarantine_data(corruption).await?;
-            
+
             let alert = Alert::new(
                 AlertSeverity::High,
                 format!("Corruption detected: {:?}", corruption.corruption_type),
                 corruption.clone(),
             );
-            
+
             self.alert_manager.send_alert(alert).await?;
         }
 
@@ -313,7 +323,11 @@ impl IntegrityManager {
             RepairResult::Success { repaired_count, .. } => {
                 stats.repaired_pages += *repaired_count as u64;
             }
-            RepairResult::PartialSuccess { repaired_count, failed_count, .. } => {
+            RepairResult::PartialSuccess {
+                repaired_count,
+                failed_count,
+                ..
+            } => {
                 stats.repaired_pages += *repaired_count as u64;
                 stats.failed_repairs += *failed_count as u64;
             }

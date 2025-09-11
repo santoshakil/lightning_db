@@ -1,50 +1,50 @@
+use crate::core::error::DatabaseResult;
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     path::Path,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use serde::{Deserialize, Serialize};
-use parking_lot::RwLock;
-use crate::core::error::DatabaseResult;
 
-pub mod schema;
+pub mod batch_processor;
+pub mod cli;
+pub mod engine;
+pub mod history;
+pub mod implementations;
+pub mod progress;
+pub mod rollback;
 pub mod runner;
+pub mod schema;
+pub mod templates;
 pub mod transform;
 pub mod validator;
-pub mod rollback;
-pub mod history;
-pub mod templates;
-pub mod cli;
-pub mod progress;
-pub mod engine;
-pub mod implementations;
-pub mod batch_processor;
 
-pub use schema::*;
+pub use cli::*;
+pub use history::*;
+pub use progress::*;
+pub use rollback::*;
 pub use runner::*;
+pub use schema::*;
+pub use templates::*;
 pub use transform::*;
 pub use validator::*;
-pub use rollback::*;
-pub use history::*;
-pub use templates::*;
-pub use cli::*;
-pub use progress::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct MigrationVersion(pub u64);
 
 impl MigrationVersion {
     pub const INITIAL: Self = Self(0);
-    
+
     pub fn new(version: u64) -> Self {
         Self(version)
     }
-    
+
     pub fn next(&self) -> Self {
         Self(self.0 + 1)
     }
-    
+
     pub fn prev(&self) -> Option<Self> {
         if self.0 > 0 {
             Some(Self(self.0 - 1))
@@ -52,7 +52,7 @@ impl MigrationVersion {
             None
         }
     }
-    
+
     pub fn as_u64(&self) -> u64 {
         self.0
     }
@@ -150,31 +150,31 @@ impl MigrationContext {
             temp_data: HashMap::new(),
         }
     }
-    
+
     pub fn with_dry_run(mut self, dry_run: bool) -> Self {
         self.dry_run = dry_run;
         self
     }
-    
+
     pub fn with_force(mut self, force: bool) -> Self {
         self.force = force;
         self
     }
-    
+
     pub fn with_batch_size(mut self, batch_size: usize) -> Self {
         self.batch_size = batch_size;
         self
     }
-    
+
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
     }
-    
+
     pub fn set_temp_data(&mut self, key: String, value: serde_json::Value) {
         self.temp_data.insert(key, value);
     }
-    
+
     pub fn get_temp_data(&self, key: &str) -> Option<&serde_json::Value> {
         self.temp_data.get(key)
     }
@@ -199,52 +199,59 @@ impl MigrationManager {
             runner: MigrationRunner::new(),
         }
     }
-    
+
     pub fn load_migrations_from_dir<P: AsRef<Path>>(&mut self, dir: P) -> DatabaseResult<()> {
         self.runner.load_migrations_from_dir(dir)
     }
-    
+
     pub fn register_migration(&mut self, migration: Migration) -> DatabaseResult<()> {
         let version = migration.metadata.version;
         if self.migrations.contains_key(&version) {
-            return Err(crate::core::error::DatabaseError::MigrationError(
-                format!("Migration version {} already exists", version)
-            ));
+            return Err(crate::core::error::DatabaseError::MigrationError(format!(
+                "Migration version {} already exists",
+                version
+            )));
         }
-        
+
         self.migrations.insert(version, migration);
         Ok(())
     }
-    
+
     pub fn get_current_version(&self, db_path: &str) -> DatabaseResult<MigrationVersion> {
         self.schema_manager.get_current_version(db_path)
     }
-    
+
     pub fn get_pending_migrations(
         &self,
         current_version: MigrationVersion,
         target_version: Option<MigrationVersion>,
     ) -> Vec<&Migration> {
         let target = target_version.unwrap_or_else(|| {
-            self.migrations.keys().max().copied().unwrap_or(MigrationVersion::INITIAL)
+            self.migrations
+                .keys()
+                .max()
+                .copied()
+                .unwrap_or(MigrationVersion::INITIAL)
         });
-        
-        let mut pending: Vec<_> = self.migrations.iter()
+
+        let mut pending: Vec<_> = self
+            .migrations
+            .iter()
             .filter(|(v, _)| **v > current_version && **v <= target)
             .map(|(_, m)| m)
             .collect();
-            
+
         pending.sort_by_key(|m| m.metadata.version);
         pending
     }
-    
+
     pub fn migrate_up(
         &mut self,
         ctx: &mut MigrationContext,
     ) -> DatabaseResult<Vec<MigrationVersion>> {
         self.runner.migrate_up(ctx, &self.migrations)
     }
-    
+
     pub fn migrate_down(
         &mut self,
         ctx: &mut MigrationContext,
@@ -252,15 +259,16 @@ impl MigrationManager {
     ) -> DatabaseResult<Vec<MigrationVersion>> {
         self.runner.migrate_down(ctx, &self.migrations, steps)
     }
-    
+
     pub fn migrate_to_version(
         &mut self,
         ctx: &mut MigrationContext,
         target_version: MigrationVersion,
     ) -> DatabaseResult<Vec<MigrationVersion>> {
-        self.runner.migrate_to_version(ctx, &self.migrations, target_version)
+        self.runner
+            .migrate_to_version(ctx, &self.migrations, target_version)
     }
-    
+
     pub fn validate_migration(
         &self,
         migration: &Migration,
@@ -268,27 +276,28 @@ impl MigrationManager {
     ) -> DatabaseResult<ValidationResult> {
         self.validator.validate_migration(migration, ctx)
     }
-    
+
     pub fn get_migration_status(
         &self,
         db_path: &str,
     ) -> DatabaseResult<HashMap<MigrationVersion, MigrationStatus>> {
         self.history_manager.get_migration_statuses(db_path)
     }
-    
+
     pub fn get_migration_history(
         &self,
         db_path: &str,
     ) -> DatabaseResult<Vec<MigrationHistoryEntry>> {
         self.history_manager.get_history(db_path)
     }
-    
+
     pub fn rollback_migration(
         &mut self,
         ctx: &mut MigrationContext,
         version: MigrationVersion,
     ) -> DatabaseResult<()> {
-        self.runner.rollback_migration(ctx, &self.migrations, version)
+        self.runner
+            .rollback_migration(ctx, &self.migrations, version)
     }
 }
 
@@ -322,7 +331,7 @@ impl Default for MigrationConfig {
 pub fn calculate_checksum(content: &str) -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    
+
     let mut hasher = DefaultHasher::new();
     content.hash(&mut hasher);
     format!("{:x}", hasher.finish())
@@ -333,6 +342,6 @@ pub fn timestamp_to_version(timestamp: SystemTime) -> MigrationVersion {
         timestamp
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs()
+            .as_secs(),
     )
 }

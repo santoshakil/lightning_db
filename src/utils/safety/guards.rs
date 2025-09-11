@@ -370,8 +370,9 @@ impl RateLimiter {
         let mut current = self.tokens.load(Ordering::Relaxed);
         loop {
             if current < tokens {
-                return Err(Error::Throttled(Duration::from_millis(
-                    ((tokens - current) * 1000) / self.refill_rate,
+                return Err(Error::Throttled(format!(
+                    "{} ms",
+                    ((tokens - current) * 1000) / self.refill_rate
                 )));
             }
 

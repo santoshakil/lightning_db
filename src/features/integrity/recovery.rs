@@ -1,8 +1,8 @@
-use crate::{Database, Result};
 use super::quarantine::QuarantineEntry;
+use crate::{Database, Result};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RecoveryStrategy {
@@ -85,7 +85,7 @@ impl RecoveryManager {
 
         // Read WAL entries for this page
         let wal_entries = self.get_wal_entries_for_page(page_id).await?;
-        
+
         if wal_entries.is_empty() {
             return Ok(RecoveryResult {
                 success: false,
@@ -102,7 +102,11 @@ impl RecoveryManager {
         match self.replay_wal_entries(page_id, &wal_entries).await {
             Ok(recovered_data) => {
                 // Verify recovered data if enabled
-                if self.recovery_options.verify_recovered_data && !self.verify_recovered_page_data(page_id, &recovered_data).await? {
+                if self.recovery_options.verify_recovered_data
+                    && !self
+                        .verify_recovered_page_data(page_id, &recovered_data)
+                        .await?
+                {
                     return Ok(RecoveryResult {
                         success: false,
                         strategy_used: RecoveryStrategy::WalReplay,
@@ -146,7 +150,11 @@ impl RecoveryManager {
             match self.try_recover_from_backup(page_id, backup_location).await {
                 Ok(Some(recovered_data)) => {
                     // Verify recovered data
-                    if self.recovery_options.verify_recovered_data && !self.verify_recovered_page_data(page_id, &recovered_data).await? {
+                    if self.recovery_options.verify_recovered_data
+                        && !self
+                            .verify_recovered_page_data(page_id, &recovered_data)
+                            .await?
+                    {
                         continue; // Try next backup
                     }
 
@@ -183,10 +191,17 @@ impl RecoveryManager {
         let start_time = std::time::Instant::now();
 
         for replica_endpoint in &self.replica_endpoints {
-            match self.try_recover_from_replica(page_id, replica_endpoint).await {
+            match self
+                .try_recover_from_replica(page_id, replica_endpoint)
+                .await
+            {
                 Ok(Some(recovered_data)) => {
                     // Verify recovered data
-                    if self.recovery_options.verify_recovered_data && !self.verify_recovered_page_data(page_id, &recovered_data).await? {
+                    if self.recovery_options.verify_recovered_data
+                        && !self
+                            .verify_recovered_page_data(page_id, &recovered_data)
+                            .await?
+                    {
                         continue; // Try next replica
                     }
 
@@ -219,17 +234,24 @@ impl RecoveryManager {
         })
     }
 
-    pub async fn recover_from_quarantine(&self, quarantine_entry: &QuarantineEntry) -> Result<RecoveryResult> {
+    pub async fn recover_from_quarantine(
+        &self,
+        quarantine_entry: &QuarantineEntry,
+    ) -> Result<RecoveryResult> {
         let start_time = std::time::Instant::now();
 
         // Try to recover using the backed up data from quarantine
         let backup_data = &quarantine_entry.data_backup;
-        
+
         // Attempt to clean/repair the quarantined data
         match self.attempt_data_repair(backup_data).await {
             Ok(Some(repaired_data)) => {
                 // Verify repaired data
-                if self.recovery_options.verify_recovered_data && !self.verify_recovered_page_data(quarantine_entry.page_id, &repaired_data).await? {
+                if self.recovery_options.verify_recovered_data
+                    && !self
+                        .verify_recovered_page_data(quarantine_entry.page_id, &repaired_data)
+                        .await?
+                {
                     return Ok(RecoveryResult {
                         success: false,
                         strategy_used: RecoveryStrategy::PartialReconstruction,
@@ -242,7 +264,8 @@ impl RecoveryManager {
                 }
 
                 // Write repaired data
-                self.write_recovered_page(quarantine_entry.page_id, &repaired_data).await?;
+                self.write_recovered_page(quarantine_entry.page_id, &repaired_data)
+                    .await?;
 
                 Ok(RecoveryResult {
                     success: true,
@@ -272,7 +295,7 @@ impl RecoveryManager {
 
     pub async fn bulk_recovery(&self, page_ids: Vec<u64>) -> Result<Vec<RecoveryResult>> {
         let mut results = Vec::new();
-        
+
         for page_id in page_ids {
             let result = self.recover_page_best_effort(page_id).await?;
             results.push(result);
@@ -283,7 +306,7 @@ impl RecoveryManager {
 
     pub async fn recover_page_best_effort(&self, page_id: u64) -> Result<RecoveryResult> {
         // Try recovery strategies in order of preference
-        
+
         // 1. Try WAL recovery first (fastest)
         if self.recovery_options.prefer_wal {
             let wal_result = self.recover_page_from_wal(page_id).await?;
@@ -340,7 +363,7 @@ impl RecoveryManager {
     async fn replay_wal_entries(&self, _page_id: u64, entries: &[WalEntry]) -> Result<Vec<u8>> {
         // Implementation would replay WAL entries to reconstruct page
         let mut page_data = vec![0u8; 4096]; // Default page size
-        
+
         // Apply each WAL entry in order
         for entry in entries {
             match entry.operation {
@@ -360,10 +383,14 @@ impl RecoveryManager {
         Ok(page_data)
     }
 
-    async fn try_recover_from_backup(&self, page_id: u64, backup_location: &str) -> Result<Option<Vec<u8>>> {
+    async fn try_recover_from_backup(
+        &self,
+        page_id: u64,
+        backup_location: &str,
+    ) -> Result<Option<Vec<u8>>> {
         // Implementation would read page from backup file
         let backup_path = format!("{}/page_{}.bak", backup_location, page_id);
-        
+
         if Path::new(&backup_path).exists() {
             match tokio::fs::read(&backup_path).await {
                 Ok(data) => Ok(Some(data)),
@@ -374,7 +401,11 @@ impl RecoveryManager {
         }
     }
 
-    async fn try_recover_from_replica(&self, _page_id: u64, _replica_endpoint: &str) -> Result<Option<Vec<u8>>> {
+    async fn try_recover_from_replica(
+        &self,
+        _page_id: u64,
+        _replica_endpoint: &str,
+    ) -> Result<Option<Vec<u8>>> {
         // Implementation would fetch page from replica via network
         // This is a simplified mock implementation
         Ok(Some(vec![b'L', b'N', b'D', b'B'])) // Simplified
@@ -398,7 +429,7 @@ impl RecoveryManager {
 
     async fn attempt_data_repair(&self, corrupted_data: &[u8]) -> Result<Option<Vec<u8>>> {
         // Try to repair corrupted data using various techniques
-        
+
         // 1. Check if it's just a checksum issue
         if corrupted_data.len() >= 4 && &corrupted_data[0..4] == b"LNDB" {
             // Page header looks valid, might just be checksum corruption
@@ -419,11 +450,11 @@ impl RecoveryManager {
     fn find_valid_data_section(&self, data: &[u8]) -> Option<Vec<u8>> {
         // Look for valid data patterns within corrupted data
         for i in 0..data.len().saturating_sub(4) {
-            if &data[i..i+4] == b"LNDB" {
+            if &data[i..i + 4] == b"LNDB" {
                 // Found potential page header
                 let remaining_len = data.len() - i;
                 if remaining_len >= 4096 {
-                    return Some(data[i..i+4096].to_vec());
+                    return Some(data[i..i + 4096].to_vec());
                 }
             }
         }
@@ -465,22 +496,24 @@ impl RecoveryManager {
         // Try to reconstruct page using database metadata
         // This is a simplified implementation
         let mut page_data = vec![0u8; 4096];
-        
+
         // Set valid page header
         page_data[0..4].copy_from_slice(b"LNDB");
         page_data[4] = 1; // Page type
-        
+
         Ok(Some(page_data))
     }
 
     pub async fn create_recovery_checkpoint(&self) -> Result<String> {
         // Create a checkpoint for recovery purposes
-        let checkpoint_id = format!("recovery_checkpoint_{}", 
+        let checkpoint_id = format!(
+            "recovery_checkpoint_{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_secs());
-        
+                .as_secs()
+        );
+
         // Implementation would create actual checkpoint
         Ok(checkpoint_id)
     }

@@ -1,14 +1,22 @@
-use lightning_db::{Database, LightningDbConfig};
+use lightning_db::Database;
 use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let rows: usize = std::env::var("OLAP_ROWS").ok().and_then(|s| s.parse().ok()).unwrap_or(1_000_00);
-    let value_size: usize = std::env::var("OLAP_VALUE_BYTES").ok().and_then(|s| s.parse().ok()).unwrap_or(128);
+    let rows: usize = std::env::var("OLAP_ROWS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1_000_00);
+    let value_size: usize = std::env::var("OLAP_VALUE_BYTES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(128);
 
     let db = Database::create_temp()?;
 
     let mut v = vec![0u8; value_size];
-    for i in 0..value_size { v[i] = (i % 251) as u8; }
+    for i in 0..value_size {
+        v[i] = (i % 251) as u8;
+    }
 
     let t0 = Instant::now();
     for i in 0..rows {
@@ -36,8 +44,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  scan_ms: {}", scan_ms);
     println!("  scanned_rows: {}", cnt);
     println!("  scanned_bytes: {}", bytes);
-    if scan_ms > 0 { println!("  mb_per_s: {:.2}", (bytes as f64 / (1024.0*1024.0)) / (scan_ms as f64 / 1000.0)); }
+    if scan_ms > 0 {
+        println!(
+            "  mb_per_s: {:.2}",
+            (bytes as f64 / (1024.0 * 1024.0)) / (scan_ms as f64 / 1000.0)
+        );
+    }
 
     Ok(())
 }
-

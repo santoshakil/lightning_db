@@ -95,9 +95,10 @@ impl DataIntegrityValidator {
         operation: &str,
         location: &str,
     ) -> Result<()> {
-        let mut tracker = self.violation_tracker.write().map_err(|_| {
-            Error::Internal("Failed to acquire violation tracker lock".to_string())
-        })?;
+        let mut tracker = self
+            .violation_tracker
+            .write()
+            .map_err(|_| Error::Internal("Failed to acquire violation tracker lock".to_string()))?;
 
         let critical_violations: Vec<_> = violations
             .iter()
@@ -171,7 +172,8 @@ impl DataIntegrityValidator {
         result: &ValidationResult<T>,
         duration: Duration,
     ) {
-        self.metrics.record_operation(operation, operation_type, result.is_valid(), duration);
+        self.metrics
+            .record_operation(operation, operation_type, result.is_valid(), duration);
 
         if self.config.collect_metrics {
             tracing::debug!(
@@ -191,17 +193,19 @@ impl DataIntegrityValidator {
 
     /// Get violation summary
     pub fn get_violation_summary(&self) -> Result<ViolationSummary> {
-        let tracker = self.violation_tracker.read().map_err(|_| {
-            Error::Internal("Failed to acquire violation tracker lock".to_string())
-        })?;
+        let tracker = self
+            .violation_tracker
+            .read()
+            .map_err(|_| Error::Internal("Failed to acquire violation tracker lock".to_string()))?;
         Ok(tracker.get_summary())
     }
 
     /// Clear violation history
     pub fn clear_violation_history(&self) -> Result<()> {
-        let mut tracker = self.violation_tracker.write().map_err(|_| {
-            Error::Internal("Failed to acquire violation tracker lock".to_string())
-        })?;
+        let mut tracker = self
+            .violation_tracker
+            .write()
+            .map_err(|_| Error::Internal("Failed to acquire violation tracker lock".to_string()))?;
         tracker.clear_history();
         Ok(())
     }
@@ -236,14 +240,15 @@ impl ViolationTracker {
 
             let violation_key = format!("{:?}:{}", violation.severity, violation.location);
             *self.violation_counts.entry(violation_key).or_insert(0) += 1;
-            
+
             self.violations.push(violation.clone());
             self.last_violation_time = Some(violation.timestamp);
         }
 
         // Keep violations list bounded
         if self.violations.len() > self.max_violations {
-            self.violations.drain(0..self.violations.len() - self.max_violations);
+            self.violations
+                .drain(0..self.violations.len() - self.max_violations);
         }
     }
 
@@ -251,7 +256,7 @@ impl ViolationTracker {
         // Trigger emergency stop if too many critical violations
         self.critical_violation_count > 10 ||
         // Or if we're getting too many violations in a short time period
-        (self.violations.len() > 100 && 
+        (self.violations.len() > 100 &&
          self.last_violation_time.is_some_and(|t| {
              chrono::Utc::now().signed_duration_since(t).num_minutes() < 5
          }))
@@ -279,8 +284,9 @@ impl ViolationTracker {
 
         let now = chrono::Utc::now();
         let hour_ago = now - chrono::Duration::hours(1);
-        
-        let recent_violations = self.violations
+
+        let recent_violations = self
+            .violations
             .iter()
             .filter(|v| v.timestamp > hour_ago)
             .count();
@@ -343,7 +349,7 @@ impl IntegrityMetrics {
         duration: Duration,
     ) {
         self.total_validations.fetch_add(1, Ordering::Relaxed);
-        
+
         if success {
             self.successful_validations.fetch_add(1, Ordering::Relaxed);
         } else {
@@ -351,7 +357,8 @@ impl IntegrityMetrics {
         }
 
         let duration_micros = duration.as_micros() as u64;
-        self.total_validation_time.fetch_add(duration_micros, Ordering::Relaxed);
+        self.total_validation_time
+            .fetch_add(duration_micros, Ordering::Relaxed);
 
         // Update per-operation metrics
         if let Ok(mut operations) = self.operations.write() {
@@ -442,12 +449,12 @@ pub mod validators {
 
     /// Validate checksum match
     pub fn validate_checksum(
-        data: &[u8], 
-        expected_checksum: u32, 
-        location: &str
+        data: &[u8],
+        expected_checksum: u32,
+        location: &str,
     ) -> ValidationResult<()> {
         let computed_checksum = crc32fast::hash(data);
-        
+
         if computed_checksum == expected_checksum {
             ValidationResult::Valid(())
         } else {
@@ -508,7 +515,7 @@ pub mod validators {
         }
 
         let found_magic = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-        
+
         if found_magic == expected_magic {
             ValidationResult::Valid(())
         } else {

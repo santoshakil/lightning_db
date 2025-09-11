@@ -4,8 +4,8 @@ pub mod crypto;
 pub mod input_validation;
 pub mod monitoring;
 pub mod network;
-pub mod rate_limiting;
 pub mod rate_limiter;
+pub mod rate_limiting;
 pub mod resource_protection;
 pub mod secure_database;
 pub mod timing_attack_tests;
@@ -19,31 +19,31 @@ use thiserror::Error;
 pub enum SecurityError {
     #[error("Access denied: {0}")]
     AccessDenied(String),
-    
+
     #[error("Authentication failed: {0}")]
     AuthenticationFailed(String),
-    
+
     #[error("Authorization failed: {0}")]
     AuthorizationFailed(String),
-    
+
     #[error("Input validation failed: {0}")]
     InputValidationFailed(String),
-    
+
     #[error("Rate limit exceeded: {0}")]
     RateLimitExceeded(String),
-    
+
     #[error("Resource quota exceeded: {0}")]
     ResourceQuotaExceeded(String),
-    
+
     #[error("Cryptographic operation failed: {0}")]
     CryptographicFailure(String),
-    
+
     #[error("Network security violation: {0}")]
     NetworkSecurityViolation(String),
-    
+
     #[error("Security policy violation: {0}")]
     PolicyViolation(String),
-    
+
     #[error("Audit logging failed: {0}")]
     AuditFailure(String),
 }

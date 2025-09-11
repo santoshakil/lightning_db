@@ -767,7 +767,9 @@ impl IncrementalBackupManager {
                 }
             }
             CompressionAlgorithm::LZ4 => {
-                use crate::features::adaptive_compression::algorithms::{CompressionAlgorithmTrait, LZ4Compression};
+                use crate::features::adaptive_compression::algorithms::{
+                    CompressionAlgorithmTrait, LZ4Compression,
+                };
                 use crate::features::adaptive_compression::CompressionLevel;
                 let compressor = LZ4Compression::new();
                 compressor.compress(data, CompressionLevel::Fast)

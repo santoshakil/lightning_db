@@ -3,10 +3,10 @@
 //! Provides comprehensive database recovery capabilities including point-in-time
 //! recovery, selective restoration, and recovery verification with WAL replay.
 
+use crate::core::error::{Error, Result};
+use crate::core::wal::WALEntry;
 use crate::features::backup::encryption::{EncryptionInfo, EncryptionManager};
 use crate::features::backup::incremental::IncrementalBackupManager;
-use crate::core::wal::WALEntry;
-use crate::core::error::{Error, Result};
 // Transaction types not needed for basic implementation
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;

@@ -167,7 +167,10 @@ impl RotationManager {
 
     /// Check if key rotation is needed
     pub fn needs_rotation(&self) -> Result<bool> {
-        let state = self.rotation_state.read().map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
+        let state = self
+            .rotation_state
+            .read()
+            .map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
 
         if state.in_progress {
             return Ok(false); // Already rotating
@@ -184,7 +187,10 @@ impl RotationManager {
     pub fn rotate_keys(&self) -> Result<()> {
         // Check if already rotating
         {
-            let mut state = self.rotation_state.write().map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
+            let mut state = self
+                .rotation_state
+                .write()
+                .map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
             if state.in_progress {
                 return Err(Error::Encryption(
                     "Key rotation already in progress".to_string(),
@@ -222,7 +228,9 @@ impl RotationManager {
 
                 // Update state
                 {
-                    let mut state = self.rotation_state.write().map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
+                    let mut state = self.rotation_state.write().map_err(|_| {
+                        Error::Encryption("Rotation state lock poisoned".to_string())
+                    })?;
                     state.phase = RotationPhase::ReencryptingData;
                 }
 
@@ -271,7 +279,10 @@ impl RotationManager {
 
         let total_pages = 10000; // Simulated
         {
-            let mut state = self.rotation_state.write().map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
+            let mut state = self
+                .rotation_state
+                .write()
+                .map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
             state.total_pages = total_pages;
             state.pages_reencrypted = 0;
         }
@@ -291,7 +302,10 @@ impl RotationManager {
             let pages_done = (batch + 1000).min(total_pages);
 
             {
-                let mut state = self.rotation_state.write().map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
+                let mut state = self
+                    .rotation_state
+                    .write()
+                    .map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
                 state.pages_reencrypted = pages_done;
             }
 
@@ -330,7 +344,10 @@ impl RotationManager {
 
         // Update state
         {
-            let mut state = self.rotation_state.write().map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
+            let mut state = self
+                .rotation_state
+                .write()
+                .map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
             state.in_progress = false;
             state.phase = RotationPhase::Idle;
             state.last_rotation = Some(SystemTime::now());
@@ -401,14 +418,17 @@ impl RotationManager {
 
     /// Get current rotation state
     pub fn get_rotation_state(&self) -> RotationState {
-        self.rotation_state.read().map(|state| state.clone()).unwrap_or(RotationState {
-            last_rotation: None,
-            next_rotation: None,
-            in_progress: false,
-            pages_reencrypted: 0,
-            total_pages: 0,
-            phase: RotationPhase::Idle,
-        })
+        self.rotation_state
+            .read()
+            .map(|state| state.clone())
+            .unwrap_or(RotationState {
+                last_rotation: None,
+                next_rotation: None,
+                in_progress: false,
+                pages_reencrypted: 0,
+                total_pages: 0,
+                phase: RotationPhase::Idle,
+            })
     }
 
     /// Get last rotation time
@@ -423,7 +443,10 @@ impl RotationManager {
 
     /// Cancel ongoing rotation
     pub fn cancel_rotation(&self) -> Result<()> {
-        let mut state = self.rotation_state.write().map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
+        let mut state = self
+            .rotation_state
+            .write()
+            .map_err(|_| Error::Encryption("Rotation state lock poisoned".to_string()))?;
         if !state.in_progress {
             return Err(Error::Encryption("No rotation in progress".to_string()));
         }

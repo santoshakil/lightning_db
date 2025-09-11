@@ -1,7 +1,9 @@
 use crate::core::btree::BPlusTree;
 use crate::core::error::Result;
 use crate::core::lsm::LSMTree;
-use crate::core::transaction::{UnifiedTransaction as Transaction, UnifiedVersionStore as VersionStore};
+use crate::core::transaction::{
+    UnifiedTransaction as Transaction, UnifiedVersionStore as VersionStore,
+};
 use parking_lot::RwLock;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -329,7 +331,8 @@ impl BTreeIterator {
         };
 
         // Create iterator and collect all entries to avoid lifetime issues
-        let iter: BTreeLeafIterator<'_, 32> = BTreeLeafIterator::new(btree, start_key.clone(), end_key.clone(), forward)?;
+        let iter: BTreeLeafIterator<'_, 32> =
+            BTreeLeafIterator::new(btree, start_key.clone(), end_key.clone(), forward)?;
 
         // Collect all entries that match the range
         let mut entries = Vec::new();
@@ -387,7 +390,8 @@ impl LSMIterator {
         };
 
         // Create the fixed iterator that includes all data sources
-        let lsm_iter = crate::core::lsm::LSMFullIteratorFixed::new(lsm, start_key, end_key, forward)?;
+        let lsm_iter =
+            crate::core::lsm::LSMFullIteratorFixed::new(lsm, start_key, end_key, forward)?;
 
         Ok(Self {
             lsm_iter,

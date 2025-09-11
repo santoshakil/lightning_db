@@ -1,9 +1,9 @@
-use std::cell::RefCell;
-use std::collections::VecDeque;
 use crate::features::adaptive_compression::AdaptiveCompressionEngine;
-use std::sync::Arc;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::sync::Arc;
 
 // Cache line size for optimal memory alignment
 const CACHE_LINE_SIZE: usize = 64;
@@ -15,7 +15,7 @@ fn simd_clear_buffer(buffer: &mut [u8]) {
     unsafe {
         let len = buffer.len();
         let ptr = buffer.as_mut_ptr();
-        
+
         // Clear 16-byte chunks with SIMD
         let mut i = 0;
         while i + 16 <= len {
@@ -23,7 +23,7 @@ fn simd_clear_buffer(buffer: &mut [u8]) {
             _mm_storeu_si128(ptr.add(i) as *mut __m128i, zero);
             i += 16;
         }
-        
+
         // Clear remaining bytes
         for j in i..len {
             *ptr.add(j) = 0;
@@ -45,12 +45,12 @@ fn simd_copy_buffer(src: &[u8], dst: &mut [u8]) {
         dst[..src.len().min(dst.len())].copy_from_slice(&src[..src.len().min(dst.len())]);
         return;
     }
-    
+
     unsafe {
         let len = src.len();
         let src_ptr = src.as_ptr();
         let dst_ptr = dst.as_mut_ptr();
-        
+
         // Copy 16-byte chunks with SIMD
         let mut i = 0;
         while i + 16 <= len {
@@ -58,7 +58,7 @@ fn simd_copy_buffer(src: &[u8], dst: &mut [u8]) {
             _mm_storeu_si128(dst_ptr.add(i) as *mut __m128i, data);
             i += 16;
         }
-        
+
         // Copy remaining bytes
         for j in i..len {
             *dst_ptr.add(j) = *src_ptr.add(j);
@@ -83,23 +83,20 @@ struct AlignedBuffer {
 impl AlignedBuffer {
     fn new(capacity: usize) -> Self {
         let data = vec![0; capacity];
-        Self {
-            data,
-            capacity,
-        }
+        Self { data, capacity }
     }
-    
+
     fn clear_simd(&mut self) {
         simd_clear_buffer(&mut self.data);
         self.data.clear();
     }
-    
+
     fn extend_from_slice_simd(&mut self, src: &[u8]) {
         let old_len = self.data.len();
         self.data.resize(old_len + src.len(), 0);
         simd_copy_buffer(src, &mut self.data[old_len..]);
     }
-    
+
     fn as_slice(&self) -> &[u8] {
         &self.data
     }
@@ -120,10 +117,10 @@ thread_local! {
 
     // Thread-local compression engine cache
     static COMPRESSION_ENGINE_CACHE: RefCell<Option<Arc<AdaptiveCompressionEngine>>> = const { RefCell::new(None) };
-    
+
     // Thread-local SIMD computation buffer
     static SIMD_WORK_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(1024));
-    
+
     // Thread-local prefetch hints buffer
     static PREFETCH_BUFFER: RefCell<Vec<*const u8>> = RefCell::new(Vec::with_capacity(8));
 }
@@ -243,7 +240,8 @@ where
         let mut buffer = pool.pop().unwrap_or_else(|| Vec::with_capacity(32 * 1024)); // 32KB default
         buffer.clear();
         let result = f(&mut buffer);
-        if pool.len() < 4 { // Keep max 4 buffers per thread
+        if pool.len() < 4 {
+            // Keep max 4 buffers per thread
             pool.push(buffer);
         }
         result
@@ -279,7 +277,8 @@ where
         let mut deque = pool.pop().unwrap_or_else(|| VecDeque::with_capacity(1024));
         deque.clear();
         let result = f(&mut deque);
-        if pool.len() < 2 { // Keep max 2 deques per thread
+        if pool.len() < 2 {
+            // Keep max 2 deques per thread
             pool.push(deque);
         }
         result
@@ -318,7 +317,7 @@ pub fn clear_thread_caches() {
 
 /// SIMD-optimized memory operations for cache performance
 pub mod simd_ops {
-    
+
     /// SIMD-optimized memory comparison
     #[cfg(target_arch = "x86_64")]
     #[inline(always)]
@@ -326,11 +325,11 @@ pub mod simd_ops {
         if a.len() != b.len() {
             return false;
         }
-        
+
         unsafe {
             let len = a.len();
             let mut i = 0;
-            
+
             // Compare 16-byte chunks with SIMD
             while i + 16 <= len {
                 let va = _mm_loadu_si128(a.as_ptr().add(i) as *const __m128i);
@@ -342,7 +341,7 @@ pub mod simd_ops {
                 }
                 i += 16;
             }
-            
+
             // Compare remaining bytes
             for j in i..len {
                 if a[j] != b[j] {
@@ -350,16 +349,16 @@ pub mod simd_ops {
                 }
             }
         }
-        
+
         true
     }
-    
+
     #[cfg(not(target_arch = "x86_64"))]
     #[inline(always)]
     pub fn simd_memcmp(a: &[u8], b: &[u8]) -> bool {
         a == b
     }
-    
+
     /// Issue hardware prefetch hints for better cache performance
     #[cfg(target_arch = "x86_64")]
     #[inline(always)]
@@ -368,13 +367,13 @@ pub mod simd_ops {
             _mm_prefetch(addr as *const i8, hint);
         }
     }
-    
+
     #[cfg(not(target_arch = "x86_64"))]
     #[inline(always)]
     pub fn prefetch_data(_addr: *const u8, _hint: i32) {
         // No-op on non-x86_64 platforms
     }
-    
+
     /// Batch prefetch multiple addresses
     #[cfg(target_arch = "x86_64")]
     #[inline(always)]
@@ -382,8 +381,9 @@ pub mod simd_ops {
         PREFETCH_BUFFER.with(|buf| {
             let mut buffer = buf.borrow_mut();
             buffer.clear();
-            
-            for &addr in addresses.iter().take(8) { // Limit to 8 prefetches
+
+            for &addr in addresses.iter().take(8) {
+                // Limit to 8 prefetches
                 buffer.push(addr);
                 unsafe {
                     _mm_prefetch(addr as *const i8, _MM_HINT_T0);
@@ -391,7 +391,7 @@ pub mod simd_ops {
             }
         });
     }
-    
+
     #[cfg(not(target_arch = "x86_64"))]
     #[inline(always)]
     pub fn batch_prefetch(_addresses: &[*const u8]) {

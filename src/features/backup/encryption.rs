@@ -6,7 +6,7 @@
 use crate::core::error::{Error, Result};
 use aes_gcm::{AeadInPlace, Aes256Gcm, Key, KeyInit, Nonce};
 use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 use chacha20poly1305::{ChaCha20Poly1305, Key as ChaChaKey};
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};

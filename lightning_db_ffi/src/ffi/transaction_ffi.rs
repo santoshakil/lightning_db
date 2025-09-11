@@ -25,16 +25,17 @@ pub extern "C" fn lightning_db_begin_transaction(db_handle: u64, out_handle: *mu
         return ErrorCode::InvalidArgument as i32;
     }
 
-    let db: Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
-        Some(db) => db,
-        None => {
-            set_last_error(
-                ErrorCode::DatabaseNotFound,
-                "Invalid database handle".to_string(),
-            );
-            return ErrorCode::DatabaseNotFound as i32;
-        }
-    };
+    let db: Arc<lightning_db::Database> =
+        match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+            Some(db) => db,
+            None => {
+                set_last_error(
+                    ErrorCode::DatabaseNotFound,
+                    "Invalid database handle".to_string(),
+                );
+                return ErrorCode::DatabaseNotFound as i32;
+            }
+        };
 
     let tx_id = ffi_try!(db.begin_transaction());
     let handle = TRANSACTION_REGISTRY.insert((db_handle, tx_id));
@@ -65,16 +66,17 @@ pub extern "C" fn lightning_db_commit_transaction(tx_handle: u64) -> i32 {
         }
     };
 
-    let db: Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
-        Some(db) => db,
-        None => {
-            set_last_error(
-                ErrorCode::DatabaseNotFound,
-                "Database no longer exists".to_string(),
-            );
-            return ErrorCode::DatabaseNotFound as i32;
-        }
-    };
+    let db: Arc<lightning_db::Database> =
+        match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+            Some(db) => db,
+            None => {
+                set_last_error(
+                    ErrorCode::DatabaseNotFound,
+                    "Database no longer exists".to_string(),
+                );
+                return ErrorCode::DatabaseNotFound as i32;
+            }
+        };
 
     ffi_try!(db.commit_transaction(tx_id));
 
@@ -100,16 +102,17 @@ pub extern "C" fn lightning_db_abort_transaction(tx_handle: u64) -> i32 {
         }
     };
 
-    let db: Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
-        Some(db) => db,
-        None => {
-            set_last_error(
-                ErrorCode::DatabaseNotFound,
-                "Database no longer exists".to_string(),
-            );
-            return ErrorCode::DatabaseNotFound as i32;
-        }
-    };
+    let db: Arc<lightning_db::Database> =
+        match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+            Some(db) => db,
+            None => {
+                set_last_error(
+                    ErrorCode::DatabaseNotFound,
+                    "Database no longer exists".to_string(),
+                );
+                return ErrorCode::DatabaseNotFound as i32;
+            }
+        };
 
     ffi_try!(db.abort_transaction(tx_id));
 
@@ -149,16 +152,17 @@ pub unsafe extern "C" fn lightning_db_put_tx(
         }
     };
 
-    let db: Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
-        Some(db) => db,
-        None => {
-            set_last_error(
-                ErrorCode::DatabaseNotFound,
-                "Database no longer exists".to_string(),
-            );
-            return ErrorCode::DatabaseNotFound as i32;
-        }
-    };
+    let db: Arc<lightning_db::Database> =
+        match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+            Some(db) => db,
+            None => {
+                set_last_error(
+                    ErrorCode::DatabaseNotFound,
+                    "Database no longer exists".to_string(),
+                );
+                return ErrorCode::DatabaseNotFound as i32;
+            }
+        };
 
     let key_data = unsafe { bytes_to_vec(key, key_len) };
     let value_data = unsafe { bytes_to_vec(value, value_len) };
@@ -199,16 +203,17 @@ pub unsafe extern "C" fn lightning_db_get_tx(
         }
     };
 
-    let db: Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
-        Some(db) => db,
-        None => {
-            set_last_error(
-                ErrorCode::DatabaseNotFound,
-                "Database no longer exists".to_string(),
-            );
-            return ByteResult::error(ErrorCode::DatabaseNotFound as i32);
-        }
-    };
+    let db: Arc<lightning_db::Database> =
+        match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+            Some(db) => db,
+            None => {
+                set_last_error(
+                    ErrorCode::DatabaseNotFound,
+                    "Database no longer exists".to_string(),
+                );
+                return ByteResult::error(ErrorCode::DatabaseNotFound as i32);
+            }
+        };
 
     let key_data = unsafe { bytes_to_vec(key, key_len) };
 
@@ -254,16 +259,17 @@ pub extern "C" fn lightning_db_delete_tx(tx_handle: u64, key: *const u8, key_len
         }
     };
 
-    let db: Arc<lightning_db::Database> = match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
-        Some(db) => db,
-        None => {
-            set_last_error(
-                ErrorCode::DatabaseNotFound,
-                "Database no longer exists".to_string(),
-            );
-            return ErrorCode::DatabaseNotFound as i32;
-        }
-    };
+    let db: Arc<lightning_db::Database> =
+        match super::database_ffi::DATABASE_REGISTRY.get(db_handle) {
+            Some(db) => db,
+            None => {
+                set_last_error(
+                    ErrorCode::DatabaseNotFound,
+                    "Database no longer exists".to_string(),
+                );
+                return ErrorCode::DatabaseNotFound as i32;
+            }
+        };
 
     let key_data = unsafe { bytes_to_vec(key, key_len) };
 

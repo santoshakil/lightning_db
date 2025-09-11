@@ -3,12 +3,12 @@ use async_trait::async_trait;
 use chrono::Utc;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
-use std::sync::atomic::Ordering;
 
 pub struct SchemaMigration {
     metadata: MigrationMetadata,
@@ -121,11 +121,28 @@ pub enum ConstraintType {
 pub enum SchemaTransformation {
     AddTable(TableSchema),
     DropTable(String),
-    RenameTable { old_name: String, new_name: String },
-    AddColumn { table: String, column: ColumnDefinition },
-    DropColumn { table: String, column: String },
-    RenameColumn { table: String, old_name: String, new_name: String },
-    ChangeColumnType { table: String, column: String, new_type: DataType },
+    RenameTable {
+        old_name: String,
+        new_name: String,
+    },
+    AddColumn {
+        table: String,
+        column: ColumnDefinition,
+    },
+    DropColumn {
+        table: String,
+        column: String,
+    },
+    RenameColumn {
+        table: String,
+        old_name: String,
+        new_name: String,
+    },
+    ChangeColumnType {
+        table: String,
+        column: String,
+        new_type: DataType,
+    },
     AddIndex(IndexSchema),
     DropIndex(String),
     AddConstraint(ConstraintDefinition),
@@ -139,7 +156,7 @@ impl SchemaMigration {
         new_schema: SchemaDefinition,
     ) -> Self {
         let transformations = Self::derive_transformations(&old_schema, &new_schema);
-        
+
         Self {
             metadata: MigrationMetadata {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -159,19 +176,19 @@ impl SchemaMigration {
             transformations,
         }
     }
-    
+
     fn derive_transformations(
         old: &SchemaDefinition,
         new: &SchemaDefinition,
     ) -> Vec<SchemaTransformation> {
         let mut transformations = Vec::new();
-        
+
         for (table_name, new_table) in &new.tables {
             if !old.tables.contains_key(table_name) {
                 transformations.push(SchemaTransformation::AddTable(new_table.clone()));
             } else {
                 let old_table = &old.tables[table_name];
-                
+
                 for column in &new_table.columns {
                     if !old_table.columns.iter().any(|c| c.name == column.name) {
                         transformations.push(SchemaTransformation::AddColumn {
@@ -180,7 +197,7 @@ impl SchemaMigration {
                         });
                     }
                 }
-                
+
                 for column in &old_table.columns {
                     if !new_table.columns.iter().any(|c| c.name == column.name) {
                         transformations.push(SchemaTransformation::DropColumn {
@@ -191,25 +208,25 @@ impl SchemaMigration {
                 }
             }
         }
-        
+
         for table_name in old.tables.keys() {
             if !new.tables.contains_key(table_name) {
                 transformations.push(SchemaTransformation::DropTable(table_name.clone()));
             }
         }
-        
+
         for (index_name, new_index) in &new.indexes {
             if !old.indexes.contains_key(index_name) {
                 transformations.push(SchemaTransformation::AddIndex(new_index.clone()));
             }
         }
-        
+
         for index_name in old.indexes.keys() {
             if !new.indexes.contains_key(index_name) {
                 transformations.push(SchemaTransformation::DropIndex(index_name.clone()));
             }
         }
-        
+
         transformations
     }
 }
@@ -219,46 +236,50 @@ impl Migration for SchemaMigration {
     fn metadata(&self) -> &MigrationMetadata {
         &self.metadata
     }
-    
+
     async fn validate(&self, context: &MigrationContext) -> MigrationResult<()> {
         if !context.source_path.exists() {
             return Err(MigrationError::SchemaValidationFailed(
-                "Source database does not exist".to_string()
+                "Source database does not exist".to_string(),
             ));
         }
-        
+
         for transformation in &self.transformations {
             match transformation {
                 SchemaTransformation::DropTable(name) => {
                     println!("Warning: Dropping table {} will delete all data", name);
                 }
                 SchemaTransformation::DropColumn { table, column } => {
-                    println!("Warning: Dropping column {}.{} will delete data", table, column);
+                    println!(
+                        "Warning: Dropping column {}.{} will delete data",
+                        table, column
+                    );
                 }
                 _ => {}
             }
         }
-        
+
         Ok(())
     }
-    
+
     async fn execute(&self, context: &mut MigrationContext) -> MigrationResult<()> {
         for transformation in &self.transformations {
             self.apply_transformation(transformation, context).await?;
             context.progress.increment_processed();
         }
-        
+
         Ok(())
     }
-    
+
     async fn rollback(&self, context: &mut MigrationContext) -> MigrationResult<()> {
         for transformation in self.transformations.iter().rev() {
-            self.rollback_transformation(transformation, context).await?;
+            self.rollback_transformation(transformation, context)
+                .await?;
         }
-        
+
         Ok(())
     }
-    
+
     async fn verify(&self, _context: &MigrationContext) -> MigrationResult<()> {
         Ok(())
     }
@@ -291,10 +312,10 @@ impl SchemaMigration {
             }
             _ => {}
         }
-        
+
         Ok(())
     }
-    
+
     async fn rollback_transformation(
         &self,
         transformation: &SchemaTransformation,
@@ -311,12 +332,10 @@ impl SchemaMigration {
                     return Ok(());
                 }
             }
-            SchemaTransformation::AddColumn { table, column } => {
-                SchemaTransformation::DropColumn {
-                    table: table.clone(),
-                    column: column.name.clone(),
-                }
-            }
+            SchemaTransformation::AddColumn { table, column } => SchemaTransformation::DropColumn {
+                table: table.clone(),
+                column: column.name.clone(),
+            },
             SchemaTransformation::DropColumn { table, column } => {
                 if let Some(table_schema) = self.old_schema.tables.get(table) {
                     if let Some(col) = table_schema.columns.iter().find(|c| &c.name == column) {
@@ -333,7 +352,7 @@ impl SchemaMigration {
             }
             _ => return Ok(()),
         };
-        
+
         self.apply_transformation(&reverse, context).await
     }
 }
@@ -367,7 +386,10 @@ impl DataMigration {
             metadata: MigrationMetadata {
                 id: uuid::Uuid::new_v4().to_string(),
                 name: format!("Data migration to v{}", version.to_string()),
-                description: format!("Migrate data from {:?} to {:?}", source_format, target_format),
+                description: format!(
+                    "Migrate data from {:?} to {:?}",
+                    source_format, target_format
+                ),
                 version,
                 migration_type: MigrationType::Data,
                 dependencies: Vec::new(),
@@ -382,7 +404,7 @@ impl DataMigration {
             transformation_pipeline: Arc::new(Vec::new()),
         }
     }
-    
+
     pub fn add_transformer(&mut self, transformer: Box<dyn DataTransformer>) {
         Arc::get_mut(&mut self.transformation_pipeline)
             .expect("Cannot modify pipeline while it's being used")
@@ -395,28 +417,26 @@ impl Migration for DataMigration {
     fn metadata(&self) -> &MigrationMetadata {
         &self.metadata
     }
-    
+
     async fn validate(&self, context: &MigrationContext) -> MigrationResult<()> {
         if !context.source_path.exists() {
             return Err(MigrationError::SchemaValidationFailed(
-                "Source data does not exist".to_string()
+                "Source data does not exist".to_string(),
             ));
         }
-        
+
         Ok(())
     }
-    
+
     async fn execute(&self, context: &mut MigrationContext) -> MigrationResult<()> {
         let (tx, mut rx) = mpsc::channel::<DataBatch>(100);
-        
+
         let reader_handle = tokio::spawn({
             let source_path = context.source_path.clone();
             let batch_size = context.batch_size;
-            async move {
-                Self::read_batches(source_path, batch_size, tx).await
-            }
+            async move { Self::read_batches(source_path, batch_size, tx).await }
         });
-        
+
         let transformer_handle = tokio::spawn({
             let pipeline = self.transformation_pipeline.clone();
             let metrics = context.metrics.clone();
@@ -426,47 +446,51 @@ impl Migration for DataMigration {
                 while let Some(mut batch) = rx.recv().await {
                     for transformer in pipeline.iter() {
                         batch = Self::transform_batch(batch, transformer.as_ref()).await?;
-                        metrics.transformations_applied.fetch_add(1, Ordering::Relaxed);
+                        metrics
+                            .transformations_applied
+                            .fetch_add(1, Ordering::Relaxed);
                     }
-                    
+
                     Self::write_batch(batch, &target_path).await?;
                     progress.increment_processed();
                 }
                 Ok::<(), MigrationError>(())
             }
         });
-        
-        reader_handle.await.map_err(|e| 
-            MigrationError::TransformationError(e.to_string()))??;
-        
-        transformer_handle.await.map_err(|e|
-            MigrationError::TransformationError(e.to_string()))??;
-        
+
+        reader_handle
+            .await
+            .map_err(|e| MigrationError::TransformationError(e.to_string()))??;
+
+        transformer_handle
+            .await
+            .map_err(|e| MigrationError::TransformationError(e.to_string()))??;
+
         Ok(())
     }
-    
+
     async fn rollback(&self, context: &mut MigrationContext) -> MigrationResult<()> {
         if context.checkpoints.read().await.is_empty() {
             return Err(MigrationError::RollbackFailed(
-                "No checkpoints available for rollback".to_string()
+                "No checkpoints available for rollback".to_string(),
             ));
         }
-        
+
         let last_checkpoint = {
             let checkpoints = context.checkpoints.read().await;
             checkpoints.last().unwrap().clone()
         };
-        
+
         Self::restore_from_checkpoint(&last_checkpoint, context).await
     }
-    
+
     async fn verify(&self, context: &MigrationContext) -> MigrationResult<()> {
         let source_checksum = Self::calculate_checksum(&context.source_path).await?;
         let target_checksum = Self::calculate_checksum(&context.target_path).await?;
-        
+
         println!("Source checksum: {}", source_checksum);
         println!("Target checksum: {}", target_checksum);
-        
+
         Ok(())
     }
 }
@@ -480,55 +504,55 @@ impl DataMigration {
         let mut file = fs::File::open(&path).await?;
         let mut buffer = vec![0u8; batch_size];
         let mut batch_id = 0;
-        
+
         loop {
             let bytes_read = file.read(&mut buffer).await?;
             if bytes_read == 0 {
                 break;
             }
-            
+
             let batch = DataBatch {
                 id: batch_id,
                 data: buffer[..bytes_read].to_vec(),
                 metadata: HashMap::new(),
             };
-            
+
             if tx.send(batch).await.is_err() {
                 break;
             }
-            
+
             batch_id += 1;
         }
-        
+
         Ok(())
     }
-    
+
     async fn transform_batch(
         batch: DataBatch,
         transformer: &dyn DataTransformer,
     ) -> MigrationResult<DataBatch> {
         let transformed_data = transformer.transform(batch.data).await?;
-        
+
         Ok(DataBatch {
             id: batch.id,
             data: transformed_data,
             metadata: batch.metadata,
         })
     }
-    
+
     async fn write_batch(batch: DataBatch, path: &Path) -> MigrationResult<()> {
         let mut file = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)
             .await?;
-        
+
         file.write_all(&batch.data).await?;
         file.sync_all().await?;
-        
+
         Ok(())
     }
-    
+
     async fn restore_from_checkpoint(
         checkpoint: &MigrationCheckpoint,
         context: &mut MigrationContext,
@@ -536,12 +560,12 @@ impl DataMigration {
         fs::copy(&checkpoint.data_snapshot.path, &context.target_path).await?;
         Ok(())
     }
-    
+
     async fn calculate_checksum(path: &Path) -> MigrationResult<String> {
         let mut file = fs::File::open(path).await?;
         let mut hasher = crc32fast::Hasher::new();
         let mut buffer = vec![0u8; 8192];
-        
+
         loop {
             let bytes_read = file.read(&mut buffer).await?;
             if bytes_read == 0 {
@@ -549,7 +573,7 @@ impl DataMigration {
             }
             hasher.update(&buffer[..bytes_read]);
         }
-        
+
         Ok(format!("{:08x}", hasher.finalize()))
     }
 }
@@ -577,9 +601,7 @@ pub enum CompressionAlgorithm {
 impl DataTransformer for CompressionTransformer {
     async fn transform(&self, data: Vec<u8>) -> MigrationResult<Vec<u8>> {
         match self.algorithm {
-            CompressionAlgorithm::LZ4 => {
-                Ok(lz4_flex::compress_prepend_size(&data))
-            }
+            CompressionAlgorithm::LZ4 => Ok(lz4_flex::compress_prepend_size(&data)),
             CompressionAlgorithm::Zstd => {
                 #[cfg(feature = "zstd-compression")]
                 {
@@ -588,42 +610,45 @@ impl DataTransformer for CompressionTransformer {
                 }
                 #[cfg(not(feature = "zstd-compression"))]
                 Err(MigrationError::TransformationError(
-                    "ZSTD compression not available without zstd-compression feature".to_string()
+                    "ZSTD compression not available without zstd-compression feature".to_string(),
                 ))
             }
             CompressionAlgorithm::Snappy => {
                 let mut encoder = snap::raw::Encoder::new();
-                encoder.compress_vec(&data)
+                encoder
+                    .compress_vec(&data)
                     .map_err(|e| MigrationError::TransformationError(e.to_string()))
             }
             CompressionAlgorithm::Gzip => {
                 #[cfg(feature = "deflate")]
-                use flate2::Compression;
-                #[cfg(feature = "deflate")]
                 use flate2::write::GzEncoder;
                 #[cfg(feature = "deflate")]
+                use flate2::Compression;
+                #[cfg(feature = "deflate")]
                 use std::io::Write;
-                
+
                 #[cfg(feature = "deflate")]
                 {
                     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-                    encoder.write_all(&data)
+                    encoder
+                        .write_all(&data)
                         .map_err(|e| MigrationError::TransformationError(e.to_string()))?;
-                    encoder.finish()
+                    encoder
+                        .finish()
                         .map_err(|e| MigrationError::TransformationError(e.to_string()))
                 }
                 #[cfg(not(feature = "deflate"))]
                 Err(MigrationError::TransformationError(
-                    "GZIP compression not available without deflate feature".to_string()
+                    "GZIP compression not available without deflate feature".to_string(),
                 ))
             }
         }
     }
-    
+
     fn name(&self) -> &str {
         "CompressionTransformer"
     }
-    
+
     fn description(&self) -> &str {
         "Compresses data using specified algorithm"
     }
@@ -640,20 +665,21 @@ impl DataTransformer for EncryptionTransformer {
             aead::{Aead, KeyInit},
             Aes256Gcm, Nonce,
         };
-        
+
         let cipher = Aes256Gcm::new_from_slice(&self.key)
             .map_err(|e| MigrationError::TransformationError(e.to_string()))?;
-        
+
         let nonce = Nonce::from_slice(b"unique nonce");
-        
-        cipher.encrypt(nonce, data.as_ref())
+
+        cipher
+            .encrypt(nonce, data.as_ref())
             .map_err(|e| MigrationError::TransformationError(e.to_string()))
     }
-    
+
     fn name(&self) -> &str {
         "EncryptionTransformer"
     }
-    
+
     fn description(&self) -> &str {
         "Encrypts data using AES-256-GCM"
     }
@@ -668,20 +694,20 @@ impl DataTransformer for JsonTransformer {
     async fn transform(&self, data: Vec<u8>) -> MigrationResult<Vec<u8>> {
         let value: serde_json::Value = serde_json::from_slice(&data)
             .map_err(|e| MigrationError::TransformationError(e.to_string()))?;
-        
+
         let result = if self.pretty {
             serde_json::to_vec_pretty(&value)
         } else {
             serde_json::to_vec(&value)
         };
-        
+
         result.map_err(|e| MigrationError::TransformationError(e.to_string()))
     }
-    
+
     fn name(&self) -> &str {
         "JsonTransformer"
     }
-    
+
     fn description(&self) -> &str {
         "Transforms data to/from JSON format"
     }
@@ -696,10 +722,10 @@ impl DataValidator for SchemaValidator {
     async fn validate(&self, data: &[u8]) -> MigrationResult<()> {
         let _value: serde_json::Value = serde_json::from_slice(data)
             .map_err(|e| MigrationError::SchemaValidationFailed(e.to_string()))?;
-        
+
         Ok(())
     }
-    
+
     fn name(&self) -> &str {
         "SchemaValidator"
     }
@@ -715,17 +741,17 @@ impl DataValidator for ChecksumValidator {
         let mut hasher = crc32fast::Hasher::new();
         hasher.update(data);
         let checksum = format!("{:08x}", hasher.finalize());
-        
+
         if checksum != self.expected_checksum {
-            return Err(MigrationError::IntegrityCheckFailed(
-                format!("Checksum mismatch: expected {}, got {}", 
-                    self.expected_checksum, checksum)
-            ));
+            return Err(MigrationError::IntegrityCheckFailed(format!(
+                "Checksum mismatch: expected {}, got {}",
+                self.expected_checksum, checksum
+            )));
         }
-        
+
         Ok(())
     }
-    
+
     fn name(&self) -> &str {
         "ChecksumValidator"
     }

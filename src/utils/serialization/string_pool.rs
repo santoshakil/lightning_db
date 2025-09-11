@@ -1,7 +1,7 @@
+use bytes::Bytes;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::sync::{Arc, RwLock};
-use bytes::Bytes;
 
 /// String pool for deduplicating common strings
 #[derive(Debug, Clone)]
@@ -88,11 +88,20 @@ impl StringPool {
     /// Get a string by its ID
     pub fn get(&self, id: u32) -> Option<String> {
         match self.pool.read() {
-            Ok(pool) => pool.reverse.get(&id).map(|bytes| String::from_utf8_lossy(bytes).into_owned()),
+            Ok(pool) => pool
+                .reverse
+                .get(&id)
+                .map(|bytes| String::from_utf8_lossy(bytes).into_owned()),
             Err(e) => {
                 // Lock was poisoned, try to recover
-                eprintln!("Warning: StringPool read lock was poisoned, recovering: {}", e);
-                e.into_inner().reverse.get(&id).map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+                eprintln!(
+                    "Warning: StringPool read lock was poisoned, recovering: {}",
+                    e
+                );
+                e.into_inner()
+                    .reverse
+                    .get(&id)
+                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
             }
         }
     }

@@ -4,13 +4,13 @@
 //! to ensure that Rust panics never propagate to foreign code, which would
 //! cause undefined behavior.
 
-use crate::error::{set_last_error, clear_last_error};
+use crate::error::{clear_last_error, set_last_error};
 use crate::ErrorCode;
 use std::panic;
 use std::panic::AssertUnwindSafe;
 
 /// Execute a closure with panic protection
-/// 
+///
 /// This function catches any panics that occur during execution and converts
 /// them into proper error codes, preventing undefined behavior at the FFI boundary.
 pub fn ffi_guard<F, R>(operation_name: &str, f: F) -> Result<R, ErrorCode>
@@ -31,7 +31,7 @@ where
 
             // Sanitize the panic message to prevent information disclosure
             let sanitized_msg = crate::validation::sanitize_error_message(&panic_msg);
-            
+
             set_last_error(ErrorCode::PanicPrevented, sanitized_msg);
             Err(ErrorCode::PanicPrevented)
         }
@@ -164,33 +164,33 @@ mod tests {
     #[test]
     fn test_resource_guard() {
         use std::sync::{Arc, Mutex};
-        
+
         let cleanup_called = Arc::new(Mutex::new(false));
         let cleanup_called_clone = cleanup_called.clone();
-        
+
         {
             let _guard = ResourceGuard::new(|| {
                 *cleanup_called_clone.lock().unwrap() = true;
             });
         } // guard drops here
-        
+
         assert!(*cleanup_called.lock().unwrap());
     }
 
     #[test]
     fn test_resource_guard_disarm() {
         use std::sync::{Arc, Mutex};
-        
+
         let cleanup_called = Arc::new(Mutex::new(false));
         let cleanup_called_clone = cleanup_called.clone();
-        
+
         {
             let mut guard = ResourceGuard::new(|| {
                 *cleanup_called_clone.lock().unwrap() = true;
             });
             guard.disarm();
         } // guard drops here but cleanup is disarmed
-        
+
         assert!(!*cleanup_called.lock().unwrap());
     }
 }

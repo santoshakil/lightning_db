@@ -5,7 +5,7 @@ use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 // rand 0.9 deprecations: avoid thread_rng/gen_range
 
@@ -106,7 +106,7 @@ impl AuthenticationManager {
             max_failed_attempts: 5,
             lockout_duration: Duration::from_secs(900),
         };
-        
+
         manager.initialize_default_permissions();
         manager.initialize_default_roles();
         manager
@@ -161,7 +161,12 @@ impl AuthenticationManager {
             Role {
                 id: RoleId("writer".to_string()),
                 name: "Writer".to_string(),
-                permissions: [PermissionId("read".to_string()), PermissionId("write".to_string())].into_iter().collect(),
+                permissions: [
+                    PermissionId("read".to_string()),
+                    PermissionId("write".to_string()),
+                ]
+                .into_iter()
+                .collect(),
                 description: "Read and write access".to_string(),
             },
             Role {
@@ -178,15 +183,21 @@ impl AuthenticationManager {
         }
     }
 
-    pub fn create_user(&self, username: String, password: String, roles: HashSet<RoleId>) -> SecurityResult<UserId> {
+    pub fn create_user(
+        &self,
+        username: String,
+        password: String,
+        roles: HashSet<RoleId>,
+    ) -> SecurityResult<UserId> {
         if username.is_empty() || password.len() < 8 {
             return Err(SecurityError::InputValidationFailed(
-                "Username cannot be empty and password must be at least 8 characters".to_string()
+                "Username cannot be empty and password must be at least 8 characters".to_string(),
             ));
         }
 
-        let password_hash = hash(password, DEFAULT_COST)
-            .map_err(|e| SecurityError::CryptographicFailure(format!("Password hashing failed: {}", e)))?;
+        let password_hash = hash(password, DEFAULT_COST).map_err(|e| {
+            SecurityError::CryptographicFailure(format!("Password hashing failed: {}", e))
+        })?;
 
         let user_id = UserId(Uuid::new_v4().to_string());
         let user = User {
@@ -203,14 +214,19 @@ impl AuthenticationManager {
 
         let mut users = self.users.write().unwrap();
         users.insert(user_id.clone(), user);
-        
+
         Ok(user_id)
     }
 
-    pub fn authenticate(&self, username: &str, password: &str, ip_address: Option<String>) -> SecurityResult<String> {
+    pub fn authenticate(
+        &self,
+        username: &str,
+        password: &str,
+        ip_address: Option<String>,
+    ) -> SecurityResult<String> {
         use std::time::Instant;
         let start_time = Instant::now();
-        
+
         let (user_id, _found_user) = {
             let users = self.users.read().unwrap();
             if let Some(user) = users.values().find(|u| u.username == username) {
@@ -219,32 +235,40 @@ impl AuthenticationManager {
                 (None, false)
             }
         };
-        
+
         if let Some(user_id) = user_id {
             self.authenticate_existing_user(user_id, password, ip_address, start_time)
         } else {
             self.authenticate_nonexistent_user(username, password, start_time)
         }
     }
-    
-    fn authenticate_existing_user(&self, user_id: UserId, password: &str, ip_address: Option<String>, start_time: Instant) -> SecurityResult<String> {
 
+    fn authenticate_existing_user(
+        &self,
+        user_id: UserId,
+        password: &str,
+        ip_address: Option<String>,
+        start_time: Instant,
+    ) -> SecurityResult<String> {
         let mut users = self.users.write().unwrap();
-        let user = users.get_mut(&user_id)
-            .ok_or_else(|| {
-                self.ensure_minimum_auth_time(start_time);
-                SecurityError::AuthenticationFailed("Invalid credentials".to_string())
-            })?;
+        let user = users.get_mut(&user_id).ok_or_else(|| {
+            self.ensure_minimum_auth_time(start_time);
+            SecurityError::AuthenticationFailed("Invalid credentials".to_string())
+        })?;
 
         if !user.active {
             self.ensure_minimum_auth_time(start_time);
-            return Err(SecurityError::AuthenticationFailed("Invalid credentials".to_string()));
+            return Err(SecurityError::AuthenticationFailed(
+                "Invalid credentials".to_string(),
+            ));
         }
 
         if let Some(locked_until) = user.locked_until {
             if SystemTime::now() < locked_until {
                 self.ensure_minimum_auth_time(start_time);
-                return Err(SecurityError::AuthenticationFailed("Invalid credentials".to_string()));
+                return Err(SecurityError::AuthenticationFailed(
+                    "Invalid credentials".to_string(),
+                ));
             } else {
                 user.locked_until = None;
                 user.failed_login_attempts = 0;
@@ -253,16 +277,18 @@ impl AuthenticationManager {
 
         let password_valid = {
             let hash_str = user.password_hash.expose_secret();
-            let dummy_hash = "$2b$12$dummy.hash.for.constant.time.comparison.purposes.only".to_string();
-            
+            let dummy_hash =
+                "$2b$12$dummy.hash.for.constant.time.comparison.purposes.only".to_string();
+
             let hash_to_check = if hash_str.len() > 0 {
                 hash_str
             } else {
                 &dummy_hash
             };
-            
-            verify(password, hash_to_check)
-                .map_err(|e| SecurityError::CryptographicFailure(format!("Password verification failed: {}", e)))?
+
+            verify(password, hash_to_check).map_err(|e| {
+                SecurityError::CryptographicFailure(format!("Password verification failed: {}", e))
+            })?
         };
 
         if !password_valid {
@@ -271,7 +297,9 @@ impl AuthenticationManager {
                 user.locked_until = Some(SystemTime::now() + self.lockout_duration);
             }
             self.ensure_minimum_auth_time(start_time);
-            return Err(SecurityError::AuthenticationFailed("Invalid credentials".to_string()));
+            return Err(SecurityError::AuthenticationFailed(
+                "Invalid credentials".to_string(),
+            ));
         }
 
         user.failed_login_attempts = 0;
@@ -297,21 +325,28 @@ impl AuthenticationManager {
         self.ensure_minimum_auth_time(start_time);
         result
     }
-    
-    fn authenticate_nonexistent_user(&self, _username: &str, password: &str, start_time: Instant) -> SecurityResult<String> {
+
+    fn authenticate_nonexistent_user(
+        &self,
+        _username: &str,
+        password: &str,
+        start_time: Instant,
+    ) -> SecurityResult<String> {
         let dummy_hash = "$2b$12$dummy.hash.for.constant.time.comparison.purposes.only.dummy.salt";
         let _ = verify(password, dummy_hash);
-        
+
         self.ensure_minimum_auth_time(start_time);
-        Err(SecurityError::AuthenticationFailed("Invalid credentials".to_string()))
+        Err(SecurityError::AuthenticationFailed(
+            "Invalid credentials".to_string(),
+        ))
     }
-    
+
     fn ensure_minimum_auth_time(&self, start_time: Instant) {
         use rand::random_range;
         let min_duration = Duration::from_millis(100);
         let random_extra = Duration::from_millis(random_range(10..50));
         let target_duration = min_duration + random_extra;
-        
+
         let elapsed = start_time.elapsed();
         if elapsed < target_duration {
             std::thread::sleep(target_duration - elapsed);
@@ -323,12 +358,15 @@ impl AuthenticationManager {
         let session_id = SessionId(claims.session_id);
 
         let mut sessions = self.sessions.write().unwrap();
-        let session = sessions.get_mut(&session_id)
+        let session = sessions
+            .get_mut(&session_id)
             .ok_or_else(|| SecurityError::AuthenticationFailed("Invalid session".to_string()))?;
 
         if SystemTime::now() > session.expires_at {
             sessions.remove(&session_id);
-            return Err(SecurityError::AuthenticationFailed("Session expired".to_string()));
+            return Err(SecurityError::AuthenticationFailed(
+                "Session expired".to_string(),
+            ));
         }
 
         session.last_activity = SystemTime::now();
@@ -337,17 +375,26 @@ impl AuthenticationManager {
         Ok(session_id)
     }
 
-    pub fn check_permission(&self, session_id: &SessionId, resource: &str, action: &str) -> SecurityResult<()> {
+    pub fn check_permission(
+        &self,
+        session_id: &SessionId,
+        resource: &str,
+        action: &str,
+    ) -> SecurityResult<()> {
         let sessions = self.sessions.read().unwrap();
-        let session = sessions.get(session_id)
+        let session = sessions
+            .get(session_id)
             .ok_or_else(|| SecurityError::AuthorizationFailed("Invalid session".to_string()))?;
 
         let users = self.users.read().unwrap();
-        let user = users.get(&session.user_id)
+        let user = users
+            .get(&session.user_id)
             .ok_or_else(|| SecurityError::AuthorizationFailed("User not found".to_string()))?;
 
         if !user.active {
-            return Err(SecurityError::AuthorizationFailed("User account disabled".to_string()));
+            return Err(SecurityError::AuthorizationFailed(
+                "User account disabled".to_string(),
+            ));
         }
 
         let roles = self.roles.read().unwrap();
@@ -357,8 +404,9 @@ impl AuthenticationManager {
             if let Some(role) = roles.get(role_id) {
                 for perm_id in &role.permissions {
                     if let Some(permission) = permissions.get(perm_id) {
-                        if (permission.resource == "*" || permission.resource == resource) &&
-                           (permission.action == "*" || permission.action == action) {
+                        if (permission.resource == "*" || permission.resource == resource)
+                            && (permission.action == "*" || permission.action == action)
+                        {
                             return Ok(());
                         }
                     }
@@ -366,14 +414,16 @@ impl AuthenticationManager {
             }
         }
 
-        Err(SecurityError::AuthorizationFailed(
-            format!("Access denied to {} on {}", action, resource)
-        ))
+        Err(SecurityError::AuthorizationFailed(format!(
+            "Access denied to {} on {}",
+            action, resource
+        )))
     }
 
     pub fn logout(&self, session_id: &SessionId) -> SecurityResult<()> {
         let mut sessions = self.sessions.write().unwrap();
-        sessions.remove(session_id)
+        sessions
+            .remove(session_id)
             .ok_or_else(|| SecurityError::AuthenticationFailed("Session not found".to_string()))?;
         Ok(())
     }
@@ -384,7 +434,12 @@ impl AuthenticationManager {
         sessions.retain(|_, session| session.expires_at > now);
     }
 
-    fn generate_jwt(&self, user_id: &UserId, session_id: &SessionId, roles: &HashSet<RoleId>) -> SecurityResult<String> {
+    fn generate_jwt(
+        &self,
+        user_id: &UserId,
+        session_id: &SessionId,
+        roles: &HashSet<RoleId>,
+    ) -> SecurityResult<String> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -425,7 +480,7 @@ mod tests {
     fn test_user_creation() {
         let auth = AuthenticationManager::new("test_secret".to_string(), Duration::from_secs(3600));
         let roles = [RoleId("reader".to_string())].into_iter().collect();
-        
+
         let user_id = auth.create_user("testuser".to_string(), "password123".to_string(), roles);
         assert!(user_id.is_ok());
     }
@@ -434,12 +489,13 @@ mod tests {
     fn test_authentication() {
         let auth = AuthenticationManager::new("test_secret".to_string(), Duration::from_secs(3600));
         let roles = [RoleId("reader".to_string())].into_iter().collect();
-        
-        auth.create_user("testuser".to_string(), "password123".to_string(), roles).unwrap();
-        
+
+        auth.create_user("testuser".to_string(), "password123".to_string(), roles)
+            .unwrap();
+
         let token = auth.authenticate("testuser", "password123", None);
         assert!(token.is_ok());
-        
+
         let invalid_token = auth.authenticate("testuser", "wrongpassword", None);
         assert!(invalid_token.is_err());
     }
@@ -448,14 +504,15 @@ mod tests {
     fn test_authorization() {
         let auth = AuthenticationManager::new("test_secret".to_string(), Duration::from_secs(3600));
         let roles = [RoleId("reader".to_string())].into_iter().collect();
-        
-        auth.create_user("testuser".to_string(), "password123".to_string(), roles).unwrap();
+
+        auth.create_user("testuser".to_string(), "password123".to_string(), roles)
+            .unwrap();
         let token = auth.authenticate("testuser", "password123", None).unwrap();
         let session_id = auth.validate_session(&token).unwrap();
-        
+
         let read_result = auth.check_permission(&session_id, "database", "read");
         assert!(read_result.is_ok());
-        
+
         let write_result = auth.check_permission(&session_id, "database", "write");
         assert!(write_result.is_err());
     }

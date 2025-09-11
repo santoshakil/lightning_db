@@ -147,7 +147,7 @@ impl Default for LoggingConfig {
                 patterns: vec![
                     r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b".to_string(), // Credit cards
                     r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b".to_string(), // Emails
-                    r"\b\d{3}-?\d{2}-?\d{4}\b".to_string(), // SSN
+                    r"\b\d{3}-?\d{2}-?\d{4}\b".to_string(),                    // SSN
                 ],
                 replacement: "[REDACTED]".to_string(),
                 redact_keys: false,
@@ -179,7 +179,7 @@ impl From<LogLevel> for Level {
 impl LoggingConfig {
     pub fn from_env() -> Self {
         let mut config = Self::default();
-        
+
         if let Ok(level) = std::env::var("LIGHTNING_LOG_LEVEL") {
             config.level = match level.to_lowercase().as_str() {
                 "trace" => LogLevel::Trace,
@@ -190,7 +190,7 @@ impl LoggingConfig {
                 _ => LogLevel::Info,
             };
         }
-        
+
         if let Ok(format) = std::env::var("LIGHTNING_LOG_FORMAT") {
             config.format = match format.to_lowercase().as_str() {
                 "json" => LogFormat::Json,
@@ -200,31 +200,33 @@ impl LoggingConfig {
                 _ => LogFormat::Json,
             };
         }
-        
+
         if let Ok(env) = std::env::var("LIGHTNING_ENV") {
             config.telemetry.environment = env;
         }
-        
+
         config
     }
-    
+
     pub fn validate(&self) -> Result<(), String> {
         if self.sampling.trace_sample_rate < 0.0 || self.sampling.trace_sample_rate > 1.0 {
             return Err("trace_sample_rate must be between 0.0 and 1.0".to_string());
         }
-        
+
         if self.sampling.debug_sample_rate < 0.0 || self.sampling.debug_sample_rate > 1.0 {
             return Err("debug_sample_rate must be between 0.0 and 1.0".to_string());
         }
-        
-        if self.sampling.high_frequency_sample_rate < 0.0 || self.sampling.high_frequency_sample_rate > 1.0 {
+
+        if self.sampling.high_frequency_sample_rate < 0.0
+            || self.sampling.high_frequency_sample_rate > 1.0
+        {
             return Err("high_frequency_sample_rate must be between 0.0 and 1.0".to_string());
         }
-        
+
         if self.performance.metrics_buffer_size == 0 {
             return Err("metrics_buffer_size must be greater than 0".to_string());
         }
-        
+
         Ok(())
     }
 }

@@ -7,8 +7,8 @@ pub mod memtable;
 pub mod parallel_compaction;
 pub mod sstable;
 
+use crate::core::error::{Error, Result};
 use crate::features::adaptive_compression::CompressionType;
-use crate::core::error::{Result, Error};
 use lru::LruCache;
 use parking_lot::RwLock;
 use std::num::NonZeroUsize;
@@ -184,7 +184,7 @@ impl LSMTree {
         let levels = Arc::new(RwLock::new(levels));
         let shutdown = Arc::new(AtomicUsize::new(0));
 
-        // Create read cache with 10K entries  
+        // Create read cache with 10K entries
         let cache_size = NonZeroUsize::new(10000)
             .ok_or_else(|| Error::Generic("Invalid cache size".to_string()))?;
         let read_cache = Arc::new(RwLock::new(LruCache::new(cache_size)));
@@ -291,29 +291,32 @@ impl LSMTree {
         loop {
             {
                 let memtable = self.memtable.read();
-                
+
                 // Fast path: if memtable has space, insert directly
-                if memtable.size_bytes() + key.len() + value.len() + 32 <= self.config.memtable_size {
-                    memtable.insert(key.clone(), value.clone());
+                if memtable.size_bytes() + key.len() + value.len() + 32 <= self.config.memtable_size
+                {
+                    memtable.insert(key, value);
                     return Ok(());
                 }
             }
-            
+
             // Slow path: need to rotate memtable
             // Use compare-and-swap pattern to ensure only one rotation happens
             let rotation_result = {
                 let mut memtable_guard = self.memtable.write();
-                
+
                 // Double-check after acquiring write lock
-                if memtable_guard.size_bytes() + key.len() + value.len() + 32 <= self.config.memtable_size {
-                    memtable_guard.insert(key.clone(), value.clone());
+                if memtable_guard.size_bytes() + key.len() + value.len() + 32
+                    <= self.config.memtable_size
+                {
+                    memtable_guard.insert(key, value);
                     return Ok(());
                 }
-                
+
                 // Perform atomic rotation
                 self.rotate_memtable_atomic(&mut memtable_guard)
             };
-            
+
             rotation_result?;
             // Retry insertion with new memtable
         }
@@ -349,7 +352,7 @@ impl LSMTree {
             // Check if this is a tombstone
             if Self::is_tombstone(&value) {
                 // Update cache with tombstone
-                self.read_cache.write().put(key.to_vec(), value);
+                self.read_cache.write().put(key.to_vec(), value.clone());
                 return Ok(None);
             }
             // Update cache
@@ -365,7 +368,7 @@ impl LSMTree {
                 // Check if this is a tombstone
                 if Self::is_tombstone(&value) {
                     // Update cache with tombstone
-                    self.read_cache.write().put(key.to_vec(), value);
+                    self.read_cache.write().put(key.to_vec(), value.clone());
                     return Ok(None);
                 }
                 // Update cache
@@ -378,19 +381,19 @@ impl LSMTree {
         // Check SSTables level by level
         let levels = self.levels.read();
         for level in &*levels {
-            // Use bloom filters to skip SSTables
-            let mut candidates = Vec::new();
+            // Use bloom filters to skip SSTables - early termination optimization
             for sstable in &level.sstables {
-                if key >= sstable.min_key()
-                    && key <= sstable.max_key()
-                    && sstable.might_contain(key)
-                {
-                    candidates.push(sstable.clone());
+                // Quick bounds check first
+                if key < sstable.min_key() || key > sstable.max_key() {
+                    continue;
                 }
-            }
-
-            // Binary search within candidates (they're sorted)
-            for sstable in candidates {
+                
+                // Bloom filter check to avoid disk I/O
+                if !sstable.might_contain(key) {
+                    continue;
+                }
+                
+                // Actually try to get the value
                 if let Some(value) = sstable.get(key)? {
                     // Check if this is a tombstone
                     if Self::is_tombstone(&value) {
@@ -398,7 +401,7 @@ impl LSMTree {
                         self.read_cache.write().put(key.to_vec(), value);
                         return Ok(None);
                     }
-                    // Update cache
+                    // Update cache and return immediately (early termination)
                     self.read_cache.write().put(key.to_vec(), value.clone());
                     return Ok(Some(value));
                 }
@@ -417,25 +420,27 @@ impl LSMTree {
     }
 
     /// Atomic memtable rotation - must be called with write lock held
-    fn rotate_memtable_atomic(&self, memtable_guard: &mut parking_lot::RwLockWriteGuard<MemTable>) -> Result<()> {
+    fn rotate_memtable_atomic(
+        &self,
+        memtable_guard: &mut parking_lot::RwLockWriteGuard<MemTable>,
+    ) -> Result<()> {
         // Create new memtable while holding the write lock
         let old_memtable = std::mem::replace(&mut **memtable_guard, MemTable::new());
-        
+
         // Only add to immutable list if memtable has data
         if !old_memtable.is_empty() {
             let old_memtable = Arc::new(old_memtable);
-            
+
             // Add to immutable list
             self.immutable_memtables.write().push(old_memtable.clone());
-            
+
             // Schedule background flush
             self.schedule_flush(old_memtable)?;
         }
-        
+
         Ok(())
     }
-    
-    #[allow(dead_code)]
+
     fn rotate_memtable(&self) -> Result<()> {
         let mut memtable_guard = self.memtable.write();
         self.rotate_memtable_atomic(&mut memtable_guard)
@@ -474,7 +479,7 @@ impl LSMTree {
         // Write all entries with error handling
         let mut entry_count = 0;
         let mut error_count = 0;
-        
+
         for entry in memtable.iter() {
             match builder.add(entry.key(), entry.value()) {
                 Ok(()) => entry_count += 1,
@@ -494,7 +499,11 @@ impl LSMTree {
             }
         }
 
-        tracing::info!("LSM schedule_flush: writing {} entries ({} errors)", entry_count, error_count);
+        tracing::info!(
+            "LSM schedule_flush: writing {} entries ({} errors)",
+            entry_count,
+            error_count
+        );
 
         // Safety check: only create SSTable if we have entries
         if entry_count == 0 {
@@ -539,7 +548,11 @@ impl LSMTree {
         // Check if compaction is needed
         self.maybe_schedule_compaction();
 
-        tracing::info!("LSM schedule_flush: successfully flushed {} entries to {:?}", entry_count, sstable_path);
+        tracing::info!(
+            "LSM schedule_flush: successfully flushed {} entries to {:?}",
+            entry_count,
+            sstable_path
+        );
         Ok(())
     }
 
@@ -616,7 +629,7 @@ impl LSMTree {
         // Wait for compactions to complete with timeout
         let start = std::time::Instant::now();
         let timeout = std::time::Duration::from_secs(30);
-        
+
         loop {
             let levels = self.levels.read();
             let total_l0 = levels[0].sstables.len();
@@ -625,7 +638,7 @@ impl LSMTree {
             if total_l0 == 0 {
                 break;
             }
-            
+
             if start.elapsed() > timeout {
                 eprintln!("LSM compact_all: timeout waiting for compaction to complete");
                 break;
@@ -676,36 +689,40 @@ impl LSMTree {
             enabled: self.config.delta_compression_config.enabled,
         }
     }
-    
+
     /// Calculate write amplification metrics for monitoring
     pub fn get_write_amplification_stats(&self) -> WriteAmplificationStats {
         let levels = self.levels.read();
         let mut total_written = 0;
         let mut total_user_data = 0;
         let mut level_writes = Vec::new();
-        
+
         for level in levels.iter() {
             let level_size: usize = level.sstables.iter().map(|sst| sst.size_bytes()).sum();
             total_written += level_size;
-            
+
             // Estimate user data (accounting for metadata overhead)
             let estimated_user_data = (level_size as f64 * 0.85) as usize; // 15% overhead
             total_user_data += estimated_user_data;
-            
+
             level_writes.push(WriteAmplificationLevelStats {
                 level: level.level_num,
                 bytes_written: level_size,
                 compaction_count: 0, // Would be tracked in real implementation
-                avg_file_size: if level.sstables.is_empty() { 0 } else { level_size / level.sstables.len() },
+                avg_file_size: if level.sstables.is_empty() {
+                    0
+                } else {
+                    level_size / level.sstables.len()
+                },
             });
         }
-        
+
         let write_amplification = if total_user_data > 0 {
             total_written as f64 / total_user_data as f64
         } else {
             1.0
         };
-        
+
         WriteAmplificationStats {
             total_bytes_written: total_written,
             total_user_bytes: total_user_data,
@@ -748,76 +765,91 @@ impl LSMTree {
     pub fn parallel_compaction_stats(&self) -> Option<ParallelCompactionStats> {
         self.parallel_compaction.as_ref().map(|pc| pc.stats())
     }
-    
+
     /// Validate LSM tree invariants - critical for data integrity
     pub fn validate_invariants(&self) -> Result<LSMValidationReport> {
         let mut report = LSMValidationReport::new();
         let levels = self.levels.read();
-        
+
         // Validate level structure
         for (level_idx, level) in levels.iter().enumerate() {
             // Check level number consistency
             if level.level_num != level_idx {
-                report.add_error(format!("Level {} has incorrect level_num {}", level_idx, level.level_num));
+                report.add_error(format!(
+                    "Level {} has incorrect level_num {}",
+                    level_idx, level.level_num
+                ));
             }
-            
+
             // Validate SSTable ordering within level
-            if level_idx > 0 { // Level 0 can have overlapping files
+            if level_idx > 0 {
+                // Level 0 can have overlapping files
                 let mut prev_max_key: Option<&[u8]> = None;
                 for sstable in &level.sstables {
                     if let Some(prev_key) = prev_max_key {
                         if sstable.min_key() <= prev_key {
-                            report.add_error(format!("Level {} SSTable {} overlaps with previous SSTable", 
-                                                   level_idx, sstable.id()));
+                            report.add_error(format!(
+                                "Level {} SSTable {} overlaps with previous SSTable",
+                                level_idx,
+                                sstable.id()
+                            ));
                         }
                     }
                     prev_max_key = Some(sstable.max_key());
                 }
             }
-            
+
             // Check size constraints
             if level.size_bytes > level.max_size_bytes && level_idx > 0 {
-                report.add_warning(format!("Level {} exceeds size limit: {} > {}", 
-                                         level_idx, level.size_bytes, level.max_size_bytes));
+                report.add_warning(format!(
+                    "Level {} exceeds size limit: {} > {}",
+                    level_idx, level.size_bytes, level.max_size_bytes
+                ));
             }
-            
+
             // Validate individual SSTables
             for sstable in &level.sstables {
                 if sstable.min_key() > sstable.max_key() {
                     report.add_error(format!("SSTable {} has invalid key range", sstable.id()));
                 }
-                
+
                 if sstable.size_bytes() == 0 {
                     report.add_warning(format!("SSTable {} has zero size", sstable.id()));
                 }
-                
+
                 // Verify file exists
                 if !sstable.path().exists() {
-                    report.add_error(format!("SSTable {} file missing: {:?}", 
-                                           sstable.id(), sstable.path()));
+                    report.add_error(format!(
+                        "SSTable {} file missing: {:?}",
+                        sstable.id(),
+                        sstable.path()
+                    ));
                 }
             }
         }
-        
+
         // Validate memtables
         let memtable_size = self.memtable.read().size_bytes();
         if memtable_size > self.config.memtable_size * 2 {
-            report.add_warning(format!("Active memtable size {} exceeds threshold by 2x", memtable_size));
+            report.add_warning(format!(
+                "Active memtable size {} exceeds threshold by 2x",
+                memtable_size
+            ));
         }
-        
+
         let immutable_count = self.immutable_memtables.read().len();
         if immutable_count > 10 {
             report.add_warning(format!("Too many immutable memtables: {}", immutable_count));
         }
-        
+
         report.mark_complete();
         Ok(report)
     }
-    
+
     /// Check and repair any inconsistencies found
     pub fn repair_inconsistencies(&self) -> Result<usize> {
         let mut repairs = 0;
-        
+
         // Remove invalid SSTable references
         {
             let mut levels = self.levels.write();
@@ -826,16 +858,19 @@ impl LSMTree {
                 level.sstables.retain(|sst| sst.path().exists());
                 let removed = original_count - level.sstables.len();
                 if removed > 0 {
-                    tracing::warn!("Removed {} invalid SSTable references from level {}", 
-                                 removed, level.level_num);
+                    tracing::warn!(
+                        "Removed {} invalid SSTable references from level {}",
+                        removed,
+                        level.level_num
+                    );
                     repairs += removed;
                 }
-                
+
                 // Recalculate level size
                 level.size_bytes = level.sstables.iter().map(|sst| sst.size_bytes()).sum();
             }
         }
-        
+
         // Force flush if too many immutable memtables
         let immutable_count = self.immutable_memtables.read().len();
         if immutable_count > 5 {
@@ -843,7 +878,7 @@ impl LSMTree {
             self.flush()?;
             repairs += immutable_count;
         }
-        
+
         Ok(repairs)
     }
 }
@@ -857,7 +892,7 @@ impl Drop for LSMTree {
         if let Some(thread) = self.compaction_thread.take() {
             // Give thread a moment to exit cleanly
             std::thread::sleep(std::time::Duration::from_millis(100));
-            
+
             // Note: We can't use a timeout on join() in stable Rust,
             // but the thread should exit quickly after shutdown flag is set
             let _ = thread.join();
@@ -911,27 +946,30 @@ impl LSMValidationReport {
             completed: false,
         }
     }
-    
+
     fn add_error(&mut self, error: String) {
         self.errors.push(error);
         self.is_valid = false;
     }
-    
+
     fn add_warning(&mut self, warning: String) {
         self.warnings.push(warning);
     }
-    
+
     fn mark_complete(&mut self) {
         self.completed = true;
     }
-    
+
     pub fn has_errors(&self) -> bool {
         !self.errors.is_empty()
     }
-    
+
     pub fn summary(&self) -> String {
-        format!("LSM Validation: {} errors, {} warnings", 
-                self.errors.len(), self.warnings.len())
+        format!(
+            "LSM Validation: {} errors, {} warnings",
+            self.errors.len(),
+            self.warnings.len()
+        )
     }
 }
 

@@ -232,9 +232,7 @@ impl ValidationLevel {
     pub fn includes_structural_validation(&self) -> bool {
         matches!(
             self,
-            ValidationLevel::Standard
-                | ValidationLevel::Comprehensive
-                | ValidationLevel::Paranoid
+            ValidationLevel::Standard | ValidationLevel::Comprehensive | ValidationLevel::Paranoid
         )
     }
 
@@ -262,19 +260,13 @@ pub enum ChecksumAlgorithm {
 impl ChecksumAlgorithm {
     pub fn calculate(&self, data: &[u8]) -> u64 {
         match self {
-            ChecksumAlgorithm::CRC32Fast => {
-                crc32fast::hash(data) as u64
-            }
+            ChecksumAlgorithm::CRC32Fast => crc32fast::hash(data) as u64,
             ChecksumAlgorithm::CRC32C => {
                 // Fallback to CRC32Fast if CRC32C not available
                 crc32fast::hash(data) as u64
             }
-            ChecksumAlgorithm::XXHash32 => {
-                xxhash_rust::xxh32::xxh32(data, 0) as u64
-            }
-            ChecksumAlgorithm::XXHash64 => {
-                xxhash_rust::xxh64::xxh64(data, 0)
-            }
+            ChecksumAlgorithm::XXHash32 => xxhash_rust::xxh32::xxh32(data, 0) as u64,
+            ChecksumAlgorithm::XXHash64 => xxhash_rust::xxh64::xxh64(data, 0),
             ChecksumAlgorithm::SHA256 => {
                 use sha2::{Digest, Sha256};
                 let mut hasher = Sha256::new();
@@ -282,8 +274,8 @@ impl ChecksumAlgorithm {
                 let result = hasher.finalize();
                 // Take first 8 bytes of SHA256 hash
                 u64::from_be_bytes([
-                    result[0], result[1], result[2], result[3],
-                    result[4], result[5], result[6], result[7],
+                    result[0], result[1], result[2], result[3], result[4], result[5], result[6],
+                    result[7],
                 ])
             }
         }

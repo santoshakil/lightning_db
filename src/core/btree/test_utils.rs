@@ -18,7 +18,7 @@ pub mod tests {
         let db_path = dir.path().join("test_btree.db");
 
         let page_manager = Arc::new(RwLock::new(PageManager::create(&db_path, 4096 * 16)?));
-        let wrapper = PageManagerWrapper::standard(page_manager);
+        let wrapper = PageManagerWrapper::from_arc(page_manager);
         let btree = BPlusTree::new_with_wrapper(wrapper)?;
 
         Ok((btree, dir))
@@ -156,7 +156,7 @@ pub mod tests {
         // Phase 1: Create and populate
         {
             let page_manager = Arc::new(RwLock::new(PageManager::create(&db_path, 4096 * 16)?));
-            let wrapper = PageManagerWrapper::standard(page_manager.clone());
+            let wrapper = PageManagerWrapper::from_arc(page_manager.clone());
             let mut btree = BPlusTree::new_with_wrapper(wrapper)?;
 
             for i in 0..50 {
@@ -185,7 +185,7 @@ pub mod tests {
         // Phase 2: Reopen and verify
         {
             let page_manager = Arc::new(RwLock::new(PageManager::open(&db_path)?));
-            let wrapper = PageManagerWrapper::standard(page_manager);
+            let wrapper = PageManagerWrapper::from_arc(page_manager);
             let btree = BPlusTree::from_existing_with_wrapper(wrapper, 1, 1);
 
             for i in 0..50 {

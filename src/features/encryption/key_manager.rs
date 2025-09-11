@@ -98,7 +98,10 @@ impl KeyManager {
             return Err(Error::Encryption("Master key must be 256 bits".to_string()));
         }
 
-        let mut master_key_guard = self.master_key.write().map_err(|_| Error::Encryption("Master key lock poisoned".to_string()))?;
+        let mut master_key_guard = self
+            .master_key
+            .write()
+            .map_err(|_| Error::Encryption("Master key lock poisoned".to_string()))?;
         let mut key = master_key.to_vec();
         *master_key_guard = Some(key.clone());
         key.zeroize(); // Clear the local copy
@@ -124,7 +127,10 @@ impl KeyManager {
 
     /// Generate a new key encryption key
     pub fn generate_kek(&self) -> Result<u64> {
-        let master_key = self.master_key.read().map_err(|_| Error::Encryption("Master key lock poisoned".to_string()))?;
+        let master_key = self
+            .master_key
+            .read()
+            .map_err(|_| Error::Encryption("Master key lock poisoned".to_string()))?;
         let master_key = master_key
             .as_ref()
             .ok_or_else(|| Error::Encryption("Master key not initialized".to_string()))?;
@@ -142,8 +148,14 @@ impl KeyManager {
         };
 
         // Store in cache
-        self.kek_cache.write().map_err(|_| Error::Encryption("KEK cache lock poisoned".to_string()))?.insert(key_id, key);
-        *self.current_kek_id.write().map_err(|_| Error::Encryption("KEK ID lock poisoned".to_string()))? = Some(key_id);
+        self.kek_cache
+            .write()
+            .map_err(|_| Error::Encryption("KEK cache lock poisoned".to_string()))?
+            .insert(key_id, key);
+        *self
+            .current_kek_id
+            .write()
+            .map_err(|_| Error::Encryption("KEK ID lock poisoned".to_string()))? = Some(key_id);
 
         // Persist if key store is configured
         if self.key_store_path.is_some() {
@@ -183,8 +195,14 @@ impl KeyManager {
         };
 
         // Store in cache
-        self.dek_cache.write().map_err(|_| Error::Encryption("DEK cache lock poisoned".to_string()))?.insert(key_id, key);
-        *self.current_dek_id.write().map_err(|_| Error::Encryption("DEK ID lock poisoned".to_string()))? = Some(key_id);
+        self.dek_cache
+            .write()
+            .map_err(|_| Error::Encryption("DEK cache lock poisoned".to_string()))?
+            .insert(key_id, key);
+        *self
+            .current_dek_id
+            .write()
+            .map_err(|_| Error::Encryption("DEK ID lock poisoned".to_string()))? = Some(key_id);
 
         // Persist if key store is configured
         if self.key_store_path.is_some() {
@@ -249,9 +267,9 @@ impl KeyManager {
 
         // Configure Argon2id parameters with secure settings
         let params = Params::new(
-            64 * 1024,   // 64 MB memory
-            100_000,     // 100,000 iterations for cryptographic security
-            4,           // 4 parallel threads
+            64 * 1024, // 64 MB memory
+            100_000,   // 100,000 iterations for cryptographic security
+            4,         // 4 parallel threads
             Some(key_length),
         )
         .map_err(|e| Error::Encryption(format!("Invalid Argon2 params: {}", e)))?;
@@ -311,9 +329,21 @@ impl KeyManager {
             .0;
 
         // Restore state
-        *self.current_kek_id.write().map_err(|_| Error::Encryption("KEK ID lock poisoned".to_string()))? = store.current_kek_id;
-        *self.current_dek_id.write().map_err(|_| Error::Encryption("DEK ID lock poisoned".to_string()))? = store.current_dek_id;
-        *self.next_key_id.write().map_err(|_| Error::Encryption("Next key ID lock poisoned".to_string()))? = store.next_key_id;
+        *self
+            .current_kek_id
+            .write()
+            .map_err(|_| Error::Encryption("KEK ID lock poisoned".to_string()))? =
+            store.current_kek_id;
+        *self
+            .current_dek_id
+            .write()
+            .map_err(|_| Error::Encryption("DEK ID lock poisoned".to_string()))? =
+            store.current_dek_id;
+        *self
+            .next_key_id
+            .write()
+            .map_err(|_| Error::Encryption("Next key ID lock poisoned".to_string()))? =
+            store.next_key_id;
 
         // Note: Encrypted keys would need to be decrypted here
         // This is a simplified version - real implementation would decrypt keys
@@ -329,9 +359,18 @@ impl KeyManager {
             .as_ref()
             .ok_or_else(|| Error::Encryption("Key store path not set".to_string()))?;
 
-        let current_kek_id = *self.current_kek_id.read().map_err(|_| Error::Encryption("KEK ID lock poisoned".to_string()))?;
-        let current_dek_id = *self.current_dek_id.read().map_err(|_| Error::Encryption("DEK ID lock poisoned".to_string()))?;
-        let next_key_id = *self.next_key_id.read().map_err(|_| Error::Encryption("Next key ID lock poisoned".to_string()))?;
+        let current_kek_id = *self
+            .current_kek_id
+            .read()
+            .map_err(|_| Error::Encryption("KEK ID lock poisoned".to_string()))?;
+        let current_dek_id = *self
+            .current_dek_id
+            .read()
+            .map_err(|_| Error::Encryption("DEK ID lock poisoned".to_string()))?;
+        let next_key_id = *self
+            .next_key_id
+            .read()
+            .map_err(|_| Error::Encryption("Next key ID lock poisoned".to_string()))?;
 
         let store = KeyStore {
             version: 1,
@@ -367,15 +406,22 @@ impl KeyManager {
         // Generate new DEK encrypted with new KEK
         let new_dek_id = self.generate_data_key()?;
 
-        let old_kek_id = self.current_kek_id.read().ok().and_then(|guard| *guard).unwrap_or(0);
-        let old_dek_id = self.current_dek_id.read().ok().and_then(|guard| *guard).unwrap_or(0);
-        
+        let old_kek_id = self
+            .current_kek_id
+            .read()
+            .ok()
+            .and_then(|guard| *guard)
+            .unwrap_or(0);
+        let old_dek_id = self
+            .current_dek_id
+            .read()
+            .ok()
+            .and_then(|guard| *guard)
+            .unwrap_or(0);
+
         info!(
             "Rotated keys: KEK {} -> {}, DEK {} -> {}",
-            old_kek_id,
-            new_kek_id,
-            old_dek_id,
-            new_dek_id,
+            old_kek_id, new_kek_id, old_dek_id, new_dek_id,
         );
 
         Ok(())

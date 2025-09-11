@@ -4,8 +4,8 @@
 //! to minimize cache misses and optimize database performance by proactively
 //! loading data that is likely to be accessed.
 
-use crate::performance::cache::adaptive_sizing::{CacheAllocation, WorkloadPattern, WorkloadType};
 use crate::core::error::{Error, Result};
+use crate::performance::cache::adaptive_sizing::{CacheAllocation, WorkloadPattern, WorkloadType};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -459,7 +459,9 @@ impl PatternDetector {
 
         // Sort by confidence and take top predictions
         predictions.sort_by(|a, b| {
-            b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
         predictions.truncate(max_predictions);
 
@@ -999,7 +1001,9 @@ impl CachePrewarmer {
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
-        (0..size as u64).map(|i| now.saturating_sub(i * 3600)).collect() // Last N hours
+        (0..size as u64)
+            .map(|i| now.saturating_sub(i * 3600))
+            .collect() // Last N hours
     }
 
     fn generate_random_pages(&self, size: usize) -> Vec<u64> {

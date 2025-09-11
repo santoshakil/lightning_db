@@ -106,8 +106,10 @@ impl MemoryRecoveryManager {
 
         // Check memory pressure
         let current_allocated = self.stats.current_allocated.load(Ordering::SeqCst);
-        let pressure = self.calculate_memory_pressure(current_allocated, size).await;
-        
+        let pressure = self
+            .calculate_memory_pressure(current_allocated, size)
+            .await;
+
         if pressure > self.config.cache_eviction_threshold {
             self.handle_memory_pressure(pressure).await?;
         }
@@ -128,8 +130,8 @@ impl MemoryRecoveryManager {
     }
 
     async fn allocate_with_tracking(&self, size: usize) -> Result<*mut u8> {
-        let layout = Layout::from_size_align(size, std::mem::align_of::<u8>())
-            .map_err(|_| Error::Memory)?;
+        let layout =
+            Layout::from_size_align(size, std::mem::align_of::<u8>()).map_err(|_| Error::Memory)?;
 
         let ptr = unsafe { alloc(layout) };
         if ptr.is_null() {
@@ -138,14 +140,23 @@ impl MemoryRecoveryManager {
 
         // Update statistics
         self.stats.allocation_count.fetch_add(1, Ordering::SeqCst);
-        let current = self.stats.current_allocated.fetch_add(size as u64, Ordering::SeqCst) + size as u64;
-        self.stats.total_allocated.fetch_add(size as u64, Ordering::SeqCst);
-        
+        let current = self
+            .stats
+            .current_allocated
+            .fetch_add(size as u64, Ordering::SeqCst)
+            + size as u64;
+        self.stats
+            .total_allocated
+            .fetch_add(size as u64, Ordering::SeqCst);
+
         // Update peak if necessary
         let mut peak = self.stats.peak_allocated.load(Ordering::SeqCst);
         while current > peak {
             match self.stats.peak_allocated.compare_exchange_weak(
-                peak, current, Ordering::SeqCst, Ordering::SeqCst
+                peak,
+                current,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
             ) {
                 Ok(_) => break,
                 Err(new_peak) => peak = new_peak,
@@ -166,14 +177,16 @@ impl MemoryRecoveryManager {
             return Ok(());
         }
 
-        let layout = Layout::from_size_align(size, std::mem::align_of::<u8>())
-            .map_err(|_| Error::Memory)?;
+        let layout =
+            Layout::from_size_align(size, std::mem::align_of::<u8>()).map_err(|_| Error::Memory)?;
 
         unsafe { dealloc(ptr, layout) };
 
         // Update statistics
         self.stats.deallocation_count.fetch_add(1, Ordering::SeqCst);
-        self.stats.current_allocated.fetch_sub(size as u64, Ordering::SeqCst);
+        self.stats
+            .current_allocated
+            .fetch_sub(size as u64, Ordering::SeqCst);
 
         // Track deallocation if enabled
         if self.config.allocation_tracking {
@@ -184,10 +197,14 @@ impl MemoryRecoveryManager {
         Ok(())
     }
 
-    async fn calculate_memory_pressure(&self, current_allocated: u64, requested_size: usize) -> f64 {
+    async fn calculate_memory_pressure(
+        &self,
+        current_allocated: u64,
+        requested_size: usize,
+    ) -> f64 {
         let system_memory = self.get_system_memory_info().await;
         let projected_usage = current_allocated + requested_size as u64;
-        
+
         if system_memory.available > 0 {
             projected_usage as f64 / system_memory.available as f64
         } else {
@@ -197,11 +214,11 @@ impl MemoryRecoveryManager {
 
     async fn handle_memory_pressure(&self, pressure: f64) -> Result<()> {
         warn!("Memory pressure detected: {:.2}%", pressure * 100.0);
-        
+
         // Evict caches
         let freed = self.evict_caches().await;
         self.stats.cache_evictions.fetch_add(1, Ordering::SeqCst);
-        
+
         // Run garbage collection if needed
         if pressure > 0.9 {
             self.run_garbage_collection().await?;
@@ -221,13 +238,15 @@ impl MemoryRecoveryManager {
             let mut reserve = self.emergency_reserve.lock().await;
             if reserve.is_some() {
                 *reserve = None;
-                self.stats.emergency_activations.fetch_add(1, Ordering::SeqCst);
+                self.stats
+                    .emergency_activations
+                    .fetch_add(1, Ordering::SeqCst);
             }
         }
 
         // Aggressive cache eviction
         let freed = self.evict_caches().await;
-        
+
         // Force garbage collection
         self.run_garbage_collection().await?;
 
@@ -253,7 +272,7 @@ impl MemoryRecoveryManager {
     async fn evict_caches(&self) -> u64 {
         let mut total_freed = 0u64;
         let managers = self.cache_managers.read().await;
-        
+
         for weak_manager in managers.iter() {
             if let Some(manager) = weak_manager.upgrade() {
                 total_freed += manager.evict_memory().await;
@@ -267,7 +286,7 @@ impl MemoryRecoveryManager {
         // Force Rust to run garbage collection
         // Note: Rust doesn't have a traditional GC, but we can trigger drop cleanup
         std::hint::black_box(());
-        
+
         // Clean up allocation tracker
         if self.config.allocation_tracking {
             let mut tracker = self.allocation_tracker.lock().await;
@@ -281,7 +300,7 @@ impl MemoryRecoveryManager {
         // Platform-specific memory information
         // This is simplified - real implementation would use platform APIs
         SystemMemoryInfo {
-            total: 8 * 1024 * 1024 * 1024, // 8GB default
+            total: 8 * 1024 * 1024 * 1024,     // 8GB default
             available: 4 * 1024 * 1024 * 1024, // 4GB available default
             used: 4 * 1024 * 1024 * 1024,
         }
@@ -299,7 +318,7 @@ impl MemoryRecoveryManager {
 
         let tracker = self.allocation_tracker.lock().await;
         let leaks = tracker.detect_leaks();
-        
+
         if !leaks.is_empty() {
             warn!("Memory leaks detected: {} allocations", leaks.len());
         }
@@ -403,12 +422,13 @@ impl AllocationTracker {
     fn track_allocation(&mut self, address: usize, size: usize) {
         if self.allocations.len() >= self.max_tracked {
             // Remove oldest allocation to make room
-            if let Some((&oldest_addr, _)) = self.allocations.iter()
-                .min_by_key(|(_, (_, time))| time) {
+            if let Some((&oldest_addr, _)) =
+                self.allocations.iter().min_by_key(|(_, (_, time))| time)
+            {
                 self.allocations.remove(&oldest_addr);
             }
         }
-        
+
         self.allocations.insert(address, (size, Instant::now()));
     }
 
@@ -419,8 +439,9 @@ impl AllocationTracker {
     fn detect_leaks(&self) -> Vec<MemoryLeakInfo> {
         let leak_threshold = Duration::from_secs(3600); // 1 hour
         let now = Instant::now();
-        
-        self.allocations.iter()
+
+        self.allocations
+            .iter()
             .filter_map(|(&address, &(size, time))| {
                 if now.duration_since(time) > leak_threshold {
                     Some(MemoryLeakInfo {
@@ -438,10 +459,9 @@ impl AllocationTracker {
     fn cleanup_stale_allocations(&mut self) {
         let leak_threshold = Duration::from_secs(3600);
         let now = Instant::now();
-        
-        self.allocations.retain(|_, (_, time)| {
-            now.duration_since(*time) <= leak_threshold
-        });
+
+        self.allocations
+            .retain(|_, (_, time)| now.duration_since(*time) <= leak_threshold);
     }
 }
 
@@ -453,7 +473,11 @@ pub struct MemoryPool {
 }
 
 impl MemoryPool {
-    pub fn new(recovery_manager: Arc<MemoryRecoveryManager>, block_size: usize, max_blocks: usize) -> Self {
+    pub fn new(
+        recovery_manager: Arc<MemoryRecoveryManager>,
+        block_size: usize,
+        max_blocks: usize,
+    ) -> Self {
         Self {
             recovery_manager,
             pool: Arc::new(Mutex::new(Vec::new())),
@@ -520,10 +544,10 @@ mod tests {
     async fn test_memory_allocation() {
         let config = MemoryRecoveryConfig::default();
         let manager = MemoryRecoveryManager::new(config);
-        
+
         let ptr = manager.try_allocate(1024).await.unwrap();
         assert!(!ptr.is_null());
-        
+
         manager.deallocate(ptr, 1024).await.unwrap();
     }
 
@@ -534,7 +558,7 @@ mod tests {
             ..Default::default()
         };
         let manager = MemoryRecoveryManager::new(config);
-        
+
         // Should trigger memory pressure handling
         let result = manager.try_allocate(1024).await;
         assert!(result.is_ok());
@@ -544,7 +568,7 @@ mod tests {
     async fn test_memory_health_report() {
         let config = MemoryRecoveryConfig::default();
         let manager = MemoryRecoveryManager::new(config);
-        
+
         let report = manager.get_memory_health_report().await;
         assert_eq!(report.status, MemoryHealthStatus::Healthy);
     }
@@ -554,10 +578,10 @@ mod tests {
         let config = MemoryRecoveryConfig::default();
         let manager = Arc::new(MemoryRecoveryManager::new(config));
         let pool = MemoryPool::new(manager, 1024, 10);
-        
+
         let block = pool.allocate().await.unwrap();
         assert_eq!(block.len(), 1024);
-        
+
         pool.deallocate(block).await.unwrap();
     }
 }

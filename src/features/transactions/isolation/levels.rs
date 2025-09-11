@@ -1,5 +1,5 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
-use serde::{Serialize, Deserialize};
 
 /// SQL standard transaction isolation levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -212,9 +212,18 @@ mod tests {
 
     #[test]
     fn test_display() {
-        assert_eq!(format!("{}", IsolationLevel::ReadUncommitted), "READ UNCOMMITTED");
-        assert_eq!(format!("{}", IsolationLevel::ReadCommitted), "READ COMMITTED");
-        assert_eq!(format!("{}", IsolationLevel::RepeatableRead), "REPEATABLE READ");
+        assert_eq!(
+            format!("{}", IsolationLevel::ReadUncommitted),
+            "READ UNCOMMITTED"
+        );
+        assert_eq!(
+            format!("{}", IsolationLevel::ReadCommitted),
+            "READ COMMITTED"
+        );
+        assert_eq!(
+            format!("{}", IsolationLevel::RepeatableRead),
+            "REPEATABLE READ"
+        );
         assert_eq!(format!("{}", IsolationLevel::Serializable), "SERIALIZABLE");
         assert_eq!(format!("{}", IsolationLevel::Snapshot), "SNAPSHOT");
     }

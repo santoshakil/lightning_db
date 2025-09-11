@@ -51,12 +51,12 @@ impl WALEntry {
             .as_millis() as u64;
 
         let tx_id = match &operation {
-            WALOperation::TransactionBegin { tx_id } |
-            WALOperation::TransactionCommit { tx_id } |
-            WALOperation::TransactionAbort { tx_id } |
-            WALOperation::BeginTransaction { tx_id } |
-            WALOperation::CommitTransaction { tx_id } |
-            WALOperation::AbortTransaction { tx_id } => Some(*tx_id),
+            WALOperation::TransactionBegin { tx_id }
+            | WALOperation::TransactionCommit { tx_id }
+            | WALOperation::TransactionAbort { tx_id }
+            | WALOperation::BeginTransaction { tx_id }
+            | WALOperation::CommitTransaction { tx_id }
+            | WALOperation::AbortTransaction { tx_id } => Some(*tx_id),
             _ => None,
         };
 
@@ -149,7 +149,7 @@ impl WALEntry {
 
     pub fn read_from<R: std::io::Read>(reader: &mut R) -> Result<Self> {
         use crate::core::error::Error;
-        
+
         // Read length prefix
         let mut len_bytes = [0u8; 4];
         reader
@@ -435,9 +435,9 @@ struct CommitBatch {
 /// Sync mode for WAL operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WalSyncMode {
-    Sync,                           // Immediate sync
-    Async,                          // No sync, rely on OS
-    Periodic { interval_ms: u64 },  // Periodic sync
+    Sync,                          // Immediate sync
+    Async,                         // No sync, rely on OS
+    Periodic { interval_ms: u64 }, // Periodic sync
 }
 
 /// Configuration for unified WAL
@@ -489,8 +489,14 @@ impl std::fmt::Debug for UnifiedWriteAheadLog {
         f.debug_struct("UnifiedWriteAheadLog")
             .field("base_path", &self.base_path)
             .field("next_lsn", &self.next_lsn.load(Ordering::Relaxed))
-            .field("next_segment_id", &self.next_segment_id.load(Ordering::Relaxed))
-            .field("last_checkpoint_lsn", &self.last_checkpoint_lsn.load(Ordering::Relaxed))
+            .field(
+                "next_segment_id",
+                &self.next_segment_id.load(Ordering::Relaxed),
+            )
+            .field(
+                "last_checkpoint_lsn",
+                &self.last_checkpoint_lsn.load(Ordering::Relaxed),
+            )
             .field("config", &self.config)
             .finish()
     }
@@ -589,8 +595,10 @@ impl UnifiedWriteAheadLog {
         let active_segment = if let Some(segment) = segments.last() {
             segment.clone()
         } else {
-            let new_segment = Arc::new(WALSegment::create(&base_path, 0)
-                .map_err(|e| Error::Io(format!("Failed to create initial WAL segment: {}", e)))?);
+            let new_segment =
+                Arc::new(WALSegment::create(&base_path, 0).map_err(|e| {
+                    Error::Io(format!("Failed to create initial WAL segment: {}", e))
+                })?);
             segments.push(new_segment.clone());
             new_segment
         };
@@ -839,7 +847,8 @@ impl UnifiedWriteAheadLog {
 
                         // Handle transaction operations
                         match &entry.operation {
-                            WALOperation::TransactionBegin { tx_id } | WALOperation::BeginTransaction { tx_id } => {
+                            WALOperation::TransactionBegin { tx_id }
+                            | WALOperation::BeginTransaction { tx_id } => {
                                 current_tx_id = Some(*tx_id);
                                 recovery_info.recovered_transactions.insert(
                                     *tx_id,
@@ -848,7 +857,8 @@ impl UnifiedWriteAheadLog {
                                     },
                                 );
                             }
-                            WALOperation::TransactionCommit { tx_id } | WALOperation::CommitTransaction { tx_id } => {
+                            WALOperation::TransactionCommit { tx_id }
+                            | WALOperation::CommitTransaction { tx_id } => {
                                 // Clone operations before applying
                                 let ops_to_apply =
                                     if let Some(TransactionRecoveryState::InProgress {
@@ -874,7 +884,8 @@ impl UnifiedWriteAheadLog {
                                     current_tx_id = None;
                                 }
                             }
-                            WALOperation::TransactionAbort { tx_id } | WALOperation::AbortTransaction { tx_id } => {
+                            WALOperation::TransactionAbort { tx_id }
+                            | WALOperation::AbortTransaction { tx_id } => {
                                 recovery_info
                                     .recovered_transactions
                                     .insert(*tx_id, TransactionRecoveryState::Aborted);
@@ -1145,10 +1156,13 @@ mod tests {
         assert_eq!(lsn, 1);
 
         // Create a manual entry to test checksum
-        let mut entry = WALEntry::new(100, WALOperation::Put {
-            key: b"manual_key".to_vec(),
-            value: b"manual_value".to_vec(),
-        });
+        let mut entry = WALEntry::new(
+            100,
+            WALOperation::Put {
+                key: b"manual_key".to_vec(),
+                value: b"manual_value".to_vec(),
+            },
+        );
 
         entry.calculate_checksum();
         assert!(entry.verify_checksum());

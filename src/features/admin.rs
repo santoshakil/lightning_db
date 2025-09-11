@@ -5,8 +5,8 @@
 
 pub mod http_server;
 
-use crate::{Database, LightningDbConfig};
 use crate::core::error::Result;
+use crate::{Database, LightningDbConfig};
 use std::path::Path;
 
 /// Database metrics for monitoring

@@ -1,7 +1,7 @@
 use crate::core::error::{Error, Result};
 use bytes::Bytes;
 use parking_lot::RwLock;
-use std::collections::{HashMap, HashSet, BTreeSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tracing::debug;
@@ -15,7 +15,10 @@ pub enum ValidationResult {
     /// Transaction can commit
     Valid,
     /// Transaction must abort due to conflicts
-    Invalid { reason: String, conflicts: Vec<TxId> },
+    Invalid {
+        reason: String,
+        conflicts: Vec<TxId>,
+    },
     /// Transaction must retry
     Retry { reason: String },
 }
@@ -85,13 +88,9 @@ impl SerializationValidator {
     }
 
     /// Begin tracking a transaction for validation
-    pub fn begin_transaction(
-        &self,
-        tx_id: TxId,
-        isolation_level: IsolationLevel,
-    ) -> Result<()> {
+    pub fn begin_transaction(&self, tx_id: TxId, isolation_level: IsolationLevel) -> Result<()> {
         let start_timestamp = self.get_next_timestamp();
-        
+
         let validation_info = ValidationInfo {
             tx_id,
             isolation_level,
@@ -119,12 +118,7 @@ impl SerializationValidator {
     }
 
     /// Record a read operation
-    pub fn record_read(
-        &self,
-        tx_id: TxId,
-        key: Bytes,
-        version: u64,
-    ) -> Result<()> {
+    pub fn record_read(&self, tx_id: TxId, key: Bytes, version: u64) -> Result<()> {
         let mut tx_info = self.tx_info.write();
         if let Some(info) = tx_info.get_mut(&tx_id) {
             info.read_set.keys.insert(key.clone());
@@ -167,7 +161,7 @@ impl SerializationValidator {
     /// Validate a transaction for commit (optimistic concurrency control)
     pub fn validate_transaction(&self, tx_id: TxId) -> Result<ValidationResult> {
         let validation_timestamp = self.get_next_timestamp();
-        
+
         // Update validation timestamp
         {
             let mut tx_info = self.tx_info.write();
@@ -178,13 +172,18 @@ impl SerializationValidator {
             }
         }
 
-        self.active_validations.write().insert(tx_id, 
-            (self.get_transaction_start_time(tx_id)?, validation_timestamp));
+        self.active_validations.write().insert(
+            tx_id,
+            (
+                self.get_transaction_start_time(tx_id)?,
+                validation_timestamp,
+            ),
+        );
 
         let result = self.perform_validation(tx_id, validation_timestamp)?;
-        
+
         self.active_validations.write().remove(&tx_id);
-        
+
         // Update statistics
         {
             let mut stats = self.stats.write();
@@ -203,7 +202,7 @@ impl SerializationValidator {
     /// Commit a transaction after successful validation
     pub fn commit_transaction(&self, tx_id: TxId) -> Result<()> {
         let commit_timestamp = self.get_next_timestamp();
-        
+
         {
             let mut tx_info = self.tx_info.write();
             if let Some(info) = tx_info.get_mut(&tx_id) {
@@ -214,9 +213,14 @@ impl SerializationValidator {
         }
 
         // Add to committed transactions
-        self.committed_transactions.write().insert((commit_timestamp, tx_id));
-        
-        debug!("Committed transaction {} at timestamp {}", tx_id, commit_timestamp);
+        self.committed_transactions
+            .write()
+            .insert((commit_timestamp, tx_id));
+
+        debug!(
+            "Committed transaction {} at timestamp {}",
+            tx_id, commit_timestamp
+        );
         Ok(())
     }
 
@@ -231,7 +235,8 @@ impl SerializationValidator {
     /// Check for write-write conflicts (backward validation)
     pub fn check_write_write_conflicts(&self, tx_id: TxId) -> Result<Vec<TxId>> {
         let tx_info = self.tx_info.read();
-        let validation_info = tx_info.get(&tx_id)
+        let validation_info = tx_info
+            .get(&tx_id)
             .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
 
         let mut conflicts = Vec::new();
@@ -258,14 +263,15 @@ impl SerializationValidator {
     /// Check for read-write conflicts (forward validation)
     pub fn check_read_write_conflicts(&self, tx_id: TxId) -> Result<Vec<TxId>> {
         let tx_info = self.tx_info.read();
-        let validation_info = tx_info.get(&tx_id)
+        let validation_info = tx_info
+            .get(&tx_id)
             .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
 
         let mut conflicts = Vec::new();
 
         // Check against all active transactions that started after us
         for (other_tx_id, other_info) in tx_info.iter() {
-            if *other_tx_id != tx_id 
+            if *other_tx_id != tx_id
                 && other_info.start_timestamp > validation_info.start_timestamp
                 && !other_info.committed
             {
@@ -285,7 +291,8 @@ impl SerializationValidator {
     /// Check for phantom read conflicts
     pub fn check_phantom_conflicts(&self, tx_id: TxId) -> Result<Vec<TxId>> {
         let tx_info = self.tx_info.read();
-        let validation_info = tx_info.get(&tx_id)
+        let validation_info = tx_info
+            .get(&tx_id)
             .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
 
         // Only check for serializable isolation
@@ -316,10 +323,15 @@ impl SerializationValidator {
     }
 
     /// Perform validation based on isolation level
-    fn perform_validation(&self, tx_id: TxId, _validation_timestamp: u64) -> Result<ValidationResult> {
+    fn perform_validation(
+        &self,
+        tx_id: TxId,
+        _validation_timestamp: u64,
+    ) -> Result<ValidationResult> {
         let isolation_level = {
             let tx_info = self.tx_info.read();
-            tx_info.get(&tx_id)
+            tx_info
+                .get(&tx_id)
                 .map(|info| info.isolation_level)
                 .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?
         };
@@ -345,8 +357,9 @@ impl SerializationValidator {
                 // Check write-write and read-write conflicts
                 let ww_conflicts = self.check_write_write_conflicts(tx_id)?;
                 let rw_conflicts = self.check_read_write_conflicts(tx_id)?;
-                
-                let all_conflicts: Vec<TxId> = ww_conflicts.into_iter()
+
+                let all_conflicts: Vec<TxId> = ww_conflicts
+                    .into_iter()
                     .chain(rw_conflicts.into_iter())
                     .collect::<HashSet<_>>()
                     .into_iter()
@@ -366,8 +379,9 @@ impl SerializationValidator {
                 let ww_conflicts = self.check_write_write_conflicts(tx_id)?;
                 let rw_conflicts = self.check_read_write_conflicts(tx_id)?;
                 let phantom_conflicts = self.check_phantom_conflicts(tx_id)?;
-                
-                let all_conflicts: Vec<TxId> = ww_conflicts.into_iter()
+
+                let all_conflicts: Vec<TxId> = ww_conflicts
+                    .into_iter()
                     .chain(rw_conflicts.into_iter())
                     .chain(phantom_conflicts.into_iter())
                     .collect::<HashSet<_>>()
@@ -393,13 +407,14 @@ impl SerializationValidator {
     /// Validate snapshot isolation (check for write-write conflicts only)
     fn validate_snapshot_isolation(&self, tx_id: TxId) -> Result<ValidationResult> {
         let conflicts = self.check_write_write_conflicts(tx_id)?;
-        
+
         if conflicts.is_empty() {
             Ok(ValidationResult::Valid)
         } else {
             // For snapshot isolation, write-write conflicts should retry
             Ok(ValidationResult::Retry {
-                reason: "Write-write conflict in snapshot isolation - retry recommended".to_string(),
+                reason: "Write-write conflict in snapshot isolation - retry recommended"
+                    .to_string(),
             })
         }
     }
@@ -407,7 +422,8 @@ impl SerializationValidator {
     /// Get transaction start time
     fn get_transaction_start_time(&self, tx_id: TxId) -> Result<u64> {
         let tx_info = self.tx_info.read();
-        tx_info.get(&tx_id)
+        tx_info
+            .get(&tx_id)
             .map(|info| info.start_timestamp)
             .ok_or_else(|| Error::TransactionNotFound { id: tx_id })
     }
@@ -438,15 +454,15 @@ impl SerializationValidator {
     pub fn cleanup_old_transactions(&self, before_timestamp: u64) -> usize {
         let mut committed = self.committed_transactions.write();
         let original_len = committed.len();
-        
+
         // Keep transactions that committed after the cutoff
         *committed = committed.split_off(&(before_timestamp, 0));
-        
+
         let cleaned = original_len - committed.len();
         if cleaned > 0 {
             debug!("Cleaned up {} old committed transactions", cleaned);
         }
-        
+
         cleaned
     }
 
@@ -468,18 +484,22 @@ mod tests {
     #[test]
     fn test_validation_basic() {
         let validator = SerializationValidator::new();
-        
+
         // Begin transaction
-        validator.begin_transaction(1, IsolationLevel::ReadCommitted).unwrap();
-        
+        validator
+            .begin_transaction(1, IsolationLevel::ReadCommitted)
+            .unwrap();
+
         // Record operations
         validator.record_read(1, Bytes::from("key1"), 1).unwrap();
-        validator.record_write(1, Bytes::from("key2"), Some(Bytes::from("value2")), 1).unwrap();
-        
+        validator
+            .record_write(1, Bytes::from("key2"), Some(Bytes::from("value2")), 1)
+            .unwrap();
+
         // Validate
         let result = validator.validate_transaction(1).unwrap();
         assert_eq!(result, ValidationResult::Valid);
-        
+
         // Commit
         validator.commit_transaction(1).unwrap();
     }
@@ -487,17 +507,25 @@ mod tests {
     #[test]
     fn test_write_write_conflict() {
         let validator = SerializationValidator::new();
-        
+
         // First transaction
-        validator.begin_transaction(1, IsolationLevel::ReadCommitted).unwrap();
-        validator.record_write(1, Bytes::from("key1"), Some(Bytes::from("value1")), 1).unwrap();
+        validator
+            .begin_transaction(1, IsolationLevel::ReadCommitted)
+            .unwrap();
+        validator
+            .record_write(1, Bytes::from("key1"), Some(Bytes::from("value1")), 1)
+            .unwrap();
         validator.validate_transaction(1).unwrap();
         validator.commit_transaction(1).unwrap();
-        
+
         // Second transaction writing to same key
-        validator.begin_transaction(2, IsolationLevel::ReadCommitted).unwrap();
-        validator.record_write(2, Bytes::from("key1"), Some(Bytes::from("value2")), 2).unwrap();
-        
+        validator
+            .begin_transaction(2, IsolationLevel::ReadCommitted)
+            .unwrap();
+        validator
+            .record_write(2, Bytes::from("key1"), Some(Bytes::from("value2")), 2)
+            .unwrap();
+
         let result = validator.validate_transaction(2).unwrap();
         match result {
             ValidationResult::Invalid { conflicts, .. } => {
@@ -510,17 +538,25 @@ mod tests {
     #[test]
     fn test_serializable_validation() {
         let validator = SerializationValidator::new();
-        
+
         // Transaction with range read
-        validator.begin_transaction(1, IsolationLevel::Serializable).unwrap();
-        validator.record_range_read(1, Some(Bytes::from("a")), Some(Bytes::from("z"))).unwrap();
-        
+        validator
+            .begin_transaction(1, IsolationLevel::Serializable)
+            .unwrap();
+        validator
+            .record_range_read(1, Some(Bytes::from("a")), Some(Bytes::from("z")))
+            .unwrap();
+
         // Another transaction that commits an insert in the range
-        validator.begin_transaction(2, IsolationLevel::Serializable).unwrap();
-        validator.record_write(2, Bytes::from("m"), Some(Bytes::from("new_value")), 1).unwrap();
+        validator
+            .begin_transaction(2, IsolationLevel::Serializable)
+            .unwrap();
+        validator
+            .record_write(2, Bytes::from("m"), Some(Bytes::from("new_value")), 1)
+            .unwrap();
         validator.validate_transaction(2).unwrap();
         validator.commit_transaction(2).unwrap();
-        
+
         // First transaction should fail validation due to phantom
         let result = validator.validate_transaction(1).unwrap();
         match result {
@@ -534,19 +570,27 @@ mod tests {
     #[test]
     fn test_snapshot_isolation_retry() {
         let validator = SerializationValidator::new();
-        
+
         // Two transactions with write-write conflict in snapshot isolation
-        validator.begin_transaction(1, IsolationLevel::Snapshot).unwrap();
-        validator.begin_transaction(2, IsolationLevel::Snapshot).unwrap();
-        
-        validator.record_write(1, Bytes::from("key1"), Some(Bytes::from("value1")), 1).unwrap();
-        validator.record_write(2, Bytes::from("key1"), Some(Bytes::from("value2")), 2).unwrap();
-        
+        validator
+            .begin_transaction(1, IsolationLevel::Snapshot)
+            .unwrap();
+        validator
+            .begin_transaction(2, IsolationLevel::Snapshot)
+            .unwrap();
+
+        validator
+            .record_write(1, Bytes::from("key1"), Some(Bytes::from("value1")), 1)
+            .unwrap();
+        validator
+            .record_write(2, Bytes::from("key1"), Some(Bytes::from("value2")), 2)
+            .unwrap();
+
         // First to validate should succeed
         let result1 = validator.validate_transaction(1).unwrap();
         assert_eq!(result1, ValidationResult::Valid);
         validator.commit_transaction(1).unwrap();
-        
+
         // Second should get retry recommendation
         let result2 = validator.validate_transaction(2).unwrap();
         match result2 {

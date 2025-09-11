@@ -220,10 +220,7 @@ impl ConsistencyChecker {
         let depth_map = self.depth_map.read();
 
         // Find all leaf nodes
-        let leaf_depths: HashSet<usize> = depth_map
-            .values()
-            .copied()
-            .collect();
+        let leaf_depths: HashSet<usize> = depth_map.values().copied().collect();
 
         // All leaves should be at the same depth
         if leaf_depths.len() > 1 {

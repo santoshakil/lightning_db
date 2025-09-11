@@ -217,7 +217,9 @@ impl SSTableBuilder {
                     Ok(compressed)
                 }
                 #[cfg(not(feature = "zstd-compression"))]
-                Err(Error::CompressionError("ZSTD compression not available".to_string()))
+                Err(Error::CompressionError(
+                    "ZSTD compression not available".to_string(),
+                ))
             }
             2 => {
                 // lz4 compression
@@ -650,10 +652,10 @@ mod tests {
     fn test_sstable_bloom_filter() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("test_bloom.sst");
-        
+
         // Build SSTable with bloom filter
         let mut builder = SSTableBuilder::new(&path, 0, 0).unwrap();
-        
+
         let mut keys = vec![];
         for i in 0..1000 {
             let key = format!("key_{:04}", i);
@@ -661,12 +663,12 @@ mod tests {
             builder.add(key.into_bytes(), b"value".to_vec()).unwrap();
         }
         let _metadata = builder.finish().unwrap();
-        
+
         // Bloom filter is internal, verify through reader behavior
-        
+
         // Test bloom filter effectiveness
         let reader = SSTableReader::open(&path).unwrap();
-        
+
         // All inserted keys should potentially be in the table
         for key in &keys {
             // Bloom filter may have false positives, but no false negatives
@@ -674,7 +676,7 @@ mod tests {
             let result = reader.get(key.as_bytes()).unwrap();
             assert!(result.is_some());
         }
-        
+
         // Test with non-existent keys
         let mut false_positives = 0;
         for i in 1000..2000 {
@@ -683,7 +685,7 @@ mod tests {
                 false_positives += 1;
             }
         }
-        
+
         // False positive rate should be low (typically < 1%)
         assert!(false_positives < 10);
     }
@@ -693,7 +695,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let uncompressed_path = dir.path().join("uncompressed.sst");
         let compressed_path = dir.path().join("compressed.sst");
-        
+
         // Create data with repetitive patterns (compressible)
         let mut data = vec![];
         for i in 0..100 {
@@ -701,28 +703,38 @@ mod tests {
             let value = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(10);
             data.push((key, value));
         }
-        
+
         // Build uncompressed SSTable
         let mut builder = SSTableBuilder::new(&uncompressed_path, 0, 0).unwrap();
         for (key, value) in &data {
-            builder.add(key.as_bytes().to_vec(), value.as_bytes().to_vec()).unwrap();
+            builder
+                .add(key.as_bytes().to_vec(), value.as_bytes().to_vec())
+                .unwrap();
         }
         builder.finish().unwrap();
-        
+
         // Build compressed SSTable (would need compression flag in real impl)
         let mut builder = SSTableBuilder::new(&compressed_path, 0, 0).unwrap();
         for (key, value) in &data {
-            builder.add(key.as_bytes().to_vec(), value.as_bytes().to_vec()).unwrap();
+            builder
+                .add(key.as_bytes().to_vec(), value.as_bytes().to_vec())
+                .unwrap();
         }
         builder.finish().unwrap();
-        
+
         // Both should read the same data
         let reader1 = SSTableReader::open(&uncompressed_path).unwrap();
         let reader2 = SSTableReader::open(&compressed_path).unwrap();
-        
+
         for (key, value) in &data {
-            assert_eq!(reader1.get(key.as_bytes()).unwrap(), Some(value.as_bytes().to_vec()));
-            assert_eq!(reader2.get(key.as_bytes()).unwrap(), Some(value.as_bytes().to_vec()));
+            assert_eq!(
+                reader1.get(key.as_bytes()).unwrap(),
+                Some(value.as_bytes().to_vec())
+            );
+            assert_eq!(
+                reader2.get(key.as_bytes()).unwrap(),
+                Some(value.as_bytes().to_vec())
+            );
         }
     }
 
@@ -730,28 +742,38 @@ mod tests {
     fn test_sstable_range_query() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("test_range.sst");
-        
+
         // Build SSTable with alphabetical keys
         let mut builder = SSTableBuilder::new(&path, 0, 0).unwrap();
-        let keys = vec!["apple", "banana", "cherry", "date", "elderberry", "fig", "grape"];
-        
+        let keys = vec![
+            "apple",
+            "banana",
+            "cherry",
+            "date",
+            "elderberry",
+            "fig",
+            "grape",
+        ];
+
         for key in &keys {
-            builder.add(key.as_bytes().to_vec(), b"fruit".to_vec()).unwrap();
+            builder
+                .add(key.as_bytes().to_vec(), b"fruit".to_vec())
+                .unwrap();
         }
         builder.finish().unwrap();
-        
+
         let reader = SSTableReader::open(&path).unwrap();
-        
+
         // Range query using iterator and manual filtering
         let mut iter = reader.iter().unwrap();
         let mut results = vec![];
-        
+
         while let Some(Ok((key, _value))) = iter.next() {
             if key.as_slice() >= b"banana".as_ref() && key.as_slice() < b"fig".as_ref() {
                 results.push(String::from_utf8(key.to_vec()).unwrap());
             }
         }
-        
+
         assert_eq!(results, vec!["banana", "cherry", "date", "elderberry"]);
     }
 
@@ -759,20 +781,20 @@ mod tests {
     fn test_sstable_large_values() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("test_large.sst");
-        
+
         // Build SSTable with large values
         let mut builder = SSTableBuilder::new(&path, 0, 0).unwrap();
-        
+
         for i in 0..10 {
             let key = format!("key_{}", i);
             let value = vec![b'x'; 1024 * 1024]; // 1MB value
             builder.add(key.into_bytes(), value).unwrap();
         }
         builder.finish().unwrap();
-        
+
         // Read and verify large values
         let reader = SSTableReader::open(&path).unwrap();
-        
+
         for i in 0..10 {
             let key = format!("key_{}", i);
             let value = reader.get(key.as_bytes()).unwrap().unwrap();
@@ -785,14 +807,14 @@ mod tests {
     fn test_sstable_manager_multi_level() {
         let dir = TempDir::new().unwrap();
         let _manager = SSTableManager::new(dir.path().to_path_buf());
-        
+
         // Create SSTables at different levels
         for level in 0..3 {
             for table_id in 0..3 {
                 let table_num = level * 10 + table_id;
                 let filename = format!("level_{}_table_{}.sst", level, table_num);
                 let path = dir.path().join(filename);
-                
+
                 let mut builder = SSTableBuilder::new(&path, level, 0).unwrap();
                 for i in 0..10 {
                     let key = format!("level_{}_table_{}_key_{}", level, table_id, i);
@@ -802,7 +824,7 @@ mod tests {
                 builder.finish().unwrap();
             }
         }
-        
+
         // Verify SSTables were created
         let entries = std::fs::read_dir(dir.path()).unwrap();
         let count = entries.filter(|e| e.is_ok()).count();
@@ -813,10 +835,10 @@ mod tests {
     fn test_sstable_concurrent_reads() {
         use std::sync::Arc;
         use std::thread;
-        
+
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("test_concurrent.sst");
-        
+
         // Build SSTable
         let mut builder = SSTableBuilder::new(&path, 0, 0).unwrap();
         for i in 0..1000 {
@@ -825,12 +847,12 @@ mod tests {
             builder.add(key.into_bytes(), value.into_bytes()).unwrap();
         }
         builder.finish().unwrap();
-        
+
         // Concurrent reads
         let reader = Arc::new(SSTableReader::open(&path).unwrap());
         let num_threads = 8;
         let mut handles = vec![];
-        
+
         for _thread_id in 0..num_threads {
             let reader_clone = Arc::clone(&reader);
             let handle = thread::spawn(move || {
@@ -843,7 +865,7 @@ mod tests {
             });
             handles.push(handle);
         }
-        
+
         for handle in handles {
             handle.join().unwrap();
         }
@@ -853,7 +875,7 @@ mod tests {
     fn test_sstable_metadata_persistence() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("test_metadata.sst");
-        
+
         let metadata = {
             // Build SSTable and get metadata
             let mut builder = SSTableBuilder::new(&path, 2, 42).unwrap();
@@ -863,7 +885,7 @@ mod tests {
             }
             builder.finish().unwrap()
         };
-        
+
         // Verify metadata
         assert_eq!(metadata.level, 2);
         assert_eq!(metadata.num_entries, 100);
@@ -876,7 +898,7 @@ mod tests {
     fn test_sstable_binary_search() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("test_binary_search.sst");
-        
+
         // Build SSTable with many entries
         let mut builder = SSTableBuilder::new(&path, 0, 0).unwrap();
         for i in 0..10000 {
@@ -885,9 +907,9 @@ mod tests {
             builder.add(key.into_bytes(), value.into_bytes()).unwrap();
         }
         builder.finish().unwrap();
-        
+
         let reader = SSTableReader::open(&path).unwrap();
-        
+
         // Test binary search efficiency with specific lookups
         assert_eq!(reader.get(b"00000000").unwrap(), Some(b"val_0".to_vec()));
         assert_eq!(reader.get(b"00005000").unwrap(), Some(b"val_5000".to_vec()));
@@ -898,11 +920,11 @@ mod tests {
     #[test]
     fn test_sstable_crash_recovery() {
         use std::fs;
-        
+
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("test_crash.sst");
         let temp_path = dir.path().join("test_crash.sst.tmp");
-        
+
         // Simulate partial write (crash during SSTable creation)
         {
             let mut file = fs::File::create(&temp_path).unwrap();
@@ -910,15 +932,15 @@ mod tests {
             // Write partial/corrupt data
             file.write_all(b"PARTIAL_SSTABLE_DATA").unwrap();
         }
-        
+
         // Recovery should handle partial files
         assert!(SSTableReader::open(&temp_path).is_err());
-        
+
         // Complete SSTable should work
         let mut builder = SSTableBuilder::new(&path, 0, 0).unwrap();
         builder.add(b"key".to_vec(), b"value".to_vec()).unwrap();
         builder.finish().unwrap();
-        
+
         assert!(SSTableReader::open(&path).is_ok());
     }
 }

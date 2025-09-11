@@ -1,11 +1,11 @@
+use crate::core::error::Result;
+use crc32fast::Hasher;
+use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::collections::{HashMap, VecDeque};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use crate::core::error::Result;
-use dashmap::DashMap;
-use crc32fast::Hasher;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LogType {
@@ -201,7 +201,7 @@ impl TransactionLog {
             checkpoint_lsn: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             recovery_lsn: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         });
-        
+
         let initial_segment = LogSegment {
             segment_id: 0,
             start_lsn: 1,
@@ -215,7 +215,7 @@ impl TransactionLog {
             closed: false,
             path: format!("{}/segment_0000.log", config.log_path),
         };
-        
+
         Self {
             storage,
             active_segment: Arc::new(RwLock::new(initial_segment)),
@@ -263,38 +263,53 @@ impl TransactionLog {
         }
     }
 
-    pub async fn write(&self, log_type: LogType, txn_id: super::TransactionId, data: LogData) -> Result<u64> {
-        let lsn = self.lsn_generator.current_lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        
+    pub async fn write(
+        &self,
+        log_type: LogType,
+        txn_id: super::TransactionId,
+        data: LogData,
+    ) -> Result<u64> {
+        let lsn = self
+            .lsn_generator
+            .current_lsn
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
         let entry = LogEntry {
             lsn,
             txn_id,
             log_type,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             data,
             prev_lsn: self.get_last_lsn_for_txn(txn_id).await,
             checksum: 0,
         };
-        
+
         let mut entry = entry;
         entry.checksum = self.calculate_checksum(&entry);
-        
+
         let mut buffer = self.buffer_pool.write_buffer.write().await;
         buffer.entries.push_back(entry.clone());
         buffer.size += std::mem::size_of::<LogEntry>();
         buffer.dirty = true;
-        
+
         if buffer.size >= buffer.capacity {
             drop(buffer);
             self.flush().await?;
         }
-        
-        self.metrics.total_entries.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+
+        self.metrics
+            .total_entries
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         if let LogData::Checkpoint { .. } = entry.data {
-            self.checkpoint_manager.checkpoint_lsn.store(lsn, std::sync::atomic::Ordering::SeqCst);
+            self.checkpoint_manager
+                .checkpoint_lsn
+                .store(lsn, std::sync::atomic::Ordering::SeqCst);
         }
-        
+
         Ok(lsn)
     }
 
@@ -302,58 +317,62 @@ impl TransactionLog {
         if let Some(state) = self.checkpoint_manager.active_transactions.get(&txn_id) {
             return Some(state.last_lsn);
         }
-        
+
         let segment = self.active_segment.read().await;
         for entry in segment.entries.iter().rev() {
             if entry.txn_id == txn_id {
                 return Some(entry.lsn);
             }
         }
-        
+
         None
     }
 
     fn calculate_checksum(&self, entry: &LogEntry) -> u32 {
         let mut hasher = Hasher::new();
-        
+
         hasher.update(&entry.lsn.to_le_bytes());
         hasher.update(&serde_json::to_vec(&entry.txn_id).unwrap());
         hasher.update(&serde_json::to_vec(&entry.log_type).unwrap());
         hasher.update(&entry.timestamp.to_le_bytes());
         hasher.update(&serde_json::to_vec(&entry.data).unwrap());
-        
+
         if let Some(prev_lsn) = entry.prev_lsn {
             hasher.update(&prev_lsn.to_le_bytes());
         }
-        
+
         hasher.finalize()
     }
 
     pub async fn flush(&self) -> Result<()> {
         let mut write_buffer = self.buffer_pool.write_buffer.write().await;
         let mut flush_buffer = self.buffer_pool.flush_buffer.write().await;
-        
+
         std::mem::swap(&mut *write_buffer, &mut *flush_buffer);
         write_buffer.dirty = false;
-        
+
         drop(write_buffer);
-        
+
         if flush_buffer.entries.is_empty() {
             return Ok(());
         }
-        
+
         let mut segment = self.active_segment.write().await;
-        
+
         for entry in flush_buffer.entries.drain(..) {
             segment.entries.push(entry.clone());
             segment.size += std::mem::size_of::<LogEntry>();
-            
-            if let Some(mut state) = self.checkpoint_manager.active_transactions.get_mut(&entry.txn_id) {
+
+            if let Some(mut state) = self
+                .checkpoint_manager
+                .active_transactions
+                .get_mut(&entry.txn_id)
+            {
                 state.last_lsn = entry.lsn;
                 if state.first_lsn == 0 {
                     state.first_lsn = entry.lsn;
                 }
-                
+
                 if matches!(entry.log_type, LogType::Undo) {
                     state.undo_chain.push(entry.lsn);
                 }
@@ -369,43 +388,51 @@ impl TransactionLog {
                     },
                 );
             }
-            
+
             if matches!(entry.log_type, LogType::Commit | LogType::Abort) {
-                self.checkpoint_manager.active_transactions.remove(&entry.txn_id);
+                self.checkpoint_manager
+                    .active_transactions
+                    .remove(&entry.txn_id);
             }
         }
-        
+
         flush_buffer.size = 0;
         flush_buffer.dirty = false;
-        
+
         let serialized = serde_json::to_vec(&segment.entries).unwrap();
-        self.storage.write_page(
-            segment.path.as_bytes().to_vec(),
-            serialized,
-        ).await?;
-        
+        self.storage
+            .write_page(segment.path.as_bytes().to_vec(), serialized)
+            .await?;
+
         if segment.size > 1024 * 1024 * 16 {
             self.rotate_segment().await?;
         }
-        
-        self.metrics.flush_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.metrics.total_bytes.fetch_add(segment.size as u64, std::sync::atomic::Ordering::Relaxed);
-        
+
+        self.metrics
+            .flush_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.metrics
+            .total_bytes
+            .fetch_add(segment.size as u64, std::sync::atomic::Ordering::Relaxed);
+
         *self.buffer_pool.last_flush.write().await = Instant::now();
-        
+
         Ok(())
     }
 
     async fn rotate_segment(&self) -> Result<()> {
         let mut current = self.active_segment.write().await;
-        
-        let current_lsn = self.lsn_generator.current_lsn.load(std::sync::atomic::Ordering::SeqCst);
+
+        let current_lsn = self
+            .lsn_generator
+            .current_lsn
+            .load(std::sync::atomic::Ordering::SeqCst);
         current.end_lsn = Some(current_lsn);
         current.closed = true;
-        
+
         let old_segment = (*current).clone();
         self.segments.insert(old_segment.segment_id, old_segment);
-        
+
         let new_segment_id = current.segment_id + 1;
         *current = LogSegment {
             segment_id: new_segment_id,
@@ -420,59 +447,71 @@ impl TransactionLog {
             closed: false,
             path: format!("logs/segment_{:04}.log", new_segment_id),
         };
-        
+
         let mut archive_queue = self.archiver.archive_queue.write().await;
         archive_queue.push_back(new_segment_id - 1);
-        
+
         Ok(())
     }
 
     pub async fn checkpoint(&self) -> Result<()> {
-        self.metrics.checkpoint_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+        self.metrics
+            .checkpoint_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         self.flush().await?;
-        
-        let active_txns: Vec<super::TransactionId> = self.checkpoint_manager
+
+        let active_txns: Vec<super::TransactionId> = self
+            .checkpoint_manager
             .active_transactions
             .iter()
             .map(|entry| *entry.key())
             .collect();
-        
-        let min_lsn = self.checkpoint_manager
+
+        let min_lsn = self
+            .checkpoint_manager
             .active_transactions
             .iter()
             .map(|entry| entry.value().first_lsn)
             .min()
             .unwrap_or(0);
-        
-        let max_lsn = self.lsn_generator.current_lsn.load(std::sync::atomic::Ordering::SeqCst);
-        
+
+        let max_lsn = self
+            .lsn_generator
+            .current_lsn
+            .load(std::sync::atomic::Ordering::SeqCst);
+
         let checkpoint_data = LogData::Checkpoint {
             active_txns: active_txns.clone(),
             min_lsn,
             max_lsn,
         };
-        
+
         self.write(
             LogType::Checkpoint,
             super::TransactionId::new(),
             checkpoint_data,
-        ).await?;
-        
+        )
+        .await?;
+
         self.flush().await?;
-        
+
         *self.checkpoint_manager.last_checkpoint.write().await = Instant::now();
-        
+
         Ok(())
     }
 
     pub async fn recover(&self, start_lsn: Option<u64>) -> Result<RecoveryInfo> {
-        self.metrics.recovery_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        
+        self.metrics
+            .recovery_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         let start = start_lsn.unwrap_or_else(|| {
-            self.checkpoint_manager.checkpoint_lsn.load(std::sync::atomic::Ordering::SeqCst)
+            self.checkpoint_manager
+                .checkpoint_lsn
+                .load(std::sync::atomic::Ordering::SeqCst)
         });
-        
+
         let mut recovery_info = RecoveryInfo {
             start_lsn: start,
             end_lsn: 0,
@@ -480,21 +519,24 @@ impl TransactionLog {
             redo_operations: Vec::new(),
             undo_operations: Vec::new(),
         };
-        
+
         let entries = self.read_log_range(start, None).await?;
-        
+
         let mut active_txns = HashMap::new();
         let mut redo_list = Vec::new();
         let mut undo_list = Vec::new();
-        
+
         for entry in &entries {
             match entry.log_type {
                 LogType::Begin => {
-                    active_txns.insert(entry.txn_id, RecoveryTransaction {
-                        txn_id: entry.txn_id,
-                        state: RecoveryState::Active,
-                        undo_chain: Vec::new(),
-                    });
+                    active_txns.insert(
+                        entry.txn_id,
+                        RecoveryTransaction {
+                            txn_id: entry.txn_id,
+                            state: RecoveryState::Active,
+                            undo_chain: Vec::new(),
+                        },
+                    );
                 }
                 LogType::Commit => {
                     if let Some(txn) = active_txns.get_mut(&entry.txn_id) {
@@ -510,7 +552,7 @@ impl TransactionLog {
                     if let Some(txn) = active_txns.get_mut(&entry.txn_id) {
                         txn.undo_chain.push(entry.lsn);
                     }
-                    
+
                     if let LogData::Undo { operation, .. } = &entry.data {
                         undo_list.push(operation.clone());
                     }
@@ -522,10 +564,10 @@ impl TransactionLog {
                 }
                 _ => {}
             }
-            
+
             recovery_info.end_lsn = entry.lsn;
         }
-        
+
         for entry in entries.iter().rev() {
             if let Some(txn) = active_txns.get(&entry.txn_id) {
                 if txn.state == RecoveryState::Active {
@@ -539,21 +581,20 @@ impl TransactionLog {
                 }
             }
         }
-        
+
         recovery_info.redo_operations = redo_list;
         recovery_info.transactions_recovered = active_txns.keys().cloned().collect();
-        
-        self.lsn_generator.recovery_lsn.store(
-            recovery_info.end_lsn,
-            std::sync::atomic::Ordering::SeqCst,
-        );
-        
+
+        self.lsn_generator
+            .recovery_lsn
+            .store(recovery_info.end_lsn, std::sync::atomic::Ordering::SeqCst);
+
         Ok(recovery_info)
     }
 
     async fn read_log_range(&self, start_lsn: u64, end_lsn: Option<u64>) -> Result<Vec<LogEntry>> {
         let mut entries = Vec::new();
-        
+
         let segment = self.active_segment.read().await;
         for entry in &segment.entries {
             if entry.lsn >= start_lsn {
@@ -565,7 +606,7 @@ impl TransactionLog {
                 entries.push(entry.clone());
             }
         }
-        
+
         for segment_entry in self.segments.iter() {
             let segment = segment_entry.value();
             if let Some(end) = segment.end_lsn {
@@ -573,7 +614,7 @@ impl TransactionLog {
                     continue;
                 }
             }
-            
+
             for entry in &segment.entries {
                 if entry.lsn >= start_lsn {
                     if let Some(end) = end_lsn {
@@ -585,17 +626,18 @@ impl TransactionLog {
                 }
             }
         }
-        
+
         entries.sort_by_key(|e| e.lsn);
-        
+
         Ok(entries)
     }
 
     pub async fn truncate(&self, lsn: u64) -> Result<()> {
         let mut segment = self.active_segment.write().await;
         segment.entries.retain(|entry| entry.lsn <= lsn);
-        
-        let segments_to_remove: Vec<u64> = self.segments
+
+        let segments_to_remove: Vec<u64> = self
+            .segments
             .iter()
             .filter(|entry| {
                 if let Some(end_lsn) = entry.value().end_lsn {
@@ -606,75 +648,106 @@ impl TransactionLog {
             })
             .map(|entry| *entry.key())
             .collect();
-        
+
         for segment_id in segments_to_remove {
             self.segments.remove(&segment_id);
         }
-        
+
         Ok(())
     }
 
     pub async fn archive_old_segments(&self) -> Result<()> {
         let mut archive_queue = self.archiver.archive_queue.write().await;
-        
+
         while let Some(segment_id) = archive_queue.pop_front() {
             if let Some((_, segment)) = self.segments.remove(&segment_id) {
                 let archive_path = format!(
                     "{}/segment_{:04}.archive",
-                    self.archiver.archive_path,
-                    segment_id
+                    self.archiver.archive_path, segment_id
                 );
-                
+
                 let data = if self.archiver.compression_enabled {
                     let serialized = serde_json::to_vec(&segment).unwrap();
                     lz4_flex::compress_prepend_size(&serialized)
                 } else {
                     serde_json::to_vec(&segment).unwrap()
                 };
-                
-                self.storage.write_page(archive_path.as_bytes().to_vec(), data).await?;
-                
-                self.metrics.archive_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                self.storage
+                    .write_page(archive_path.as_bytes().to_vec(), data)
+                    .await?;
+
+                self.metrics
+                    .archive_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
         }
-        
+
         *self.archiver.last_archive.write().await = Instant::now();
-        
+
         Ok(())
     }
 
-    pub async fn log_begin(&self, txn_id: super::TransactionId, isolation_level: super::isolation::IsolationLevel, participants: Vec<String>) -> Result<u64> {
-        let lsn = self.lsn_generator.current_lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    pub async fn log_begin(
+        &self,
+        txn_id: super::TransactionId,
+        isolation_level: super::isolation::IsolationLevel,
+        participants: Vec<String>,
+    ) -> Result<u64> {
+        let lsn = self
+            .lsn_generator
+            .current_lsn
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
         let entry = LogEntry {
             lsn,
             txn_id,
             log_type: LogType::Begin,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             data: LogData::Begin {
                 isolation_level,
-                read_timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                read_timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64,
                 participants,
             },
             prev_lsn: None,
             checksum: 0,
         };
-        
+
         let mut hasher = Hasher::new();
         hasher.update(&serde_json::to_vec(&entry.data).unwrap());
         let mut entry = entry;
         entry.checksum = hasher.finalize();
-        
+
         self.append_entry(entry).await?;
         Ok(lsn)
     }
 
-    pub async fn log_prepare(&self, txn_id: super::TransactionId, participant_id: String, vote: super::participant::VoteDecision, locks: Vec<String>) -> Result<u64> {
-        let lsn = self.lsn_generator.current_lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    pub async fn log_prepare(
+        &self,
+        txn_id: super::TransactionId,
+        participant_id: String,
+        vote: super::participant::VoteDecision,
+        locks: Vec<String>,
+    ) -> Result<u64> {
+        let lsn = self
+            .lsn_generator
+            .current_lsn
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
         let entry = LogEntry {
             lsn,
             txn_id,
             log_type: LogType::Prepare,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             data: LogData::Prepare {
                 participant_id,
                 vote,
@@ -683,23 +756,35 @@ impl TransactionLog {
             prev_lsn: self.find_last_lsn_for_txn(txn_id).await,
             checksum: 0,
         };
-        
+
         let mut hasher = Hasher::new();
         hasher.update(&serde_json::to_vec(&entry.data).unwrap());
         let mut entry = entry;
         entry.checksum = hasher.finalize();
-        
+
         self.append_entry(entry).await?;
         Ok(lsn)
     }
 
-    pub async fn log_commit(&self, txn_id: super::TransactionId, commit_timestamp: u64, participants_committed: Vec<String>) -> Result<u64> {
-        let lsn = self.lsn_generator.current_lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    pub async fn log_commit(
+        &self,
+        txn_id: super::TransactionId,
+        commit_timestamp: u64,
+        participants_committed: Vec<String>,
+    ) -> Result<u64> {
+        let lsn = self
+            .lsn_generator
+            .current_lsn
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
         let entry = LogEntry {
             lsn,
             txn_id,
             log_type: LogType::Commit,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             data: LogData::Commit {
                 commit_timestamp,
                 participants_committed,
@@ -707,23 +792,35 @@ impl TransactionLog {
             prev_lsn: self.find_last_lsn_for_txn(txn_id).await,
             checksum: 0,
         };
-        
+
         let mut hasher = Hasher::new();
         hasher.update(&serde_json::to_vec(&entry.data).unwrap());
         let mut entry = entry;
         entry.checksum = hasher.finalize();
-        
+
         self.append_entry(entry).await?;
         Ok(lsn)
     }
 
-    pub async fn log_abort(&self, txn_id: super::TransactionId, reason: String, participants_aborted: Vec<String>) -> Result<u64> {
-        let lsn = self.lsn_generator.current_lsn.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    pub async fn log_abort(
+        &self,
+        txn_id: super::TransactionId,
+        reason: String,
+        participants_aborted: Vec<String>,
+    ) -> Result<u64> {
+        let lsn = self
+            .lsn_generator
+            .current_lsn
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
         let entry = LogEntry {
             lsn,
             txn_id,
             log_type: LogType::Abort,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             data: LogData::Abort {
                 reason,
                 participants_aborted,
@@ -731,12 +828,12 @@ impl TransactionLog {
             prev_lsn: self.find_last_lsn_for_txn(txn_id).await,
             checksum: 0,
         };
-        
+
         let mut hasher = Hasher::new();
         hasher.update(&serde_json::to_vec(&entry.data).unwrap());
         let mut entry = entry;
         entry.checksum = hasher.finalize();
-        
+
         self.append_entry(entry).await?;
         Ok(lsn)
     }
@@ -750,7 +847,9 @@ impl TransactionLog {
 
     async fn append_entry(&self, entry: LogEntry) -> Result<()> {
         // Update checkpoint manager
-        self.checkpoint_manager.active_transactions.entry(entry.txn_id)
+        self.checkpoint_manager
+            .active_transactions
+            .entry(entry.txn_id)
             .or_insert(TransactionLogState {
                 txn_id: entry.txn_id,
                 first_lsn: entry.lsn,
@@ -773,10 +872,12 @@ impl TransactionLog {
         }
 
         // Update metrics
-        self.metrics.total_entries.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.metrics
+            .total_entries
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.metrics.total_bytes.fetch_add(
             std::mem::size_of::<LogEntry>() as u64,
-            std::sync::atomic::Ordering::Relaxed
+            std::sync::atomic::Ordering::Relaxed,
         );
 
         Ok(())
