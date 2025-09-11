@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use lightning_db::{Database, LightningDbConfig};
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use std::hint::black_box;
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,10 +29,10 @@ fn bench_write_operations(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("random", size), |b| {
             let dir = tempdir().unwrap();
             let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
-            let mut rng = thread_rng();
+            let mut rng = rng();
             
             b.iter(|| {
-                let key = format!("key_{:08}", rng.gen::<u32>());
+                let key = format!("key_{:08}", rng.random::<u32>());
                 let value = vec![0u8; 100];
                 db.put(key.as_bytes(), &value).unwrap();
             });
@@ -68,9 +68,9 @@ fn bench_read_operations(c: &mut Criterion) {
         });
         
         group.bench_function(BenchmarkId::new("random", size), |b| {
-            let mut rng = thread_rng();
+            let mut rng = rng();
             b.iter(|| {
-                let key = format!("key_{:08}", rng.gen::<u32>() % size);
+                let key = format!("key_{:08}", rng.random::<u32>() % size);
                 black_box(db.get(key.as_bytes()).unwrap());
             });
         });
