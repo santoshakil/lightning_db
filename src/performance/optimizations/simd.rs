@@ -292,17 +292,32 @@ pub mod safe {
     use super::SimdOps;
 
     /// Safe key comparison that uses SIMD when available
+    #[inline]
     pub fn compare_keys(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
+        // Fast path for common cases
+        match (a.len(), b.len()) {
+            (0, 0) => return std::cmp::Ordering::Equal,
+            (0, _) => return std::cmp::Ordering::Less,
+            (_, 0) => return std::cmp::Ordering::Greater,
+            (la, lb) if la == lb && la <= 8 => {
+                // For small equal-length keys, use word comparison
+                if la == 8 {
+                    let a_word = u64::from_le_bytes(a.try_into().unwrap());
+                    let b_word = u64::from_le_bytes(b.try_into().unwrap());
+                    return a_word.cmp(&b_word);
+                } else if la == 4 {
+                    let a_word = u32::from_le_bytes(a.try_into().unwrap());
+                    let b_word = u32::from_le_bytes(b.try_into().unwrap());
+                    return a_word.cmp(&b_word);
+                }
+            },
+            _ => {}
+        }
+        
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("sse4.2") {
+            if is_x86_feature_detected!("sse4.2") && (a.len() >= 8 || b.len() >= 8) {
                 // SAFETY: CPU feature detection ensures SSE4.2 support
-                // Invariants:
-                // 1. is_x86_feature_detected confirms SSE4.2 availability
-                // 2. Input slices are valid (from safe references)
-                // Guarantees:
-                // - Safe execution of SIMD instructions
-                // - Fallback to scalar on unsupported CPUs
                 unsafe { SimdOps::compare_keys_simd(a, b) }
             } else {
                 a.cmp(b)

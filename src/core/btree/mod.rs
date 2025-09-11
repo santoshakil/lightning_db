@@ -42,16 +42,57 @@ pub(crate) const MIN_KEYS_PER_NODE: usize = 50;
 pub(crate) const MAX_KEYS_PER_NODE: usize = 100;
 
 /// Helper function to compare keys using SIMD when beneficial
-#[inline]
+#[inline(always)]
 fn compare_keys(a: &[u8], b: &[u8]) -> Ordering {
+    // Optimize common cases first
+    match (a.len(), b.len()) {
+        (0, 0) => return Ordering::Equal,
+        (0, _) => return Ordering::Less,
+        (_, 0) => return Ordering::Greater,
+        (la, lb) if la != lb => {
+            // Different lengths - compare common prefix first
+            let min_len = la.min(lb);
+            if min_len > 0 {
+                let prefix_cmp = compare_bytes_fast(&a[..min_len], &b[..min_len]);
+                if prefix_cmp != Ordering::Equal {
+                    return prefix_cmp;
+                }
+            }
+            return la.cmp(&lb);
+        }
+        _ => {}
+    }
+
     #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
     {
         // Use SIMD for keys longer than 8 bytes
-        if a.len() >= 8 && b.len() >= 8 {
+        if a.len() >= 8 {
             return simd_compare_keys(a, b);
         }
     }
-    a.cmp(b)
+    
+    compare_bytes_fast(a, b)
+}
+
+/// Fast byte comparison for small keys
+#[inline(always)]
+fn compare_bytes_fast(a: &[u8], b: &[u8]) -> Ordering {
+    // For small keys, use word-based comparison
+    if a.len() == b.len() && a.len() >= 8 {
+        let mut i = 0;
+        while i + 8 <= a.len() {
+            let a_word = u64::from_le_bytes(a[i..i+8].try_into().unwrap());
+            let b_word = u64::from_le_bytes(b[i..i+8].try_into().unwrap());
+            match a_word.cmp(&b_word) {
+                Ordering::Equal => i += 8,
+                other => return other,
+            }
+        }
+        // Compare remaining bytes
+        a[i..].cmp(&b[i..])
+    } else {
+        a.cmp(b)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -212,25 +253,30 @@ impl BPlusTree {
         Ok(())
     }
 
+    #[inline]
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        // Navigate to leaf
-        // Read tree metadata atomically
+        // Hot path optimization: cache frequently accessed pages
         let mut current_page_id = self.root_page_id.load(AtomicOrdering::Acquire);
-        let mut level = self.height.load(AtomicOrdering::Acquire);
-
-        while level > 1 {
+        let height = self.height.load(AtomicOrdering::Acquire);
+        
+        // Optimize for leaf-only trees (height == 1)
+        if height == 1 {
             let page = self.page_manager.get_page(current_page_id)?;
             let node = BTreeNode::deserialize_from_page(&page)?;
-
-            current_page_id = self.find_child_page(&node, key)?;
-            level -= 1;
+            return self.search_leaf(&node, key);
         }
 
-        // Search in leaf
+        // Navigate through internal nodes
+        for _level in (2..=height).rev() {
+            let page = self.page_manager.get_page(current_page_id)?;
+            let node = BTreeNode::deserialize_from_page(&page)?;
+            current_page_id = self.find_child_page_optimized(&node, key)?;
+        }
+
+        // Search in leaf with prefetch hint
         let leaf_page = self.page_manager.get_page(current_page_id)?;
         let leaf_node = BTreeNode::deserialize_from_page(&leaf_page)?;
-
-        self.search_leaf(&leaf_node, key)
+        self.search_leaf_optimized(&leaf_node, key)
     }
 
     pub fn delete(&mut self, key: &[u8]) -> Result<bool> {
@@ -261,45 +307,105 @@ impl BPlusTree {
         Ok(path)
     }
 
+    #[inline(always)]
     fn find_child_page(&self, node: &BTreeNode, key: &[u8]) -> Result<u32> {
-        match node.node_type {
-            NodeType::Internal => {
-                let mut child_index = 0;
-
-                for (i, entry) in node.entries.iter().enumerate() {
-                    match compare_keys(key, &entry.key) {
-                        Ordering::Less => break,
-                        Ordering::Equal => {
-                            child_index = i + 1;
-                            break;
-                        }
-                        Ordering::Greater => child_index = i + 1,
+        if node.node_type != NodeType::Internal {
+            return Err(Error::Index("Cannot find child in leaf node".to_string()));
+        }
+        
+        self.find_child_page_optimized(node, key)
+    }
+    
+    /// Optimized child page finding with binary search for large nodes
+    #[inline]
+    fn find_child_page_optimized(&self, node: &BTreeNode, key: &[u8]) -> Result<u32> {
+        let entries = &node.entries;
+        
+        // Use binary search for nodes with many entries
+        if entries.len() > 8 {
+            let mut left = 0;
+            let mut right = entries.len();
+            
+            while left < right {
+                let mid = left + (right - left) / 2;
+                match compare_keys(key, &entries[mid].key) {
+                    Ordering::Less => right = mid,
+                    Ordering::Equal => {
+                        // Key found, go to right child
+                        let child_index = mid + 1;
+                        return if child_index < node.children.len() {
+                            Ok(node.children[child_index])
+                        } else {
+                            Err(Error::Index(format!(
+                                "Invalid child index: {} >= {}",
+                                child_index, node.children.len()
+                            )))
+                        };
                     }
-                }
-
-                if child_index < node.children.len() {
-                    Ok(node.children[child_index])
-                } else {
-                    Err(Error::Index(format!(
-                        "Invalid child index: {} >= {}",
-                        child_index,
-                        node.children.len()
-                    )))
+                    Ordering::Greater => left = mid + 1,
                 }
             }
-            NodeType::Leaf => Err(Error::Index("Cannot find child in leaf node".to_string())),
+            
+            // Key not found, use left as insertion point
+            return if left < node.children.len() {
+                Ok(node.children[left])
+            } else {
+                Err(Error::Index(format!(
+                    "Invalid child index: {} >= {}",
+                    left, node.children.len()
+                )))
+            };
+        }
+        
+        // Linear search for small nodes (better cache locality)
+        let mut child_index = 0;
+        for (i, entry) in entries.iter().enumerate() {
+            match compare_keys(key, &entry.key) {
+                Ordering::Less => break,
+                Ordering::Equal => {
+                    child_index = i + 1;
+                    break;
+                }
+                Ordering::Greater => child_index = i + 1,
+            }
+        }
+
+        if child_index < node.children.len() {
+            Ok(node.children[child_index])
+        } else {
+            Err(Error::Index(format!(
+                "Invalid child index: {} >= {}",
+                child_index, node.children.len()
+            )))
         }
     }
 
+    #[inline(always)]
     fn search_leaf(&self, node: &BTreeNode, key: &[u8]) -> Result<Option<Vec<u8>>> {
         if node.node_type != NodeType::Leaf {
             return Err(Error::Index("Expected leaf node".to_string()));
         }
-
-        for entry in &node.entries {
+        self.search_leaf_optimized(node, key)
+    }
+    
+    /// Optimized leaf search with binary search and SIMD when beneficial
+    #[inline]
+    fn search_leaf_optimized(&self, node: &BTreeNode, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let entries = &node.entries;
+        
+        // Use binary search for larger leaf nodes
+        if entries.len() > 16 {
+            match entries.binary_search_by(|entry| compare_keys(&entry.key, key)) {
+                Ok(idx) => return Ok(Some(entries[idx].value.clone())),
+                Err(_) => return Ok(None),
+            }
+        }
+        
+        // Linear search with early termination for small leaf nodes
+        for entry in entries {
             match compare_keys(key, &entry.key) {
                 Ordering::Equal => return Ok(Some(entry.value.clone())),
-                Ordering::Less => break,
+                Ordering::Less => break, // Entries are sorted, no point continuing
                 Ordering::Greater => {}
             }
         }

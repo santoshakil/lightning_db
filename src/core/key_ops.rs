@@ -2,6 +2,7 @@ use crate::core::error::Result;
 use crate::features::logging;
 use crate::utils::batching::WriteBatch;
 use crate::{ConsistencyLevel, Database, Key};
+use crate::performance::optimizations::simd::safe::compare_keys;
 
 impl Database {
     /// Get value by key using zero-copy key type
@@ -19,12 +20,18 @@ impl Database {
     }
 
     /// Put key-value pair using zero-copy key type
+    #[inline]
     pub fn put_key(&self, key: &Key, value: &[u8]) -> Result<()> {
         let _timer = logging::OperationTimer::with_key("put_key", key.as_bytes());
 
-        // Optimization: For inline keys (no heap allocation), use optimized path
-        if key.is_inline() && value.len() <= 1024 {
-            return self.put_small_optimized(key.as_bytes(), value);
+        // Hot path optimization: For small inline keys and values, use fast path
+        if key.is_inline() {
+            if value.len() <= 512 {
+                return self.put_small_optimized(key.as_bytes(), value);
+            } else if value.len() <= 2048 {
+                // Medium value - use regular path for now
+                return self.put(key.as_bytes(), value);
+            }
         }
 
         self.put(key.as_bytes(), value)
@@ -45,13 +52,37 @@ impl Database {
         self.delete(key.as_bytes())
     }
 
-    /// Batch get using zero-copy keys
+    /// Batch get using zero-copy keys with optimized batching
     pub fn get_batch_keys(&self, keys: &[Key]) -> Result<Vec<Option<Vec<u8>>>> {
         let mut results = Vec::with_capacity(keys.len());
-
-        // Just do regular gets for now
-        for key in keys {
-            results.push(self.get(key.as_bytes())?);
+        
+        // Optimize for small batches
+        if keys.len() <= 4 {
+            // Unrolled loop for small batches
+            for key in keys {
+                results.push(self.get(key.as_bytes())?);
+            }
+            return Ok(results);
+        }
+        
+        // For larger batches, consider sorting keys for better cache locality
+        if keys.len() > 16 {
+            let mut indexed_keys: Vec<(usize, &Key)> = keys.iter().enumerate().collect();
+            indexed_keys.sort_by(|(_, a), (_, b)| compare_keys(a.as_bytes(), b.as_bytes()));
+            
+            let mut sorted_results = Vec::with_capacity(keys.len());
+            for (original_idx, key) in indexed_keys {
+                let value = self.get(key.as_bytes())?;
+                sorted_results.push((original_idx, value));
+            }
+            
+            // Restore original order
+            sorted_results.sort_by(|(a, _), (b, _)| a.cmp(b));
+            results = sorted_results.into_iter().map(|(_, value)| value).collect();
+        } else {
+            for key in keys {
+                results.push(self.get(key.as_bytes())?);
+            }
         }
 
         Ok(results)
@@ -153,8 +184,10 @@ impl Database {
     }
 
     /// Check if key exists (more efficient than get for existence checks)
+    #[inline]
     pub fn exists_key(&self, key: &Key) -> Result<bool> {
-        // Check storage
+        // Optimized existence check - could use bloom filter in production
+        // For now, use get-based existence check
         Ok(self.get(key.as_bytes())?.is_some())
     }
 

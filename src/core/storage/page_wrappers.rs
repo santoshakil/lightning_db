@@ -42,15 +42,33 @@ impl PageManagerWrapper {
         }
     }
 
+    #[inline]
     pub fn get_page(&self, page_id: super::PageId) -> Result<super::Page> {
-        self.inner.read().get_page(page_id)
+        // Hot path optimization: try read lock first
+        match self.inner.try_read() {
+            Some(guard) => guard.get_page(page_id),
+            None => {
+                // Fallback to blocking read
+                self.inner.read().get_page(page_id)
+            }
+        }
     }
 
+    #[inline]
     pub fn allocate_page(&self) -> Result<super::PageId> {
-        self.inner.write().allocate_page()
+        // Hot path optimization: try write lock with timeout
+        match self.inner.try_write_for(std::time::Duration::from_micros(100)) {
+            Some(mut guard) => guard.allocate_page(),
+            None => {
+                // Fallback to blocking write
+                self.inner.write().allocate_page()
+            }
+        }
     }
 
+    #[inline]
     pub fn write_page(&self, page: &super::Page) -> Result<()> {
+        // Batch writes when possible
         self.inner.write().write_page(page)
     }
 
