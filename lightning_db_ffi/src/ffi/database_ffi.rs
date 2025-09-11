@@ -5,7 +5,7 @@ use crate::handle_registry::HandleRegistry;
 use crate::panic_guard::{ffi_guard_bytes, ffi_guard_int, ResourceGuard};
 use crate::utils::{bytes_to_vec, c_str_to_string, ByteResult};
 use crate::validation::{validate_cache_size, validate_database_operation, ValidationResult};
-use crate::{ffi_try_safe, CompressionType, ConsistencyLevel, ErrorCode, WalSyncMode};
+use crate::{ffi_try_safe, ConsistencyLevel, ErrorCode};
 use lightning_db::{Database, LightningDbConfig};
 use std::os::raw::c_char;
 use std::path::Path;
@@ -119,8 +119,8 @@ pub unsafe extern "C" fn lightning_db_open(path: *const c_char, out_handle: *mut
 pub unsafe extern "C" fn lightning_db_create_with_config(
     path: *const c_char,
     cache_size: u64,
-    compression_type: CompressionType,
-    wal_sync_mode: WalSyncMode,
+    compression_type: i32,
+    wal_sync_mode: i32,
     out_handle: *mut u64,
 ) -> i32 {
     ffi_guard_int("lightning_db_create_with_config", || {
@@ -151,38 +151,33 @@ pub unsafe extern "C" fn lightning_db_create_with_config(
             }
         };
 
-        // Validate enum values are in acceptable ranges
-        let compression_val = compression_type as i32;
-        if compression_val < 0 || compression_val > 3 {
+        // Validate compression type
+        if compression_type < 0 || compression_type > 3 {
             set_last_error(
                 ErrorCode::InvalidArgument,
-                format!("Invalid compression type: {}", compression_val),
+                format!("Invalid compression type: {}", compression_type),
             );
             return Err(ErrorCode::InvalidArgument);
         }
 
-        let wal_mode_val = wal_sync_mode as i32;
-        if wal_mode_val < 0 || wal_mode_val > 2 {
+        // Validate WAL sync mode
+        if wal_sync_mode < 0 || wal_sync_mode > 2 {
             set_last_error(
                 ErrorCode::InvalidArgument,
-                format!("Invalid WAL sync mode: {}", wal_mode_val),
+                format!("Invalid WAL sync mode: {}", wal_sync_mode),
             );
             return Err(ErrorCode::InvalidArgument);
         }
 
         let config = LightningDbConfig {
             cache_size,
-            compression_enabled: compression_type != CompressionType::None,
-            compression_type: match compression_type {
-                CompressionType::None => 0,
-                CompressionType::Zstd => 1,
-                CompressionType::LZ4 => 2,
-                CompressionType::Snappy => 3,
-            },
+            compression_enabled: compression_type != 0,
+            compression_type,
             wal_sync_mode: match wal_sync_mode {
-                WalSyncMode::Sync => lightning_db::WalSyncMode::Sync,
-                WalSyncMode::Periodic => lightning_db::WalSyncMode::Periodic { interval_ms: 1000 },
-                WalSyncMode::Async => lightning_db::WalSyncMode::Async,
+                0 => lightning_db::WalSyncMode::Sync,
+                1 => lightning_db::WalSyncMode::Periodic { interval_ms: 1000 },
+                2 => lightning_db::WalSyncMode::Async,
+                _ => unreachable!(), // Already validated above
             },
             ..Default::default()
         };
