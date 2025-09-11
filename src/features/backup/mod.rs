@@ -735,9 +735,9 @@ impl BackupManager {
 
             #[cfg(not(feature = "zstd-compression"))]
             {
-                return Err(Error::Compression(
+                Err(Error::Compression(
                     "Zstd compression not available in this build".to_string(),
-                ));
+                ))
             }
         } else {
             let mut dest_file = File::create(dest)?;
@@ -776,9 +776,9 @@ impl BackupManager {
 
             #[cfg(not(feature = "zstd-compression"))]
             {
-                return Err(Error::Compression(
+                Err(Error::Compression(
                     "Zstd compression not available in this build".to_string(),
-                ));
+                ))
             }
         } else {
             let mut dest_file = File::create(dest)?;
