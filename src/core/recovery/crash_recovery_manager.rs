@@ -745,15 +745,13 @@ impl ResourceChecker {
 
         // In a real implementation, you would check actual system memory
         // For now, assume we have enough memory
-        if required_memory > 0 {
-            debug!("Memory requirement check passed: {} bytes", required_memory);
+        if required_memory == 0 {
+            // Cache is disabled, no memory requirement
+            debug!("Cache disabled, no memory requirement");
             Ok(())
         } else {
-            Err(Error::InsufficientResources {
-                resource: "memory".to_string(),
-                required: format!("{} bytes", required_memory),
-                available: "unknown".to_string(),
-            })
+            debug!("Memory requirement check passed: {} bytes", required_memory);
+            Ok(())
         }
     }
 
