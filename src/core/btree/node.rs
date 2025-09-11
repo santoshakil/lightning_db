@@ -1,4 +1,4 @@
-use super::KeyEntry;
+use super::{KeyEntry, MAX_KEYS_PER_NODE};
 use crate::core::error::{Error, Result};
 use crate::core::storage::{Page, PAGE_SIZE};
 #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
@@ -224,10 +224,15 @@ impl BTreeNode {
         })
     }
 
+    #[inline(always)]
     pub fn is_full(&self) -> bool {
-        // Use accurate size calculation
+        // Quick check for common cases
+        if self.entries.len() >= MAX_KEYS_PER_NODE {
+            return true;
+        }
+        
+        // More precise size check only when needed
         let estimated_size = self.get_size_estimate();
-        // Leave 256 bytes buffer for new entry (typical max key+value size)
         estimated_size > PAGE_SIZE - 256
     }
 
@@ -237,25 +242,35 @@ impl BTreeNode {
         self.entries.len() < min_entries
     }
 
+    #[inline]
     pub fn find_key_position(&self, key: &[u8]) -> (bool, usize) {
+        let len = self.entries.len();
+        
+        // For very small nodes, linear search is faster
+        if len <= 4 {
+            for (i, entry) in self.entries.iter().enumerate() {
+                match key.cmp(&entry.key) {
+                    std::cmp::Ordering::Equal => return (true, i),
+                    std::cmp::Ordering::Less => return (false, i),
+                    std::cmp::Ordering::Greater => {}
+                }
+            }
+            return (false, len);
+        }
+        
         // Use SIMD for larger nodes when available
         #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
         {
-            if self.entries.len() > 8 {
-                // For larger nodes, try SIMD binary search
+            if len > 8 {
                 return self.find_key_position_simd(key);
             }
         }
 
-        // Fallback to regular comparison
-        for (i, entry) in self.entries.iter().enumerate() {
-            match key.cmp(&entry.key) {
-                std::cmp::Ordering::Equal => return (true, i),
-                std::cmp::Ordering::Less => return (false, i),
-                std::cmp::Ordering::Greater => {}
-            }
+        // Binary search for medium-sized nodes
+        match self.entries.binary_search_by(|entry| entry.key.as_slice().cmp(key)) {
+            Ok(pos) => (true, pos),
+            Err(pos) => (false, pos),
         }
-        (false, self.entries.len())
     }
 
     #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
@@ -331,13 +346,13 @@ impl BTreeNode {
         true
     }
 
+    #[inline]
     pub fn get_size_estimate(&self) -> usize {
-        let entries_size: usize = self
-            .entries
-            .iter()
-            .map(|e| 8 + e.key.len() + e.value.len() + 8) // lengths + data + timestamp
-            .sum();
-        let children_size = self.children.len() * 4;
-        64 + entries_size + children_size
+        // Cache-friendly size calculation
+        let mut entries_size = 0;
+        for entry in &self.entries {
+            entries_size += 16 + entry.key.len() + entry.value.len(); // 4+4+8 + key + value
+        }
+        64 + entries_size + (self.children.len() << 2) // Use bit shift for *4
     }
 }

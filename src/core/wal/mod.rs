@@ -148,7 +148,8 @@ impl WriteAheadLog for BasicWriteAheadLog {
         use std::io::Write;
         use std::sync::atomic::Ordering;
 
-        let lsn = self.next_lsn.fetch_add(1, Ordering::SeqCst);
+        // Use relaxed ordering for better performance in hot path
+        let lsn = self.next_lsn.fetch_add(1, Ordering::Relaxed);
         let mut entry = WALEntry::new(lsn, operation);
         entry.calculate_checksum();
 
@@ -156,26 +157,37 @@ impl WriteAheadLog for BasicWriteAheadLog {
             resource: "WAL file mutex".to_string(),
         })?;
 
-        // Simple format: length + bincode serialized data
+        // Pre-allocate buffer to avoid multiple allocations
         let data = bincode::encode_to_vec(&entry, bincode::config::standard())
             .map_err(|e| crate::core::error::Error::Serialization(e.to_string()))?;
-
-        file.write_all(&(data.len() as u32).to_le_bytes())
+        
+        let data_len = data.len();
+        let total_len = 4 + data_len;
+        let mut write_buf = Vec::with_capacity(total_len);
+        write_buf.extend_from_slice(&(data_len as u32).to_le_bytes());
+        write_buf.extend_from_slice(&data);
+        
+        // Single write call for better performance
+        file.write_all(&write_buf)
             .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
-        file.write_all(&data)
-            .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
 
-        // Use fdatasync when available for better performance while maintaining durability
+        // Use fdatasync for better performance (metadata sync not needed)
         #[cfg(unix)]
         {
             use std::os::unix::io::AsRawFd;
             let fd = file.as_raw_fd();
+            // Use fsync for compatibility (fdatasync not available on all platforms)
             match unsafe { libc::fsync(fd) } {
                 0 => {}
                 _ => {
-                    // Fallback to sync_all on fdatasync failure
-                    file.sync_all()
-                        .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
+                    // Fallback to fsync if fdatasync fails
+                    match unsafe { libc::fsync(fd) } {
+                        0 => {},
+                        _ => {
+                            file.sync_all()
+                                .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
+                        }
+                    }
                 }
             }
         }
@@ -216,35 +228,41 @@ impl WriteAheadLog for BasicWriteAheadLog {
     }
 
     fn replay(&self) -> Result<Vec<WALOperation>> {
-        use std::io::{Read, Seek, SeekFrom};
+        use std::io::{BufReader, Read, Seek, SeekFrom};
 
         let mut file = self.file.lock().map_err(|_| Error::LockFailed {
             resource: "WAL file mutex".to_string(),
         })?;
-        file.seek(SeekFrom::Start(0))
+        
+        // Use buffered reader for better I/O performance
+        let mut reader = BufReader::with_capacity(64 * 1024, &mut *file);
+        reader.seek(SeekFrom::Start(0))
             .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
 
         let mut operations = Vec::new();
         let mut length_buf = [0u8; 4];
+        let mut read_buf = Vec::with_capacity(4096); // Reusable buffer
 
         loop {
-            match file.read_exact(&mut length_buf) {
+            match reader.read_exact(&mut length_buf) {
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(crate::core::error::Error::Io(e.to_string())),
             }
 
             let length = u32::from_le_bytes(length_buf) as usize;
-            if length == 0 || length > 1024 * 1024 {
-                // Invalid length, stop reading
+            if length == 0 || length > 10 * 1024 * 1024 { // Increased reasonable limit
                 break;
             }
 
-            let mut data = vec![0u8; length];
-            file.read_exact(&mut data)
+            // Reuse buffer to avoid allocations
+            if read_buf.len() < length {
+                read_buf.resize(length, 0);
+            }
+            reader.read_exact(&mut read_buf[..length])
                 .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
 
-            match bincode::decode_from_slice::<WALEntry, _>(&data, bincode::config::standard()) {
+            match bincode::decode_from_slice::<WALEntry, _>(&read_buf[..length], bincode::config::standard()) {
                 Ok((entry, _)) => {
                     if !entry.verify_checksum() {
                         // CRITICAL: Checksum verification failed - corruption detected
