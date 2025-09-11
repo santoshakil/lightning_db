@@ -460,7 +460,7 @@ pub struct SSTableIterator<'a> {
     current_entry_index: usize,
 }
 
-impl<'a> Iterator for SSTableIterator<'a> {
+impl Iterator for SSTableIterator<'_> {
     type Item = Result<(Vec<u8>, Vec<u8>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -490,7 +490,7 @@ impl<'a> Iterator for SSTableIterator<'a> {
     }
 }
 
-impl<'a> SSTableIterator<'a> {
+impl SSTableIterator<'_> {
     fn load_next_block(&mut self) -> Result<bool> {
         let mut file = self.reader.file.write();
         file.seek(SeekFrom::Start(self.current_offset))?;

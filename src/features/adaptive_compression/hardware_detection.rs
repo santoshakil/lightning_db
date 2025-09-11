@@ -160,7 +160,7 @@ impl HardwareCapabilities {
     pub fn detect() -> Self {
         static CAPABILITIES: OnceLock<HardwareCapabilities> = OnceLock::new();
 
-        CAPABILITIES.get_or_init(|| Self::detect_internal()).clone()
+        CAPABILITIES.get_or_init(Self::detect_internal).clone()
     }
 
     /// Internal detection implementation
@@ -191,7 +191,7 @@ impl HardwareCapabilities {
     /// Get optimal number of compression threads
     pub fn optimal_compression_threads(&self) -> usize {
         // Use 75% of logical cores, but at least 1 and at most 16
-        let threads = (self.cpu.logical_cores * 3 / 4).max(1).min(16);
+        let threads = (self.cpu.logical_cores * 3 / 4).clamp(1, 16);
 
         // Adjust based on memory bandwidth
         if self.memory.bandwidth_gb_s < 10.0 {

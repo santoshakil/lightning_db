@@ -557,7 +557,7 @@ impl AdaptiveSelector {
             }
         }
 
-        ratio.max(0.01).min(1.0) // Clamp to reasonable range
+        ratio.clamp(0.01, 1.0) // Clamp to reasonable range
     }
 
     /// Estimate compression time in microseconds
@@ -655,7 +655,7 @@ impl AdaptiveSelector {
             confidence = confidence * 0.7 + sample_confidence * 0.3;
         }
 
-        confidence.max(0.1).min(1.0)
+        confidence.clamp(0.1, 1.0)
     }
 
     /// Generate human-readable reasoning
