@@ -14,14 +14,16 @@ lazy_static::lazy_static! {
 pub fn error_to_code(error: &LightningError) -> ErrorCode {
     match error {
         LightningError::InvalidKeySize { .. } => ErrorCode::InvalidArgument,
-        LightningError::DatabaseNotFound { .. } => ErrorCode::DatabaseNotFound,
-        LightningError::DatabaseExists { .. } => ErrorCode::DatabaseExists,
+        LightningError::InvalidValueSize { .. } => ErrorCode::InvalidArgument,
         LightningError::TransactionNotFound { .. } => ErrorCode::TransactionNotFound,
         LightningError::Transaction(_) => ErrorCode::TransactionConflict,
         LightningError::KeyNotFound => ErrorCode::KeyNotFound,
         LightningError::Io(_) => ErrorCode::IoError,
-        LightningError::CorruptedDatabase(_) => ErrorCode::CorruptedData,
+        LightningError::Corruption(_) => ErrorCode::CorruptedData,
         LightningError::Memory => ErrorCode::OutOfMemory,
+        LightningError::InvalidDatabase => ErrorCode::DatabaseNotFound,
+        LightningError::DatabaseLocked { .. } => ErrorCode::TransactionConflict,
+        LightningError::ChecksumMismatch { .. } => ErrorCode::CorruptedData,
         _ => ErrorCode::Unknown,
     }
 }

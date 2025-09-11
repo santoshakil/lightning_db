@@ -6,8 +6,7 @@
 use lightning_db_ffi::{
     lightning_db_clear_error, lightning_db_close, lightning_db_create,
     lightning_db_create_with_config, lightning_db_delete, lightning_db_free_bytes,
-    lightning_db_get, lightning_db_get_last_error, lightning_db_put, CompressionType, ErrorCode,
-    WalSyncMode,
+    lightning_db_get, lightning_db_get_last_error, lightning_db_put, ErrorCode,
 };
 use std::ffi::CString;
 use std::ptr;
@@ -91,8 +90,8 @@ fn test_integer_overflow_protection() {
         lightning_db_create_with_config(
             path.as_ptr(),
             0, // Invalid cache size
-            CompressionType::None,
-            WalSyncMode::Sync,
+            0, // CompressionType::None
+            0, // WalSyncMode::Sync
             &mut db_handle,
         )
     };
@@ -103,8 +102,8 @@ fn test_integer_overflow_protection() {
         lightning_db_create_with_config(
             path.as_ptr(),
             u64::MAX, // Extremely large cache size
-            CompressionType::None,
-            WalSyncMode::Sync,
+            0, // CompressionType::None
+            0, // WalSyncMode::Sync
             &mut db_handle,
         )
     };
@@ -115,8 +114,8 @@ fn test_integer_overflow_protection() {
         lightning_db_create_with_config(
             path.as_ptr(),
             1024 * 1024, // 1MB cache
-            CompressionType::None,
-            WalSyncMode::Sync,
+            0, // CompressionType::None
+            0, // WalSyncMode::Sync
             &mut db_handle,
         )
     };
@@ -142,8 +141,8 @@ fn test_string_validation() {
     let result = unsafe { lightning_db_create(c_long_path.as_ptr(), &mut db_handle) };
     assert_ne!(result, 0);
 
-    // Test path with control characters
-    let control_path = CString::new("path_with_\x00_null").unwrap();
+    // Test path with control characters (non-null control characters)
+    let control_path = CString::new("path_with_\x01_control").unwrap();
     let result = unsafe { lightning_db_create(control_path.as_ptr(), &mut db_handle) };
     // This should be handled gracefully
     if result == 0 {
@@ -181,27 +180,25 @@ fn test_enum_validation() {
     let path = CString::new(temp_dir.path().to_str().unwrap()).unwrap();
     let mut db_handle = 0u64;
 
-    // Test with invalid compression type value (cast from invalid int)
-    let invalid_compression = unsafe { std::mem::transmute::<i32, CompressionType>(999) };
+    // Test with invalid compression type value
     let result = unsafe {
         lightning_db_create_with_config(
             path.as_ptr(),
             1024 * 1024,
-            invalid_compression,
-            WalSyncMode::Sync,
+            999, // Invalid compression type
+            0,   // Valid WAL sync mode (Sync)
             &mut db_handle,
         )
     };
     assert_ne!(result, 0);
 
     // Test with invalid WAL sync mode
-    let invalid_wal_mode = unsafe { std::mem::transmute::<i32, WalSyncMode>(999) };
     let result = unsafe {
         lightning_db_create_with_config(
             path.as_ptr(),
             1024 * 1024,
-            CompressionType::None,
-            invalid_wal_mode,
+            0,   // Valid compression type (None)
+            999, // Invalid WAL sync mode
             &mut db_handle,
         )
     };

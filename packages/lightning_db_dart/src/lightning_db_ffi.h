@@ -176,8 +176,8 @@ FFI_PLUGIN_EXPORT  int32_t lightning_db_open(const char *path, uint64_t *out_han
 FFI_PLUGIN_EXPORT 
 int32_t lightning_db_create_with_config(const char *path,
                                         uint64_t cache_size,
-                                        enum CompressionType compression_type,
-                                        enum WalSyncMode wal_sync_mode,
+                                        int32_t compression_type,
+                                        int32_t wal_sync_mode,
                                         uint64_t *out_handle);
 
 /**
