@@ -223,15 +223,6 @@ path = "examples/production_validation.rs"
 required-features = ["integration_tests"]
 
 [[bench]]
-name = "mmap_benchmark"
-harness = false
-
-
-[[bench]]
-name = "encryption_benchmarks"
-harness = false
-
-[[bench]]
 name = "comprehensive_benchmarks"
 harness = false
 

@@ -1,7 +1,7 @@
 use lightning_db::{Database, LightningDbConfig, Key, WriteBatch};
 use std::sync::{Arc, Barrier};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tempfile::tempdir;
 
 #[test]

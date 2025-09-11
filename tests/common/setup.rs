@@ -19,9 +19,3 @@ pub fn setup_concurrent_db() -> (TempDir, Arc<Database>) {
     let db = Arc::new(Database::create(dir.path(), LightningDbConfig::default()).unwrap());
     (dir, db)
 }
-
-pub fn setup_large_cache_db(cache_mb: usize) -> (TempDir, Database) {
-    let mut config = LightningDbConfig::default();
-    config.cache_size = (cache_mb * 1024 * 1024) as u64;
-    setup_temp_db_with_config(config)
-}

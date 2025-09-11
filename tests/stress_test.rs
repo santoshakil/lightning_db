@@ -1,4 +1,4 @@
-use lightning_db::{Database, LightningDbConfig, Key, WalSyncMode};
+use lightning_db::{Database, LightningDbConfig, WalSyncMode};
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -126,11 +126,11 @@ fn stress_test_data_integrity_under_load() {
     }
     
     // Reader threads
-    for thread_id in NUM_THREADS / 2..NUM_THREADS {
+    for _thread_id in NUM_THREADS / 2..NUM_THREADS {
         let db_clone = Arc::clone(&db);
         let barrier_clone = Arc::clone(&barrier);
         let stop_flag_clone = Arc::clone(&stop_flag);
-        let counts_clone = Arc::clone(&operation_counts);
+        let _counts_clone = Arc::clone(&operation_counts);
         
         let handle = thread::spawn(move || {
             barrier_clone.wait();
@@ -295,7 +295,7 @@ fn stress_test_concurrent_transactions() {
     
     let mut handles = vec![];
     
-    for thread_id in 0..NUM_THREADS {
+    for _thread_id in 0..NUM_THREADS {
         let db_clone = Arc::clone(&db);
         let barrier_clone = Arc::clone(&barrier);
         
