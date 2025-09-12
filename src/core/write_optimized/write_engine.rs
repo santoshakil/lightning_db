@@ -346,21 +346,6 @@ impl WriteOptimizedEngine {
 
     /// Execute a write batch atomically
     pub fn write_batch(&self, batch: WriteBatch) -> Result<()> {
-        // WAL batch write will be first step when unified WriteAheadLog is available
-        // if self.config.base.enable_wal {
-        //     for operation in &batch.operations {
-        //         let wal_entry = match operation {
-        //             WriteOperation::Put { key, value } => {
-        //                 WalEntry::put(batch.sequence_number, key.clone(), value.clone())?
-        //             }
-        //             WriteOperation::Delete { key } => {
-        //                 WalEntry::delete(batch.sequence_number, key.clone())?
-        //             }
-        //         };
-        //         self.wal.append(wal_entry)?;
-        //     }
-        // }
-
         // Apply operations to MemTable
         for operation in &batch.operations {
             match operation {
@@ -568,36 +553,8 @@ impl WriteOptimizedEngine {
 
     /// Recover from WAL
     pub fn recover(&self) -> Result<u64> {
-        let _wal_dir = self.config.data_dir.join("wal");
-        // WAL recovery integration deferred until unified WriteAheadLog is implemented
-        // let recovery = crate::core::write_optimized::wal::WalRecovery::recover(&wal_dir)?;
-
-        let recovered_entries = 0;
-
-        // WAL recovery implementation pending unified WriteAheadLog module
-        /*
-        recovery.apply(|entry| {
-            match entry.header.entry_type {
-                crate::core::write_optimized::wal::WalEntryType::Put => {
-                    if let Some(ref value) = entry.value {
-                        self.memtable_manager
-                            .put(entry.key.clone(), value.clone())?;
-                        recovered_entries += 1;
-                    }
-                }
-                crate::core::write_optimized::wal::WalEntryType::Delete => {
-                    self.memtable_manager.delete(entry.key.clone())?;
-                    recovered_entries += 1;
-                }
-                _ => {
-                    // Ignore other entry types for now
-                }
-            }
-            Ok(())
-        })?;
-        */
-
-        Ok(recovered_entries)
+        // Recovery not yet implemented - returns 0 recovered entries
+        Ok(0)
     }
 
     /// Sync all data to disk
