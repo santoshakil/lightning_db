@@ -164,13 +164,14 @@ impl Logger {
 
     fn create_otel_layer(
         &mut self,
-        _jaeger_config: &crate::features::logging::config::JaegerConfig,
+        jaeger_config: &crate::features::logging::config::JaegerConfig,
     ) -> Result<
         Box<dyn tracing_subscriber::Layer<Registry> + Send + Sync>,
         Box<dyn std::error::Error>,
     > {
         #[cfg(not(feature = "telemetry"))]
         {
+            let _ = jaeger_config;
             Err("Telemetry feature not enabled".into())
         }
 
