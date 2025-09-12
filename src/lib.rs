@@ -2704,20 +2704,17 @@ impl Database {
 
     /// Get cache statistics
     pub fn get_cache_stats(&self) -> Result<CacheStatsInfo> {
-        // UnifiedCache replaces MemoryPool functionality - cache stats disabled
-        // if let Some(ref memory_pool) = self.memory_pool {
-        //     let stats = memory_pool.get_cache_stats();
-        if false {
-            // Ok(CacheStatsInfo {
-            //     hits: stats.hot_cache_hits + stats.cold_cache_hits,
-            //     misses: stats.cache_misses,
-            //     size_bytes: stats.hot_cache_size + stats.cold_cache_size,
-            //     entry_count: stats.hot_cache_entries + stats.cold_cache_entries,
-            //     evictions: stats.evictions,
-            // })
-            unreachable!()
+        if let Some(ref cache) = self.unified_cache {
+            let stats = cache.stats();
+            use std::sync::atomic::Ordering;
+            Ok(CacheStatsInfo {
+                hits: stats.hits.load(Ordering::Relaxed) as u64,
+                misses: stats.misses.load(Ordering::Relaxed) as u64,
+                size_bytes: 0, // Not tracked in current implementation
+                entry_count: 0, // Not tracked in current implementation
+                evictions: stats.evictions.load(Ordering::Relaxed) as u64,
+            })
         } else {
-            // Return empty stats if cache is disabled
             Ok(CacheStatsInfo::default())
         }
     }
