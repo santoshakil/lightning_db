@@ -181,7 +181,7 @@ macro_rules! log_transaction {
             _ => {}
         }
 
-        tracing::info!(
+        tracing::debug!(
             event = $event,
             tx_id = $tx_id,
             duration_ms = $duration.as_millis() as u64,
