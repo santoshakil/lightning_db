@@ -123,7 +123,6 @@ pub mod features {
 pub mod utils;
 
 // Testing infrastructure
-// Testing module removed - test utilities are in individual module test submodules
 
 // Security module for comprehensive security hardening
 pub mod security;
@@ -318,8 +317,6 @@ impl Database {
             let manager = Arc::new(encryption::EncryptionManager::new(
                 config.encryption_config.clone(),
             )?);
-            // Implementation pending master key initialization from environment or key management system
-            // For now, we'll leave the key uninitialized until explicitly set
             Some(manager)
         } else {
             None
@@ -341,8 +338,6 @@ impl Database {
 
         // Wrap with encryption if enabled
         if let Some(ref _enc_manager) = encryption_manager {
-            // Encryption wrapping would happen here if needed
-            // For now we keep the wrapper as-is
         }
 
         // Create BPlusTree with the final wrapper
@@ -393,7 +388,6 @@ impl Database {
         let transaction_manager = UnifiedTransactionManager::new(config.max_active_transactions);
 
 
-        // Remove optimized transaction manager (replaced by unified)
         let _optimized_transaction_manager: Option<Arc<UnifiedTransactionManager>> = None;
 
         // WAL for durability
@@ -451,10 +445,6 @@ impl Database {
         if lsm_tree.is_some() {
             metrics_collector.register_component("lsm_tree");
         }
-        // UnifiedCache replaces MemoryPool functionality
-        // if memory_pool.is_some() {
-        //     metrics_collector.register_component("cache");
-        // }
         if prefetch_manager.is_some() {
             metrics_collector.register_component("prefetch");
         }
@@ -578,20 +568,6 @@ impl Database {
             let mut btree =
                 BPlusTree::from_existing_with_wrapper(page_manager_wrapper.clone(), 1, 1);
 
-            // UnifiedCache replaces MemoryPool functionality - functionality disabled
-            // let memory_pool = if config.cache_size > 0 {
-            //     let mem_config = MemoryConfig {
-            //         hot_cache_size: config.cache_size as usize,
-            //         mmap_size: config.mmap_size.map(|s| s as usize),
-            //         ..Default::default()
-            //     };
-            //     Some(Arc::new(MemoryPool::new(
-            //         page_manager_arc.clone(),
-            //         mem_config,
-            //     )))
-            // } else {
-            //     None
-            // };
 
             let lsm_tree = if config.compression_enabled {
                 let lsm_config = LSMConfig {
@@ -619,8 +595,7 @@ impl Database {
                 UnifiedTransactionManager::new(config.max_active_transactions);
 
 
-            // Remove optimized transaction manager (replaced by unified)
-            let _optimized_transaction_manager: Option<Arc<UnifiedTransactionManager>> = None;
+                let _optimized_transaction_manager: Option<Arc<UnifiedTransactionManager>> = None;
 
             // WAL recovery for existing database
             let unified_wal = if config.use_unified_wal {
@@ -765,10 +740,6 @@ impl Database {
             if lsm_tree.is_some() {
                 metrics_collector.register_component("lsm_tree");
             }
-            // UnifiedCache replaces MemoryPool functionality - cache component registration disabled
-            // if memory_pool.is_some() {
-            //     metrics_collector.register_component("cache");
-            // }
             if prefetch_manager.is_some() {
                 metrics_collector.register_component("prefetch");
             }
@@ -868,9 +839,6 @@ impl Database {
         // Start the cleanup thread
         let _handle = cleanup_thread.clone().start();
 
-        // Store the thread reference (we can't modify self, so this is a limitation)
-        // In a real implementation, we'd need to refactor to allow mutable updates
-        // For now, the thread will run until process exit
 
         db
     }
@@ -882,9 +850,6 @@ impl Database {
             10, // 10ms max delay
         );
 
-        // We need to store the batcher in the database struct
-        // Since Database fields are not mutable, we return a wrapper
-        // For now, we'll use a different approach - store it globally
         db
     }
 
@@ -1009,10 +974,6 @@ impl Database {
             lsm.insert(key_vec, value_vec)?;
 
             // UnifiedCache integration implemented
-            // // Update cache
-            // if let Some(ref memory_pool) = self.memory_pool {
-            //     let _ = memory_pool.cache_put(key, value);
-            // }
 
             // Log successful put operation
             log_operation!(
@@ -1048,10 +1009,6 @@ impl Database {
             }
 
             // UnifiedCache integration implemented
-            // // Update cache
-            // if let Some(ref memory_pool) = self.memory_pool {
-            //     let _ = memory_pool.cache_put(key, value);
-            // }
 
             return Ok(());
         }
@@ -1179,7 +1136,6 @@ impl Database {
 
     /// Standard put path for larger data  
     fn put_standard(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        // Just delegate to the original put logic for now
         self.put_with_consistency(key, value, self._config.consistency_config.default_level)
     }
 
@@ -1211,10 +1167,6 @@ impl Database {
             }
 
             // UnifiedCache integration implemented
-            // // Use cache if available
-            // if let Some(ref memory_pool) = self.memory_pool {
-            //     let _ = memory_pool.cache_put(key, value);
-            // }
 
             // Apply write directly to storage layers
             // Use LSM tree if available, otherwise use version store via transaction
@@ -1284,10 +1236,6 @@ impl Database {
         for operation in batch.operations() {
             match operation {
                 BatchOperation::Put { key, value } => {
-                    // UnifiedCache replaces MemoryPool functionality - cache functionality disabled
-                    // if let Some(ref memory_pool) = self.memory_pool {
-                    //     let _ = memory_pool.cache_put(key, value);
-                    // }
 
                     // Apply to storage layer
                     if let Some(ref lsm) = self.lsm_tree {
@@ -1300,10 +1248,6 @@ impl Database {
                     }
                 }
                 BatchOperation::Delete { key } => {
-                    // UnifiedCache replaces MemoryPool functionality - cache functionality disabled
-                    // if let Some(ref memory_pool) = self.memory_pool {
-                    //     let _ = memory_pool.cache_remove(key);
-                    // }
 
                     // Apply to storage layer
                     if let Some(ref lsm) = self.lsm_tree {
@@ -1360,29 +1304,6 @@ impl Database {
             quota_manager.check_read_allowed(None, key.len() as u64)?;
         }
 
-        // UnifiedCache integration implemented
-        // // Fast path: try cache first with minimal metrics overhead
-        // if let Some(ref memory_pool) = self.memory_pool {
-        //     if let Ok(Some(cached_value)) = memory_pool.cache_get(key) {
-        //         // Record cache hit in fast path
-        //         let metrics = self.metrics_collector.database_metrics();
-        //         metrics.record_cache_hit();
-        //         metrics.record_read(std::time::Duration::from_micros(1)); // Minimal latency for cache hit
-        //
-        //         log_cache_event!("get", key, true);
-        //         log_operation!(
-        //             tracing::Level::DEBUG,
-        //             "get",
-        //             key,
-        //             start_time.elapsed(),
-        //             Ok::<(), _>(())
-        //         );
-        //
-        //         return Ok(Some(cached_value));
-        //     } else {
-        //         log_cache_event!("get", key, false);
-        //     }
-        // }
 
         let result = self.get_with_consistency(key, self._config.consistency_config.default_level);
 
@@ -1409,26 +1330,6 @@ impl Database {
             let was_cache_hit = false;
             let mut result = None;
 
-            // UnifiedCache replaces MemoryPool functionality - cache functionality disabled
-            // if let Some(ref memory_pool) = self.memory_pool {
-            //     if let Ok(Some(cached_value)) = memory_pool.cache_get(key) {
-            //         was_cache_hit = true;
-            //         result = Some(cached_value);
-            //         metrics.record_cache_hit();
-            //
-            //         // Record access pattern for prefetching
-            //         if let Some(ref prefetch_manager) = self.prefetch_manager {
-            //             // Use a hash of the key as a simplified page ID
-            //             let page_id = self.key_to_page_id(key);
-            //             prefetch_manager.record_access("main", page_id, was_cache_hit);
-            //         }
-            //
-            //         return Ok(result);
-            //     }
-            //     metrics.record_cache_miss();
-            // }
-
-            // Cache is disabled; mark as miss
 
             // Check LSM tree first if available
             if let Some(ref lsm) = self.lsm_tree {
@@ -1457,10 +1358,6 @@ impl Database {
             }
 
             // UnifiedCache integration implemented for caching
-            // // Cache the result for future reads
-            // if let (Some(ref memory_pool), Some(ref value)) = (&self.memory_pool, &result) {
-            //     let _ = memory_pool.cache_put(key, value);
-            // }
 
             // Record access pattern for prefetching
             if let Some(ref prefetch_manager) = self.prefetch_manager {
@@ -1483,10 +1380,6 @@ impl Database {
                 unified_wal.append(WALOperation::Delete { key: key.to_vec() })?;
             }
 
-            // UnifiedCache replaces MemoryPool functionality - cache functionality disabled
-            // if let Some(ref memory_pool) = self.memory_pool {
-            //     let _ = memory_pool.cache_remove(key);
-            // }
 
             // Apply delete directly to storage layers
             // Use LSM tree if available, otherwise use implicit transaction
@@ -1802,10 +1695,6 @@ impl Database {
     }
 
     pub fn delete_tx(&self, tx_id: u64, key: &[u8]) -> Result<()> {
-        // UnifiedCache replaces MemoryPool functionality - cache functionality disabled
-        // if let Some(ref memory_pool) = self.memory_pool {
-        //     let _ = memory_pool.cache_remove(key);
-        // }
 
         if let Some(ref opt_manager) = Some(&self.transaction_manager) {
             // Use optimized transaction manager with explicit locking
@@ -2089,8 +1978,6 @@ impl Database {
     }
 
     pub fn cache_stats(&self) -> Option<String> {
-        // UnifiedCache replaces MemoryPool functionality - cache stats disabled
-        // self.memory_pool.as_ref().map(|pool| pool.cache_stats())
         None
     }
 
@@ -2483,9 +2370,6 @@ impl Database {
 
     /// Analyze indexes and update query planner statistics
     pub fn analyze_query_performance(&self) -> Result<()> {
-        // Implementation pending analyze_indexes method in QueryPlanner
-        // let mut planner = self.query_planner.write();
-        // planner.analyze_indexes(&self.index_manager)
         Ok(())
     }
 
@@ -2503,9 +2387,6 @@ impl Database {
         &self,
         _plan: &query_planner::ExecutionPlan,
     ) -> Result<Vec<Vec<u8>>> {
-        // Implementation pending execute_plan method in QueryPlanner
-        // let planner = self.query_planner.read();
-        // planner.execute_plan(plan, &self.index_manager)
         Ok(Vec::new())
     }
 
@@ -2622,10 +2503,6 @@ impl Database {
         self.unified_cache.clone()
     }
 
-    // Legacy memory pool method deprecated:
-    // pub fn get_memory_pool(&self) -> Option<Arc<MemoryPool>> {
-    //     self.memory_pool.clone()
-    // }
 
     /// Get a reference to the page manager
     pub fn get_page_manager(&self) -> Arc<RwLock<PageManager>> {
@@ -3224,14 +3101,6 @@ impl Database {
 
     // ===== INTEGRITY MANAGEMENT METHODS =====
 
-    // Commented out duplicate method - using the version at line 1980 instead
-    // pub async fn verify_integrity(&self) -> Result<crate::features::integrity::CorruptionReport> {
-    //     use crate::features::integrity::{IntegrityManager, IntegrityConfig};
-    //
-    //     let config = IntegrityConfig::default();
-    //     let integrity_manager = IntegrityManager::new(Arc::new(self.clone()), config)?;
-    //     integrity_manager.verify_integrity().await
-    // }
 
     /// Enable or disable automatic repair of corrupted data
     pub async fn enable_auto_repair(&self, enabled: bool) -> Result<()> {
