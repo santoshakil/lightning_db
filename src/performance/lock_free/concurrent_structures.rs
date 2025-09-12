@@ -4,13 +4,29 @@
 //! database workloads where minimizing contention and maximizing throughput
 //! are critical for performance.
 
-use crate::core::error::{Error, Result};
-use crate::performance::optimizations::simd;
-use crossbeam::epoch::{self, Atomic, Owned, Shared};
-use crossbeam::utils::CachePadded;
-use std::mem::MaybeUninit;
+use crate::core::error::Result;
+use crossbeam::epoch::{self, Atomic, Owned, Shared, CompareExchangeError};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+
+/// Simple cache-padded wrapper to avoid false sharing
+#[repr(align(64))]
+struct CachePadded<T> {
+    inner: T,
+}
+
+impl<T> CachePadded<T> {
+    fn new(inner: T) -> Self {
+        Self { inner }
+    }
+}
+
+impl<T> std::ops::Deref for CachePadded<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -100,7 +116,7 @@ where
                 Ordering::Acquire,
             ).is_ok() {
                 // Successfully acquired version lock, can modify bucket
-                self.add_new_entry(bucket, key, value, hash, &guard)?;
+                self.add_new_entry(bucket, key.clone(), value.clone(), hash, &guard)?;
                 self.size.fetch_add(1, Ordering::Relaxed);
                 return Ok(None);
             }
@@ -181,7 +197,7 @@ where
         for entry in &bucket.entries {
             if entry.hash == hash && entry.key == *key && !entry.deleted.load(Ordering::Acquire) {
                 let old_ptr = entry.value.load(Ordering::Acquire, guard);
-                let new_value = Owned::new(value);
+                let new_value = Owned::new(value.clone());
                 
                 match entry.value.compare_exchange_weak(
                     old_ptr,
@@ -199,7 +215,10 @@ where
                             return Ok(None);
                         }
                     }
-                    Err(_) => continue, // Retry on conflict
+                    Err(CompareExchangeError { new: returned_new, .. }) => {
+                        // CAS failed, value still owned by returned_new, continue with value
+                        continue;
+                    }
                 }
             }
         }
@@ -217,11 +236,11 @@ where
     /// Add new entry to bucket
     fn add_new_entry(
         &self,
-        bucket: &Bucket<K, V>,
-        key: K,
-        value: V,
-        hash: u64,
-        guard: &epoch::Guard,
+        _bucket: &Bucket<K, V>,
+        _key: K,
+        _value: V,
+        _hash: u64,
+        _guard: &epoch::Guard,
     ) -> Result<()> {
         // In a real implementation, this would need to handle bucket expansion
         // For now, this is a simplified version
@@ -330,7 +349,7 @@ where
     }
     
     /// Enqueue an element (non-blocking)
-    pub fn enqueue(&self, item: T) -> Result<(), T> {
+    pub fn enqueue(&self, item: T) -> std::result::Result<(), T> {
         let item = Owned::new(item);
         let guard = epoch::pin();
         
@@ -355,7 +374,7 @@ where
                 }
             } else if diff < 0 {
                 // Queue is full
-                return Err(unsafe { item.into_box() });
+                return Err(unsafe { *item.into_box() });
             } else {
                 // Another thread is updating this slot
                 continue;
@@ -384,7 +403,7 @@ where
                 ).is_ok() {
                     let data_ptr = slot.data.load(Ordering::Acquire, &guard);
                     if !data_ptr.is_null() {
-                        let data = unsafe { data_ptr.deref().clone() };
+                        let data = unsafe { std::ptr::read(data_ptr.as_raw()) };
                         slot.data.store(Shared::null(), Ordering::Release);
                         slot.sequence.store(head.wrapping_add(self.capacity), Ordering::Release);
                         unsafe { guard.defer_destroy(data_ptr) };
@@ -439,7 +458,7 @@ impl<T> LockFreeStack<T> {
     /// Push an element onto the stack
     pub fn push(&self, data: T) {
         let guard = epoch::pin();
-        let new_node = Owned::new(Node {
+        let mut new_node = Owned::new(Node {
             data,
             next: Atomic::null(),
         });
@@ -459,8 +478,8 @@ impl<T> LockFreeStack<T> {
                     self.size.fetch_add(1, Ordering::Relaxed);
                     break;
                 }
-                Err(returned_node) => {
-                    new_node = returned_node;
+                Err(err) => {
+                    new_node = err.new;
                 }
             }
         }

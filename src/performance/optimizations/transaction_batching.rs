@@ -171,8 +171,8 @@ impl TransactionBatcher {
     }
     
     /// Start the background batch processor thread
-    fn start_processor(&self) {
-        let batcher = Arc::downgrade(&Arc::new(self));
+    fn start_processor(self: &Arc<Self>) {
+        let batcher = Arc::downgrade(self);
         let receiver = self.batch_receiver.clone();
         let shutdown_signal = self.shutdown_signal.clone();
         
@@ -225,7 +225,7 @@ impl TransactionBatcher {
         let ordered_transactions = self.order_transactions_for_processing(&batch.transactions, &conflicts)?;
         
         for tx in ordered_transactions {
-            if conflicts.contains(&tx.tx_id) {
+            if conflicts.contains_key(&tx.tx_id) {
                 conflicted_transactions.push(tx.tx_id);
                 failed_commits += 1;
             } else {
@@ -469,7 +469,7 @@ pub fn create_transaction_batcher(workload: WorkloadType) -> Arc<TransactionBatc
     TransactionBatcher::new(max_batch_size, max_delay_ms)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum WorkloadType {
     HighThroughput,
     LowLatency,

@@ -21,12 +21,22 @@ use smallvec::SmallVec;
 use bytes::Bytes;
 
 /// Lock-free page cache entry optimized for critical path access
-#[derive(Clone)]
 pub struct OptimizedPageEntry {
     pub page_id: u32,
     pub data: Arc<Vec<u8>>,
     pub last_access: AtomicU64,
     pub access_count: AtomicUsize,
+}
+
+impl Clone for OptimizedPageEntry {
+    fn clone(&self) -> Self {
+        Self {
+            page_id: self.page_id,
+            data: Arc::clone(&self.data),
+            last_access: AtomicU64::new(self.last_access.load(Ordering::Relaxed)),
+            access_count: AtomicUsize::new(self.access_count.load(Ordering::Relaxed)),
+        }
+    }
 }
 
 impl OptimizedPageEntry {

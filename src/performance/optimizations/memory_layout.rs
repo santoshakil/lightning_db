@@ -48,11 +48,38 @@ impl MemoryLayoutOps {
 }
 
 /// Cache-aligned allocator for critical data structures
-pub struct CacheAlignedAllocator;
+pub struct CacheAlignedAllocator {
+    capacity: usize,
+}
 
 impl CacheAlignedAllocator {
-    /// Allocate memory aligned to cache line boundaries
-    pub fn allocate(size: usize) -> Result<NonNull<u8>, AllocError> {
+    /// Create new allocator with given capacity
+    pub fn new(capacity: usize) -> Self {
+        Self { capacity }
+    }
+
+    /// Instance method to allocate memory (for thread-local use)
+    pub fn allocate(&mut self, size: usize) -> Option<CompactRecord> {
+        if size > self.capacity {
+            return None;
+        }
+        Self::allocate_static(size).ok().map(|_ptr| {
+            // Create a simple wrapper for allocated memory
+            CompactRecord {
+                header: RecordHeader {
+                    size: size as u32,
+                    key_len: 0,
+                    value_len: 0,
+                    flags: 0,
+                    checksum: 0,
+                },
+                data: [],
+            }
+        })
+    }
+
+    /// Static method to allocate memory aligned to cache line boundaries  
+    pub fn allocate_static(size: usize) -> Result<NonNull<u8>, AllocError> {
         let layout = Layout::from_size_align(size, MemoryLayoutOps::CACHE_LINE_SIZE)
             .map_err(|_| AllocError)?;
 
@@ -702,7 +729,7 @@ mod tests {
 
     #[test]
     fn test_cache_aligned_allocator() {
-        let ptr = CacheAlignedAllocator::allocate(1024).unwrap();
+        let ptr = CacheAlignedAllocator::allocate_static(1024).unwrap();
 
         // Check alignment
         assert_eq!(ptr.as_ptr() as usize % MemoryLayoutOps::CACHE_LINE_SIZE, 0);

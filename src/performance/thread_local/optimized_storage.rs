@@ -50,13 +50,8 @@ pub enum IsolationLevel {
     Serializable = 3,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub enum TransactionPriority {
-    Low = 0,
-    Normal = 1,
-    High = 2,
-    Critical = 3,
-}
+// Re-export TransactionPriority from transaction_batching module
+pub use crate::performance::optimizations::transaction_batching::TransactionPriority;
 
 impl ThreadLocalTransactionCache {
     fn new() -> Self {
