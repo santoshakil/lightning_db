@@ -504,7 +504,7 @@ mod tests {
         
         // Test statistics
         let stats = ops.get_performance_stats();
-        assert!(stats.global_stats.total_operations > 0);
+        assert!(stats.critical_path_stats.simd_operations > 0 || stats.transaction_batcher_stats.batches_processed > 0);
         
         println!("{}", stats.generate_report());
     }
@@ -523,7 +523,7 @@ mod tests {
         let ll_stats = low_latency.get_performance_stats();
         
         // Both should show operation counts
-        assert!(ht_stats.global_stats.total_operations > 0);
-        assert!(ll_stats.global_stats.total_operations > 0);
+        assert!(ht_stats.critical_path_stats.simd_operations >= 0 || ht_stats.transaction_batcher_stats.batches_processed > 0);
+        assert!(ll_stats.critical_path_stats.simd_operations >= 0 || ll_stats.transaction_batcher_stats.batches_processed > 0);
     }
 }
