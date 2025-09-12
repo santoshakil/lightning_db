@@ -302,13 +302,17 @@ pub mod safe {
             (la, lb) if la == lb && la <= 8 => {
                 // For small equal-length keys, use word comparison
                 if la == 8 {
-                    let a_word = u64::from_le_bytes(a.try_into().unwrap());
-                    let b_word = u64::from_le_bytes(b.try_into().unwrap());
-                    return a_word.cmp(&b_word);
+                    if let (Ok(a_bytes), Ok(b_bytes)) = (a.try_into(), b.try_into()) {
+                        let a_word = u64::from_le_bytes(a_bytes);
+                        let b_word = u64::from_le_bytes(b_bytes);
+                        return a_word.cmp(&b_word);
+                    }
                 } else if la == 4 {
-                    let a_word = u32::from_le_bytes(a.try_into().unwrap());
-                    let b_word = u32::from_le_bytes(b.try_into().unwrap());
-                    return a_word.cmp(&b_word);
+                    if let (Ok(a_bytes), Ok(b_bytes)) = (a.try_into(), b.try_into()) {
+                        let a_word = u32::from_le_bytes(a_bytes);
+                        let b_word = u32::from_le_bytes(b_bytes);
+                        return a_word.cmp(&b_word);
+                    }
                 }
             },
             _ => {}
