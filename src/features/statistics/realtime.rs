@@ -339,10 +339,9 @@ impl RealtimeStats {
 }
 
 // Global realtime stats collector
-lazy_static::lazy_static! {
-    pub static ref REALTIME_STATS: Arc<RwLock<RealtimeStatsCollector>> =
-        Arc::new(RwLock::new(RealtimeStatsCollector::new()));
-}
+use once_cell::sync::Lazy;
+pub static REALTIME_STATS: Lazy<Arc<RwLock<RealtimeStatsCollector>>> =
+    Lazy::new(|| Arc::new(RwLock::new(RealtimeStatsCollector::new())));
 
 #[cfg(test)]
 mod tests {

@@ -7,7 +7,7 @@ pub mod production_hooks;
 pub mod resource_tracker;
 
 use crate::core::error::Result;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use prometheus::{
     register_counter_vec, register_gauge_vec, register_histogram_vec, CounterVec, Encoder,
     GaugeVec, HistogramVec, TextEncoder,
@@ -25,77 +25,95 @@ pub use otel_integration::{OpenTelemetryProvider, TelemetryConfig};
 pub use performance_monitor::{PerformanceData, PerformanceMonitor, PerformanceTrend};
 pub use resource_tracker::{ResourceThreshold, ResourceTracker, ResourceUsage};
 
-lazy_static! {
-    // Operation counters
-    static ref OPERATION_COUNTER: CounterVec = register_counter_vec!(
+// Operation counters
+static OPERATION_COUNTER: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
         "lightning_db_operations_total",
         "Total number of database operations",
         &["operation", "status"]
-    ).unwrap();
+    ).unwrap()
+});
 
-    // Operation latency histograms
-    static ref OPERATION_HISTOGRAM: HistogramVec = register_histogram_vec!(
+// Operation latency histograms
+static OPERATION_HISTOGRAM: Lazy<HistogramVec> = Lazy::new(|| {
+    register_histogram_vec!(
         "lightning_db_operation_duration_seconds",
         "Operation latency in seconds",
         &["operation"],
         vec![0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0]
-    ).unwrap();
+    ).unwrap()
+});
 
-    // Database size metrics
-    static ref DB_SIZE_GAUGE: GaugeVec = register_gauge_vec!(
+// Database size metrics
+static DB_SIZE_GAUGE: Lazy<GaugeVec> = Lazy::new(|| {
+    register_gauge_vec!(
         "lightning_db_size_bytes",
         "Database size in bytes",
         &["component"]
-    ).unwrap();
+    ).unwrap()
+});
 
-    // Cache metrics
-    static ref CACHE_HITS: CounterVec = register_counter_vec!(
+// Cache metrics
+static CACHE_HITS: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
         "lightning_db_cache_hits_total",
         "Total number of cache hits",
         &["cache_type"]
-    ).unwrap();
+    ).unwrap()
+});
 
-    static ref CACHE_MISSES: CounterVec = register_counter_vec!(
+static CACHE_MISSES: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
         "lightning_db_cache_misses_total",
         "Total number of cache misses",
         &["cache_type"]
-    ).unwrap();
+    ).unwrap()
+});
 
-    // Transaction metrics
-    static ref TRANSACTION_GAUGE: GaugeVec = register_gauge_vec!(
+// Transaction metrics
+static TRANSACTION_GAUGE: Lazy<GaugeVec> = Lazy::new(|| {
+    register_gauge_vec!(
         "lightning_db_active_transactions",
         "Number of active transactions",
         &["type"]
-    ).unwrap();
+    ).unwrap()
+});
 
-    // WAL metrics
-    static ref WAL_SIZE_GAUGE: GaugeVec = register_gauge_vec!(
+// WAL metrics
+static WAL_SIZE_GAUGE: Lazy<GaugeVec> = Lazy::new(|| {
+    register_gauge_vec!(
         "lightning_db_wal_size_bytes",
         "WAL size in bytes",
         &["segment"]
-    ).unwrap();
+    ).unwrap()
+});
 
-    // Compaction metrics
-    static ref COMPACTION_COUNTER: CounterVec = register_counter_vec!(
+// Compaction metrics
+static COMPACTION_COUNTER: Lazy<CounterVec> = Lazy::new(|| {
+    register_counter_vec!(
         "lightning_db_compactions_total",
         "Total number of compactions",
         &["level"]
-    ).unwrap();
+    ).unwrap()
+});
 
-    static ref COMPACTION_DURATION: HistogramVec = register_histogram_vec!(
+static COMPACTION_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
+    register_histogram_vec!(
         "lightning_db_compaction_duration_seconds",
         "Compaction duration in seconds",
         &["level"],
         vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 300.0]
-    ).unwrap();
+    ).unwrap()
+});
 
-    // Memory metrics
-    static ref MEMORY_USAGE_GAUGE: GaugeVec = register_gauge_vec!(
+// Memory metrics
+static MEMORY_USAGE_GAUGE: Lazy<GaugeVec> = Lazy::new(|| {
+    register_gauge_vec!(
         "lightning_db_memory_usage_bytes",
         "Memory usage in bytes",
         &["component"]
-    ).unwrap();
-}
+    ).unwrap()
+});
 
 /// Metrics collection timer
 pub struct MetricsTimer {
