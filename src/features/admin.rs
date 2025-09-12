@@ -77,7 +77,7 @@ impl Database {
         let snapshot = metrics.get_current_snapshot();
 
         Ok(DatabaseMetrics {
-            cache_size: self._config.cache_size as u64,
+            cache_size: self._config.cache_size,
             cache_hits: snapshot.cache_hits,
             cache_misses: snapshot.cache_misses,
             total_reads: snapshot.reads,

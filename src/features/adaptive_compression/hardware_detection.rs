@@ -207,7 +207,7 @@ impl HardwareCapabilities {
         let cache_based = (self.cpu.cache.l3_kb as usize * 1024) / 4; // 1/4 of L3 cache
 
         // Clamp to reasonable range
-        cache_based.max(32 * 1024).min(1024 * 1024) // 32KB to 1MB
+        cache_based.clamp(32 * 1024, 1024 * 1024) // 32KB to 1MB
     }
 
     /// Check if parallel compression is beneficial
@@ -419,10 +419,10 @@ impl CacheInfo {
 
     fn parse_cache_size(size_str: &str) -> Result<u32, std::num::ParseIntError> {
         let trimmed = size_str.trim();
-        if trimmed.ends_with('K') {
-            trimmed[..trimmed.len() - 1].parse::<u32>()
-        } else if trimmed.ends_with("KB") {
-            trimmed[..trimmed.len() - 2].parse::<u32>()
+        if let Some(without_suffix) = trimmed.strip_suffix("KB") {
+            without_suffix.parse::<u32>()
+        } else if let Some(without_suffix) = trimmed.strip_suffix('K') {
+            without_suffix.parse::<u32>()
         } else {
             trimmed.parse::<u32>()
         }

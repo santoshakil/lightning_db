@@ -84,8 +84,8 @@ pub struct StreamingStats {
 }
 
 thread_local! {
-    static BUFFER_POOL: RefCell<Vec<Vec<u8>>> = RefCell::new(Vec::new());
-    static DEQUE_POOL: RefCell<Vec<VecDeque<u8>>> = RefCell::new(Vec::new());
+    static BUFFER_POOL: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
+    static DEQUE_POOL: RefCell<Vec<VecDeque<u8>>> = const { RefCell::new(Vec::new()) };
 }
 
 struct CompressorBuffers {
