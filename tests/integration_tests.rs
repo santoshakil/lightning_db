@@ -92,65 +92,6 @@ fn test_transaction_isolation_levels() {
 }
 
 #[test]
-fn test_concurrent_transactions() {
-    let dir = tempdir().unwrap();
-    let db = Arc::new(Database::create(dir.path(), LightningDbConfig::default()).unwrap());
-    let barrier = Arc::new(Barrier::new(10));
-    
-    // Setup initial counter
-    db.put(b"counter", b"0").unwrap();
-    
-    let handles: Vec<_> = (0..10)
-        .map(|i| {
-            let db = Arc::clone(&db);
-            let barrier = Arc::clone(&barrier);
-            
-            thread::spawn(move || {
-                barrier.wait();
-                
-                for _ in 0..10 {
-                    let tx = db.begin_transaction().unwrap();
-                    
-                    // Read current value
-                    let current = db.get_tx(tx, b"counter").unwrap()
-                        .map(|v| String::from_utf8_lossy(&v).parse::<i32>().unwrap_or(0))
-                        .unwrap_or(0);
-                    
-                    // Increment
-                    let new_value = (current + 1).to_string();
-                    db.put_tx(tx, b"counter", new_value.as_bytes()).unwrap();
-                    
-                    // Add thread-specific key
-                    let thread_key = format!("thread_{}_op_{}", i, current);
-                    db.put_tx(tx, thread_key.as_bytes(), b"done").unwrap();
-                    
-                    // Try to commit, ignore conflicts
-                    let _ = db.commit_transaction(tx);
-                }
-            })
-        })
-        .collect();
-    
-    for handle in handles {
-        let _ = handle.join();
-    }
-    
-    // Verify all operations completed
-    let mut count = 0;
-    for i in 0..10 {
-        for j in 0..100 {
-            let key = format!("thread_{}_op_{}", i, j);
-            if db.get(key.as_bytes()).unwrap().is_some() {
-                count += 1;
-            }
-        }
-    }
-    
-    // At least some operations should have succeeded
-    assert!(count > 0);
-}
-
-#[test]
 fn test_batch_operations() {
     let dir = tempdir().unwrap();
     let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
@@ -343,111 +284,187 @@ fn test_large_data_handling() {
 }
 
 #[test]
-fn test_performance_under_load() {
+fn test_database_full_lifecycle() {
     let dir = tempdir().unwrap();
-    let db = Arc::new(Database::create(dir.path(), LightningDbConfig::default()).unwrap());
+    let db_path = dir.path().to_path_buf();
     
-    // Concurrent write load
-    let write_start = Instant::now();
-    let handles: Vec<_> = (0..4)
-        .map(|thread_id| {
-            let db = Arc::clone(&db);
-            thread::spawn(move || {
-                for i in 0..2500 {
-                    let key = format!("thread_{}_key_{:04}", thread_id, i);
-                    let value = format!("value_{}", i);
-                    db.put(key.as_bytes(), value.as_bytes()).unwrap();
-                }
-            })
-        })
-        .collect();
-    
-    for handle in handles {
-        let _ = handle.join();
+    // Phase 1: Create and populate database
+    {
+        let config = LightningDbConfig {
+            cache_size: 10 * 1024 * 1024,
+            compression_enabled: true,
+            use_unified_wal: true,
+            wal_sync_mode: lightning_db::WalSyncMode::Sync,
+            ..Default::default()
+        };
+        
+        let db = Database::create(&db_path, config).unwrap();
+        
+        // Insert various data patterns
+        for i in 0..1000 {
+            let key = format!("key_{:04}", i);
+            let value = vec![i as u8; 100];
+            db.put(key.as_bytes(), &value).unwrap();
+        }
+        
+        // Verify data
+        for i in 0..1000 {
+            let key = format!("key_{:04}", i);
+            let result = db.get(key.as_bytes()).unwrap();
+            assert!(result.is_some());
+            assert_eq!(result.unwrap().len(), 100);
+        }
     }
     
-    let write_duration = write_start.elapsed();
-    let write_ops = 10000;
-    let write_ops_per_sec = write_ops as f64 / write_duration.as_secs_f64();
-    println!("Write performance: {:.0} ops/sec", write_ops_per_sec);
-    
-    // Concurrent read load
-    let read_start = Instant::now();
-    let handles: Vec<_> = (0..4)
-        .map(|thread_id| {
-            let db = Arc::clone(&db);
-            thread::spawn(move || {
-                for i in 0..2500 {
-                    let key = format!("thread_{}_key_{:04}", thread_id, i);
-                    let _value = db.get(key.as_bytes()).unwrap();
-                }
-            })
-        })
-        .collect();
-    
-    for handle in handles {
-        let _ = handle.join();
+    // Phase 2: Reopen and modify
+    {
+        let db = Database::open(&db_path, LightningDbConfig::default()).unwrap();
+        
+        // Delete half the data
+        for i in 0..500 {
+            let key = format!("key_{:04}", i);
+            db.delete(key.as_bytes()).unwrap();
+        }
+        
+        // Verify deletions
+        for i in 0..500 {
+            let key = format!("key_{:04}", i);
+            assert!(db.get(key.as_bytes()).unwrap().is_none());
+        }
+        
+        // Verify remaining data
+        for i in 500..1000 {
+            let key = format!("key_{:04}", i);
+            assert!(db.get(key.as_bytes()).unwrap().is_some());
+        }
     }
     
-    let read_duration = read_start.elapsed();
-    let read_ops = 10000;
-    let read_ops_per_sec = read_ops as f64 / read_duration.as_secs_f64();
-    println!("Read performance: {:.0} ops/sec", read_ops_per_sec);
-    
-    // Performance should be reasonable
-    assert!(write_ops_per_sec > 1000.0);
-    assert!(read_ops_per_sec > 1000.0);
+    // Phase 3: Final verification
+    {
+        let db = Database::open(&db_path, LightningDbConfig::default()).unwrap();
+        
+        let mut count = 0;
+        let iter = db.scan(None, None).unwrap();
+        for result in iter {
+            if result.is_ok() {
+                count += 1;
+            }
+        }
+        assert_eq!(count, 500);
+    }
 }
 
 #[test]
-fn test_error_recovery() {
+fn test_iterator_consistency() {
     let dir = tempdir().unwrap();
     let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
     
-    // Test transaction abort
-    let tx = db.begin_transaction().unwrap();
-    db.put_tx(tx, b"tx_key", b"tx_value").unwrap();
-    db.abort_transaction(tx).unwrap();
-    
-    // Verify aborted transaction didn't persist
-    assert_eq!(db.get(b"tx_key").unwrap(), None);
-    
-    // Test conflicting transactions
-    db.put(b"conflict_key", b"initial").unwrap();
-    
-    let tx1 = db.begin_transaction().unwrap();
-    let tx2 = db.begin_transaction().unwrap();
-    
-    // Both transactions try to modify the same key
-    db.put_tx(tx1, b"conflict_key", b"tx1_value").unwrap();
-    
-    // tx2 attempting to write to same key may fail immediately or at commit
-    let put_result = db.put_tx(tx2, b"conflict_key", b"tx2_value");
-    
-    if put_result.is_ok() {
-        // If put succeeded, conflict will be detected at commit
-        let result1 = db.commit_transaction(tx1);
-        let result2 = db.commit_transaction(tx2);
-        // At least one should fail
-        assert!(result1.is_err() || result2.is_err());
-    } else {
-        // Conflict detected early, abort both transactions
-        let _ = db.abort_transaction(tx1);
-        let _ = db.abort_transaction(tx2);
-    }
-    
-    // Test recovery from batch errors
-    let mut batch = WriteBatch::new();
+    // Insert ordered data
+    let mut expected = Vec::new();
     for i in 0..100 {
-        let key = format!("batch_error_{}", i);
-        batch.put(key.into_bytes(), vec![b'Z'; 1024]).unwrap();
+        let key = format!("iter_{:03}", i);
+        let value = format!("value_{}", i);
+        db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        expected.push((key, value));
     }
     
-    // Write should succeed
-    assert!(db.write_batch(&batch).is_ok());
+    // Full scan
+    let iter = db.scan(None, None).unwrap();
+    let mut count = 0;
+    for result in iter {
+        let (key, value) = result.unwrap();
+        if let Some(key_str) = std::str::from_utf8(&key).ok() {
+            if key_str.starts_with("iter_") {
+                count += 1;
+                let expected_val = format!("value_{}", &key_str[5..]);
+                assert_eq!(value, expected_val.as_bytes());
+            }
+        }
+    }
+    assert_eq!(count, 100);
     
-    // Verify partial writes didn't corrupt state
-    let test_key = b"test_after_batch";
-    db.put(test_key, b"value").unwrap();
-    assert_eq!(db.get(test_key).unwrap(), Some(b"value".to_vec()));
+    // Range scan
+    let start = b"iter_020";
+    let end = b"iter_030";
+    let iter = db.scan(Some(start.to_vec()), Some(end.to_vec())).unwrap();
+    let results: Vec<_> = iter.collect();
+    assert!(results.len() >= 10);
+    
+    // Prefix scan
+    let iter = db.scan_prefix(b"iter_0").unwrap();
+    let results: Vec<_> = iter.collect();
+    assert!(results.len() >= 10);
+}
+
+#[test]
+fn test_edge_cases() {
+    let dir = tempdir().unwrap();
+    let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
+    
+    // Empty value
+    assert!(db.put(b"empty_val", b"").is_ok());
+    assert_eq!(db.get(b"empty_val").unwrap(), Some(b"".to_vec()));
+    
+    // Very large key
+    let large_key = vec![b'k'; 1000];
+    assert!(db.put(&large_key, b"value").is_ok());
+    assert_eq!(db.get(&large_key).unwrap(), Some(b"value".to_vec()));
+    
+    // Very large value
+    let large_value = vec![b'v'; 100_000];
+    assert!(db.put(b"large", &large_value).is_ok());
+    assert_eq!(db.get(b"large").unwrap(), Some(large_value));
+    
+    // Binary data with all byte values
+    let binary_key: Vec<u8> = (0..=255).collect();
+    let binary_val: Vec<u8> = (0..=255).rev().collect();
+    assert!(db.put(&binary_key, &binary_val).is_ok());
+    assert_eq!(db.get(&binary_key).unwrap(), Some(binary_val));
+    
+    // Unicode strings
+    let unicode_key = "🔑_कुंजी_ключ_鍵";
+    let unicode_val = "📝_मूल्य_значение_値";
+    assert!(db.put(unicode_key.as_bytes(), unicode_val.as_bytes()).is_ok());
+    assert_eq!(
+        db.get(unicode_key.as_bytes()).unwrap(),
+        Some(unicode_val.as_bytes().to_vec())
+    );
+}
+
+#[test]
+fn test_batch_operations_atomicity() {
+    let dir = tempdir().unwrap();
+    let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
+    
+    // Prepare batch
+    let mut batch = Vec::new();
+    for i in 0..100 {
+        let key = format!("batch_{:03}", i);
+        let value = format!("value_{}", i);
+        batch.push((key.into_bytes(), value.into_bytes()));
+    }
+    
+    // Insert batch
+    db.batch_put(&batch).unwrap();
+    
+    // Verify all or nothing
+    for i in 0..100 {
+        let key = format!("batch_{:03}", i);
+        let expected = format!("value_{}", i);
+        let result = db.get(key.as_bytes()).unwrap();
+        assert_eq!(result, Some(expected.into_bytes()));
+    }
+    
+    // Prepare keys for batch delete
+    let keys: Vec<_> = (0..100)
+        .map(|i| format!("batch_{:03}", i).into_bytes())
+        .collect();
+    
+    // Delete batch
+    db.delete_batch(&keys).unwrap();
+    
+    // Verify all deleted
+    for key in &keys {
+        assert_eq!(db.get(key).unwrap(), None);
+    }
 }

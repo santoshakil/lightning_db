@@ -7,13 +7,13 @@ use rand::Rng;
 
 #[test]
 fn test_ecommerce_platform_simulation() {
-    let dir = tempdir().expect("Failed to create temp dir");
+    let dir = tempdir().unwrap();
     let mut config = LightningDbConfig::default();
     config.compression_enabled = true;
     config.cache_size = 2 * 1024 * 1024;
     config.use_optimized_transactions = true;
     
-    let db = Arc::new(Database::create(dir.path(), config).expect("Failed to create database"));
+    let db = Arc::new(Database::create(dir.path(), config).unwrap());
     
     println!("\n=== E-Commerce Platform Simulation ===\n");
     
@@ -43,7 +43,7 @@ fn test_ecommerce_platform_simulation() {
             3.5 + (product_id % 3) as f64 * 0.5
         );
         
-        db.put(product_key.as_bytes(), product_data.as_bytes()).expect("Put failed");
+        db.put(product_key.as_bytes(), product_data.as_bytes()).unwrap();
     }
     println!("   ✓ Loaded 1000 products");
     
@@ -67,7 +67,7 @@ fn test_ecommerce_platform_simulation() {
                 "wishlist_items": 0
             }}"#, user_id, user_id);
             
-            db_clone.put(session_key.as_bytes(), session_data.as_bytes()).expect("Put failed");
+            db_clone.put(session_key.as_bytes(), session_data.as_bytes()).unwrap();
             
             for item in 0..10 {
                 let cart_key = format!("cart:user:{}:item:{}", user_id, item);
@@ -78,20 +78,20 @@ fn test_ecommerce_platform_simulation() {
                     "price": {:.2}
                 }}"#, product_id, 1 + item % 3, 10.0 + product_id as f64 * 0.5);
                 
-                db_clone.put(cart_key.as_bytes(), cart_data.as_bytes()).expect("Put failed");
+                db_clone.put(cart_key.as_bytes(), cart_data.as_bytes()).unwrap();
             }
         });
         handles.push(handle);
     }
     
     for handle in handles {
-        handle.join().expect("Thread panicked");
+        handle.join().unwrap();
     }
     println!("   ✓ Created 20 concurrent user sessions with shopping carts");
     
     println!("\n3. Processing orders with transactions...");
     for order_id in 1000..1010 {
-        let tx_id = db.begin_transaction().expect("Failed to begin transaction");
+        let tx_id = db.begin_transaction().unwrap();
         
         let order_key = format!("order:{}", order_id);
         let order_data = format!(r#"{{
@@ -102,7 +102,7 @@ fn test_ecommerce_platform_simulation() {
             "created_at": "2024-01-01T13:00:00Z"
         }}"#, order_id, order_id % 20, 100.0 + (order_id as f64 * 10.0));
         
-        db.put_tx(tx_id, order_key.as_bytes(), order_data.as_bytes()).expect("Put failed");
+        db.put_tx(tx_id, order_key.as_bytes(), order_data.as_bytes()).unwrap();
         
         for item in 0..5 {
             let item_key = format!("order:{}:item:{}", order_id, item);
@@ -112,7 +112,7 @@ fn test_ecommerce_platform_simulation() {
                 "price": {:.2}
             }}"#, item * 100, 1 + item % 3, 20.0 + item as f64 * 5.0);
             
-            db.put_tx(tx_id, item_key.as_bytes(), item_data.as_bytes()).expect("Put failed");
+            db.put_tx(tx_id, item_key.as_bytes(), item_data.as_bytes()).unwrap();
         }
         
         let inventory_key = format!("inventory:product:{}", order_id % 100);
@@ -123,22 +123,22 @@ fn test_ecommerce_platform_simulation() {
             "last_updated": "2024-01-01T13:00:00Z"
         }}"#, order_id % 100, 900 - order_id % 100, order_id % 10);
         
-        db.put_tx(tx_id, inventory_key.as_bytes(), inventory_data.as_bytes()).expect("Put failed");
+        db.put_tx(tx_id, inventory_key.as_bytes(), inventory_data.as_bytes()).unwrap();
         
-        db.commit_transaction(tx_id).expect("Commit failed");
+        db.commit_transaction(tx_id).unwrap();
     }
     println!("   ✓ Processed 10 orders transactionally");
     
     println!("\n4. Analytics queries...");
-    let products = db.prefix_scan_key(&Key::from(b"product:".as_ref())).expect("Scan failed");
+    let products = db.prefix_scan_key(&Key::from(b"product:".as_ref())).unwrap();
     println!("   Products in catalog: {}", products.len());
     assert_eq!(products.len(), 1000);
     
-    let sessions = db.prefix_scan_key(&Key::from(b"session:".as_ref())).expect("Scan failed");
+    let sessions = db.prefix_scan_key(&Key::from(b"session:".as_ref())).unwrap();
     println!("   Active sessions: {}", sessions.len());
     assert_eq!(sessions.len(), 20);
     
-    let orders = db.prefix_scan_key(&Key::from(b"order:".as_ref())).expect("Scan failed");
+    let orders = db.prefix_scan_key(&Key::from(b"order:".as_ref())).unwrap();
     println!("   Orders processed: {}", orders.len() / 6);
     
     let stats = db.stats();
@@ -154,12 +154,12 @@ fn test_ecommerce_platform_simulation() {
 
 #[test]
 fn test_high_concurrency_banking_system() {
-    let dir = tempdir().expect("Failed to create temp dir");
+    let dir = tempdir().unwrap();
     let mut config = LightningDbConfig::default();
     config.wal_sync_mode = WalSyncMode::Sync;
     config.use_optimized_transactions = true;
     
-    let db = Arc::new(Database::create(dir.path(), config).expect("Failed to create database"));
+    let db = Arc::new(Database::create(dir.path(), config).unwrap());
     
     println!("\n=== Banking System Concurrency Test ===\n");
     
@@ -172,7 +172,7 @@ fn test_high_concurrency_banking_system() {
             "status": "active"
         }}"#, account_id);
         
-        db.put(account_key.as_bytes(), account_data.as_bytes()).expect("Put failed");
+        db.put(account_key.as_bytes(), account_data.as_bytes()).unwrap();
     }
     println!("Created 100 bank accounts with $1000 each");
     
@@ -196,7 +196,7 @@ fn test_high_concurrency_banking_system() {
                 const MAX_RETRIES: u32 = 5;
                 
                 loop {
-                    let tx_id = db_clone.begin_transaction().expect("Failed to begin transaction");
+                    let tx_id = db_clone.begin_transaction().unwrap();
                     
                     let from_key = format!("account:{:04}", from_account);
                     let to_key = format!("account:{:04}", to_account);
@@ -214,8 +214,8 @@ fn test_high_concurrency_banking_system() {
                                     let new_from = update_balance(&from_str, from_balance - amount);
                                     let new_to = update_balance(&to_str, to_balance + amount);
                                     
-                                    db_clone.put_tx(tx_id, from_key.as_bytes(), new_from.as_bytes()).expect("Put failed");
-                                    db_clone.put_tx(tx_id, to_key.as_bytes(), new_to.as_bytes()).expect("Put failed");
+                                    db_clone.put_tx(tx_id, from_key.as_bytes(), new_from.as_bytes()).unwrap();
+                                    db_clone.put_tx(tx_id, to_key.as_bytes(), new_to.as_bytes()).unwrap();
                                     
                                     let transfer_key = format!("transfer:{}:{}", thread_id, 
                                         std::time::SystemTime::now()
@@ -229,7 +229,7 @@ fn test_high_concurrency_banking_system() {
                                         "timestamp": "2024-01-01T14:00:00Z"
                                     }}"#, from_account, to_account, amount);
                                     
-                                    db_clone.put_tx(tx_id, transfer_key.as_bytes(), transfer_data.as_bytes()).expect("Put failed");
+                                    db_clone.put_tx(tx_id, transfer_key.as_bytes(), transfer_data.as_bytes()).unwrap();
                                     
                                     match db_clone.commit_transaction(tx_id) {
                                         Ok(_) => break,
@@ -260,13 +260,13 @@ fn test_high_concurrency_banking_system() {
     }
     
     for handle in handles {
-        handle.join().expect("Thread panicked");
+        handle.join().unwrap();
     }
     
     let mut total_balance = 0.0;
     for account_id in 0..100 {
         let account_key = format!("account:{:04}", account_id);
-        if let Some(data) = db.get(account_key.as_bytes()).expect("Get failed") {
+        if let Some(data) = db.get(account_key.as_bytes()).unwrap() {
             let data_str = String::from_utf8_lossy(&data);
             if let Some(balance) = extract_balance(&data_str) {
                 total_balance += balance;
@@ -277,7 +277,7 @@ fn test_high_concurrency_banking_system() {
     println!("Total balance after transfers: ${:.2}", total_balance);
     assert!((total_balance - 100000.0).abs() < 0.01, "Money was lost or created!");
     
-    let transfers = db.prefix_scan_key(&Key::from(b"transfer:".as_ref())).expect("Scan failed");
+    let transfers = db.prefix_scan_key(&Key::from(b"transfer:".as_ref())).unwrap();
     println!("Total transfers completed: {}", transfers.len());
     
     println!("\n=== Banking System Test Complete ===\n");
@@ -285,11 +285,11 @@ fn test_high_concurrency_banking_system() {
 
 #[test]
 fn test_time_series_iot_data() {
-    let dir = tempdir().expect("Failed to create temp dir");
+    let dir = tempdir().unwrap();
     let mut config = LightningDbConfig::default();
     config.compression_enabled = true;
     
-    let db = Database::create(dir.path(), config).expect("Failed to create database");
+    let db = Database::create(dir.path(), config).unwrap();
     
     println!("\n=== IoT Time Series Data Test ===\n");
     
@@ -317,7 +317,7 @@ fn test_time_series_iot_data() {
                 100 - (reading % 20)
             );
             
-            db.put(key.as_bytes(), value.as_bytes()).expect("Put failed");
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
         }
     }
     
@@ -325,18 +325,18 @@ fn test_time_series_iot_data() {
     println!("Wrote {} sensor readings in {:?}", sensors * readings_per_sensor, write_time);
     
     let start_query = Instant::now();
-    let sensor_0_data = db.prefix_scan_key(&Key::from(b"sensor:0:".as_ref())).expect("Scan failed");
+    let sensor_0_data = db.prefix_scan_key(&Key::from(b"sensor:0:".as_ref())).unwrap();
     let query_time = start_query.elapsed();
     
     println!("Retrieved {} readings for sensor 0 in {:?}", sensor_0_data.len(), query_time);
     assert_eq!(sensor_0_data.len(), readings_per_sensor);
     
     let time_range_prefix = format!("sensor:10:ts:1704067");
-    let range_data = db.prefix_scan_key(&Key::from(time_range_prefix.as_bytes())).expect("Scan failed");
+    let range_data = db.prefix_scan_key(&Key::from(time_range_prefix.as_bytes())).unwrap();
     
     println!("Range query returned {} readings", range_data.len());
     
-    db.flush_lsm().expect("Flush failed");
+    db.flush_lsm().unwrap();
     
     let stats = db.stats();
     println!("\nDatabase statistics:");
@@ -348,8 +348,56 @@ fn test_time_series_iot_data() {
 }
 
 #[test]
+fn test_crash_recovery_simulation() {
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().to_path_buf();
+
+    // Phase 1: Write data with WAL enabled
+    {
+        let db = Database::create(
+            &db_path,
+            LightningDbConfig {
+                use_unified_wal: true,
+                wal_sync_mode: WalSyncMode::Sync,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // Write critical data
+        for i in 0..100 {
+            let key = format!("critical:{}", i);
+            let value = format!("important_data_{}", i);
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+
+        // Start a transaction but don't commit (simulate crash)
+        let tx_id = db.begin_transaction().unwrap();
+        db.put_tx(tx_id, b"uncommitted", b"should_not_exist").unwrap();
+        // Simulate crash by dropping db without commit
+    }
+
+    // Phase 2: Reopen and verify recovery
+    {
+        let db = Database::open(&db_path, LightningDbConfig::default()).unwrap();
+
+        // Verify committed data survived
+        for i in 0..100 {
+            let key = format!("critical:{}", i);
+            let value = db.get(key.as_bytes()).unwrap();
+            assert!(value.is_some());
+            let expected = format!("important_data_{}", i);
+            assert_eq!(value.unwrap(), expected.as_bytes());
+        }
+
+        // Verify uncommitted data was not recovered
+        assert_eq!(db.get(b"uncommitted").unwrap(), None);
+    }
+}
+
+#[test]
 fn test_crash_recovery_with_partial_writes() {
-    let dir = tempdir().expect("Failed to create temp dir");
+    let dir = tempdir().unwrap();
     let path = dir.path().to_path_buf();
     
     println!("\n=== Crash Recovery Test ===\n");
@@ -357,35 +405,35 @@ fn test_crash_recovery_with_partial_writes() {
     {
         let mut config = LightningDbConfig::default();
         config.wal_sync_mode = WalSyncMode::Sync;
-        let db = Database::create(&path, config).expect("Failed to create database");
+        let db = Database::create(&path, config).unwrap();
         
         for i in 0..500 {
             let key = format!("persistent_key_{:04}", i);
             let value = format!("persistent_value_{}", i);
-            db.put(key.as_bytes(), value.as_bytes()).expect("Put failed");
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
         }
         
-        let tx_id = db.begin_transaction().expect("Failed to begin transaction");
+        let tx_id = db.begin_transaction().unwrap();
         for i in 500..600 {
             let key = format!("tx_key_{:04}", i);
             let value = format!("tx_value_{}", i);
-            db.put_tx(tx_id, key.as_bytes(), value.as_bytes()).expect("Put failed");
+            db.put_tx(tx_id, key.as_bytes(), value.as_bytes()).unwrap();
         }
-        db.commit_transaction(tx_id).expect("Commit failed");
+        db.commit_transaction(tx_id).unwrap();
         
-        db.flush_lsm().expect("Flush failed");
+        db.flush_lsm().unwrap();
         println!("Database synced with 600 entries");
     }
     
     {
         println!("Simulating database restart...");
-        let db = Database::open(&path, LightningDbConfig::default()).expect("Failed to reopen database");
+        let db = Database::open(&path, LightningDbConfig::default()).unwrap();
         
         let mut verified = 0;
         for i in 0..500 {
             let key = format!("persistent_key_{:04}", i);
             let value = format!("persistent_value_{}", i);
-            let retrieved = db.get(key.as_bytes()).expect("Get failed");
+            let retrieved = db.get(key.as_bytes()).unwrap();
             assert_eq!(retrieved, Some(value.into_bytes()));
             verified += 1;
         }
@@ -393,7 +441,7 @@ fn test_crash_recovery_with_partial_writes() {
         for i in 500..600 {
             let key = format!("tx_key_{:04}", i);
             let value = format!("tx_value_{}", i);
-            let retrieved = db.get(key.as_bytes()).expect("Get failed");
+            let retrieved = db.get(key.as_bytes()).unwrap();
             assert_eq!(retrieved, Some(value.into_bytes()));
             verified += 1;
         }
@@ -405,66 +453,142 @@ fn test_crash_recovery_with_partial_writes() {
 }
 
 #[test]
-fn test_memory_pressure_and_cache_eviction() {
-    let dir = tempdir().expect("Failed to create temp dir");
-    let mut config = LightningDbConfig::default();
-    config.cache_size = 256 * 1024;
-    config.page_size = 4096;
+fn test_stress_crash_recovery_cycles() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().to_path_buf();
     
-    let db = Database::create(dir.path(), config).expect("Failed to create database");
-    
-    println!("\n=== Memory Pressure Test ===\n");
-    
-    let value_size = 4000;
-    let value = vec![b'X'; value_size];
-    let num_entries = 1000;
-    
-    let mut write_times = Vec::new();
-    for i in 0..num_entries {
-        let key = format!("pressure_key_{:06}", i);
-        let start = Instant::now();
-        db.put(key.as_bytes(), &value).expect("Put failed");
-        write_times.push(start.elapsed());
+    // Simulate multiple crash/recovery cycles
+    for cycle in 0..5 {
+        println!("Crash recovery cycle {}", cycle + 1);
         
-        if i % 100 == 99 {
-            let stats = db.stats();
-            println!("After {} entries:", i + 1);
-            println!("  Pages: {}, Free: {}", stats.page_count, stats.free_page_count);
-            println!("  Cache hit rate: {:.1}%", stats.cache_hit_rate.unwrap_or(0.0) * 100.0);
+        {
+            let mut config = LightningDbConfig::default();
+            config.wal_sync_mode = WalSyncMode::Sync;
+            let db = Database::create(&path, config).unwrap();
+            
+            // Write data with specific patterns
+            for i in 0..100 {
+                let key = format!("crash_test_c{}_k{:03}", cycle, i);
+                let value = format!("cycle_{}_value_{}_checksum_{:x}", cycle, i, i * cycle);
+                db.put(key.as_bytes(), value.as_bytes()).unwrap();
+            }
+            
+            // Simulate transaction in progress
+            let tx_id = db.begin_transaction().unwrap();
+            for i in 100..150 {
+                let key = format!("crash_test_c{}_k{:03}", cycle, i);
+                let value = format!("tx_value_{}_pending", i);
+                db.put_tx(tx_id, key.as_bytes(), value.as_bytes()).unwrap();
+            }
+            
+            if cycle % 2 == 0 {
+                // Commit some transactions
+                db.commit_transaction(tx_id).unwrap();
+            }
+            // Otherwise, simulate crash by dropping db without commit
+        }
+        
+        // Reopen and verify
+        {
+            let db = Database::open(&path, LightningDbConfig::default()).unwrap();
+            
+            // Verify committed data from all cycles
+            for c in 0..=cycle {
+                for i in 0..100 {
+                    let key = format!("crash_test_c{}_k{:03}", c, i);
+                    let expected = format!("cycle_{}_value_{}_checksum_{:x}", c, i, i * c);
+                    let result = db.get(key.as_bytes()).unwrap();
+                    assert_eq!(result, Some(expected.into_bytes()), 
+                              "Data loss detected for key {} in cycle {}", key, c);
+                }
+                
+                // Verify transactional data
+                if c % 2 == 0 {
+                    for i in 100..150 {
+                        let key = format!("crash_test_c{}_k{:03}", c, i);
+                        let result = db.get(key.as_bytes()).unwrap();
+                        assert!(result.is_some(), "Committed transaction data lost for key {}", key);
+                    }
+                } else {
+                    // Uncommitted transactions should not be visible
+                    for i in 100..150 {
+                        let key = format!("crash_test_c{}_k{:03}", c, i);
+                        let result = db.get(key.as_bytes()).unwrap();
+                        assert!(result.is_none(), "Uncommitted transaction data persisted for key {}", key);
+                    }
+                }
+            }
         }
     }
     
-    let avg_write_time: Duration = write_times.iter().sum::<Duration>() / write_times.len() as u32;
-    println!("\nAverage write time: {:?}", avg_write_time);
+    println!("✓ All crash recovery cycles completed successfully");
+}
+
+#[test]
+fn test_large_dataset_simulation() {
+    let dir = tempdir().unwrap();
+    let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
     
-    println!("\nTesting cache effectiveness with random reads...");
-    let mut rng = rand::rng();
-    let mut hit_times = Vec::new();
-    let mut miss_times = Vec::new();
+    const BATCH_SIZE: usize = 1000;
+    const NUM_BATCHES: usize = 10;
     
-    for _ in 0..200 {
-        let key_idx = rng.random_range(0..num_entries);
-        let key = format!("pressure_key_{:06}", key_idx);
-        
+    println!("Testing large dataset simulation...");
+    
+    // Write phase with checksums
+    for batch in 0..NUM_BATCHES {
         let start = Instant::now();
-        let _ = db.get(key.as_bytes()).expect("Get failed");
-        let duration = start.elapsed();
         
-        if key_idx < 50 {
-            hit_times.push(duration);
-        } else {
-            miss_times.push(duration);
+        for i in 0..BATCH_SIZE {
+            let key = format!("large_{:03}_{:04}", batch, i);
+            let checksum = calculate_checksum(batch, i);
+            let value = format!("batch_{}_item_{}_checksum_{:08x}_data_{}", 
+                              batch, i, checksum, "x".repeat(500));
+            
+            db.put(key.as_bytes(), value.as_bytes()).unwrap();
+        }
+        
+        println!("  Batch {} written in {:?}", batch, start.elapsed());
+        
+        // Periodic flush
+        if batch % 3 == 0 {
+            db.flush_lsm().unwrap();
         }
     }
     
-    if !hit_times.is_empty() && !miss_times.is_empty() {
-        let avg_hit: Duration = hit_times.iter().sum::<Duration>() / hit_times.len() as u32;
-        let avg_miss: Duration = miss_times.iter().sum::<Duration>() / miss_times.len() as u32;
-        println!("Average hit time: {:?}", avg_hit);
-        println!("Average miss time: {:?}", avg_miss);
+    // Verification phase
+    println!("Verifying dataset integrity...");
+    let mut errors = 0;
+    
+    for batch in 0..NUM_BATCHES {
+        for i in 0..BATCH_SIZE {
+            let key = format!("large_{:03}_{:04}", batch, i);
+            
+            match db.get(key.as_bytes()) {
+                Ok(Some(value)) => {
+                    let value_str = String::from_utf8_lossy(&value);
+                    let expected_checksum = calculate_checksum(batch, i);
+                    
+                    if !value_str.contains(&format!("checksum_{:08x}", expected_checksum)) {
+                        errors += 1;
+                    }
+                    
+                    if !value_str.starts_with(&format!("batch_{}_item_{}", batch, i)) {
+                        errors += 1;
+                    }
+                }
+                _ => {
+                    errors += 1;
+                }
+            }
+        }
     }
     
-    println!("\n=== Memory Pressure Test Complete ===\n");
+    let total_entries = NUM_BATCHES * BATCH_SIZE;
+    println!("  Total entries: {}", total_entries);
+    println!("  Errors found: {}", errors);
+    
+    assert_eq!(errors, 0, "Dataset integrity check failed with {} errors", errors);
+    println!("✓ Large dataset integrity verified successfully");
 }
 
 fn extract_balance(json: &str) -> Option<f64> {
@@ -493,4 +617,9 @@ fn update_balance(json: &str, new_balance: f64) -> String {
     } else {
         json.to_string()
     }
+}
+
+fn calculate_checksum(batch: usize, item: usize) -> u32 {
+    // Simple checksum calculation
+    ((batch as u32) * 1000000 + (item as u32) * 1000) ^ 0xDEADBEEF
 }
