@@ -1646,7 +1646,7 @@ impl Database {
 
         // Log successful transaction commit
         log_transaction!("commit", tx_id, start_time.elapsed());
-        tracing::info!(
+        tracing::debug!(
             operation = "commit_transaction",
             tx_id = tx_id,
             duration_ms = start_time.elapsed().as_millis(),
