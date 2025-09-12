@@ -325,7 +325,7 @@ impl TracedSpan {
 
         #[cfg(not(feature = "telemetry"))]
         for (key, value) in context.to_span_attributes() {
-            span.record(key, &tracing::field::display(&value));
+            span.record(key, tracing::field::display(&value));
         }
 
         // Set OpenTelemetry context
@@ -347,15 +347,15 @@ impl TracedSpan {
     }
 
     pub fn add_event(&self, name: &str, attributes: Vec<(&str, &str)>) {
-        self.span.record("event_name", &name);
+        self.span.record("event_name", name);
         for (key, value) in attributes {
-            self.span.record(key, &value);
+            self.span.record(key, value);
         }
     }
 
     pub fn set_error(&self, error: &dyn std::error::Error) {
-        self.span.record("error", &tracing::field::display(error));
-        self.span.record("error.type", &error.to_string());
+        self.span.record("error", tracing::field::display(error));
+        self.span.record("error.type", error.to_string());
     }
 }
 
