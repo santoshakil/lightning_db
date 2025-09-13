@@ -1,4 +1,5 @@
 use crate::core::error::{Error, Result};
+use crate::utils::lock_utils::{LockUtils, StdMutexExt};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -206,7 +207,7 @@ impl ResourceEnforcer {
         }
 
         // Check write throughput
-        let tracker = self.write_throughput_tracker.lock().unwrap();
+        let tracker = LockUtils::std_mutex_with_retry(&self.write_throughput_tracker)?;
         let current_throughput = tracker.current_throughput();
         if current_throughput + bytes > self.limits.max_write_throughput_bytes_per_sec {
             self.record_violation(
@@ -233,7 +234,7 @@ impl ResourceEnforcer {
         }
 
         // Check read throughput
-        let tracker = self.read_throughput_tracker.lock().unwrap();
+        let tracker = LockUtils::std_mutex_with_retry(&self.read_throughput_tracker)?;
         let current_throughput = tracker.current_throughput();
         if current_throughput + bytes > self.limits.max_read_throughput_bytes_per_sec {
             self.record_violation(
@@ -298,19 +299,17 @@ impl ResourceEnforcer {
 
     /// Record a write operation
     pub fn record_write(&self, bytes: u64) {
-        self.write_throughput_tracker
-            .lock()
-            .unwrap()
-            .add_bytes(bytes);
+        if let Ok(mut tracker) = LockUtils::std_mutex_with_retry(&self.write_throughput_tracker) {
+            tracker.add_bytes(bytes);
+        }
         self.current_disk_usage.fetch_add(bytes, Ordering::Relaxed);
     }
 
     /// Record a read operation
     pub fn record_read(&self, bytes: u64) {
-        self.read_throughput_tracker
-            .lock()
-            .unwrap()
-            .add_bytes(bytes);
+        if let Ok(mut tracker) = LockUtils::std_mutex_with_retry(&self.read_throughput_tracker) {
+            tracker.add_bytes(bytes);
+        }
     }
 
     /// Update current memory usage
@@ -343,28 +342,26 @@ impl ResourceEnforcer {
             disk_bytes: self.current_disk_usage.load(Ordering::Relaxed),
             open_files: self.current_open_files.load(Ordering::Relaxed),
             concurrent_operations: self.current_operations.load(Ordering::Relaxed),
-            write_throughput_bytes_per_sec: self
-                .write_throughput_tracker
-                .lock()
-                .unwrap()
-                .current_throughput(),
-            read_throughput_bytes_per_sec: self
-                .read_throughput_tracker
-                .lock()
-                .unwrap()
-                .current_throughput(),
+            write_throughput_bytes_per_sec: LockUtils::std_mutex_with_retry(&self.write_throughput_tracker)
+                .map(|t| t.current_throughput())
+                .unwrap_or(0),
+            read_throughput_bytes_per_sec: LockUtils::std_mutex_with_retry(&self.read_throughput_tracker)
+                .map(|t| t.current_throughput())
+                .unwrap_or(0),
             wal_size_bytes: self.current_wal_size.load(Ordering::Relaxed),
         }
     }
 
     /// Get resource violations
     pub fn get_violations(&self) -> Vec<ResourceViolation> {
-        self.violations.lock().unwrap().clone()
+        LockUtils::std_mutex_with_retry(&self.violations).map(|v| v.clone()).unwrap_or_default()
     }
 
     /// Clear violation history
     pub fn clear_violations(&self) {
-        self.violations.lock().unwrap().clear();
+        if let Ok(mut violations) = LockUtils::std_mutex_with_retry(&self.violations) {
+            violations.clear();
+        }
     }
 
     /// Emergency cleanup when limits are exceeded
@@ -389,7 +386,9 @@ impl ResourceEnforcer {
             action_taken: ActionTaken::Rejected,
         };
 
-        self.violations.lock().unwrap().push(violation);
+        if let Ok(mut violations) = LockUtils::std_mutex_with_retry(&self.violations) {
+            violations.push(violation);
+        }
     }
 }
 

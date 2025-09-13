@@ -1,4 +1,5 @@
 use crate::features::logging::config::{FileRotation, LogFormat, LoggingConfig};
+use crate::utils::lock_utils::{LockUtils, ArcRwLockExt};
 use once_cell::sync::Lazy;
 #[cfg(feature = "telemetry")]
 use opentelemetry::global;
@@ -10,7 +11,8 @@ use opentelemetry_sdk::{
     Resource,
 };
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::RwLock;
 use tracing::Level;
 use tracing_appender::{non_blocking, rolling};
 #[cfg(feature = "telemetry")]
@@ -22,7 +24,7 @@ use tracing_subscriber::{
     EnvFilter, Registry,
 };
 
-static LOGGER_INITIALIZED: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+static LOGGER_INITIALIZED: Lazy<Arc<RwLock<bool>>> = Lazy::new(|| Arc::new(RwLock::new(false)));
 
 pub struct Logger {
     config: LoggingConfig,
@@ -47,7 +49,7 @@ impl Logger {
     }
 
     pub fn init_global(config: LoggingConfig) -> Result<(), Box<dyn std::error::Error>> {
-        let mut initialized = LOGGER_INITIALIZED.lock().unwrap();
+        let mut initialized = LockUtils::arc_write_with_retry(&*LOGGER_INITIALIZED)?;
         if *initialized {
             return Ok(());
         }

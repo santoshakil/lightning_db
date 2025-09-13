@@ -1,7 +1,7 @@
 use crate::core::error::{Error, Result};
 use crate::utils::retry::{RetryPolicy, RetryableOperations};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 /// Lock acquisition utilities with retry logic
@@ -81,6 +81,15 @@ impl LockUtils {
                 .ok_or_else(|| Error::Timeout("Failed to acquire write lock".to_string()))
         })
     }
+
+    /// Try to acquire a std::sync::Mutex with retry on contention
+    pub fn std_mutex_with_retry<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
+        RetryableOperations::lock_operation(|| {
+            mutex.try_lock().map_err(|_| Error::LockFailed {
+                resource: "std mutex".to_string(),
+            })
+        })
+    }
 }
 
 /// Extension trait for RwLock to add retry methods
@@ -122,6 +131,17 @@ impl<T> ArcRwLockExt<T> for Arc<RwLock<T>> {
 
     fn write_retry(&self) -> Result<RwLockWriteGuard<'_, T>> {
         LockUtils::arc_write_with_retry(self)
+    }
+}
+
+/// Extension trait for std::sync::Mutex to add retry methods
+pub trait StdMutexExt<T> {
+    fn lock_retry(&self) -> Result<MutexGuard<'_, T>>;
+}
+
+impl<T> StdMutexExt<T> for Mutex<T> {
+    fn lock_retry(&self) -> Result<MutexGuard<'_, T>> {
+        LockUtils::std_mutex_with_retry(self)
     }
 }
 
