@@ -3,7 +3,7 @@ use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Error, Debug, Clone, Serialize)]
+#[derive(Error, Debug, Serialize)]
 pub enum Error {
     #[error("IO error: {0}")]
     Io(String),
@@ -338,6 +338,21 @@ pub enum Error {
 
     #[error("WAL corruption at offset {offset}: {reason}")]
     WalCorruption { offset: u64, reason: String },
+
+    #[error("Deserialization error: {0}")]
+    DeserializationError(String),
+
+    #[error("Corrupted data: {0}")]
+    CorruptedData(String),
+
+    #[error("IO error: {operation} on {path}: {source}")]
+    IOError {
+        path: std::path::PathBuf,
+        operation: String,
+        #[serde(skip)]
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 impl From<std::io::Error> for Error {
@@ -377,6 +392,24 @@ impl From<bincode::error::DecodeError> for Error {
 impl From<bincode::error::EncodeError> for Error {
     fn from(err: bincode::error::EncodeError) -> Self {
         Error::Serialization(err.to_string())
+    }
+}
+
+impl Clone for Error {
+    fn clone(&self) -> Self {
+        match self {
+            Error::IOError { path, operation, source } => {
+                Error::IOError {
+                    path: path.clone(),
+                    operation: operation.clone(),
+                    source: std::io::Error::new(source.kind(), source.to_string()),
+                }
+            }
+            _ => {
+                // For all other variants, use a generic representation
+                Error::Generic(self.to_string())
+            }
+        }
     }
 }
 

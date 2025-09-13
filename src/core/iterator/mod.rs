@@ -1,3 +1,5 @@
+pub mod base;
+
 use crate::core::btree::BPlusTree;
 use crate::core::error::Result;
 use crate::core::lsm::LSMTree;

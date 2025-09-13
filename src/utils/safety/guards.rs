@@ -1,4 +1,5 @@
 use crate::core::error::{Error, Result};
+use crate::utils::lock_utils::{LockUtils, StdMutexExt};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -266,7 +267,7 @@ impl CircuitBreaker {
     }
 
     pub fn check(&self) -> Result<()> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = LockUtils::std_mutex_with_retry(&self.state)?;
 
         match &*state {
             CircuitState::Open { opened_at } => {
@@ -298,7 +299,9 @@ impl CircuitBreaker {
     }
 
     fn record_success(&self) {
-        let mut state = self.state.lock().unwrap();
+        let Ok(mut state) = LockUtils::std_mutex_with_retry(&self.state) else {
+            return;
+        };
 
         match &mut *state {
             CircuitState::HalfOpen {
@@ -324,7 +327,9 @@ impl CircuitBreaker {
     }
 
     fn record_failure(&self) {
-        let mut state = self.state.lock().unwrap();
+        let Ok(mut state) = LockUtils::std_mutex_with_retry(&self.state) else {
+            return;
+        };
 
         match &mut *state {
             CircuitState::Closed { failure_count } => {
@@ -389,7 +394,9 @@ impl RateLimiter {
     }
 
     fn refill(&self) {
-        let mut last_refill = self.last_refill.lock().unwrap();
+        let Ok(mut last_refill) = LockUtils::std_mutex_with_retry(&self.last_refill) else {
+            return;
+        };
         let now = Instant::now();
         let elapsed = now - *last_refill;
 
@@ -416,7 +423,7 @@ impl BackupGuard {
 
     pub fn start_backup(&self) -> Result<BackupHandle<'_>> {
         // Acquire backup lock
-        let _lock = self.backup_lock.lock().unwrap();
+        let _lock = LockUtils::std_mutex_with_retry(&self.backup_lock)?;
 
         // Check if backup already in progress
         if self.backup_in_progress.load(Ordering::Relaxed) {
@@ -426,7 +433,7 @@ impl BackupGuard {
         }
 
         // Check minimum interval
-        if let Some(last) = *self.last_backup.lock().unwrap() {
+        if let Some(last) = *LockUtils::std_mutex_with_retry(&self.last_backup)? {
             let elapsed = SystemTime::now().duration_since(last).unwrap_or_default();
             if elapsed < self.min_backup_interval {
                 return Err(Error::InvalidOperation {
@@ -454,7 +461,9 @@ impl<'a> Drop for BackupHandle<'a> {
         self.guard
             .backup_in_progress
             .store(false, Ordering::Relaxed);
-        *self.guard.last_backup.lock().unwrap() = Some(SystemTime::now());
+        if let Ok(mut last_backup) = LockUtils::std_mutex_with_retry(&self.guard.last_backup) {
+            *last_backup = Some(SystemTime::now());
+        }
     }
 }
 
@@ -477,7 +486,7 @@ impl RetentionGuard {
 
         // Check if key is protected
         let key_str = String::from_utf8_lossy(key);
-        let protected = self.protected_keys.lock().unwrap();
+        let protected = LockUtils::std_mutex_with_retry(&self.protected_keys)?;
         for pattern in protected.iter() {
             if key_str.contains(pattern) {
                 return Err(Error::InvalidOperation {
@@ -490,7 +499,9 @@ impl RetentionGuard {
     }
 
     pub fn protect_key_pattern(&self, pattern: String) {
-        self.protected_keys.lock().unwrap().push(pattern);
+        if let Ok(mut protected) = LockUtils::std_mutex_with_retry(&self.protected_keys) {
+            protected.push(pattern);
+        }
     }
 
     pub fn enable_deletion_confirmation(&self) {
