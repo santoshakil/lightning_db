@@ -194,7 +194,7 @@ impl VisibilityEngine {
         let transactions = self.transactions.read();
         let tx_info = transactions
             .get(&tx_id)
-            .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
+            .ok_or(Error::TransactionNotFound { id: tx_id })?;
 
         let versions = self.versions.read();
         let version_map = versions.get(key);
@@ -212,7 +212,7 @@ impl VisibilityEngine {
         let transactions = self.transactions.read();
         let tx_info = transactions
             .get(&tx_id)
-            .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
+            .ok_or(Error::TransactionNotFound { id: tx_id })?;
 
         let versions = self.versions.read();
         if let Some(version_map) = versions.get(key) {
@@ -237,7 +237,7 @@ impl VisibilityEngine {
         let transactions = self.transactions.read();
         let tx_info = transactions
             .get(&tx_id)
-            .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
+            .ok_or(Error::TransactionNotFound { id: tx_id })?;
 
         let versions = self.versions.read();
         let mut result = Vec::new();
@@ -272,7 +272,7 @@ impl VisibilityEngine {
         let transactions = self.transactions.read();
         let tx_info = transactions
             .get(&tx_id)
-            .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
+            .ok_or(Error::TransactionNotFound { id: tx_id })?;
 
         let versions = self.versions.read();
         if let Some(version_map) = versions.get(key) {
@@ -301,7 +301,7 @@ impl VisibilityEngine {
         let transactions = self.transactions.read();
         let tx_info = transactions
             .get(&tx_id)
-            .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
+            .ok_or(Error::TransactionNotFound { id: tx_id })?;
 
         // Only check for serializable isolation
         if tx_info.isolation_level != IsolationLevel::Serializable {

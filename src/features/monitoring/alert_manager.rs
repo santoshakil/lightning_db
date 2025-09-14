@@ -922,12 +922,12 @@ pub struct AlertStats {
     pub most_frequent_alert: Option<String>,
 }
 
-impl ToString for AlertSeverity {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for AlertSeverity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AlertSeverity::Info => "info".to_string(),
-            AlertSeverity::Warning => "warning".to_string(),
-            AlertSeverity::Critical => "critical".to_string(),
+            AlertSeverity::Info => write!(f, "info"),
+            AlertSeverity::Warning => write!(f, "warning"),
+            AlertSeverity::Critical => write!(f, "critical"),
         }
     }
 }
