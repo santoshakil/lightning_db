@@ -326,7 +326,7 @@ mod tests {
         ];
 
         for item in &items {
-            batch.add(item.clone());
+            batch.add(item);
         }
 
         let serialized = batch.serialize_batch().unwrap();

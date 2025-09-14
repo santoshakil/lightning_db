@@ -499,7 +499,7 @@ mod tests {
         
         // Test batch processing
         let processed = ops.process_batches().unwrap();
-        assert!(processed >= 0);
+        assert!(processed > 0);
         
         // Test statistics
         let stats = ops.get_performance_stats();
@@ -522,7 +522,7 @@ mod tests {
         let ll_stats = low_latency.get_performance_stats();
         
         // Both should show operation counts
-        assert!(ht_stats.critical_path_stats.simd_operations >= 0 || ht_stats.transaction_batcher_stats.batches_processed > 0);
-        assert!(ll_stats.critical_path_stats.simd_operations >= 0 || ll_stats.transaction_batcher_stats.batches_processed > 0);
+        assert!(ht_stats.critical_path_stats.simd_operations > 0 || ht_stats.transaction_batcher_stats.batches_processed > 0);
+        assert!(ll_stats.critical_path_stats.simd_operations > 0 || ll_stats.transaction_batcher_stats.batches_processed > 0);
     }
 }
