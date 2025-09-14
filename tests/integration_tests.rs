@@ -319,37 +319,53 @@ fn test_database_full_lifecycle() {
     // Phase 2: Reopen and modify
     {
         let db = Database::open(&db_path, LightningDbConfig::default()).unwrap();
-        
+
         // Delete half the data
         for i in 0..500 {
             let key = format!("key_{:04}", i);
             db.delete(key.as_bytes()).unwrap();
         }
-        
+
         // Verify deletions
         for i in 0..500 {
             let key = format!("key_{:04}", i);
             assert!(db.get(key.as_bytes()).unwrap().is_none());
         }
-        
+
         // Verify remaining data
         for i in 500..1000 {
             let key = format!("key_{:04}", i);
             assert!(db.get(key.as_bytes()).unwrap().is_some());
         }
+
+        // Explicitly sync before closing
+        db.sync().unwrap();
     }
     
     // Phase 3: Final verification
     {
         let db = Database::open(&db_path, LightningDbConfig::default()).unwrap();
-        
+
         let mut count = 0;
+        let mut deleted_found = 0;
         let iter = db.scan(None, None).unwrap();
         for result in iter {
-            if result.is_ok() {
+            if let Ok((key, _value)) = result {
                 count += 1;
+                // Check if this is a key that should have been deleted
+                let key_str = String::from_utf8_lossy(&key);
+                if let Some(num_str) = key_str.strip_prefix("key_") {
+                    if let Ok(num) = num_str.parse::<usize>() {
+                        if num < 500 {
+                            deleted_found += 1;
+                            println!("Found deleted key: {}", key_str);
+                        }
+                    }
+                }
             }
         }
+        println!("Total count: {}, deleted keys found: {}", count, deleted_found);
+        assert_eq!(deleted_found, 0, "Found {} keys that should have been deleted", deleted_found);
         assert_eq!(count, 500);
     }
 }
@@ -363,11 +379,11 @@ fn test_iterator_consistency() {
     let mut expected = Vec::new();
     for i in 0..100 {
         let key = format!("iter_{:03}", i);
-        let value = format!("value_{}", i);
+        let value = format!("value_{:03}", i);  // Use consistent formatting
         db.put(key.as_bytes(), value.as_bytes()).unwrap();
         expected.push((key, value));
     }
-    
+
     // Full scan
     let iter = db.scan(None, None).unwrap();
     let mut count = 0;

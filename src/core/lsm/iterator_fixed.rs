@@ -197,11 +197,17 @@ impl LSMFullIteratorFixed {
     fn collect_memtable_entries(&self, memtable: &MemTable) -> Vec<(Vec<u8>, Vec<u8>)> {
         let mut entries: Vec<_> = memtable
             .entries()
-            .filter(|(k, v)| {
-                // Filter out tombstones and check range
-                v.is_some() && self.is_in_range(k)
+            .filter(|(k, _v)| {
+                // Check range only, don't filter tombstones
+                self.is_in_range(k)
             })
-            .map(|(k, v)| (k.clone(), v.unwrap().clone()))
+            .map(|(k, v)| {
+                // Include tombstones - use the tombstone marker if value is None
+                let value = v.as_ref()
+                    .map(|val| val.clone())
+                    .unwrap_or_else(|| LSMTree::TOMBSTONE_MARKER.to_vec());
+                (k.clone(), value)
+            })
             .collect();
 
         // Sort based on direction
@@ -267,17 +273,13 @@ impl LSMFullIteratorFixed {
 
     pub fn advance(&mut self) -> Option<(Vec<u8>, Option<Vec<u8>>, u64)> {
         while let Some(Reverse(entry)) = self.merge_heap.pop() {
-            // Check if this is a tombstone
-            if LSMTree::is_tombstone(&entry.value) {
-                // Skip tombstones but continue to next entry
-                self.refill_from_source(entry.source_type);
-                continue;
-            }
+            let is_tombstone = LSMTree::is_tombstone(&entry.value);
 
             // Refill from the source that provided this entry
             self.refill_from_source(entry.source_type);
 
             // Skip duplicate keys (keep the first one we see, which is the newest)
+            // This handles both tombstones and regular values correctly
             while let Some(Reverse(next_entry)) = self.merge_heap.peek() {
                 if next_entry.key == entry.key {
                     let Reverse(dup_entry) = self.merge_heap.pop().unwrap();
@@ -287,7 +289,12 @@ impl LSMFullIteratorFixed {
                 }
             }
 
-            return Some((entry.key, Some(entry.value), 0)); // timestamp 0 for now
+            // If the newest entry for this key is a tombstone, skip it
+            // Otherwise return the value
+            if !is_tombstone {
+                return Some((entry.key, Some(entry.value), 0)); // timestamp 0 for now
+            }
+            // If it was a tombstone, continue to the next key
         }
 
         None
