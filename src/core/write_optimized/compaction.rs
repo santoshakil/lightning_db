@@ -94,12 +94,13 @@ impl CompactionJob {
     /// Execute leveled compaction
     fn execute_leveled_compaction(&self) -> Result<Vec<SSTableMetadata>> {
         if self.input_sstables.is_empty() {
-            return Ok(Vec::new());
+            return Ok(Vec::with_capacity(0));
         }
 
         // Merge SSTables in sorted order
         let mut merger = SSTableMerger::new(&self.input_sstables)?;
-        let mut output_sstables = Vec::new();
+        let estimated_outputs = (self.input_sstables.len() + 1) / 2;
+        let mut output_sstables = Vec::with_capacity(estimated_outputs);
         let mut current_builder: Option<SSTableBuilder> = None;
         let mut output_file_count = 0;
 
@@ -156,7 +157,7 @@ impl CompactionJob {
                 .push(Arc::clone(sstable));
         }
 
-        let mut output_sstables = Vec::new();
+        let mut output_sstables = Vec::with_capacity(size_groups.len() * 2);
 
         // Compact each size tier separately
         for (tier, sstables) in size_groups {
@@ -212,7 +213,7 @@ struct SSTableMerger {
 impl SSTableMerger {
     /// Create a new merger
     fn new(sstables: &[Arc<SSTableReader>]) -> Result<Self> {
-        let mut iterators = Vec::new();
+        let mut iterators = Vec::with_capacity(sstables.len());
 
         for sstable in sstables {
             let wrapper = SSTableIteratorWrapper::new(Arc::clone(sstable))?;
