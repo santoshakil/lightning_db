@@ -13,6 +13,6 @@ pub use join_optimizer::JoinOptimizer;
 pub use optimizer::{OptimizationRule, QueryOptimizer};
 pub use planner::{
     CostEstimate, ExecutionPlan, ExecutionStep, JoinStrategy, JoinType, OrderByClause, PlanNode,
-    QueryCondition, QueryCost, QueryJoin, QueryPlan, QueryPlanner, QuerySpec,
+    QueryCondition, QueryCost, QueryJoin, QueryPlan, QueryPlanner, QuerySpec, ScanNode,
 };
 pub use statistics::{ColumnStatistics, StatisticsCollector, TableStatistics};

@@ -388,10 +388,10 @@ impl TransactionCoordinator {
         #[async_trait::async_trait]
         impl crate::core::storage::PageManagerAsync for MockPageManager {
             async fn load_page(&self, _page_id: u64) -> Result<crate::core::storage::Page, Error> {
-                unimplemented!("Mock implementation")
+                Err(Error::NotImplemented("Mock page manager - not implemented".to_string()))
             }
             async fn save_page(&self, _page: &crate::core::storage::Page) -> Result<(), Error> {
-                unimplemented!("Mock implementation")
+                Err(Error::NotImplemented("Mock page manager - not implemented".to_string()))
             }
             async fn is_page_allocated(&self, _page_id: u64) -> Result<bool, Error> {
                 Ok(false)
