@@ -190,7 +190,7 @@ impl IntegrityManager {
 
         let report = self
             .report_generator
-            .generate_report(&scan_result, &*stats)
+            .generate_report(&scan_result, &stats)
             .await?;
 
         if scan_result.has_corruption() {
@@ -250,7 +250,7 @@ impl IntegrityManager {
         let quarantine_stats = self.quarantine.get_stats().await?;
 
         self.report_generator
-            .generate_status_report(&*stats, &quarantine_stats)
+            .generate_status_report(&stats, &quarantine_stats)
             .await
     }
 

@@ -284,14 +284,13 @@ where
     ) -> Option<V> {
         // Search in main bucket entries
         for entry in &bucket.entries {
-            if entry.hash == hash && entry.key == *key {
-                if entry.deleted.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_ok() {
-                    let value_ptr = entry.value.load(Ordering::Acquire, guard);
-                    if !value_ptr.is_null() {
-                        let value = unsafe { value_ptr.deref().clone() };
-                        unsafe { guard.defer_destroy(value_ptr) };
-                        return Some(value);
-                    }
+            if entry.hash == hash && entry.key == *key
+                && entry.deleted.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+                let value_ptr = entry.value.load(Ordering::Acquire, guard);
+                if !value_ptr.is_null() {
+                    let value = unsafe { value_ptr.deref().clone() };
+                    unsafe { guard.defer_destroy(value_ptr) };
+                    return Some(value);
                 }
             }
         }

@@ -342,11 +342,13 @@ impl AlertManager {
         let alerts = self.alerts.read().await;
         let counters = self.counters.read().await;
 
-        let mut summary = AlertSummary::default();
-        summary.total_alerts = alerts.len();
-        summary.checksum_errors = counters.checksum_errors;
-        summary.structure_errors = counters.structure_errors;
-        summary.recovery_failures = counters.recovery_failures;
+        let mut summary = AlertSummary {
+            total_alerts: alerts.len(),
+            checksum_errors: counters.checksum_errors,
+            structure_errors: counters.structure_errors,
+            recovery_failures: counters.recovery_failures,
+            ..Default::default()
+        };
 
         for alert in alerts.values() {
             match alert.severity {

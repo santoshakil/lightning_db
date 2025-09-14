@@ -362,8 +362,10 @@ impl ResourceTracker {
         let collection_start = Instant::now();
         debug!("Starting resource tracking cycle");
 
-        let mut usage = ResourceUsage::default();
-        usage.timestamp = SystemTime::now();
+        let mut usage = ResourceUsage {
+            timestamp: SystemTime::now(),
+            ..Default::default()
+        };
 
         // Collect system resources
         if self.config.enable_system_monitoring {

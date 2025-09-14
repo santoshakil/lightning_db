@@ -223,11 +223,9 @@ mod tests {
                                 // Increment
                                 let new_value = (current + 1).to_string();
 
-                                if mgr.put(tx_id, key, new_value.as_bytes()).is_ok() {
-                                    if mgr.commit_sync(tx_id).is_ok() {
-                                        counter.fetch_add(1, Ordering::Relaxed);
-                                        break;
-                                    }
+                                if mgr.put(tx_id, key, new_value.as_bytes()).is_ok() && mgr.commit_sync(tx_id).is_ok() {
+                                    counter.fetch_add(1, Ordering::Relaxed);
+                                    break;
                                 }
                                 let _ = mgr.abort(tx_id);
                             }

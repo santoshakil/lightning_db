@@ -77,10 +77,7 @@ impl LockMode {
 
     /// Check if this lock mode provides write access
     pub fn provides_write_access(self) -> bool {
-        match self {
-            LockMode::Exclusive | LockMode::SharedIntentionExclusive | LockMode::Update => true,
-            _ => false,
-        }
+        matches!(self, LockMode::Exclusive | LockMode::SharedIntentionExclusive | LockMode::Update)
     }
 }
 

@@ -162,7 +162,7 @@ impl OptimizedDatabaseOps {
         
         // Get cached transaction state
         let cached_state = ThreadLocalStorage::get_transaction(tx_id)
-            .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
+            .ok_or(Error::TransactionNotFound { id: tx_id })?;
 
         // Create batched transaction for high-throughput processing
         let batched_tx = BatchedTransaction {

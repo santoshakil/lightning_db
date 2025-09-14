@@ -37,43 +37,27 @@ impl fmt::Display for IsolationLevel {
 impl IsolationLevel {
     /// Check if this isolation level prevents dirty reads
     pub fn prevents_dirty_reads(self) -> bool {
-        match self {
-            IsolationLevel::ReadUncommitted => false,
-            _ => true,
-        }
+        !matches!(self, IsolationLevel::ReadUncommitted)
     }
 
     /// Check if this isolation level prevents non-repeatable reads
     pub fn prevents_non_repeatable_reads(self) -> bool {
-        match self {
-            IsolationLevel::ReadUncommitted | IsolationLevel::ReadCommitted => false,
-            _ => true,
-        }
+        !matches!(self, IsolationLevel::ReadUncommitted | IsolationLevel::ReadCommitted)
     }
 
     /// Check if this isolation level prevents phantom reads
     pub fn prevents_phantom_reads(self) -> bool {
-        match self {
-            IsolationLevel::Serializable => true,
-            _ => false,
-        }
+        matches!(self, IsolationLevel::Serializable)
     }
 
     /// Check if this isolation level uses snapshot isolation
     pub fn uses_snapshot_isolation(self) -> bool {
-        match self {
-            IsolationLevel::Snapshot => true,
-            IsolationLevel::RepeatableRead | IsolationLevel::Serializable => true,
-            _ => false,
-        }
+        matches!(self, IsolationLevel::Snapshot | IsolationLevel::RepeatableRead | IsolationLevel::Serializable)
     }
 
     /// Check if this isolation level requires predicate locking
     pub fn requires_predicate_locking(self) -> bool {
-        match self {
-            IsolationLevel::Serializable => true,
-            _ => false,
-        }
+        matches!(self, IsolationLevel::Serializable)
     }
 
     /// Get required lock types for this isolation level
