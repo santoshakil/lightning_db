@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::{Database, Result, RangeIterator, JoinQuery, JoinResult, TransactionIterator};
-use crate::core::index::{MultiIndexQuery, IndexQuery};
+use crate::core::index::MultiIndexQuery;
 use std::collections::HashMap;
 use crate::core::query_planner::{QueryPlan, QuerySpec, ExecutionPlan};
 

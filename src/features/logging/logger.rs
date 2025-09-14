@@ -1,5 +1,5 @@
 use crate::features::logging::config::{FileRotation, LogFormat, LoggingConfig};
-use crate::utils::lock_utils::{LockUtils, ArcRwLockExt};
+use crate::utils::lock_utils::LockUtils;
 use once_cell::sync::Lazy;
 #[cfg(feature = "telemetry")]
 use opentelemetry::global;

@@ -1,5 +1,5 @@
 use crate::core::error::{Error, Result};
-use crate::utils::lock_utils::{LockUtils, StdMutexExt};
+use crate::utils::lock_utils::LockUtils;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

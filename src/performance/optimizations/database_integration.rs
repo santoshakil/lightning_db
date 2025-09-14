@@ -21,10 +21,9 @@ use crate::performance::optimizations::simd;
 use crate::performance::thread_local::optimized_storage::{
     CachedTransactionState, CachedPage, IsolationLevel,
 };
-use crate::core::transaction::unified_manager::{UnifiedTransaction, WriteOp};
 use bytes::Bytes;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Optimized database operations wrapper
 pub struct OptimizedDatabaseOps {
@@ -275,7 +274,7 @@ impl OptimizedDatabaseOps {
     fn check_thread_local_cache(&self, key: &[u8]) -> Option<Bytes> {
         // Convert key to page ID and check thread-local cache
         let page_id = self.key_to_page_id(key);
-        if let Some(cached_page) = ThreadLocalStorage::get_cached_page(page_id) {
+        if let Some(_cached_page) = ThreadLocalStorage::get_cached_page(page_id) {
             // In real implementation, would search within page data
             if key.len() <= 32 {
                 return Some(Bytes::from(format!("cached_value_{:?}", key)));

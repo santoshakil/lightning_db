@@ -483,6 +483,8 @@ pub struct FileOpStats {
     pub bytes_written: u64,
     pub errors: u64,
     pub retries: u64,
+    pub total_read_time: Duration,
+    pub total_write_time: Duration,
 }
 
 /// File operations with statistics tracking
@@ -510,12 +512,13 @@ impl StatisticsFileOps {
     /// Read with statistics tracking
     pub fn read<P: AsRef<Path>>(&self, path: P) -> Result<Vec<u8>> {
         let start = Instant::now();
-        
+
         match FileOps::read_to_vec(path) {
             Ok(data) => {
                 let mut stats = self.stats.lock().unwrap();
                 stats.reads += 1;
                 stats.bytes_read += data.len() as u64;
+                stats.total_read_time += start.elapsed();
                 Ok(data)
             }
             Err(e) => {
@@ -529,13 +532,14 @@ impl StatisticsFileOps {
     /// Write with statistics tracking
     pub fn write<P: AsRef<Path>>(&self, path: P, data: &[u8]) -> Result<()> {
         let start = Instant::now();
-        
+
         let configurable = ConfigurableFileOps::new(self.config.clone());
         match configurable.write(path, data) {
             Ok(()) => {
                 let mut stats = self.stats.lock().unwrap();
                 stats.writes += 1;
                 stats.bytes_written += data.len() as u64;
+                stats.total_write_time += start.elapsed();
                 Ok(())
             }
             Err(e) => {
