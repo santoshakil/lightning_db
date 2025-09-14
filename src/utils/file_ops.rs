@@ -554,7 +554,6 @@ impl StatisticsFileOps {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use tempfile::TempDir;
 
     #[test]
@@ -616,7 +615,7 @@ mod tests {
         let test_data = b"Statistics test data";
         
         stats_ops.write(&file_path, test_data).unwrap();
-        let read_data = stats_ops.read(&file_path).unwrap();
+        let _read_data = stats_ops.read(&file_path).unwrap();
         
         let stats = stats_ops.get_stats();
         assert_eq!(stats.reads, 1);
