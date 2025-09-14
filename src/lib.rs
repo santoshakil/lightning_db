@@ -1190,11 +1190,7 @@ impl Database {
 
             // CRITICAL: Update version store for regular puts to maintain consistency
             // This ensures transactions can see regular puts
-            let timestamp = if let Some(opt_manager) = Some(&self.transaction_manager) {
-                opt_manager.get_read_timestamp() + 1
-            } else {
-                self.transaction_manager.get_read_timestamp() + 1
-            };
+            let timestamp = self.transaction_manager.get_read_timestamp() + 1;
             self.version_store
                 .put(key.to_vec(), Some(value.to_vec()), timestamp, 0);
 
@@ -1416,11 +1412,7 @@ impl Database {
             quota_manager.check_connection_allowed(None)?; // Treat transaction as a connection for quota purposes
         }
 
-        if let Some(opt_manager) = Some(&self.transaction_manager) {
-            opt_manager.begin()
-        } else {
-            self.transaction_manager.begin()
-        }
+        self.transaction_manager.begin()
     }
 
     pub fn commit_transaction(&self, tx_id: u64) -> Result<()> {
@@ -1438,11 +1430,7 @@ impl Database {
 
         // Get the transaction and write set before committing
         let write_set = {
-            let tx_arc = if let Some(opt_manager) = Some(&self.transaction_manager) {
-                opt_manager.get_transaction(tx_id)?
-            } else {
-                self.transaction_manager.get_transaction(tx_id)?
-            };
+            let tx_arc = self.transaction_manager.get_transaction(tx_id)?;
 
             let tx = tx_arc.read();
             tx.write_set.clone()
@@ -1483,11 +1471,7 @@ impl Database {
 
         // CRITICAL: First commit to version store to ensure transaction is recorded
         // This must happen BEFORE writing to LSM to prevent lost updates
-        if let Some(opt_manager) = Some(&self.transaction_manager) {
-            opt_manager.commit_sync(tx_id)?;
-        } else {
-            self.transaction_manager.commit(tx_id)?;
-        }
+        self.transaction_manager.commit_sync(tx_id)?;
 
         // Now write all changes to the appropriate storage backend
         // This happens AFTER version store commit to ensure consistency
@@ -1554,11 +1538,7 @@ impl Database {
     }
 
     pub fn abort_transaction(&self, tx_id: u64) -> Result<()> {
-        if let Some(opt_manager) = Some(&self.transaction_manager) {
-            opt_manager.abort(tx_id)
-        } else {
-            self.transaction_manager.abort(tx_id)
-        }
+        self.transaction_manager.abort(tx_id)
     }
 
     pub fn put_tx(&self, tx_id: u64, key: &[u8], value: &[u8]) -> Result<()> {
@@ -1771,9 +1751,7 @@ impl Database {
             prefetch_manager.stop();
         }
 
-        if let Some(opt_manager) = Some(&self.transaction_manager) {
-            (*opt_manager).stop();
-        }
+        self.transaction_manager.stop();
 
         // Perform final checkpoint to ensure all data is persisted
         self.checkpoint()?;
