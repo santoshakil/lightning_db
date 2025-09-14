@@ -11,6 +11,7 @@ use super::{
 };
 use crate::{Error, Result};
 use crossbeam_channel::{unbounded, Receiver, Sender};
+use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -73,8 +74,8 @@ pub struct WriteOptimizedEngine {
     compaction_manager: Arc<Mutex<CompactionManager>>,
     /// Tiered storage manager
     tiered_storage: Arc<TieredStorageManager>,
-    /// SSTables by level
-    sstables_by_level: Arc<RwLock<HashMap<usize, Vec<Arc<SSTableReader>>>>>,
+    /// SSTables by level (lock-free for better performance)
+    sstables_by_level: Arc<DashMap<usize, Vec<Arc<SSTableReader>>>>,
     /// Sequence number generator
     sequence_generator: Arc<AtomicU64>,
     /// Statistics
@@ -149,7 +150,7 @@ impl WriteOptimizedEngine {
             // wal, // WAL integration pending unified WriteAheadLog implementation
             compaction_manager,
             tiered_storage,
-            sstables_by_level: Arc::new(RwLock::new(HashMap::new())),
+            sstables_by_level: Arc::new(DashMap::new()),
             sequence_generator: Arc::new(AtomicU64::new(1)),
             stats: Arc::new(RwLock::new(WriteEngineStats::default())),
             workers: Vec::new(),
@@ -311,9 +312,9 @@ impl WriteOptimizedEngine {
         }
 
         // Check SSTables from newest to oldest
-        let sstables = self.sstables_by_level.read();
         for level in 0..self.config.base.max_levels {
-            if let Some(level_sstables) = sstables.get(&level) {
+            if let Some(entry) = self.sstables_by_level.get(&level) {
+                let level_sstables = entry.value();
                 for sstable in level_sstables.iter().rev() {
                     // Check bloom filter first
                     if !sstable.may_contain(key) {
@@ -436,13 +437,10 @@ impl WriteOptimizedEngine {
         let sstable_reader = Arc::new(SSTableReader::open(&sstable_path)?);
 
         // Add to level 0
-        {
-            let mut sstables = self.sstables_by_level.write();
-            sstables
-                .entry(0)
-                .or_default()
-                .push(Arc::clone(&sstable_reader));
-        }
+        self.sstables_by_level
+            .entry(0)
+            .or_insert_with(Vec::new)
+            .push(Arc::clone(&sstable_reader));
 
         // Add to tiered storage
         self.tiered_storage

@@ -1,6 +1,7 @@
 use crate::core::error::{Error, Result};
+use dashmap::{DashMap, DashSet};
 use parking_lot::{RwLock, Mutex};
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque, HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -85,14 +86,14 @@ pub struct TransactionSnapshot {
     pub xmin: TransactionId,
     pub xmax: TransactionId,
     pub active_transactions: HashSet<TransactionId>,
-    pub committed_transactions: Arc<RwLock<HashSet<TransactionId>>>,
+    pub committed_transactions: Arc<DashSet<TransactionId>>,
 }
 
 impl TransactionSnapshot {
     pub fn new(
         transaction_id: TransactionId,
         active_transactions: HashSet<TransactionId>,
-        committed_transactions: Arc<RwLock<HashSet<TransactionId>>>,
+        committed_transactions: Arc<DashSet<TransactionId>>,
     ) -> Self {
         let xmin = active_transactions.iter().min().copied().unwrap_or(transaction_id);
         let xmax = active_transactions.iter().max().copied().unwrap_or(transaction_id);
@@ -117,11 +118,11 @@ impl TransactionSnapshot {
         }
         
         if other_txn_id < self.xmin {
-            return self.committed_transactions.read().contains(&other_txn_id);
+            return self.committed_transactions.contains(&other_txn_id);
         }
-        
+
         !self.active_transactions.contains(&other_txn_id) &&
-        self.committed_transactions.read().contains(&other_txn_id)
+        self.committed_transactions.contains(&other_txn_id)
     }
 }
 
@@ -281,10 +282,10 @@ impl MVCCEngine {
 
 pub struct TransactionManager {
     next_txn_id: AtomicU64,
-    active_transactions: Arc<RwLock<HashMap<TransactionId, TransactionState>>>,
-    committed_transactions: Arc<RwLock<HashSet<TransactionId>>>,
-    aborted_transactions: Arc<RwLock<HashSet<TransactionId>>>,
-    commit_timestamps: Arc<RwLock<BTreeMap<TransactionId, Timestamp>>>,
+    active_transactions: Arc<DashMap<TransactionId, TransactionState>>,
+    committed_transactions: Arc<DashSet<TransactionId>>,
+    aborted_transactions: Arc<DashSet<TransactionId>>,
+    commit_timestamps: Arc<DashMap<TransactionId, Timestamp>>,
 }
 
 #[derive(Debug, Clone)]
@@ -309,10 +310,10 @@ impl TransactionManager {
     pub fn new() -> Self {
         Self {
             next_txn_id: AtomicU64::new(1),
-            active_transactions: Arc::new(RwLock::new(HashMap::new())),
-            committed_transactions: Arc::new(RwLock::new(HashSet::new())),
-            aborted_transactions: Arc::new(RwLock::new(HashSet::new())),
-            commit_timestamps: Arc::new(RwLock::new(BTreeMap::new())),
+            active_transactions: Arc::new(DashMap::new()),
+            committed_transactions: Arc::new(DashSet::new()),
+            aborted_transactions: Arc::new(DashSet::new()),
+            commit_timestamps: Arc::new(DashMap::new()),
         }
     }
     
@@ -320,9 +321,8 @@ impl TransactionManager {
         let txn_id = self.next_txn_id.fetch_add(1, Ordering::SeqCst);
         
         let active_txns: HashSet<TransactionId> = self.active_transactions
-            .read()
-            .keys()
-            .copied()
+            .iter()
+            .map(|entry| *entry.key())
             .collect();
         
         let snapshot = TransactionSnapshot::new(
@@ -340,7 +340,7 @@ impl TransactionManager {
             write_set: HashMap::new(),
         };
         
-        self.active_transactions.write().insert(txn_id, state);
+        self.active_transactions.insert(txn_id, state);
         
         Ok(Transaction {
             id: txn_id,
@@ -353,27 +353,18 @@ impl TransactionManager {
     }
     
     pub fn commit(&self, mut txn: Transaction) -> Result<()> {
-        {
-            let mut active = self.active_transactions.write();
-            if let Some(state) = active.get_mut(&txn.id) {
-                state.state = TxnState::Preparing;
-            }
+        if let Some(mut state) = self.active_transactions.get_mut(&txn.id) {
+            state.state = TxnState::Preparing;
         }
         
         if txn.isolation_level == IsolationLevel::Serializable {
             self.validate_serializable(&txn)?;
         }
         
-        {
-            let mut active = self.active_transactions.write();
-            let mut committed = self.committed_transactions.write();
-            let mut timestamps = self.commit_timestamps.write();
-            
-            if let Some(mut state) = active.remove(&txn.id) {
-                state.state = TxnState::Committed;
-                committed.insert(txn.id);
-                timestamps.insert(txn.id, current_timestamp());
-            }
+        if let Some((_, mut state)) = self.active_transactions.remove(&txn.id) {
+            state.state = TxnState::Committed;
+            self.committed_transactions.insert(txn.id);
+            self.commit_timestamps.insert(txn.id, current_timestamp());
         }
         
         txn.state = TxnState::Committed;
@@ -382,14 +373,9 @@ impl TransactionManager {
     }
     
     pub fn abort(&self, mut txn: Transaction) -> Result<()> {
-        {
-            let mut active = self.active_transactions.write();
-            let mut aborted = self.aborted_transactions.write();
-            
-            if let Some(mut state) = active.remove(&txn.id) {
-                state.state = TxnState::Aborted;
-                aborted.insert(txn.id);
-            }
+        if let Some((_, mut state)) = self.active_transactions.remove(&txn.id) {
+            state.state = TxnState::Aborted;
+            self.aborted_transactions.insert(txn.id);
         }
         
         txn.state = TxnState::Aborted;
@@ -398,9 +384,8 @@ impl TransactionManager {
     }
     
     fn validate_serializable(&self, txn: &Transaction) -> Result<()> {
-        let active = self.active_transactions.read();
-        
-        for (other_id, other_state) in active.iter() {
+        for entry in self.active_transactions.iter() {
+            let (other_id, other_state) = entry.pair();
             if *other_id == txn.id {
                 continue;
             }
@@ -425,7 +410,7 @@ impl TransactionManager {
     }
     
     pub fn get_oldest_active(&self) -> Option<TransactionId> {
-        self.active_transactions.read().keys().min().copied()
+        self.active_transactions.iter().map(|entry| *entry.key()).min()
     }
 }
 
@@ -461,7 +446,7 @@ pub enum IsolationLevel {
 }
 
 pub struct ConflictManager {
-    lock_table: Arc<RwLock<HashMap<Bytes, LockInfo>>>,
+    lock_table: Arc<DashMap<Bytes, LockInfo>>,
     deadlock_detector: Arc<DeadlockDetector>,
 }
 
@@ -482,15 +467,13 @@ enum LockType {
 impl ConflictManager {
     pub fn new() -> Self {
         Self {
-            lock_table: Arc::new(RwLock::new(HashMap::new())),
+            lock_table: Arc::new(DashMap::new()),
             deadlock_detector: Arc::new(DeadlockDetector::new()),
         }
     }
     
     pub fn check_write_conflict(&self, key: &Bytes, txn: &Transaction) -> Result<()> {
-        let lock_table = self.lock_table.read();
-        
-        if let Some(lock_info) = lock_table.get(key) {
+        if let Some(lock_info) = self.lock_table.get(key) {
             if lock_info.owner != txn.id {
                 if self.deadlock_detector.would_cause_deadlock(txn.id, lock_info.owner) {
                     return Err(Error::DeadlockDetected);
@@ -506,9 +489,7 @@ impl ConflictManager {
     }
     
     pub fn acquire_lock(&self, key: Bytes, txn_id: TransactionId, lock_type: LockType) -> Result<()> {
-        let mut lock_table = self.lock_table.write();
-        
-        if let Some(lock_info) = lock_table.get_mut(&key) {
+        if let Some(mut lock_info) = self.lock_table.get_mut(&key) {
             if lock_info.owner == txn_id {
                 if lock_type == LockType::Exclusive && lock_info.lock_type == LockType::Shared {
                     lock_info.lock_type = LockType::Exclusive;
@@ -520,7 +501,7 @@ impl ConflictManager {
                 return Err(Error::LockConflict);
             }
         } else {
-            lock_table.insert(key, LockInfo {
+            self.lock_table.insert(key, LockInfo {
                 owner: txn_id,
                 lock_type,
                 acquired_at: Instant::now(),
@@ -532,41 +513,38 @@ impl ConflictManager {
     }
     
     pub fn release_locks(&self, txn_id: TransactionId) {
-        let mut lock_table = self.lock_table.write();
-        lock_table.retain(|_, lock_info| lock_info.owner != txn_id);
+        self.lock_table.retain(|_, lock_info| lock_info.owner != txn_id);
     }
 }
 
 struct DeadlockDetector {
-    wait_for_graph: Arc<RwLock<HashMap<TransactionId, HashSet<TransactionId>>>>,
+    wait_for_graph: Arc<DashMap<TransactionId, HashSet<TransactionId>>>,
 }
 
 impl DeadlockDetector {
     fn new() -> Self {
         Self {
-            wait_for_graph: Arc::new(RwLock::new(HashMap::new())),
+            wait_for_graph: Arc::new(DashMap::new()),
         }
     }
     
     fn would_cause_deadlock(&self, waiter: TransactionId, holder: TransactionId) -> bool {
-        let graph = self.wait_for_graph.read();
-        
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
         queue.push_back(holder);
-        
+
         while let Some(current) = queue.pop_front() {
             if current == waiter {
                 return true;
             }
-            
+
             if visited.contains(&current) {
                 continue;
             }
-            
+
             visited.insert(current);
-            
-            if let Some(dependencies) = graph.get(&current) {
+
+            if let Some(dependencies) = self.wait_for_graph.get(&current) {
                 for &dep in dependencies {
                     queue.push_back(dep);
                 }
@@ -577,16 +555,14 @@ impl DeadlockDetector {
     }
     
     fn add_edge(&self, from: TransactionId, to: TransactionId) {
-        let mut graph = self.wait_for_graph.write();
-        graph.entry(from).or_insert_with(HashSet::new).insert(to);
+        self.wait_for_graph.entry(from).or_insert_with(HashSet::new).insert(to);
     }
     
     fn remove_edges(&self, txn_id: TransactionId) {
-        let mut graph = self.wait_for_graph.write();
-        graph.remove(&txn_id);
-        
-        for edges in graph.values_mut() {
-            edges.remove(&txn_id);
+        self.wait_for_graph.remove(&txn_id);
+
+        for mut edges in self.wait_for_graph.iter_mut() {
+            edges.value_mut().remove(&txn_id);
         }
     }
 }
