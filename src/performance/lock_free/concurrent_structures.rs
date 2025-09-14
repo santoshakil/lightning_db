@@ -7,7 +7,6 @@
 use crate::core::error::Result;
 use crossbeam::epoch::{self, Atomic, Owned, Shared, CompareExchangeError};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::Arc;
 
 /// Simple cache-padded wrapper to avoid false sharing
 #[repr(align(64))]
@@ -215,7 +214,7 @@ where
                             return Ok(None);
                         }
                     }
-                    Err(CompareExchangeError { new: returned_new, .. }) => {
+                    Err(CompareExchangeError { .. }) => {
                         // CAS failed, value still owned by returned_new, continue with value
                         continue;
                     }
@@ -351,7 +350,7 @@ where
     /// Enqueue an element (non-blocking)
     pub fn enqueue(&self, item: T) -> std::result::Result<(), T> {
         let item = Owned::new(item);
-        let guard = epoch::pin();
+        let _guard = epoch::pin();
         
         loop {
             let tail = self.tail.load(Ordering::Relaxed);
@@ -359,7 +358,7 @@ where
             let sequence = slot.sequence.load(Ordering::Acquire);
             
             let diff = sequence.wrapping_sub(tail);
-            
+
             if diff == 0 {
                 // Slot is available for writing
                 if self.tail.compare_exchange_weak(
@@ -372,9 +371,9 @@ where
                     slot.sequence.store(tail.wrapping_add(1), Ordering::Release);
                     return Ok(());
                 }
-            } else if diff < 0 {
-                // Queue is full
-                return Err(unsafe { *item.into_box() });
+            } else if diff > self.capacity {
+                // Queue is full (wrapped around)
+                return Err(*item.into_box());
             } else {
                 // Another thread is updating this slot
                 continue;
@@ -410,8 +409,8 @@ where
                         return Some(data);
                     }
                 }
-            } else if diff < 0 {
-                // Queue is empty
+            } else if diff > self.capacity {
+                // Queue is empty (wrapped around)
                 return None;
             } else {
                 // Another thread is updating this slot

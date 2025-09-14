@@ -7,17 +7,16 @@
 //! - Reduced lock contention through smart batching strategies
 //! - Memory-efficient transaction state management
 
-use crate::core::error::{Error, Result};
+use crate::core::error::Result;
 use crate::core::transaction::unified_manager::{UnifiedTransaction, WriteOp};
-use crate::performance::thread_local::cache;
 use crate::performance::optimizations::simd;
 use bytes::Bytes;
 use crossbeam_channel::{bounded, Receiver, Sender};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -173,7 +172,7 @@ impl TransactionBatcher {
     /// Start the background batch processor thread
     fn start_processor(self: &Arc<Self>) {
         let batcher = Arc::downgrade(self);
-        let receiver = self.batch_receiver.clone();
+        let _receiver = self.batch_receiver.clone();
         let shutdown_signal = self.shutdown_signal.clone();
         
         let handle = thread::spawn(move || {

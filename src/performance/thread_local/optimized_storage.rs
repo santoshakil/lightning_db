@@ -4,16 +4,12 @@
 //! for database-specific workloads, including transaction metadata caching,
 //! page buffers, and SIMD-aligned data structures.
 
-use crate::core::error::Result;
-use crate::performance::optimizations::simd;
 use crate::performance::optimizations::memory_layout::{CacheAlignedAllocator, CompactRecord};
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use rustc_hash::FxHashMap;
-use smallvec::SmallVec;
 
 // Thread-local storage constants
 const MAX_CACHED_TRANSACTIONS: usize = 64;
