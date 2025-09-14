@@ -237,7 +237,7 @@ impl SerializationValidator {
         let tx_info = self.tx_info.read();
         let validation_info = tx_info
             .get(&tx_id)
-            .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
+            .ok_or(Error::TransactionNotFound { id: tx_id })?;
 
         let mut conflicts = Vec::new();
         let committed_transactions = self.committed_transactions.read();
@@ -265,7 +265,7 @@ impl SerializationValidator {
         let tx_info = self.tx_info.read();
         let validation_info = tx_info
             .get(&tx_id)
-            .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
+            .ok_or(Error::TransactionNotFound { id: tx_id })?;
 
         let mut conflicts = Vec::new();
 
@@ -293,7 +293,7 @@ impl SerializationValidator {
         let tx_info = self.tx_info.read();
         let validation_info = tx_info
             .get(&tx_id)
-            .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?;
+            .ok_or(Error::TransactionNotFound { id: tx_id })?;
 
         // Only check for serializable isolation
         if validation_info.isolation_level != IsolationLevel::Serializable {
@@ -333,7 +333,7 @@ impl SerializationValidator {
             tx_info
                 .get(&tx_id)
                 .map(|info| info.isolation_level)
-                .ok_or_else(|| Error::TransactionNotFound { id: tx_id })?
+                .ok_or(Error::TransactionNotFound { id: tx_id })?
         };
 
         match isolation_level {
@@ -425,7 +425,7 @@ impl SerializationValidator {
         tx_info
             .get(&tx_id)
             .map(|info| info.start_timestamp)
-            .ok_or_else(|| Error::TransactionNotFound { id: tx_id })
+            .ok_or(Error::TransactionNotFound { id: tx_id })
     }
 
     /// Check if a key is in a range
