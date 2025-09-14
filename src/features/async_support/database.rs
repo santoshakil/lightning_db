@@ -55,10 +55,9 @@ impl AsyncDatabase {
         let btree = Arc::new(RwLock::new(BPlusTree::new(page_manager.clone())?));
 
         // Create WAL
-        let wal_path = db_path.join("wal.log");
-        // AsyncWriteAheadLog implementation pending - using placeholder for now
-        // let wal = AsyncWriteAheadLog::create(wal_path, config.clone()).await?;
-        let wal: Arc<dyn AsyncWAL> = unimplemented!("AsyncWriteAheadLog module not yet implemented");
+        let _wal_path = db_path.join("wal.log");
+        // AsyncWriteAheadLog implementation pending - return error for now
+        return Err(Error::NotImplemented("Async database not yet implemented".to_string()));
 
         // Create transaction manager
         let transaction_manager = Arc::new(AsyncTransactionManager::new(
@@ -106,10 +105,9 @@ impl AsyncDatabase {
         )));
 
         // Open WAL
-        let wal_path = db_path.join("wal.log");
-        // AsyncWriteAheadLog implementation pending - using placeholder for now  
-        // let wal = AsyncWriteAheadLog::open(wal_path, config.clone()).await?;
-        let wal: Arc<dyn AsyncWAL> = unimplemented!("AsyncWriteAheadLog module not yet implemented");
+        let _wal_path = db_path.join("wal.log");
+        // AsyncWriteAheadLog implementation pending - return error for now
+        return Err(Error::NotImplemented("Async database not yet implemented".to_string()));
 
         // Create transaction manager
         let transaction_manager = Arc::new(AsyncTransactionManager::new(

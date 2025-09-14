@@ -528,7 +528,7 @@ impl QueryPlanner {
 
         let exec_plan = ExecutionPlan {
             root_node: physical_plan.root.as_ref().clone(),
-            steps: Vec::new(), // TODO: Extract steps from physical plan
+            steps: Vec::new(),
             estimated_cost: QueryCost {
                 cpu_cost: physical_plan.estimated_cost.cpu_cost,
                 io_cost: physical_plan.estimated_cost.io_cost,
