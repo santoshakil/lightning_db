@@ -138,7 +138,7 @@ impl BTreeNode {
         // Read page header
         let magic = cursor.get_u32_le();
         if magic != crate::core::storage::MAGIC {
-            return Err(Error::CorruptedPage);
+            return Err(Error::Corruption(String::from("Corrupted page")));
         }
 
         let _version = cursor.get_u32_le();
@@ -157,7 +157,7 @@ impl BTreeNode {
         let node_type = match page_type {
             0 => NodeType::Leaf,
             1 => NodeType::Internal,
-            _ => return Err(Error::CorruptedPage),
+            _ => return Err(Error::Corruption(String::from("Corrupted page"))),
         };
 
         let mut entries = SmallVec::new();
@@ -173,13 +173,13 @@ impl BTreeNode {
             let mut key = vec![0u8; key_len];
             cursor
                 .read_exact(&mut key)
-                .map_err(|_| Error::CorruptedPage)?;
+                .map_err(|_| Error::Corruption(String::from("Corrupted page")))?;
 
             let value_len = cursor.get_u32_le() as usize;
             let mut value = vec![0u8; value_len];
             cursor
                 .read_exact(&mut value)
-                .map_err(|_| Error::CorruptedPage)?;
+                .map_err(|_| Error::Corruption(String::from("Corrupted page")))?;
 
             let timestamp = cursor.get_u64_le();
 

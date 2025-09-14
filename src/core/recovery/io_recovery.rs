@@ -209,7 +209,7 @@ impl IoRecoveryManager {
         }
 
         error!("Failed to auto-repair file: {:?}", path);
-        Err(Error::CorruptionUnrecoverable(format!(
+        Err(Error::Corruption(format!(
             "Cannot repair file: {:?}",
             path
         )))
@@ -349,7 +349,7 @@ impl IoRecoveryManager {
                 required_permissions: "read/write access".to_string(),
             },
             ErrorKind::InvalidData => {
-                Error::CorruptedDatabase(format!("Invalid data in file: {:?}", path))
+                Error::Corruption(format!("Invalid data in file: {:?}", path))
             }
             ErrorKind::UnexpectedEof => Error::WalPartialEntry {
                 offset: 0,

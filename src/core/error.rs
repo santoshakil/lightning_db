@@ -167,20 +167,12 @@ pub enum Error {
     #[error("Commit failed: {0}")]
     CommitFailed(String),
 
-    #[error("Compression error: {0}")]
-    CompressionError(String),
 
     #[error("Connection pool exhausted")]
     ConnectionPoolExhausted,
 
-    #[error("Database corrupted: {0}")]
-    CorruptedDatabase(String),
 
-    #[error("Corrupted page")]
-    CorruptedPage,
 
-    #[error("Corruption unrecoverable: {0}")]
-    CorruptionUnrecoverable(String),
 
     #[error("Custom error: {0}")]
     Custom(String),
@@ -206,14 +198,8 @@ pub enum Error {
     #[error("Invalid page ID")]
     InvalidPageId,
 
-    #[error("IO error: {0}")]
-    IoError(String),
 
-    #[error("Migration error: {0}")]
-    MigrationError(String),
 
-    #[error("Serialization error: {0}")]
-    SerializationError(String),
 
     #[error("Snapshot not found: {0}")]
     SnapshotNotFound(u64),
@@ -224,8 +210,6 @@ pub enum Error {
     #[error("Transaction retry needed: {0}")]
     TransactionRetry(String),
 
-    #[error("Validation failed: {0}")]
-    ValidationFailed(String),
 
     #[error("Transaction {id} in invalid state: {state}")]
     TransactionInvalidState { id: u64, state: String },
@@ -432,9 +416,6 @@ impl Error {
                 | Error::ChecksumMismatch { .. }
                 | Error::InvalidDatabase
                 | Error::IntegrityViolation(_)
-                | Error::CorruptedDatabase(_)
-                | Error::CorruptedPage
-                | Error::CorruptionUnrecoverable(_)
         )
     }
 
@@ -452,7 +433,7 @@ impl Error {
     pub fn is_recoverable(&self) -> bool {
         !matches!(
             self,
-            Error::CorruptionUnrecoverable(_) | Error::RecoveryImpossible { .. }
+            Error::Corruption(_) | Error::RecoveryImpossible { .. }
         )
     }
 }

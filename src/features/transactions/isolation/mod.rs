@@ -209,7 +209,7 @@ impl IsolationManager {
                 self.serialization_validator.commit_transaction(tx_id)?;
             }
             ValidationResult::Invalid { reason, conflicts } => {
-                return Err(Error::ValidationFailed(format!(
+                return Err(Error::ValidationError(format!(
                     "Transaction {} validation failed: {} (conflicts with {:?})",
                     tx_id, reason, conflicts
                 )));

@@ -2736,7 +2736,7 @@ impl Database {
                 self.abort_transaction(tx_id)?;
                 self.isolation_manager.abort_transaction(tx_id)?;
 
-                Err(crate::core::error::Error::ValidationFailed(format!(
+                Err(crate::core::error::Error::ValidationError(format!(
                     "Transaction validation failed: {} (conflicts with {:?})",
                     reason, conflicts
                 )))
@@ -2924,12 +2924,12 @@ impl Database {
         // Verify within transaction
         if let Some(value) = self.get_tx(tx_id, test_key)? {
             if value != test_value {
-                return Err(Error::CorruptedDatabase(
+                return Err(Error::Corruption(
                     "Transaction read verification failed".to_string(),
                 ));
             }
         } else {
-            return Err(Error::CorruptedDatabase(
+            return Err(Error::Corruption(
                 "Transaction read failed".to_string(),
             ));
         }

@@ -203,13 +203,13 @@ impl<T> ValidationResult<T> {
         match self {
             ValidationResult::Valid(value) => Ok(value),
             ValidationResult::Invalid(violations) => {
-                Err(crate::core::error::Error::ValidationFailed(format!(
+                Err(crate::core::error::Error::ValidationError(format!(
                     "Validation failed with {} violations: {:?}",
                     violations.len(),
                     violations
                 )))
             }
-            ValidationResult::Error(error) => Err(crate::core::error::Error::ValidationFailed(
+            ValidationResult::Error(error) => Err(crate::core::error::Error::ValidationError(
                 format!("Validation error: {}", error),
             )),
         }

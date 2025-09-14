@@ -36,14 +36,14 @@ impl MigrationRunner {
     pub fn load_migrations_from_dir<P: AsRef<Path>>(&mut self, dir: P) -> DatabaseResult<()> {
         let dir_path = dir.as_ref();
         if !dir_path.exists() {
-            std::fs::create_dir_all(dir_path).map_err(|e| DatabaseError::IoError(e.to_string()))?;
+            std::fs::create_dir_all(dir_path).map_err(|e| DatabaseError::Io(e.to_string()))?;
             return Ok(());
         }
 
         for entry in
-            std::fs::read_dir(dir_path).map_err(|e| DatabaseError::IoError(e.to_string()))?
+            std::fs::read_dir(dir_path).map_err(|e| DatabaseError::Io(e.to_string()))?
         {
-            let entry = entry.map_err(|e| DatabaseError::IoError(e.to_string()))?;
+            let entry = entry.map_err(|e| DatabaseError::Io(e.to_string()))?;
             let path = entry.path();
 
             if path.extension().is_some_and(|ext| ext == "sql") {
@@ -56,7 +56,7 @@ impl MigrationRunner {
 
     fn load_migration_file(&mut self, path: &Path) -> DatabaseResult<()> {
         let content =
-            std::fs::read_to_string(path).map_err(|e| DatabaseError::IoError(e.to_string()))?;
+            std::fs::read_to_string(path).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         let _migration = self.parse_migration_file(&content, path)?;
         Ok(())
@@ -64,19 +64,19 @@ impl MigrationRunner {
 
     fn parse_migration_file(&self, content: &str, path: &Path) -> DatabaseResult<Migration> {
         let filename = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
-            DatabaseError::MigrationError("Invalid migration filename".to_string())
+            DatabaseError::Migration("Invalid migration filename".to_string())
         })?;
 
         let parts: Vec<&str> = filename.split('_').collect();
         if parts.len() < 2 {
-            return Err(DatabaseError::MigrationError(
+            return Err(DatabaseError::Migration(
                 "Migration filename must be in format: VERSION_NAME.sql".to_string(),
             ));
         }
 
         let version_str = parts[0];
         let version = version_str.parse::<u64>().map_err(|_| {
-            DatabaseError::MigrationError(format!("Invalid version number: {}", version_str))
+            DatabaseError::Migration(format!("Invalid version number: {}", version_str))
         })?;
 
         let name = parts[1..].join("_");
@@ -229,7 +229,7 @@ impl MigrationRunner {
             self.execute_migration_down(ctx, migration)?;
             Ok(())
         } else {
-            Err(DatabaseError::MigrationError(format!(
+            Err(DatabaseError::Migration(format!(
                 "Migration version {} not found",
                 version
             )))
@@ -365,7 +365,7 @@ impl MigrationRunner {
                 }
             }
         } else {
-            Err(DatabaseError::MigrationError(format!(
+            Err(DatabaseError::Migration(format!(
                 "Migration {} is not reversible",
                 version
             )))
@@ -395,7 +395,7 @@ impl MigrationRunner {
         let result = self.validator.validate_migration(migration, ctx)?;
 
         if !result.is_valid {
-            return Err(DatabaseError::MigrationError(format!(
+            return Err(DatabaseError::Migration(format!(
                 "Migration validation failed: {:?}",
                 result.errors
             )));
@@ -463,13 +463,13 @@ impl MigrationRunner {
                 active.insert(version, MigrationStatus::Failed);
                 Ok(())
             } else {
-                Err(DatabaseError::MigrationError(format!(
+                Err(DatabaseError::Migration(format!(
                     "Migration {} is not currently running",
                     version
                 )))
             }
         } else {
-            Err(DatabaseError::MigrationError(format!(
+            Err(DatabaseError::Migration(format!(
                 "Migration {} not found",
                 version
             )))

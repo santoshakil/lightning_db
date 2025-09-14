@@ -60,7 +60,7 @@ impl MigrationTemplateManager {
         params: &HashMap<String, String>,
     ) -> DatabaseResult<Migration> {
         let template = self.templates.get(template_name).ok_or_else(|| {
-            DatabaseError::MigrationError(format!("Template '{}' not found", template_name))
+            DatabaseError::Migration(format!("Template '{}' not found", template_name))
         })?;
 
         template.generate_migration(version, name, params)
@@ -157,7 +157,7 @@ impl MigrationTemplate {
     fn validate_parameters(&self, params: &HashMap<String, String>) -> DatabaseResult<()> {
         for required_param in &self.required_params {
             if !params.contains_key(&required_param.name) {
-                return Err(DatabaseError::MigrationError(format!(
+                return Err(DatabaseError::Migration(format!(
                     "Required parameter '{}' is missing",
                     required_param.name
                 )));
@@ -191,7 +191,7 @@ impl MigrationTemplate {
         match param_def.param_type {
             ParameterType::String => {
                 if value.is_empty() {
-                    return Err(DatabaseError::MigrationError(format!(
+                    return Err(DatabaseError::Migration(format!(
                         "Parameter '{}' cannot be empty",
                         param_def.name
                     )));
@@ -199,7 +199,7 @@ impl MigrationTemplate {
             }
             ParameterType::Integer => {
                 if value.parse::<i64>().is_err() {
-                    return Err(DatabaseError::MigrationError(format!(
+                    return Err(DatabaseError::Migration(format!(
                         "Parameter '{}' must be a valid integer",
                         param_def.name
                     )));
@@ -210,7 +210,7 @@ impl MigrationTemplate {
                     value.to_lowercase().as_str(),
                     "true" | "false" | "1" | "0" | "yes" | "no"
                 ) {
-                    return Err(DatabaseError::MigrationError(format!(
+                    return Err(DatabaseError::Migration(format!(
                         "Parameter '{}' must be a valid boolean",
                         param_def.name
                     )));
@@ -218,7 +218,7 @@ impl MigrationTemplate {
             }
             ParameterType::TableName | ParameterType::ColumnName => {
                 if !value.chars().all(|c| c.is_alphanumeric() || c == '_') || value.is_empty() {
-                    return Err(DatabaseError::MigrationError(format!(
+                    return Err(DatabaseError::Migration(format!(
                         "Parameter '{}' must be a valid identifier",
                         param_def.name
                     )));
@@ -232,7 +232,7 @@ impl MigrationTemplate {
                 let is_valid = valid_types.iter().any(|&t| normalized_type.starts_with(t));
 
                 if !is_valid {
-                    return Err(DatabaseError::MigrationError(format!(
+                    return Err(DatabaseError::Migration(format!(
                         "Parameter '{}' must be a valid data type",
                         param_def.name
                     )));
@@ -240,7 +240,7 @@ impl MigrationTemplate {
             }
             ParameterType::SqlExpression => {
                 if value.trim().is_empty() {
-                    return Err(DatabaseError::MigrationError(format!(
+                    return Err(DatabaseError::Migration(format!(
                         "Parameter '{}' cannot be empty SQL expression",
                         param_def.name
                     )));
@@ -250,14 +250,14 @@ impl MigrationTemplate {
 
         if let Some(ref regex_pattern) = param_def.validation_regex {
             let regex = regex::Regex::new(regex_pattern).map_err(|e| {
-                DatabaseError::MigrationError(format!(
+                DatabaseError::Migration(format!(
                     "Invalid validation regex for parameter '{}': {}",
                     param_def.name, e
                 ))
             })?;
 
             if !regex.is_match(value) {
-                return Err(DatabaseError::MigrationError(format!(
+                return Err(DatabaseError::Migration(format!(
                     "Parameter '{}' does not match required pattern",
                     param_def.name
                 )));
@@ -296,7 +296,7 @@ impl MigrationTemplate {
                 .collect();
 
             if !remaining_placeholders.is_empty() {
-                return Err(DatabaseError::MigrationError(format!(
+                return Err(DatabaseError::Migration(format!(
                     "Unresolved template placeholders: {:?}",
                     remaining_placeholders
                 )));
@@ -573,7 +573,7 @@ impl MigrationGenerator {
         directory: &str,
         filename: &str,
     ) -> DatabaseResult<String> {
-        std::fs::create_dir_all(directory).map_err(|e| DatabaseError::IoError(e.to_string()))?;
+        std::fs::create_dir_all(directory).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         let file_path = format!("{}/{}", directory, filename);
 
@@ -612,7 +612,7 @@ impl MigrationGenerator {
             content.push_str(down_script);
         }
 
-        std::fs::write(&file_path, content).map_err(|e| DatabaseError::IoError(e.to_string()))?;
+        std::fs::write(&file_path, content).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         Ok(file_path)
     }

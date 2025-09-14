@@ -8,7 +8,7 @@ pub struct SerializationUtils;
 impl SerializationUtils {
     /// Serialize a value to bytes using serde_json for simplicity
     pub fn serialize<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-        serde_json::to_vec(value).map_err(|e| Error::SerializationError(format!("Failed to serialize: {}", e)))
+        serde_json::to_vec(value).map_err(|e| Error::Serialization(format!("Failed to serialize: {}", e)))
     }
 
     /// Deserialize bytes to a value using serde_json
@@ -18,7 +18,7 @@ impl SerializationUtils {
 
     /// Serialize a value and write to a writer
     pub fn serialize_to_writer<T: Serialize, W: Write>(value: &T, writer: W) -> Result<()> {
-        serde_json::to_writer(writer, value).map_err(|e| Error::SerializationError(format!("Failed to serialize to writer: {}", e)))
+        serde_json::to_writer(writer, value).map_err(|e| Error::Serialization(format!("Failed to serialize to writer: {}", e)))
     }
 
     /// Read from a reader and deserialize to a value
@@ -60,7 +60,7 @@ impl SerializationUtils {
     pub fn serialize_to_buffer<T: Serialize>(value: &T, buffer: &mut [u8]) -> Result<usize> {
         let serialized = Self::serialize(value)?;
         if serialized.len() > buffer.len() {
-            return Err(Error::SerializationError(format!("Buffer too small: need {}, got {}", serialized.len(), buffer.len())));
+            return Err(Error::Serialization(format!("Buffer too small: need {}, got {}", serialized.len(), buffer.len())));
         }
         buffer[..serialized.len()].copy_from_slice(&serialized);
         Ok(serialized.len())

@@ -88,7 +88,7 @@ impl SchemaDefinition {
             element.deprecated_in_version = Some(version);
             Ok(())
         } else {
-            Err(DatabaseError::MigrationError(format!(
+            Err(DatabaseError::Migration(format!(
                 "Schema element '{}' not found",
                 name
             )))
@@ -153,10 +153,10 @@ impl SchemaManager {
 
         if Path::new(&schema_file).exists() {
             let content = std::fs::read_to_string(&schema_file)
-                .map_err(|e| DatabaseError::IoError(e.to_string()))?;
+                .map_err(|e| DatabaseError::Io(e.to_string()))?;
 
             let schema_info: SchemaInfo = serde_json::from_str(&content)
-                .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+                .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
             {
                 let mut guard = self.schema_info.write();
@@ -173,12 +173,12 @@ impl SchemaManager {
     pub fn save_schema_info(&self, db_path: &str, info: &SchemaInfo) -> DatabaseResult<()> {
         let schema_file = format!("{}/schema_info.json", db_path);
 
-        std::fs::create_dir_all(db_path).map_err(|e| DatabaseError::IoError(e.to_string()))?;
+        std::fs::create_dir_all(db_path).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         let content = serde_json::to_string_pretty(info)
-            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+            .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
-        std::fs::write(&schema_file, content).map_err(|e| DatabaseError::IoError(e.to_string()))?;
+        std::fs::write(&schema_file, content).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         Ok(())
     }
@@ -192,10 +192,10 @@ impl SchemaManager {
 
         if Path::new(&schema_file).exists() {
             let content = std::fs::read_to_string(&schema_file)
-                .map_err(|e| DatabaseError::IoError(e.to_string()))?;
+                .map_err(|e| DatabaseError::Io(e.to_string()))?;
 
             let schema_def: SchemaDefinition = serde_json::from_str(&content)
-                .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+                .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
             Ok(schema_def)
         } else {
@@ -210,12 +210,12 @@ impl SchemaManager {
     ) -> DatabaseResult<()> {
         let schema_file = format!("{}/schema_{}.json", db_path, schema.version);
 
-        std::fs::create_dir_all(db_path).map_err(|e| DatabaseError::IoError(e.to_string()))?;
+        std::fs::create_dir_all(db_path).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         let content = serde_json::to_string_pretty(schema)
-            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+            .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
-        std::fs::write(&schema_file, content).map_err(|e| DatabaseError::IoError(e.to_string()))?;
+        std::fs::write(&schema_file, content).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         {
             let mut history_guard = self.schema_history.write();
@@ -307,20 +307,20 @@ impl SchemaManager {
         let info = self.load_schema_info(db_path)?;
         let schema = self.load_schema_definition(db_path, info.version)?;
 
-        std::fs::create_dir_all(backup_path).map_err(|e| DatabaseError::IoError(e.to_string()))?;
+        std::fs::create_dir_all(backup_path).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         let backup_info_file = format!("{}/schema_info_backup.json", backup_path);
         let backup_schema_file = format!("{}/schema_{}_backup.json", backup_path, info.version);
 
         let info_content = serde_json::to_string_pretty(&info)
-            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+            .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
         let schema_content = serde_json::to_string_pretty(&schema)
-            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+            .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
         std::fs::write(&backup_info_file, info_content)
-            .map_err(|e| DatabaseError::IoError(e.to_string()))?;
+            .map_err(|e| DatabaseError::Io(e.to_string()))?;
         std::fs::write(&backup_schema_file, schema_content)
-            .map_err(|e| DatabaseError::IoError(e.to_string()))?;
+            .map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         Ok(())
     }
@@ -328,17 +328,17 @@ impl SchemaManager {
     pub fn restore_schema(&self, db_path: &str, backup_path: &str) -> DatabaseResult<()> {
         let backup_info_file = format!("{}/schema_info_backup.json", backup_path);
         let info_content = std::fs::read_to_string(&backup_info_file)
-            .map_err(|e| DatabaseError::IoError(e.to_string()))?;
+            .map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         let info: SchemaInfo = serde_json::from_str(&info_content)
-            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+            .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
         let backup_schema_file = format!("{}/schema_{}_backup.json", backup_path, info.version);
         let schema_content = std::fs::read_to_string(&backup_schema_file)
-            .map_err(|e| DatabaseError::IoError(e.to_string()))?;
+            .map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         let schema: SchemaDefinition = serde_json::from_str(&schema_content)
-            .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+            .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
         self.save_schema_info(db_path, &info)?;
         self.save_schema_definition(db_path, &schema)?;

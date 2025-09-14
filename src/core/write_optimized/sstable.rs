@@ -217,7 +217,7 @@ impl SSTableBuilder {
                     Ok(compressed)
                 }
                 #[cfg(not(feature = "zstd-compression"))]
-                Err(Error::CompressionError(
+                Err(Error::Compression(
                     "ZSTD compression not available".to_string(),
                 ))
             }

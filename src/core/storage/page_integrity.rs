@@ -443,7 +443,7 @@ pub mod page_validators {
                     }
                 },
             )
-            .map_err(|_| Error::ValidationFailed("Deep validation failed".to_string()))?;
+            .map_err(|_| Error::ValidationError("Deep validation failed".to_string()))?;
 
         Ok(ValidationResult::Valid(()))
     }

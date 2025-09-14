@@ -241,21 +241,21 @@ impl DataTransformationEngine {
                 name, data_type, ..
             } => {
                 if name.is_empty() || data_type.is_empty() {
-                    return Err(DatabaseError::MigrationError(
+                    return Err(DatabaseError::Migration(
                         "Column name and data type cannot be empty".to_string(),
                     ));
                 }
             }
             TransformationType::RenameColumn { old_name, new_name } => {
                 if old_name.is_empty() || new_name.is_empty() || old_name == new_name {
-                    return Err(DatabaseError::MigrationError(
+                    return Err(DatabaseError::Migration(
                         "Invalid column rename parameters".to_string(),
                     ));
                 }
             }
             TransformationType::CreateTable { name, schema } => {
                 if name.is_empty() || schema.columns.is_empty() {
-                    return Err(DatabaseError::MigrationError(
+                    return Err(DatabaseError::Migration(
                         "Table name and columns cannot be empty".to_string(),
                     ));
                 }
@@ -266,7 +266,7 @@ impl DataTransformationEngine {
                 ..
             } => {
                 if source_query.is_empty() || target_table.is_empty() {
-                    return Err(DatabaseError::MigrationError(
+                    return Err(DatabaseError::Migration(
                         "Source query and target table cannot be empty".to_string(),
                     ));
                 }
@@ -410,7 +410,7 @@ impl DataTransformationEngine {
             "rebuild_indexes" => self.rebuild_indexes(),
             "update_statistics" => self.update_statistics(),
             "vacuum" => self.vacuum_database(),
-            _ => Err(DatabaseError::MigrationError(format!(
+            _ => Err(DatabaseError::Migration(format!(
                 "Unknown custom transformation: {}",
                 name
             ))),
@@ -613,7 +613,7 @@ impl DataMigrator {
             "uppercase" => Ok(FieldValue::String(value.to_string().to_uppercase())),
             "lowercase" => Ok(FieldValue::String(value.to_string().to_lowercase())),
             "trim" => Ok(FieldValue::String(value.to_string().trim().to_string())),
-            _ => Err(DatabaseError::MigrationError(format!(
+            _ => Err(DatabaseError::Migration(format!(
                 "Unknown custom function: {}",
                 function
             ))),
