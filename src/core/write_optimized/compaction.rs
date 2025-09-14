@@ -99,7 +99,7 @@ impl CompactionJob {
 
         // Merge SSTables in sorted order
         let mut merger = SSTableMerger::new(&self.input_sstables)?;
-        let estimated_outputs = (self.input_sstables.len() + 1) / 2;
+        let estimated_outputs = self.input_sstables.len().div_ceil(2);
         let mut output_sstables = Vec::with_capacity(estimated_outputs);
         let mut current_builder: Option<SSTableBuilder> = None;
         let mut output_file_count = 0;
