@@ -201,7 +201,7 @@ impl PageManager {
     fn load_header_page(&mut self) -> Result<()> {
         // Check if file has enough data for header page
         if self.mmap.len() < PAGE_SIZE {
-            return Err(Error::CorruptedDatabase(format!(
+            return Err(Error::Corruption(format!(
                 "Database file too small: {} bytes, expected at least {} bytes",
                 self.mmap.len(),
                 PAGE_SIZE
@@ -306,7 +306,7 @@ impl PageManager {
 
         // Verify page checksum for data pages (skip for header page and empty pages)
         if page_id > 0 && !is_empty && !page.verify_checksum() {
-            return Err(Error::CorruptedPage);
+            return Err(Error::Corruption(String::from("Corrupted page")));
         }
 
         Ok(page)

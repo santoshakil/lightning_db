@@ -206,7 +206,7 @@ mod tests {
     fn test_non_recoverable_error() {
         let policy = RetryPolicy::default();
 
-        let result: Result<()> = policy.execute(|| Err(Error::CorruptedPage));
+        let result: Result<()> = policy.execute(|| Err(Error::Corruption(String::from("Corrupted page"))));
 
         assert!(result.is_err());
     }

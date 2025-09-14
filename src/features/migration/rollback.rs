@@ -80,7 +80,7 @@ impl RollbackManager {
         let current_version = self.get_current_version(db_path)?;
 
         if target_version >= current_version {
-            return Err(DatabaseError::MigrationError(format!(
+            return Err(DatabaseError::Migration(format!(
                 "Target version {} must be less than current version {}",
                 target_version, current_version
             )));
@@ -331,7 +331,7 @@ impl RollbackManager {
 
             Ok(())
         } else {
-            Err(DatabaseError::MigrationError(format!(
+            Err(DatabaseError::Migration(format!(
                 "Migration {} is not reversible",
                 migration.metadata.version
             )))
@@ -354,7 +354,7 @@ impl RollbackManager {
 
     fn validate_rollback_safety(&self, migration: &Migration) -> DatabaseResult<()> {
         if migration.down_script.is_none() {
-            return Err(DatabaseError::MigrationError(format!(
+            return Err(DatabaseError::Migration(format!(
                 "Migration {} is not reversible",
                 migration.metadata.version
             )));
@@ -455,7 +455,7 @@ impl RollbackManager {
         for version in &ordered {
             if let Some(migration) = migrations.get(version) {
                 if migration.down_script.is_none() {
-                    return Err(DatabaseError::MigrationError(format!(
+                    return Err(DatabaseError::Migration(format!(
                         "Migration {} is not reversible",
                         version
                     )));
@@ -562,12 +562,12 @@ impl RollbackManager {
                 state.errors.push("Rollback aborted by user".to_string());
                 Ok(())
             } else {
-                Err(DatabaseError::MigrationError(
+                Err(DatabaseError::Migration(
                     "Cannot abort rollback in current phase".to_string(),
                 ))
             }
         } else {
-            Err(DatabaseError::MigrationError(format!(
+            Err(DatabaseError::Migration(format!(
                 "Rollback {} not found",
                 rollback_id
             )))
@@ -588,7 +588,7 @@ impl RollbackManager {
 
         if let Some(mut state) = state {
             if !state.can_continue {
-                return Err(DatabaseError::MigrationError(
+                return Err(DatabaseError::Migration(
                     "Rollback cannot be resumed due to previous errors".to_string(),
                 ));
             }
@@ -609,7 +609,7 @@ impl RollbackManager {
 
             self.execute_rollback_phases(ctx, &resumed_plan, migrations, rollback_id, &mut state)
         } else {
-            Err(DatabaseError::MigrationError(format!(
+            Err(DatabaseError::Migration(format!(
                 "Rollback {} not found",
                 rollback_id
             )))

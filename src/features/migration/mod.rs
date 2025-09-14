@@ -207,7 +207,7 @@ impl MigrationManager {
     pub fn register_migration(&mut self, migration: Migration) -> DatabaseResult<()> {
         let version = migration.metadata.version;
         if self.migrations.contains_key(&version) {
-            return Err(crate::core::error::DatabaseError::MigrationError(format!(
+            return Err(crate::core::error::DatabaseError::Migration(format!(
                 "Migration version {} already exists",
                 version
             )));

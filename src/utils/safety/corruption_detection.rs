@@ -435,7 +435,7 @@ fn heal_corruption(
                 "Corruption on page {} requires backup restore",
                 corruption.page_id
             );
-            Err(Error::CorruptionUnrecoverable(format!(
+            Err(Error::Corruption(format!(
                 "Page {} requires backup restore",
                 corruption.page_id
             )))

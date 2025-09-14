@@ -181,7 +181,7 @@ impl MigrationCliRunner {
 
     #[cfg(not(feature = "cli"))]
     pub fn run(&mut self, _cli: ()) -> DatabaseResult<()> {
-        Err(DatabaseError::MigrationError(
+        Err(DatabaseError::Migration(
             "CLI feature not enabled".to_string(),
         ))
     }
@@ -294,7 +294,7 @@ impl MigrationCliRunner {
             Some("emergency") => RollbackStrategy::Emergency,
             None => RollbackStrategy::Graceful,
             Some(s) => {
-                return Err(DatabaseError::MigrationError(format!(
+                return Err(DatabaseError::Migration(format!(
                     "Unknown rollback strategy: {}",
                     s
                 )));
@@ -353,7 +353,7 @@ impl MigrationCliRunner {
                 }
             }
         } else {
-            return Err(DatabaseError::MigrationError(
+            return Err(DatabaseError::Migration(
                 "Must specify either --version or --steps for rollback".to_string(),
             ));
         }
@@ -416,10 +416,10 @@ impl MigrationCliRunner {
 
         if let Some(export_path) = export {
             let json_content = serde_json::to_string_pretty(&entries)
-                .map_err(|e| DatabaseError::SerializationError(e.to_string()))?;
+                .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
             std::fs::write(export_path, json_content)
-                .map_err(|e| DatabaseError::IoError(e.to_string()))?;
+                .map_err(|e| DatabaseError::Io(e.to_string()))?;
 
             println!("History exported to: {}", export_path);
             return Ok(());
@@ -540,7 +540,7 @@ impl MigrationCliRunner {
         if let Some(target_version) = version {
             let target = MigrationVersion::new(target_version);
             if target >= current_version {
-                return Err(DatabaseError::MigrationError(
+                return Err(DatabaseError::Migration(
                     "Target version must be less than current version".to_string(),
                 ));
             }
@@ -560,7 +560,7 @@ impl MigrationCliRunner {
 
     fn import_history(&self, _database_path: &str, file: &str) -> DatabaseResult<()> {
         if !Path::new(file).exists() {
-            return Err(DatabaseError::IoError(format!(
+            return Err(DatabaseError::Io(format!(
                 "Import file not found: {}",
                 file
             )));
@@ -586,7 +586,7 @@ impl MigrationCliRunner {
         println!("Output: {}", output_dir);
         println!("Format: {}", doc_format);
 
-        std::fs::create_dir_all(output_dir).map_err(|e| DatabaseError::IoError(e.to_string()))?;
+        std::fs::create_dir_all(output_dir).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         println!("Documentation generated in: {}", output_dir);
 
@@ -599,7 +599,7 @@ impl MigrationCliRunner {
         for param in params {
             let parts: Vec<&str> = param.splitn(2, '=').collect();
             if parts.len() != 2 {
-                return Err(DatabaseError::MigrationError(format!(
+                return Err(DatabaseError::Migration(format!(
                     "Invalid parameter format: {}. Use key=value",
                     param
                 )));
@@ -650,7 +650,7 @@ pub fn run_cli() -> DatabaseResult<()> {
 
 #[cfg(not(feature = "cli"))]
 pub fn run_cli() -> DatabaseResult<()> {
-    Err(DatabaseError::MigrationError(
+    Err(DatabaseError::Migration(
         "CLI feature not enabled".to_string(),
     ))
 }
