@@ -152,8 +152,8 @@ impl MVCCEngine {
         self.transaction_manager.begin(isolation_level)
     }
     
-    pub fn get(&self, key: &[u8], txn: &Transaction) -> Result<Option<Bytes>> {
-        let key_bytes = Bytes::copy_from_slice(key);
+    pub fn get(&self, key: impl Into<Bytes>, txn: &Transaction) -> Result<Option<Bytes>> {
+        let key_bytes = key.into();
         
         if let Some(entry) = self.data.get(&key_bytes) {
             let versioned = entry.value().read();
@@ -169,11 +169,13 @@ impl MVCCEngine {
         Ok(None)
     }
     
-    pub fn put(&self, key: &[u8], value: &[u8], txn: &mut Transaction) -> Result<()> {
-        let key_bytes = Bytes::copy_from_slice(key);
-        let value_bytes = Bytes::copy_from_slice(value);
+    pub fn put(&self, key: impl Into<Bytes>, value: impl Into<Bytes>, txn: &mut Transaction) -> Result<()> {
+        let key_bytes = key.into();
+        let value_bytes = value.into();
         
-        txn.add_write(key_bytes.clone(), Some(value_bytes.clone()));
+        let key_clone = key_bytes.clone();
+        let value_clone = value_bytes.clone();
+        txn.add_write(key_clone, Some(value_clone));
         
         if txn.isolation_level == IsolationLevel::Serializable {
             self.conflict_manager.check_write_conflict(&key_bytes, txn)?;
@@ -198,10 +200,11 @@ impl MVCCEngine {
         Ok(())
     }
     
-    pub fn delete(&self, key: &[u8], txn: &mut Transaction) -> Result<()> {
-        let key_bytes = Bytes::copy_from_slice(key);
+    pub fn delete(&self, key: impl Into<Bytes>, txn: &mut Transaction) -> Result<()> {
+        let key_bytes = key.into();
         
-        txn.add_write(key_bytes.clone(), None);
+        let key_clone = key_bytes.clone();
+        txn.add_write(key_clone, None);
         
         if txn.isolation_level == IsolationLevel::Serializable {
             self.conflict_manager.check_write_conflict(&key_bytes, txn)?;
@@ -228,13 +231,13 @@ impl MVCCEngine {
     
     pub fn scan(
         &self,
-        start: &[u8],
-        end: &[u8],
+        start: impl Into<Bytes>,
+        end: impl Into<Bytes>,
         txn: &Transaction,
         limit: Option<usize>,
     ) -> Result<Vec<(Bytes, Bytes)>> {
-        let start_key = Bytes::copy_from_slice(start);
-        let end_key = Bytes::copy_from_slice(end);
+        let start_key = start.into();
+        let end_key = end.into();
         
         let mut results = Vec::new();
         let mut count = 0;
