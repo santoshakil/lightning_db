@@ -7,8 +7,6 @@ use std::time::{Duration, Instant};
 use tempfile::tempdir;
 use rand::{Rng, RngCore};
 
-mod common;
-use common::*;
 
 const MB: u64 = 1024 * 1024;
 const GB: u64 = 1024 * 1024 * 1024;
