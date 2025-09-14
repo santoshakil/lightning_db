@@ -337,8 +337,10 @@ impl MetricsCollector {
         debug!("Starting metrics collection cycle");
 
         // Collect various metric categories
-        let mut metrics = DatabaseMetrics::default();
-        metrics.timestamp = SystemTime::now();
+        let mut metrics = DatabaseMetrics {
+            timestamp: SystemTime::now(),
+            ..Default::default()
+        };
 
         // Collect operation metrics
         self.collect_operation_metrics(database, &mut metrics)?;

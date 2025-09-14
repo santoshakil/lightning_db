@@ -353,8 +353,10 @@ impl PerformanceMonitor {
         let collection_start = Instant::now();
         debug!("Starting performance data collection");
 
-        let mut performance = PerformanceData::default();
-        performance.timestamp = SystemTime::now();
+        let mut performance = PerformanceData {
+            timestamp: SystemTime::now(),
+            ..Default::default()
+        };
 
         // Collect throughput metrics
         self.collect_throughput_metrics(database, &mut performance)?;

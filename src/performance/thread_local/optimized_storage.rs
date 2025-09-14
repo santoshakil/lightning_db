@@ -482,7 +482,7 @@ impl ThreadLocalStorage {
 
         ThreadLocalStorageStats {
             transaction_cache_size: tx_cache_size,
-            page_cache_size: page_cache_size,
+            page_cache_size,
             page_cache_hit_rate: page_hit_rate,
             total_operations,
         }

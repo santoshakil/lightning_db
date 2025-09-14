@@ -8,10 +8,12 @@ use rand::Rng;
 #[test]
 fn test_ecommerce_platform_simulation() {
     let dir = tempdir().unwrap();
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = true;
-    config.cache_size = 2 * 1024 * 1024;
-    config.use_optimized_transactions = true;
+    let config = LightningDbConfig {
+        compression_enabled: true,
+        cache_size: 2 * 1024 * 1024,
+        use_optimized_transactions: true,
+        ..Default::default()
+    };
     
     let db = Arc::new(Database::create(dir.path(), config).unwrap());
     
@@ -155,9 +157,11 @@ fn test_ecommerce_platform_simulation() {
 #[test]
 fn test_high_concurrency_banking_system() {
     let dir = tempdir().unwrap();
-    let mut config = LightningDbConfig::default();
-    config.wal_sync_mode = WalSyncMode::Sync;
-    config.use_optimized_transactions = true;
+    let config = LightningDbConfig {
+        wal_sync_mode: WalSyncMode::Sync,
+        use_optimized_transactions: true,
+        ..Default::default()
+    };
     
     let db = Arc::new(Database::create(dir.path(), config).unwrap());
     
@@ -286,9 +290,11 @@ fn test_high_concurrency_banking_system() {
 #[test]
 fn test_time_series_iot_data() {
     let dir = tempdir().unwrap();
-    let mut config = LightningDbConfig::default();
-    config.compression_enabled = true;
-    
+    let config = LightningDbConfig {
+        compression_enabled: true,
+        ..Default::default()
+    };
+
     let db = Database::create(dir.path(), config).unwrap();
     
     println!("\n=== IoT Time Series Data Test ===\n");
@@ -403,8 +409,10 @@ fn test_crash_recovery_with_partial_writes() {
     println!("\n=== Crash Recovery Test ===\n");
     
     {
-        let mut config = LightningDbConfig::default();
-        config.wal_sync_mode = WalSyncMode::Sync;
+        let config = LightningDbConfig {
+            wal_sync_mode: WalSyncMode::Sync,
+            ..Default::default()
+        };
         let db = Database::create(&path, config).unwrap();
         
         for i in 0..500 {
