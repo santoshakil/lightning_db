@@ -747,6 +747,12 @@ impl UnifiedTransactionManager {
             visibility.min_active_timestamp
         };
 
+        // Clean up old transactions in visibility tracker
+        {
+            let mut visibility = self.visibility_tracker.write();
+            visibility.cleanup_old_transactions(min_timestamp.saturating_sub(1000));
+        }
+
         let collected = self.version_store.garbage_collect(min_timestamp);
         if collected > 0 {
             self.stats
@@ -919,6 +925,12 @@ impl VisibilityTracker {
         } else {
             false
         }
+    }
+
+    fn cleanup_old_transactions(&mut self, keep_after_timestamp: u64) {
+        self.committed_transactions.retain(|_, &mut timestamp| {
+            timestamp >= keep_after_timestamp
+        });
     }
 }
 
