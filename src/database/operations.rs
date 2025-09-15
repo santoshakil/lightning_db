@@ -79,7 +79,7 @@ impl Database {
         // Fast path for direct B+Tree writes when not using transactions
         // Note: Even with optimized transactions enabled, non-transactional puts should use the direct path
         if let Some(ref write_buffer) = self.btree_write_buffer {
-            return write_buffer.insert(key, value);
+            return write_buffer.insert(key.to_vec(), value.to_vec());
         }
 
         // Direct B+Tree write (fallback)

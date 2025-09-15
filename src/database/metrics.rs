@@ -133,8 +133,16 @@ impl Database {
     }
 
     pub fn cache_stats(&self) -> crate::performance::cache::CacheStats {
+        use std::sync::atomic::Ordering;
+
         if let Some(ref cache) = self.unified_cache {
-            cache.stats().clone()
+            let stats = cache.stats();
+            let new_stats = crate::performance::cache::CacheStats::new();
+            new_stats.hits.store(stats.hits.load(Ordering::Relaxed), Ordering::Relaxed);
+            new_stats.misses.store(stats.misses.load(Ordering::Relaxed), Ordering::Relaxed);
+            new_stats.evictions.store(stats.evictions.load(Ordering::Relaxed), Ordering::Relaxed);
+            new_stats.prefetch_hits.store(stats.prefetch_hits.load(Ordering::Relaxed), Ordering::Relaxed);
+            new_stats
         } else {
             Default::default()
         }
@@ -146,7 +154,7 @@ impl Database {
 
     pub fn get_root_page_id(&self) -> Result<u64, crate::Error> {
         let btree = self.btree.read();
-        Ok(btree.root_page_id())
+        Ok(btree.root_page_id() as u64)
     }
 
     pub fn get_page_manager(&self) -> crate::core::storage::page_wrappers::PageManagerWrapper {

@@ -22,7 +22,7 @@ impl Database {
     pub fn shutdown(&self) -> Result<()> {
         // Stop prefetch manager
         if let Some(ref prefetch_manager) = self.prefetch_manager {
-            prefetch_manager.stop()?;
+            prefetch_manager.stop();
         }
 
         // Stop metrics collector
@@ -156,7 +156,7 @@ impl Database {
 
     pub fn enable_compaction(&self, config: crate::features::compaction::CompactionConfig) -> Result<()> {
         if self.compaction_manager.is_none() {
-            let compaction_manager = Arc::new(crate::features::compaction::incremental::IncrementalCompactor::new(config));
+            let compaction_manager = Arc::new(crate::features::compaction::incremental::IncrementalCompactor::new(Arc::new(tokio::sync::RwLock::new(config))));
             // Note: We can't modify self here as it's not mutable
             // This would need to be handled differently in the actual implementation
             // For now, we'll just return an error
@@ -167,7 +167,8 @@ impl Database {
 
     pub fn trigger_compaction(&self) -> Result<()> {
         if let Some(ref compaction_manager) = self.compaction_manager {
-            tokio::runtime::Runtime::new()?.block_on(compaction_manager.compact_async())?;
+            use crate::features::compaction::CompactionType;
+            tokio::runtime::Runtime::new()?.block_on(compaction_manager.compact_async(CompactionType::Incremental))?;
         }
         Ok(())
     }
