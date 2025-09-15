@@ -609,7 +609,7 @@ impl DeadlockDetector {
     pub async fn add_transaction(&self, txn_id: TransactionId, priority: i32) -> Result<()> {
         let mut graph = self.wait_graph.write().await;
 
-        if let std::collections::hash_map::Entry::Vacant(e) = graph.node_map.entry(txn_id) {
+        if !graph.node_map.contains_key(&txn_id) {
             let idx = graph.graph.add_node(WaitNode {
                 txn_id,
                 priority,
@@ -622,7 +622,7 @@ impl DeadlockDetector {
                 node_type: NodeType::Transaction,
                 cost: 0.0,
             });
-            e.insert(idx);
+            graph.node_map.insert(txn_id, idx);
             graph.generation += 1;
         }
 
