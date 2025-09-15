@@ -112,26 +112,6 @@ impl Database {
         }
     }
 
-    fn put_small_optimized(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        // Fast path for small data - minimize allocations
-        if let Some(ref lsm) = self.lsm_tree {
-            // Write to WAL first
-            if let Some(ref unified_wal) = self.unified_wal {
-                unified_wal.append(WALOperation::Put {
-                    key: key.to_vec(),
-                    value: value.to_vec(),
-                })?;
-            }
-
-            // Use thread-local buffer for small data
-            let key_vec = performance::thread_local::cache::copy_to_thread_buffer(key);
-            let value_vec = performance::thread_local::cache::copy_to_thread_buffer(value);
-            lsm.insert(key_vec, value_vec)?;
-            Ok(())
-        } else {
-            self.put_standard(key, value)
-        }
-    }
 
     fn put_standard(&self, key: &[u8], value: &[u8]) -> Result<()> {
         // Write to WAL first for durability
@@ -174,7 +154,7 @@ impl Database {
         let tx_id = self.transaction_manager.begin()?;
 
         // Apply all operations within the transaction
-        for op in &batch.operations {
+        for op in batch.operations() {
             match op {
                 BatchOperation::Put { key, value } => {
                     if let Err(e) = self.put_tx(tx_id, key, value) {
@@ -285,5 +265,92 @@ impl Database {
 
             Ok(existed)
         })
+    }
+
+    pub fn put_batch(&self, pairs: &[(Vec<u8>, Vec<u8>)]) -> Result<()> {
+        // Use batch_put which already exists
+        self.batch_put(pairs)
+    }
+
+    pub fn get_batch(&self, keys: &[Vec<u8>]) -> Result<Vec<Option<Vec<u8>>>> {
+        let mut results = Vec::with_capacity(keys.len());
+        for key in keys {
+            results.push(self.get(key)?);
+        }
+        Ok(results)
+    }
+
+    pub fn delete_batch(&self, keys: &[Vec<u8>]) -> Result<Vec<bool>> {
+        let mut results = Vec::with_capacity(keys.len());
+        for key in keys {
+            results.push(self.delete(key)?);
+        }
+        Ok(results)
+    }
+
+    pub fn sync(&self) -> Result<()> {
+        // Sync WAL if present
+        if let Some(ref wal) = self.unified_wal {
+            wal.sync()?;
+        }
+        // Sync page manager
+        self.page_manager.sync()?;
+        Ok(())
+    }
+
+    pub fn scan(&self, start: Option<&[u8]>, end: Option<&[u8]>) -> Result<crate::core::iterator::RangeIterator> {
+        use crate::core::iterator::RangeIterator;
+        RangeIterator::new(
+            self.btree.clone(),
+            start.map(|s| s.to_vec()),
+            end.map(|e| e.to_vec()),
+            None,
+        )
+    }
+
+    pub fn scan_prefix(&self, prefix: &[u8]) -> Result<crate::core::iterator::RangeIterator> {
+        use crate::core::iterator::RangeIterator;
+        // Calculate end key for prefix scan
+        let mut end = prefix.to_vec();
+        for i in (0..end.len()).rev() {
+            if end[i] < 255 {
+                end[i] += 1;
+                end.truncate(i + 1);
+                return RangeIterator::new(
+                    self.btree.clone(),
+                    Some(prefix.to_vec()),
+                    Some(end),
+                    None,
+                );
+            }
+        }
+        // If all bytes are 255, scan from prefix to end
+        RangeIterator::new(
+            self.btree.clone(),
+            Some(prefix.to_vec()),
+            None,
+            None,
+        )
+    }
+
+    pub(crate) fn put_small_optimized(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        // Fast path for small data - minimize allocations
+        if let Some(ref lsm) = self.lsm_tree {
+            // Write to WAL first
+            if let Some(ref unified_wal) = self.unified_wal {
+                unified_wal.append(WALOperation::Put {
+                    key: key.to_vec(),
+                    value: value.to_vec(),
+                })?;
+            }
+
+            // Use thread-local buffer for small data
+            let key_vec = performance::thread_local::cache::copy_to_thread_buffer(key);
+            let value_vec = performance::thread_local::cache::copy_to_thread_buffer(value);
+            lsm.insert(key_vec, value_vec)?;
+            Ok(())
+        } else {
+            self.put_standard(key, value)
+        }
     }
 }

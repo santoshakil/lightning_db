@@ -1008,36 +1008,6 @@ impl BackupManager {
     }
 }
 
-/// Convenient backup/restore functions for Database
-impl Database {
-    /// Create a backup of this database
-    pub fn backup<P: AsRef<Path>>(&self, _backup_path: P) -> Result<BackupMetadata> {
-        // Sync database before backup
-        self.sync()?;
-
-        let _manager = BackupManager::new(BackupConfig::default());
-
-        // Get database path from config
-        // In a real implementation, we'd store the path in the Database struct
-        // For now, we'll return an error
-        Err(Error::Generic(
-            "Database path not available for backup".to_string(),
-        ))
-    }
-
-    /// Restore database from backup
-    pub fn restore<P: AsRef<Path>, Q: AsRef<Path>>(
-        backup_path: P,
-        restore_path: Q,
-        config: LightningDbConfig,
-    ) -> Result<Self> {
-        let manager = BackupManager::new(BackupConfig::default());
-        manager.restore_backup(backup_path, &restore_path)?;
-
-        // Open the restored database
-        Self::open(restore_path, config)
-    }
-}
 
 #[cfg(test)]
 mod tests {

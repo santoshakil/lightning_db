@@ -133,6 +133,27 @@ impl Database {
             1.0 // No amplification for B+Tree only
         }
     }
+
+    pub fn cache_stats(&self) -> crate::performance::cache::unified_cache::CacheStats {
+        if let Some(ref cache) = self.unified_cache {
+            cache.stats().clone()
+        } else {
+            Default::default()
+        }
+    }
+
+    pub fn lsm_stats(&self) -> Option<crate::core::lsm::LSMStats> {
+        self.lsm_tree.as_ref().map(|lsm| lsm.stats())
+    }
+
+    pub fn get_root_page_id(&self) -> Result<u64, crate::Error> {
+        let btree = self.btree.read();
+        Ok(btree.root_page_id())
+    }
+
+    pub fn get_page_manager(&self) -> crate::core::storage::page_wrappers::PageManagerWrapper {
+        self.page_manager.clone()
+    }
 }
 
 // Helper function to calculate directory size

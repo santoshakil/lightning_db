@@ -124,7 +124,6 @@ mod database;
 
 // Re-export core types and functionality
 pub use crate::core::error::{Error, Result};
-use crate::core::index;
 pub use crate::core::index::{IndexConfig, IndexKey, IndexQuery, IndexType};
 pub use crate::core::index::{
     IndexableRecord, JoinQuery, JoinResult, JoinType, MultiIndexQuery, SimpleRecord,
@@ -134,18 +133,17 @@ pub use crate::core::iterator::{
 };
 pub use crate::core::key::{Key, KeyBatch, SmallKey, SmallKeyExt};
 use crate::core::query_planner;
-use crate::core::storage::{MmapConfig, PageManager, PageManagerWrapper, PAGE_SIZE};
+use crate::core::storage::{MmapConfig, PAGE_SIZE};
 use core::btree::BPlusTree;
 use core::index::IndexManager;
-use core::lsm::{DeltaCompressionStats, LSMConfig, LSMTree};
+use core::lsm::LSMTree;
 use features::adaptive_compression::CompressionAlgorithm as CompType;
 use features::encryption;
 use features::monitoring;
-use features::statistics::{MetricsCollector, MetricsInstrumented, OperationType};
+use features::statistics::{MetricsCollector, OperationType};
 use parking_lot::RwLock;
-use performance::prefetch::{PrefetchConfig, PrefetchManager};
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use performance::prefetch::PrefetchManager;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 pub use utils::batching::FastAutoBatcher as AutoBatcher;
