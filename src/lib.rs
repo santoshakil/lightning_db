@@ -134,6 +134,7 @@ pub use crate::core::iterator::{
 pub use crate::core::key::{Key, KeyBatch, SmallKey, SmallKeyExt};
 use crate::core::query_planner;
 use crate::core::storage::{MmapConfig, PAGE_SIZE};
+use crate::core::storage::page_wrappers::PageManagerWrapper;
 use core::btree::BPlusTree;
 use core::index::IndexManager;
 use core::lsm::LSMTree;

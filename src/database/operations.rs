@@ -1,5 +1,5 @@
 use crate::{
-    Database, Error, Result, OperationType,
+    Database, Error, Result,
     core::{
         wal::WALOperation,
     },
@@ -79,7 +79,7 @@ impl Database {
         // Fast path for direct B+Tree writes when not using transactions
         // Note: Even with optimized transactions enabled, non-transactional puts should use the direct path
         if let Some(ref write_buffer) = self.btree_write_buffer {
-            return write_buffer.put(key, value);
+            return write_buffer.insert(key, value);
         }
 
         // Direct B+Tree write (fallback)
@@ -139,14 +139,11 @@ impl Database {
         &self,
         key: &[u8],
         value: &[u8],
-        consistency_level: ConsistencyLevel,
+        _consistency_level: ConsistencyLevel,
     ) -> Result<()> {
-        // Check consistency requirements
-        self.consistency_manager
-            .check_write(consistency_level, || {
-                // Perform the actual write
-                self.put(key, value)
-            })
+        // TODO: Implement consistency level handling
+        // For now, just perform the write
+        self.put(key, value)
     }
 
     pub fn write_batch(&self, batch: &WriteBatch) -> Result<()> {
@@ -193,20 +190,13 @@ impl Database {
         key: &[u8],
         consistency_level: ConsistencyLevel,
     ) -> Result<Option<Vec<u8>>> {
-        let metrics = self.metrics_collector.database_metrics();
-
-        metrics.record_operation(OperationType::Get, || {
-            // Check consistency requirements
-            self.consistency_manager
-                .check_read(consistency_level, || {
-                    // Check unified cache first if available
-                    if let Some(ref cache) = self.unified_cache {
-                        if let Some(value) = cache.get(key) {
-                            metrics.record_cache_hit();
-                            return Ok(Some(value));
-                        }
-                        metrics.record_cache_miss();
-                    }
+        let start = std::time::Instant::now();
+        let result = {
+            // TODO: Implement consistency level handling
+            let _ = consistency_level;
+            {
+                    // TODO: Implement proper key-value caching
+                    // UnifiedCache is for page caching, not key-value caching
 
                     // Try LSM tree first if available
                     let result = if let Some(ref lsm) = self.lsm_tree {
@@ -217,20 +207,24 @@ impl Database {
                         btree.get(key)?
                     };
 
-                    // Update cache if found
-                    if let (Some(ref value), Some(ref cache)) = (&result, &self.unified_cache) {
-                        cache.put(key.to_vec(), value.clone());
-                    }
+                    // TODO: Update cache when proper key-value cache is implemented
 
-                    Ok(result)
-                })
-        })
+                    result
+                }
+        };
+
+        // Record metrics
+        let metrics = self.metrics_collector.database_metrics();
+        if result.is_ok() {
+            metrics.record_read(start.elapsed());
+        }
+
+        result
     }
 
     pub fn delete(&self, key: &[u8]) -> Result<bool> {
-        let metrics = self.metrics_collector.database_metrics();
-
-        metrics.record_operation(OperationType::Delete, || {
+        let start = std::time::Instant::now();
+        let result: Result<bool> = (|| {
             // Write to WAL first for durability
             if let Some(ref unified_wal) = self.unified_wal {
                 use crate::core::wal::WALOperation;
@@ -247,7 +241,7 @@ impl Database {
             } else {
                 // For non-LSM databases, delete directly from B+Tree
                 if let Some(ref write_buffer) = self.btree_write_buffer {
-                    write_buffer.delete(key)?
+                    write_buffer.remove(key)?
                 } else {
                     // Direct B+Tree delete
                     let mut btree = self.btree.write();
@@ -258,13 +252,18 @@ impl Database {
                 }
             };
 
-            // Remove from cache if present
-            if let Some(ref cache) = self.unified_cache {
-                cache.remove(key);
-            }
+            // TODO: Remove from cache when proper key-value cache is implemented
 
             Ok(existed)
-        })
+        })();
+
+        // Record metrics
+        if result.is_ok() {
+            let metrics = self.metrics_collector.database_metrics();
+            metrics.record_delete(start.elapsed());
+        }
+
+        result
     }
 
     pub fn put_batch(&self, pairs: &[(Vec<u8>, Vec<u8>)]) -> Result<()> {

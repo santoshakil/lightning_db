@@ -26,6 +26,9 @@ pub use prewarming::{
     WarmingStats,
 };
 
+// Export CacheStats for external use
+pub use self::CacheStats;
+
 #[derive(Debug, Clone)]
 pub struct MemoryConfig {
     pub hot_cache_size: usize,    // Bytes in hot cache
