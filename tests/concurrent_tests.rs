@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 mod common;
-use common::*;
 
 #[test]
 fn test_concurrent_reads_writes() {

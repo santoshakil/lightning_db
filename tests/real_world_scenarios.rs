@@ -6,7 +6,6 @@ use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 mod common;
-use common::*;
 
 #[test]
 fn test_ecommerce_platform_simulation() {

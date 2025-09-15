@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 mod common;
-use common::*;
 
 const MB: u64 = 1024 * 1024;
 // GB constant removed as it's unused
