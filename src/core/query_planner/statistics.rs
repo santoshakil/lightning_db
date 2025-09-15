@@ -437,14 +437,12 @@ pub enum SelectivityOperator {
 }
 
 pub struct StatisticsCollector {
-    sample_rate: f64,
     max_sample_size: usize,
 }
 
 impl StatisticsCollector {
     pub fn new() -> Self {
         Self {
-            sample_rate: 0.1,
             max_sample_size: SAMPLE_SIZE,
         }
     }

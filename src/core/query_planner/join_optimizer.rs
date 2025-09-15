@@ -40,7 +40,6 @@ impl Default for JoinOptimizerConfig {
 #[derive(Debug, Clone)]
 struct JoinGraph {
     nodes: Vec<JoinGraphNode>,
-    edges: Vec<JoinGraphEdge>,
     adjacency_list: HashMap<usize, Vec<usize>>,
 }
 
@@ -49,18 +48,12 @@ struct JoinGraphNode {
     id: usize,
     table_name: String,
     estimated_rows: usize,
-    estimated_size: usize,
-    filter_selectivity: f64,
 }
 
 #[derive(Debug, Clone)]
 struct JoinGraphEdge {
     left_node: usize,
     right_node: usize,
-    join_type: JoinType,
-    join_condition: JoinCondition,
-    selectivity: f64,
-    estimated_output_rows: usize,
 }
 
 impl JoinOptimizer {
@@ -119,8 +112,6 @@ impl JoinOptimizer {
                     id,
                     table_name: left_table.clone(),
                     estimated_rows: self.estimate_table_rows(&left_table, stats),
-                    estimated_size: self.estimate_table_size(&left_table, stats),
-                    filter_selectivity: 1.0,
                 });
                 id
             });
@@ -131,8 +122,6 @@ impl JoinOptimizer {
                     id,
                     table_name: right_table.clone(),
                     estimated_rows: self.estimate_table_rows(&right_table, stats),
-                    estimated_size: self.estimate_table_size(&right_table, stats),
-                    filter_selectivity: 1.0,
                 });
                 id
             });
@@ -140,10 +129,6 @@ impl JoinOptimizer {
             edges.push(JoinGraphEdge {
                 left_node: left_id,
                 right_node: right_id,
-                join_type: join.join_type,
-                join_condition: join.join_condition.clone(),
-                selectivity: self.estimate_join_selectivity(&join.join_condition, stats),
-                estimated_output_rows: join.estimated_rows,
             });
         }
 
@@ -161,7 +146,6 @@ impl JoinOptimizer {
 
         Ok(JoinGraph {
             nodes,
-            edges,
             adjacency_list,
         })
     }
