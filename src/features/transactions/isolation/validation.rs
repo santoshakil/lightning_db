@@ -360,7 +360,7 @@ impl SerializationValidator {
 
                 let all_conflicts: Vec<TxId> = ww_conflicts
                     .into_iter()
-                    .chain(rw_conflicts.into_iter())
+                    .chain(rw_conflicts)
                     .collect::<HashSet<_>>()
                     .into_iter()
                     .collect();
@@ -382,8 +382,8 @@ impl SerializationValidator {
 
                 let all_conflicts: Vec<TxId> = ww_conflicts
                     .into_iter()
-                    .chain(rw_conflicts.into_iter())
-                    .chain(phantom_conflicts.into_iter())
+                    .chain(rw_conflicts)
+                    .chain(phantom_conflicts)
                     .collect::<HashSet<_>>()
                     .into_iter()
                     .collect();

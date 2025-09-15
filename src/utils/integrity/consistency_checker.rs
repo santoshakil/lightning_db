@@ -255,7 +255,7 @@ impl ConsistencyChecker {
                         "Page {} is allocated but not reachable from root",
                         page_id
                     ),
-                    affected_pages: vec![page_id as u64],
+                    affected_pages: vec![page_id],
                     severity: ErrorSeverity::Error,
                 });
             }

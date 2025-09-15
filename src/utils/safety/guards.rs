@@ -456,7 +456,7 @@ pub struct BackupHandle<'a> {
     guard: &'a BackupGuard,
 }
 
-impl<'a> Drop for BackupHandle<'a> {
+impl Drop for BackupHandle<'_> {
     fn drop(&mut self) {
         self.guard
             .backup_in_progress

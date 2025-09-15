@@ -42,7 +42,7 @@ impl FileOps {
         let path = path.as_ref();
         Self::retry_operation(|| {
             OpenOptions::new()
-                .write(true)
+                
                 .create(true)
                 .append(true)
                 .open(path)

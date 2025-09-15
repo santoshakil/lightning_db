@@ -264,7 +264,7 @@ impl SnapshotManager {
                 let should_cleanup =
                     // No references
                     !references.contains_key(snapshot_id) ||
-                    references.get(snapshot_id).map_or(true, |refs| refs.is_empty()) ||
+                    references.get(snapshot_id).is_none_or(|refs| refs.is_empty()) ||
                     // Too old
                     now - meta.created_at > self.max_snapshot_age;
 
