@@ -329,7 +329,7 @@ pub struct AdaptiveCacheSizer {
 struct WorkingSetEstimator {
     access_frequency: HashMap<u64, u32>,
     temporal_windows: VecDeque<HashSet<u64>>,
-    window_size: Duration,
+    _window_size: Duration,
     max_windows: usize,
     estimated_size: usize,
 }
@@ -341,7 +341,7 @@ impl WorkingSetEstimator {
         Self {
             access_frequency: HashMap::new(),
             temporal_windows: VecDeque::new(),
-            window_size,
+            _window_size: window_size,
             max_windows,
             estimated_size: 0,
         }
@@ -993,16 +993,16 @@ pub struct AdaptiveSizingStats {
 
 /// Cache warming strategy for new cache sizes
 pub struct CacheWarmer {
-    warming_rate: usize, // Pages to warm per second
-    priority_pages: VecDeque<u64>,
+    _warming_rate: usize, // Pages to warm per second
+    _priority_pages: VecDeque<u64>,
     is_warming: AtomicBool,
 }
 
 impl CacheWarmer {
     pub fn new(warming_rate: usize) -> Self {
         Self {
-            warming_rate,
-            priority_pages: VecDeque::new(),
+            _warming_rate: warming_rate,
+            _priority_pages: VecDeque::new(),
             is_warming: AtomicBool::new(false),
         }
     }

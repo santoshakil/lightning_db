@@ -287,7 +287,7 @@ impl JoinReordering {
         Ok(())
     }
 
-    fn get_table_name(&self, node: &PlanNode) -> Result<String, Error> {
+    fn _get_table_name(&self, node: &PlanNode) -> Result<String, Error> {
         match node {
             PlanNode::Scan(scan) => Ok(scan.table_name.clone()),
             _ => Ok("unknown".to_string()),
