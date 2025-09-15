@@ -298,38 +298,38 @@ impl Database {
     }
 
     pub fn scan(&self, start: Option<&[u8]>, end: Option<&[u8]>) -> Result<crate::core::iterator::RangeIterator> {
-        use crate::core::iterator::RangeIterator;
-        RangeIterator::new(
-            self.btree.clone(),
+        use crate::core::iterator::{RangeIterator, ScanDirection};
+        Ok(RangeIterator::new(
             start.map(|s| s.to_vec()),
             end.map(|e| e.to_vec()),
-            None,
-        )
+            ScanDirection::Forward,
+            0, // TODO: Use proper read timestamp
+        ))
     }
 
     pub fn scan_prefix(&self, prefix: &[u8]) -> Result<crate::core::iterator::RangeIterator> {
-        use crate::core::iterator::RangeIterator;
+        use crate::core::iterator::{RangeIterator, ScanDirection};
         // Calculate end key for prefix scan
         let mut end = prefix.to_vec();
         for i in (0..end.len()).rev() {
             if end[i] < 255 {
                 end[i] += 1;
                 end.truncate(i + 1);
-                return RangeIterator::new(
-                    self.btree.clone(),
+                return Ok(RangeIterator::new(
                     Some(prefix.to_vec()),
                     Some(end),
-                    None,
-                );
+                    ScanDirection::Forward,
+                    0, // TODO: Use proper read timestamp
+                ));
             }
         }
         // If all bytes are 255, scan from prefix to end
-        RangeIterator::new(
-            self.btree.clone(),
+        Ok(RangeIterator::new(
             Some(prefix.to_vec()),
             None,
-            None,
-        )
+            ScanDirection::Forward,
+            0, // TODO: Use proper read timestamp
+        ))
     }
 
     pub(crate) fn put_small_optimized(&self, key: &[u8], value: &[u8]) -> Result<()> {
