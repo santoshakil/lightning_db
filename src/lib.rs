@@ -154,7 +154,7 @@ use crate::core::transaction::{
     version_cleanup::VersionCleanupThread, UnifiedTransactionManager,
     UnifiedVersionStore as VersionStore,
 };
-use crate::core::wal::{UnifiedWalSyncMode, UnifiedWriteAheadLog};
+use crate::core::wal::UnifiedWriteAheadLog;
 pub use utils::batching::WriteBatch;
 
 // Include protobuf generated code if available

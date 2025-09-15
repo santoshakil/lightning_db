@@ -134,7 +134,7 @@ impl Database {
         }
     }
 
-    pub fn cache_stats(&self) -> crate::performance::cache::unified_cache::CacheStats {
+    pub fn cache_stats(&self) -> crate::performance::cache::CacheStats {
         if let Some(ref cache) = self.unified_cache {
             cache.stats().clone()
         } else {
