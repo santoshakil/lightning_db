@@ -50,8 +50,8 @@ impl Database {
             unified_wal.append(WALOperation::TransactionCommit { tx_id })?;
         }
 
-        // Commit through transaction manager
-        self.transaction_manager.commit(tx_id)?;
+        // Commit through transaction manager (use sync for immediate lock release)
+        self.transaction_manager.commit_sync(tx_id)?;
 
         // Apply committed changes to storage
         if let Some(ref lsm) = self.lsm_tree {
