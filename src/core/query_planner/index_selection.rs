@@ -5,14 +5,14 @@ use crate::core::error::Error;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-const INDEX_SCAN_OVERHEAD: f64 = 1.2;
+const _INDEX_SCAN_OVERHEAD: f64 = 1.2;
 const COVERING_INDEX_BONUS: f64 = 0.5;
-const PARTIAL_INDEX_BONUS: f64 = 0.8;
+const _PARTIAL_INDEX_BONUS: f64 = 0.8;
 const CLUSTERED_INDEX_BONUS: f64 = 0.7;
 
 #[derive(Debug, Clone)]
 pub struct IndexSelector {
-    cost_model: Arc<CostModel>,
+    _cost_model: Arc<CostModel>,
     config: IndexSelectorConfig,
     available_indexes: Arc<HashMap<String, Vec<IndexInfo>>>,
 }
@@ -93,7 +93,7 @@ pub enum IndexAccessType {
 impl IndexSelector {
     pub fn new(cost_model: Arc<CostModel>) -> Self {
         Self {
-            cost_model,
+            _cost_model: cost_model,
             config: IndexSelectorConfig::default(),
             available_indexes: Arc::new(HashMap::new()),
         }

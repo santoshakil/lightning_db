@@ -6,11 +6,11 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 const MAX_JOIN_PERMUTATIONS: usize = 100_000;
-const BUSHY_TREE_THRESHOLD: usize = 8;
+const _BUSHY_TREE_THRESHOLD: usize = 8;
 
 #[derive(Debug, Clone)]
 pub struct JoinOptimizer {
-    cost_model: Arc<CostModel>,
+    _cost_model: Arc<CostModel>,
     config: JoinOptimizerConfig,
 }
 
@@ -66,7 +66,7 @@ struct JoinGraphEdge {
 impl JoinOptimizer {
     pub fn new(cost_model: Arc<CostModel>) -> Self {
         Self {
-            cost_model,
+            _cost_model: cost_model,
             config: JoinOptimizerConfig::default(),
         }
     }

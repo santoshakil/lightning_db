@@ -156,7 +156,7 @@ impl Database {
 
     pub fn enable_compaction(&self, config: crate::features::compaction::CompactionConfig) -> Result<()> {
         if self.compaction_manager.is_none() {
-            let compaction_manager = Arc::new(crate::features::compaction::incremental::IncrementalCompactor::new(Arc::new(tokio::sync::RwLock::new(config))));
+            let _compaction_manager = Arc::new(crate::features::compaction::incremental::IncrementalCompactor::new(Arc::new(tokio::sync::RwLock::new(config))));
             // Note: We can't modify self here as it's not mutable
             // This would need to be handled differently in the actual implementation
             // For now, we'll just return an error

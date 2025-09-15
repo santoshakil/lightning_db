@@ -441,7 +441,7 @@ impl LSMTree {
         Ok(())
     }
 
-    fn rotate_memtable(&self) -> Result<()> {
+    fn _rotate_memtable(&self) -> Result<()> {
         let mut memtable_guard = self.memtable.write();
         self.rotate_memtable_atomic(&mut memtable_guard)
     }

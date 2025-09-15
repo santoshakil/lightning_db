@@ -75,7 +75,7 @@ impl Database {
         total += self._config.cache_size as usize;
 
         // Estimate based on page count
-        total += (self.page_manager.page_count() * 4096); // Assuming 4KB pages
+        total += self.page_manager.page_count() * 4096;
 
         total
     }

@@ -13,7 +13,7 @@ impl<'a> SplitHandler<'a> {
     }
 
     /// Handle a split that may propagate up the tree
-    pub fn handle_split(
+    pub fn _handle_split(
         &self,
         node: &mut BTreeNode,
         node_page_id: u32,
@@ -133,7 +133,7 @@ impl<'a> SplitHandler<'a> {
     }
 
     /// Handle split propagation up the tree
-    pub fn propagate_split(
+    pub fn _propagate_split(
         &self,
         path: &[u32],
         split_key: Vec<u8>,
@@ -151,7 +151,7 @@ impl<'a> SplitHandler<'a> {
 
         // Insert split key and new child into parent
         let parent_path = &path[..path.len() - 1];
-        self.handle_split(
+        self._handle_split(
             &mut parent_node,
             parent_id,
             parent_path,

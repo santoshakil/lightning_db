@@ -332,6 +332,51 @@ impl Database {
         ))
     }
 
+    pub fn range(&self, start: Option<&[u8]>, end: Option<&[u8]>) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        use crate::core::lsm::LSMFullIterator;
+        use std::collections::BTreeMap;
+
+        let mut result = Vec::new();
+
+        // Use LSM tree if available
+        if let Some(ref lsm) = self.lsm_tree {
+            // Collect from memtable using iterator
+            let mut iter = LSMFullIterator::new(
+                &lsm,
+                start.map(|s| s.to_vec()),
+                end.map(|e| e.to_vec()),
+                true, // forward
+            )?;
+
+            // Use a BTreeMap to deduplicate and sort
+            let mut entries = BTreeMap::new();
+
+            // Get from memtable
+            while let Some((key, value, _timestamp)) = iter.advance() {
+                if let Some(val) = value {
+                    if !crate::core::lsm::LSMTree::is_tombstone(&val) {
+                        entries.insert(key, val);
+                    }
+                }
+            }
+
+            // TODO: Also need to read from SSTables, but that's not implemented in LSMFullIterator yet
+            // For now, convert the sorted entries to result
+            for (key, value) in entries {
+                if start.is_none() || key.as_slice() >= start.unwrap() {
+                    if end.is_none() || key.as_slice() < end.unwrap() {
+                        result.push((key, value));
+                    }
+                }
+            }
+        } else {
+            // B+Tree range scan not implemented yet
+            return Err(crate::Error::Internal("B+Tree range scan not implemented".to_string()));
+        }
+
+        Ok(result)
+    }
+
     pub(crate) fn put_small_optimized(&self, key: &[u8], value: &[u8]) -> Result<()> {
         // Fast path for small data - minimize allocations
         if let Some(ref lsm) = self.lsm_tree {
