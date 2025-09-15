@@ -146,17 +146,17 @@ impl RecordBatchStream {
 }
 
 pub struct QueryExecutor {
-    operators: HashMap<String, Arc<dyn PhysicalOperator>>,
-    memory_manager: Arc<MemoryManager>,
-    scheduler: Arc<TaskScheduler>,
+    _operators: HashMap<String, Arc<dyn PhysicalOperator>>,
+    _memory_manager: Arc<MemoryManager>,
+    _scheduler: Arc<TaskScheduler>,
 }
 
 impl QueryExecutor {
     pub fn new() -> Self {
         Self {
-            operators: HashMap::new(),
-            memory_manager: Arc::new(MemoryManager::new(1024 * 1024 * 1024)),
-            scheduler: Arc::new(TaskScheduler::new(num_cpus::get())),
+            _operators: HashMap::new(),
+            _memory_manager: Arc::new(MemoryManager::new(1024 * 1024 * 1024)),
+            _scheduler: Arc::new(TaskScheduler::new(num_cpus::get())),
         }
     }
 
@@ -205,7 +205,7 @@ impl QueryExecutor {
             PlanNode::Scan(scan) => Ok(Arc::new(ScanOperator {
                 table_name: scan.table_name.clone(),
                 columns: scan.columns.clone(),
-                predicate: scan.predicate.clone(),
+                _predicate: scan.predicate.clone(),
                 estimated_rows: scan.estimated_rows,
             })),
             PlanNode::Filter(filter) => {
@@ -246,7 +246,7 @@ impl QueryExecutor {
                 let input = self.plan_to_operator(sort.input.clone())?;
                 Ok(Arc::new(SortOperator {
                     input,
-                    order_by: sort.order_by.clone(),
+                    _order_by: sort.order_by.clone(),
                     limit: sort.limit,
                 }))
             }
@@ -268,7 +268,7 @@ impl QueryExecutor {
 struct ScanOperator {
     table_name: String,
     columns: Vec<String>,
-    predicate: Option<Predicate>,
+    _predicate: Option<Predicate>,
     estimated_rows: usize,
 }
 
@@ -518,13 +518,13 @@ impl PhysicalOperator for HashAggregateOperator {
 }
 
 struct AggregateAccumulator {
-    groups: HashMap<Vec<Value>, AggregateState>,
+    _groups: HashMap<Vec<Value>, AggregateState>,
 }
 
 impl AggregateAccumulator {
     fn new(_group_by: &[Expression], _aggregates: &[super::planner::AggregateFunction]) -> Self {
         Self {
-            groups: HashMap::new(),
+            _groups: HashMap::new(),
         }
     }
 
@@ -541,15 +541,15 @@ impl AggregateAccumulator {
 }
 
 struct AggregateState {
-    count: usize,
-    sum: f64,
-    min: Option<Value>,
-    max: Option<Value>,
+    _count: usize,
+    _sum: f64,
+    _min: Option<Value>,
+    _max: Option<Value>,
 }
 
 struct SortOperator {
     input: Arc<dyn PhysicalOperator>,
-    order_by: Vec<super::planner::OrderByExpr>,
+    _order_by: Vec<super::planner::OrderByExpr>,
     limit: Option<usize>,
 }
 
@@ -681,83 +681,83 @@ impl LimitOperator {
 }
 
 struct MemoryManager {
-    total_memory: usize,
-    used_memory: Arc<RwLock<usize>>,
-    allocations: Arc<RwLock<HashMap<String, usize>>>,
+    _total_memory: usize,
+    _used_memory: Arc<RwLock<usize>>,
+    _allocations: Arc<RwLock<HashMap<String, usize>>>,
 }
 
 impl MemoryManager {
     fn new(total_memory: usize) -> Self {
         Self {
-            total_memory,
-            used_memory: Arc::new(RwLock::new(0)),
-            allocations: Arc::new(RwLock::new(HashMap::new())),
+            _total_memory: total_memory,
+            _used_memory: Arc::new(RwLock::new(0)),
+            _allocations: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    fn allocate(&self, operator: &str, size: usize) -> Result<MemoryAllocation<'_>, Error> {
-        let mut used = self.used_memory.write();
+    fn _allocate(&self, _operator: &str, _size: usize) -> Result<_MemoryAllocation<'_>, Error> {
+        let mut used = self._used_memory.write();
 
-        if *used + size > self.total_memory {
+        if *used + _size > self._total_memory {
             return Err(Error::ResourceExhausted {
                 resource: format!(
                     "Memory: requested {}, available {}",
-                    size,
-                    self.total_memory - *used
+                    _size,
+                    self._total_memory - *used
                 ),
             });
         }
 
-        *used += size;
-        self.allocations.write().insert(operator.to_string(), size);
+        *used += _size;
+        self._allocations.write().insert(_operator.to_string(), _size);
 
-        Ok(MemoryAllocation {
+        Ok(_MemoryAllocation {
             manager: self,
-            size,
-            operator: operator.to_string(),
+            size: _size,
+            operator: _operator.to_string(),
         })
     }
 }
 
-struct MemoryAllocation<'a> {
+struct _MemoryAllocation<'a> {
     manager: &'a MemoryManager,
     size: usize,
     operator: String,
 }
 
-impl Drop for MemoryAllocation<'_> {
+impl Drop for _MemoryAllocation<'_> {
     fn drop(&mut self) {
-        *self.manager.used_memory.write() -= self.size;
-        self.manager.allocations.write().remove(&self.operator);
+        *self.manager._used_memory.write() -= self.size;
+        self.manager._allocations.write().remove(&self.operator);
     }
 }
 
 struct TaskScheduler {
-    semaphore: Arc<Semaphore>,
-    task_queue: Arc<RwLock<VecDeque<Task>>>,
+    _semaphore: Arc<Semaphore>,
+    _task_queue: Arc<RwLock<VecDeque<Task>>>,
 }
 
 impl TaskScheduler {
     fn new(parallelism: usize) -> Self {
         Self {
-            semaphore: Arc::new(Semaphore::new(parallelism)),
-            task_queue: Arc::new(RwLock::new(VecDeque::new())),
+            _semaphore: Arc::new(Semaphore::new(parallelism)),
+            _task_queue: Arc::new(RwLock::new(VecDeque::new())),
         }
     }
 
-    async fn schedule<F, R>(&self, task: F) -> Result<R, Error>
+    async fn _schedule<F, R>(&self, task: F) -> Result<R, Error>
     where
         F: Future<Output = Result<R, Error>> + Send + 'static,
         R: Send + 'static,
     {
-        let _permit = self.semaphore.acquire().await.unwrap();
+        let _permit = self._semaphore.acquire().await.unwrap();
         task.await
     }
 }
 
 struct Task {
-    id: String,
-    priority: u32,
+    _id: String,
+    _priority: u32,
 }
 
 #[derive(Debug, Clone)]

@@ -26,7 +26,7 @@ fn unlikely(b: bool) -> bool {
 }
 
 // Optimized constants for iterator performance
-const PREFETCH_SIZE: usize = 64; // Cache line size for prefetching
+const _PREFETCH_SIZE: usize = 64;
 const STACK_BUFFER_ENTRIES: usize = 32; // Stack buffer for small result sets
 
 /// Safe stack-like buffer for small key-value pairs to avoid heap allocation
@@ -72,7 +72,7 @@ impl SafeStackEntryBuffer {
     }
 
     #[inline(always)]
-    fn is_full(&self) -> bool {
+    fn _is_full(&self) -> bool {
         self.entries.len() >= self.capacity
     }
 }

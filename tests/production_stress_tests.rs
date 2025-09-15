@@ -21,7 +21,8 @@ fn test_sustained_high_write_throughput_1m() {
     let config = LightningDbConfig {
         cache_size: 500 * MB,
         max_active_transactions: 1000,
-        // wal_sync_interval removed - not available in config
+        compression_enabled: false, // Disable for performance
+        enable_statistics: false,   // Disable for performance
         ..Default::default()
     };
     let db = Database::create(dir.path(), config).unwrap();
