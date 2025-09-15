@@ -1,6 +1,7 @@
 use super::{Level, SSTable, SSTableBuilder};
 use crate::core::error::Result;
-use crate::performance::lock_free::WorkStealingQueue;
+use std::collections::VecDeque;
+use std::sync::Mutex;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use rayon::prelude::*;
@@ -13,7 +14,7 @@ use std::time::{Duration, Instant};
 pub struct ParallelCompactionCoordinator {
     // Worker pool
     worker_count: usize,
-    work_queue: Arc<WorkStealingQueue<CompactionJob>>,
+    work_queue: Arc<Mutex<VecDeque<CompactionJob>>>,
 
     // Progress tracking
     active_compactions: Arc<DashMap<u64, CompactionProgress>>,
@@ -54,7 +55,7 @@ pub enum CompactionState {
 impl ParallelCompactionCoordinator {
     pub fn new(worker_count: usize) -> Arc<Self> {
         let shutdown = Arc::new(AtomicBool::new(false));
-        let work_queue = Arc::new(WorkStealingQueue::new(worker_count));
+        let work_queue = Arc::new(Mutex::new(VecDeque::new()));
         let active_compactions = Arc::new(DashMap::new());
 
         let coordinator = Arc::new(Self {
@@ -104,7 +105,7 @@ impl ParallelCompactionCoordinator {
         };
 
         self.active_compactions.insert(job_id, progress);
-        self.work_queue.push(job);
+        self.work_queue.lock().unwrap().push_back(job);
 
         job_id
     }
@@ -124,9 +125,9 @@ impl ParallelCompactionCoordinator {
     }
 
     /// Worker loop
-    fn worker_loop(&self, worker_id: usize) {
+    fn worker_loop(&self, _worker_id: usize) {
         while !self.shutdown.load(Ordering::Relaxed) {
-            if let Some(job) = self.work_queue.pop(worker_id) {
+            if let Some(job) = self.work_queue.lock().unwrap().pop_front() {
                 self.execute_compaction(job);
             } else {
                 std::thread::sleep(Duration::from_millis(10));

@@ -1,22 +1,9 @@
 pub mod cache;
 pub mod optimizations;
-pub mod lock_free;
-pub mod thread_local;
 pub mod prefetch;
 
 // Re-export key performance optimization types
-pub use optimizations::critical_path::{CriticalPathOptimizer, create_critical_path_optimizer};
-pub use optimizations::transaction_batching::{
-    TransactionBatcher, create_transaction_batcher, WorkloadType,
-    BatchedTransaction, TransactionPriority,
-};
-pub use lock_free::concurrent_structures::{
-    LockFreeHashMap, LockFreeQueue, LockFreeStack,
-};
-pub use thread_local::optimized_storage::{
-    ThreadLocalStorage, CachedTransactionState, CachedPage,
-    ThreadLocalStorageStats,
-};
+pub use optimizations::simd_ops;
 
 
 // Performance metrics aggregation

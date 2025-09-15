@@ -89,10 +89,8 @@ pub mod core {
 // Performance optimizations
 pub mod performance {
     pub mod cache;
-    pub mod lock_free;
     pub mod optimizations;
     pub mod prefetch;
-    pub mod thread_local;
 }
 
 // Optional features

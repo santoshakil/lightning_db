@@ -7,7 +7,6 @@ use crate::{
         batching::write_batch::{WriteBatch, BatchOperation},
         safety::consistency::ConsistencyLevel,
     },
-    performance,
 };
 
 impl Database {
@@ -58,17 +57,9 @@ impl Database {
                 })?;
             }
 
-            // Write to LSM - use thread-local buffers for small data
-            let key_vec = if key.len() <= 256 {
-                performance::thread_local::cache::copy_to_thread_buffer(key)
-            } else {
-                key.to_vec()
-            };
-            let value_vec = if value.len() <= 4096 {
-                performance::thread_local::cache::copy_to_thread_buffer(value)
-            } else {
-                value.to_vec()
-            };
+            // Write to LSM
+            let key_vec = key.to_vec();
+            let value_vec = value.to_vec();
             lsm.insert(key_vec, value_vec)?;
 
             // UnifiedCache integration implemented
@@ -388,10 +379,8 @@ impl Database {
                 })?;
             }
 
-            // Use thread-local buffer for small data
-            let key_vec = performance::thread_local::cache::copy_to_thread_buffer(key);
-            let value_vec = performance::thread_local::cache::copy_to_thread_buffer(value);
-            lsm.insert(key_vec, value_vec)?;
+            // Insert to LSM
+            lsm.insert(key.to_vec(), value.to_vec())?;
             Ok(())
         } else {
             self.put_standard(key, value)
