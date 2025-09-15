@@ -126,7 +126,7 @@ impl Database {
         let start = start_key.map(|k| k.to_vec());
         let end = end_key.map(|k| k.to_vec());
 
-        let mut iterator = self.scan(start, end)?;
+        let mut iterator = self.scan(start.as_deref(), end.as_deref())?;
         let mut results = Vec::new();
 
         // Collect all items from iterator

@@ -19,7 +19,7 @@ pub struct RepairTool {
 impl RepairTool {
     /// Create new repair tool
     pub fn new(database: Arc<Database>) -> Self {
-        let page_manager = database.get_page_manager();
+        let page_manager = database.get_page_manager().inner_arc();
 
         Self {
             database,

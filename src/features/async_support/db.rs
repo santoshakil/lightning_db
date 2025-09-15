@@ -149,7 +149,15 @@ impl AsyncDatabase {
     }
 
     pub fn cache_stats(&self) -> Option<String> {
-        self.inner.cache_stats()
+        let stats = self.inner.cache_stats();
+        let hits = stats.hits.load(std::sync::atomic::Ordering::Relaxed);
+        let misses = stats.misses.load(std::sync::atomic::Ordering::Relaxed);
+        let total = hits + misses;
+        let hit_ratio = if total > 0 { hits as f64 / total as f64 } else { 0.0 };
+        Some(format!("hits: {}, misses: {}, hit_ratio: {:.2}%",
+                     hits,
+                     misses,
+                     hit_ratio * 100.0))
     }
 
     pub fn lsm_stats(&self) -> Option<crate::core::lsm::LSMStats> {

@@ -215,11 +215,11 @@ impl Database {
 
         // Record metrics
         let metrics = self.metrics_collector.database_metrics();
-        if result.is_ok() {
+        if result.is_some() {
             metrics.record_read(start.elapsed());
         }
 
-        result
+        Ok(result)
     }
 
     pub fn delete(&self, key: &[u8]) -> Result<bool> {
