@@ -1,4 +1,4 @@
-use lightning_db::{Database, Key, LightningDbConfig, WalSyncMode};
+use lightning_db::{Database, Key, LightningDbConfig, WalSyncMode, WriteBatch};
 use rand::Rng;
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -744,4 +744,129 @@ fn update_balance(json: &str, new_balance: f64) -> String {
 fn calculate_checksum(batch: usize, item: usize) -> u32 {
     // Simple checksum calculation
     ((batch as u32) * 1000000 + (item as u32) * 1000) ^ 0xDEADBEEF
+}
+
+#[test]
+fn test_batch_operations() {
+    let dir = tempdir().unwrap();
+    let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
+
+    let mut batch = WriteBatch::new();
+    for i in 0..1000 {
+        let key = format!("batch_key_{:04}", i);
+        let value = format!("batch_value_{}", i);
+        batch.put(key.into_bytes(), value.into_bytes()).unwrap();
+    }
+    db.write_batch(&batch).unwrap();
+
+    for i in 0..1000 {
+        let key = format!("batch_key_{:04}", i);
+        let result = db.get(key.as_bytes()).unwrap();
+        assert_eq!(result, Some(format!("batch_value_{}", i).into_bytes()));
+    }
+
+    let mut batch = WriteBatch::new();
+    for i in 500..1000 {
+        let key = format!("batch_key_{:04}", i);
+        batch.delete(key.into_bytes()).unwrap();
+    }
+    db.write_batch(&batch).unwrap();
+
+    for i in 0..500 {
+        let key = format!("batch_key_{:04}", i);
+        assert!(db.get(key.as_bytes()).unwrap().is_some());
+    }
+
+    for i in 500..1000 {
+        let key = format!("batch_key_{:04}", i);
+        assert!(db.get(key.as_bytes()).unwrap().is_none());
+    }
+}
+
+#[test]
+fn test_performance_characteristics() {
+    let dir = tempdir().unwrap();
+    let db = Database::create(dir.path(), LightningDbConfig::default()).unwrap();
+
+    let num_operations = 10000;
+    let start = Instant::now();
+
+    for i in 0..num_operations {
+        let key = format!("perf_key_{:06}", i);
+        let value = vec![0u8; 100];
+        db.put(key.as_bytes(), &value).unwrap();
+    }
+
+    let write_duration = start.elapsed();
+    let writes_per_sec = num_operations as f64 / write_duration.as_secs_f64();
+    println!("Write throughput: {:.0} ops/sec", writes_per_sec);
+    assert!(writes_per_sec > 1000.0);
+
+    let start = Instant::now();
+
+    for i in 0..num_operations {
+        let key = format!("perf_key_{:06}", i);
+        let _ = db.get(key.as_bytes()).unwrap();
+    }
+
+    let read_duration = start.elapsed();
+    let reads_per_sec = num_operations as f64 / read_duration.as_secs_f64();
+    println!("Read throughput: {:.0} ops/sec", reads_per_sec);
+    assert!(reads_per_sec > 5000.0);
+
+    let num_range_keys = 100;
+    let start_key = format!("perf_key_{:06}", 1000);
+    let end_key = format!("perf_key_{:06}", 1000 + num_range_keys);
+
+    let start = Instant::now();
+    let results = db.range(Some(start_key.as_bytes()), Some(end_key.as_bytes())).unwrap();
+    let range_duration = start.elapsed();
+
+    assert_eq!(results.len(), num_range_keys);
+    assert!(range_duration < Duration::from_millis(100));
+}
+
+#[test]
+fn test_concurrent_stress() {
+    let dir = tempdir().unwrap();
+    let db = Arc::new(Database::create(dir.path(), LightningDbConfig::default()).unwrap());
+
+    let num_threads = 10;
+    let ops_per_thread = 1000;
+    let mut handles = vec![];
+
+    for thread_id in 0..num_threads {
+        let db_clone = Arc::clone(&db);
+        handles.push(thread::spawn(move || {
+            for op_id in 0..ops_per_thread {
+                let key = format!("t{}:k{:04}", thread_id, op_id);
+                let value = format!("thread_{}_op_{}", thread_id, op_id);
+
+                match op_id % 4 {
+                    0 => {
+                        db_clone.put(key.as_bytes(), value.as_bytes()).unwrap();
+                    }
+                    1 => {
+                        let _ = db_clone.get(key.as_bytes());
+                    }
+                    2 => {
+                        let tx_id = db_clone.begin_transaction().unwrap();
+                        db_clone.put_tx(tx_id, key.as_bytes(), value.as_bytes()).unwrap();
+                        db_clone.commit_transaction(tx_id).unwrap();
+                    }
+                    3 => {
+                        let _ = db_clone.delete(key.as_bytes());
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }));
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    let all_keys: Vec<_> = db.range(None, None).unwrap();
+    assert!(all_keys.len() > 0);
 }
