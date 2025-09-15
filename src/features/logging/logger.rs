@@ -10,9 +10,9 @@ use opentelemetry_sdk::{
     trace::{self, TracerProvider},
     Resource,
 };
+use parking_lot::RwLock;
 use std::io::Write;
 use std::sync::Arc;
-use parking_lot::RwLock;
 use tracing::Level;
 use tracing_appender::{non_blocking, rolling};
 #[cfg(feature = "telemetry")]

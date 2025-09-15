@@ -299,11 +299,7 @@ impl SSTableBuilder {
 
     pub fn add(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         // Update min/max keys
-        if self
-            .min_key
-            .as_ref()
-            .is_none_or(|min| key < min.as_slice())
-        {
+        if self.min_key.as_ref().is_none_or(|min| key < min.as_slice()) {
             self.min_key = Some(key.to_vec());
         }
         self.max_key = Some(key.to_vec());

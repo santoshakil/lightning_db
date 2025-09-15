@@ -160,13 +160,13 @@ impl WriteAheadLog for BasicWriteAheadLog {
         // Pre-allocate buffer to avoid multiple allocations
         let data = bincode::encode_to_vec(&entry, bincode::config::standard())
             .map_err(|e| crate::core::error::Error::Serialization(e.to_string()))?;
-        
+
         let data_len = data.len();
         let total_len = 4 + data_len;
         let mut write_buf = Vec::with_capacity(total_len);
         write_buf.extend_from_slice(&(data_len as u32).to_le_bytes());
         write_buf.extend_from_slice(&data);
-        
+
         // Single write call for better performance
         file.write_all(&write_buf)
             .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
@@ -182,7 +182,7 @@ impl WriteAheadLog for BasicWriteAheadLog {
                 _ => {
                     // Fallback to fsync if fdatasync fails
                     match unsafe { libc::fsync(fd) } {
-                        0 => {},
+                        0 => {}
                         _ => {
                             file.sync_all()
                                 .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
@@ -233,10 +233,11 @@ impl WriteAheadLog for BasicWriteAheadLog {
         let mut file = self.file.lock().map_err(|_| Error::LockFailed {
             resource: "WAL file mutex".to_string(),
         })?;
-        
+
         // Use buffered reader for better I/O performance
         let mut reader = BufReader::with_capacity(64 * 1024, &mut *file);
-        reader.seek(SeekFrom::Start(0))
+        reader
+            .seek(SeekFrom::Start(0))
             .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
 
         let mut operations = Vec::new();
@@ -251,7 +252,8 @@ impl WriteAheadLog for BasicWriteAheadLog {
             }
 
             let length = u32::from_le_bytes(length_buf) as usize;
-            if length == 0 || length > 10 * 1024 * 1024 { // Increased reasonable limit
+            if length == 0 || length > 10 * 1024 * 1024 {
+                // Increased reasonable limit
                 break;
             }
 
@@ -259,10 +261,14 @@ impl WriteAheadLog for BasicWriteAheadLog {
             if read_buf.len() < length {
                 read_buf.resize(length, 0);
             }
-            reader.read_exact(&mut read_buf[..length])
+            reader
+                .read_exact(&mut read_buf[..length])
                 .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
 
-            match bincode::decode_from_slice::<WALEntry, _>(&read_buf[..length], bincode::config::standard()) {
+            match bincode::decode_from_slice::<WALEntry, _>(
+                &read_buf[..length],
+                bincode::config::standard(),
+            ) {
                 Ok((entry, _)) => {
                     if !entry.verify_checksum() {
                         // CRITICAL: Checksum verification failed - corruption detected

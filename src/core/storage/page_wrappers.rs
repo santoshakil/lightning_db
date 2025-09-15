@@ -1,6 +1,6 @@
 use crate::core::error::Result;
-use std::sync::Arc;
 use parking_lot::RwLock;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct PageManagerWrapper {
@@ -11,7 +11,7 @@ impl PageManagerWrapper {
     pub fn standard(page_manager: super::PageManager) -> Self {
         Self::new(page_manager)
     }
-    
+
     pub fn from_arc(page_manager: Arc<RwLock<super::PageManager>>) -> Self {
         // This is a workaround - in production we'd handle this differently
         // For now, we'll just create a new wrapper
@@ -57,7 +57,10 @@ impl PageManagerWrapper {
     #[inline]
     pub fn allocate_page(&self) -> Result<super::PageId> {
         // Hot path optimization: try write lock with timeout
-        match self.inner.try_write_for(std::time::Duration::from_micros(100)) {
+        match self
+            .inner
+            .try_write_for(std::time::Duration::from_micros(100))
+        {
             Some(mut guard) => guard.allocate_page(),
             None => {
                 // Fallback to blocking write
@@ -96,12 +99,18 @@ impl OptimizedPageManager {
         Self::new(page_manager)
     }
 
-    pub fn create(path: &std::path::Path, _config: crate::LightningDbConfig) -> crate::core::error::Result<Self> {
+    pub fn create(
+        path: &std::path::Path,
+        _config: crate::LightningDbConfig,
+    ) -> crate::core::error::Result<Self> {
         let pm = super::PageManager::create(path, 4096)?;
         Ok(Self::new(pm))
     }
 
-    pub fn open(path: &std::path::Path, _config: crate::LightningDbConfig) -> crate::core::error::Result<Self> {
+    pub fn open(
+        path: &std::path::Path,
+        _config: crate::LightningDbConfig,
+    ) -> crate::core::error::Result<Self> {
         let pm = super::PageManager::open(path)?;
         Ok(Self::new(pm))
     }

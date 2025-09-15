@@ -142,10 +142,7 @@ pub use crate::core::iterator::{
 };
 pub use crate::core::key::{Key, KeyBatch, SmallKey, SmallKeyExt};
 use crate::core::query_planner;
-use crate::core::storage::{
-    MmapConfig, PageManager, PageManagerWrapper,
-    PAGE_SIZE,
-};
+use crate::core::storage::{MmapConfig, PageManager, PageManagerWrapper, PAGE_SIZE};
 use core::btree::BPlusTree;
 use core::index::IndexManager;
 use core::lsm::{DeltaCompressionStats, LSMConfig, LSMTree};
@@ -169,8 +166,7 @@ use crate::core::transaction::{
     UnifiedVersionStore as VersionStore,
 };
 use crate::core::wal::{
-    UnifiedTransactionRecoveryState, UnifiedWalConfig, UnifiedWalSyncMode,
-    UnifiedWriteAheadLog,
+    UnifiedTransactionRecoveryState, UnifiedWalConfig, UnifiedWalSyncMode, UnifiedWriteAheadLog,
 };
 use utils::batching::BatchOperation;
 pub use utils::batching::WriteBatch;
@@ -340,8 +336,7 @@ impl Database {
         let page_manager_wrapper = PageManagerWrapper::from_arc(page_manager_arc.clone());
 
         // Wrap with encryption if enabled
-        if let Some(ref _enc_manager) = encryption_manager {
-        }
+        if let Some(ref _enc_manager) = encryption_manager {}
 
         // Create BPlusTree with the final wrapper
         let btree = BPlusTree::new_with_wrapper(page_manager_wrapper.clone())?;
@@ -390,7 +385,6 @@ impl Database {
         // Use the unified transaction manager combining MVCC, optimizations, and safety
         let transaction_manager = UnifiedTransactionManager::new(config.max_active_transactions);
 
-
         let _optimized_transaction_manager: Option<Arc<UnifiedTransactionManager>> = None;
 
         // WAL for durability
@@ -408,9 +402,15 @@ impl Database {
                 enable_compression: config.compression_enabled,
                 strict_ordering: false,
             };
-            Some(UnifiedWriteAheadLog::create_with_config(db_path.join("wal"), wal_config)?)
+            Some(UnifiedWriteAheadLog::create_with_config(
+                db_path.join("wal"),
+                wal_config,
+            )?)
         } else {
-            Some(UnifiedWriteAheadLog::create_with_config(db_path.join("wal"), UnifiedWalConfig::default())?)
+            Some(UnifiedWriteAheadLog::create_with_config(
+                db_path.join("wal"),
+                UnifiedWalConfig::default(),
+            )?)
         };
 
         // Optional prefetch manager for performance
@@ -424,7 +424,9 @@ impl Database {
             let mut manager = PrefetchManager::new(prefetch_config);
 
             // Set up page cache adapter
-            let page_cache_adapter = Arc::new(crate::core::storage::PageCacheAdapter::new(page_manager_arc.clone()));
+            let page_cache_adapter = Arc::new(crate::core::storage::PageCacheAdapter::new(
+                page_manager_arc.clone(),
+            ));
             manager.set_page_cache(page_cache_adapter);
 
             let manager = Arc::new(manager);
@@ -571,7 +573,6 @@ impl Database {
             let mut btree =
                 BPlusTree::from_existing_with_wrapper(page_manager_wrapper.clone(), 1, 1);
 
-
             let lsm_tree = if config.compression_enabled {
                 let lsm_config = LSMConfig {
                     compression_type: match config.compression_type {
@@ -597,8 +598,7 @@ impl Database {
             let transaction_manager =
                 UnifiedTransactionManager::new(config.max_active_transactions);
 
-
-                let _optimized_transaction_manager: Option<Arc<UnifiedTransactionManager>> = None;
+            let _optimized_transaction_manager: Option<Arc<UnifiedTransactionManager>> = None;
 
             // WAL recovery for existing database
             let unified_wal = if config.use_unified_wal {
@@ -705,9 +705,13 @@ impl Database {
                 let wal_dir = db_path.join("wal");
                 let wal_config = UnifiedWalConfig::default();
                 if wal_dir.exists() {
-                    Some(UnifiedWriteAheadLog::open_with_config(&wal_dir, wal_config)?)
+                    Some(UnifiedWriteAheadLog::open_with_config(
+                        &wal_dir, wal_config,
+                    )?)
                 } else {
-                    Some(UnifiedWriteAheadLog::create_with_config(&wal_dir, wal_config)?)
+                    Some(UnifiedWriteAheadLog::create_with_config(
+                        &wal_dir, wal_config,
+                    )?)
                 }
             };
 
@@ -722,7 +726,9 @@ impl Database {
                 let mut manager = PrefetchManager::new(prefetch_config);
 
                 // Set up page cache adapter
-                let page_cache_adapter = Arc::new(crate::core::storage::PageCacheAdapter::new(page_manager_arc.clone()));
+                let page_cache_adapter = Arc::new(crate::core::storage::PageCacheAdapter::new(
+                    page_manager_arc.clone(),
+                ));
                 manager.set_page_cache(page_cache_adapter);
 
                 let manager = Arc::new(manager);
@@ -841,7 +847,6 @@ impl Database {
 
         // Start the cleanup thread
         let _handle = cleanup_thread.clone().start();
-
 
         db
     }
@@ -1235,7 +1240,6 @@ impl Database {
         for operation in batch.operations() {
             match operation {
                 BatchOperation::Put { key, value } => {
-
                     // Apply to storage layer
                     if let Some(ref lsm) = self.lsm_tree {
                         lsm.insert(key.to_vec(), value.to_vec())?;
@@ -1247,7 +1251,6 @@ impl Database {
                     }
                 }
                 BatchOperation::Delete { key } => {
-
                     // Apply to storage layer
                     if let Some(ref lsm) = self.lsm_tree {
                         lsm.delete(key)?;
@@ -1303,7 +1306,6 @@ impl Database {
             quota_manager.check_read_allowed(None, key.len() as u64)?;
         }
 
-
         let result = self.get_with_consistency(key, self._config.consistency_config.default_level);
 
         // Log the final result
@@ -1328,7 +1330,6 @@ impl Database {
         metrics.record_operation(OperationType::Read, || {
             let was_cache_hit = false;
             let mut result = None;
-
 
             // Check LSM tree first if available
             if let Some(ref lsm) = self.lsm_tree {
@@ -1378,7 +1379,6 @@ impl Database {
                 use crate::core::wal::WALOperation;
                 unified_wal.append(WALOperation::Delete { key: key.to_vec() })?;
             }
-
 
             // Apply delete directly to storage layers
             // Use LSM tree if available, otherwise use implicit transaction
@@ -1678,7 +1678,6 @@ impl Database {
     }
 
     pub fn delete_tx(&self, tx_id: u64, key: &[u8]) -> Result<()> {
-
         if let Some(ref opt_manager) = Some(&self.transaction_manager) {
             // Use optimized transaction manager with explicit locking
             opt_manager.acquire_write_lock(tx_id, key)?;
@@ -2484,7 +2483,6 @@ impl Database {
         self.unified_cache.clone()
     }
 
-
     /// Get a reference to the page manager
     pub fn get_page_manager(&self) -> Arc<RwLock<PageManager>> {
         self.page_manager.inner_arc()
@@ -2568,7 +2566,7 @@ impl Database {
             Ok(CacheStatsInfo {
                 hits: stats.hits.load(Ordering::Relaxed) as u64,
                 misses: stats.misses.load(Ordering::Relaxed) as u64,
-                size_bytes: 0, // Not tracked in current implementation
+                size_bytes: 0,  // Not tracked in current implementation
                 entry_count: 0, // Not tracked in current implementation
                 evictions: stats.evictions.load(Ordering::Relaxed) as u64,
             })
@@ -2929,9 +2927,7 @@ impl Database {
                 ));
             }
         } else {
-            return Err(Error::Corruption(
-                "Transaction read failed".to_string(),
-            ));
+            return Err(Error::Corruption("Transaction read failed".to_string()));
         }
 
         // Commit
@@ -3081,7 +3077,6 @@ impl Database {
     }
 
     // ===== INTEGRITY MANAGEMENT METHODS =====
-
 
     /// Enable or disable automatic repair of corrupted data
     pub async fn enable_auto_repair(&self, enabled: bool) -> Result<()> {
@@ -3453,4 +3448,3 @@ pub use features::async_support::AsyncDatabase;
 pub use features::backup::{BackupConfig, BackupManager, BackupMetadata};
 pub use features::statistics::REALTIME_STATS;
 pub use utils::safety::consistency::{ConsistencyConfig, ConsistencyLevel};
-

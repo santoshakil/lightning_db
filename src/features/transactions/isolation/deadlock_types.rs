@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use std::collections::HashMap;
-use std::time::Duration;
 use crate::core::error::Result;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 
 pub type TxId = u64;
 
@@ -33,7 +33,11 @@ pub struct DeadlockDetector {
 }
 
 impl DeadlockDetector {
-    pub fn new(strategy: DeadlockResolutionStrategy, _check_interval: Duration, _timeout: Duration) -> Self {
+    pub fn new(
+        strategy: DeadlockResolutionStrategy,
+        _check_interval: Duration,
+        _timeout: Duration,
+    ) -> Self {
         Self { strategy }
     }
 
@@ -82,7 +86,9 @@ pub struct PredicateLockManager {
 }
 
 impl PredicateLockManager {
-    pub fn new(_lock_manager: Arc<crate::features::transactions::isolation::locks::LockManager>) -> Self {
+    pub fn new(
+        _lock_manager: Arc<crate::features::transactions::isolation::locks::LockManager>,
+    ) -> Self {
         Self {
             locks: Arc::new(parking_lot::RwLock::new(HashMap::new())),
         }

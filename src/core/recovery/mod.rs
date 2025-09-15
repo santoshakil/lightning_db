@@ -14,8 +14,8 @@ pub mod corruption_recovery;
 pub mod crash_recovery_manager;
 pub mod io_recovery;
 pub mod memory_recovery;
-pub mod transaction_recovery;
 pub mod recovery_utils;
+pub mod transaction_recovery;
 
 pub use corruption_recovery::{
     CorruptionHealthReport, CorruptionHealthStatus, CorruptionRecoveryConfig,
@@ -34,13 +34,13 @@ pub use memory_recovery::{
     CacheManager, MemoryHealthReport, MemoryHealthStatus, MemoryPool, MemoryRecoveryConfig,
     MemoryRecoveryManager, MemoryStats,
 };
+pub use recovery_utils::{
+    DoubleWriteBuffer, EnhancedWalRecovery, RecoveryProgress, RecoveryStats, RedundantMetadata,
+};
 pub use transaction_recovery::{
     ConflictResolutionStrategy, OperationType, TransactionHealthReport, TransactionHealthStatus,
     TransactionInfo, TransactionOperation, TransactionRecoveryConfig, TransactionRecoveryManager,
     TransactionRecoveryStats, TransactionState,
-};
-pub use recovery_utils::{
-    DoubleWriteBuffer, EnhancedWalRecovery, RecoveryProgress, RecoveryStats, RedundantMetadata,
 };
 
 use crate::core::error::Result;

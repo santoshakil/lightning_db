@@ -1,5 +1,5 @@
 //! Critical path performance optimizations for Lightning DB
-//! 
+//!
 //! This module contains optimizations specifically targeting the hot paths
 //! identified through profiling:
 //! - get() operations with SIMD-optimized key comparisons
@@ -10,13 +10,13 @@
 use crate::core::error::Result;
 use crate::performance::optimizations::simd;
 use crate::performance::thread_local::cache;
-use parking_lot::{RwLock, Mutex};
+use bytes::Bytes;
+use parking_lot::{Mutex, RwLock};
+use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use rustc_hash::FxHashMap;
-use smallvec::SmallVec;
-use bytes::Bytes;
 
 /// Lock-free page cache entry optimized for critical path access
 pub struct OptimizedPageEntry {
@@ -108,7 +108,8 @@ impl LockFreeWriteBatch {
             operation_type: OpType::Put,
         });
 
-        self.size_estimate.fetch_add(key.len() + value.len(), Ordering::Relaxed);
+        self.size_estimate
+            .fetch_add(key.len() + value.len(), Ordering::Relaxed);
         true
     }
 
@@ -155,19 +156,19 @@ impl LockFreeWriteBatch {
 pub struct CriticalPathOptimizer {
     // Thread-local caches for frequently accessed data
     page_cache: Arc<RwLock<FxHashMap<u32, OptimizedPageEntry>>>,
-    
+
     // Lock-free batch accumulator
     write_batch: Arc<LockFreeWriteBatch>,
-    
+
     // SIMD-optimized operations counter
     simd_ops_count: AtomicU64,
-    
+
     // Performance metrics
     get_latency_ns: AtomicU64,
     put_latency_ns: AtomicU64,
     cache_hit_count: AtomicU64,
     cache_miss_count: AtomicU64,
-    
+
     // Configuration
     enable_simd: bool,
     batch_size: usize,
@@ -213,7 +214,7 @@ impl CriticalPathOptimizer {
         // For now, return None to indicate cache miss
         let elapsed = start.elapsed().as_nanos() as u64;
         self.update_get_latency(elapsed);
-        
+
         Ok(None)
     }
 
@@ -224,7 +225,7 @@ impl CriticalPathOptimizer {
 
         // Use SIMD-optimized thread-local buffers for small data
         let should_batch = key.len() <= 64 && value.len() <= 256;
-        
+
         if should_batch {
             // Try to add to batch - returns false if batch is full
             if self.write_batch.add_put(key, value) {
@@ -244,7 +245,7 @@ impl CriticalPathOptimizer {
     #[inline(always)]
     pub fn optimized_delete(&self, key: &[u8]) -> Result<bool> {
         let should_batch = key.len() <= 64;
-        
+
         if should_batch {
             return Ok(self.write_batch.add_delete(key));
         }
@@ -263,7 +264,7 @@ impl CriticalPathOptimizer {
     fn get_from_cache(&self, key: &[u8]) -> Option<Bytes> {
         // Convert key to page ID (simplified - real implementation would use hash)
         let page_id = self.key_to_page_id(key);
-        
+
         let cache = self.page_cache.read();
         if let Some(entry) = cache.get(&page_id) {
             entry.record_access();
@@ -273,7 +274,7 @@ impl CriticalPathOptimizer {
                 return Some(Bytes::from(format!("cached_value_for_{:?}", key)));
             }
         }
-        
+
         None
     }
 
@@ -351,17 +352,20 @@ impl CriticalPathOptimizer {
     /// Background cache maintenance (call periodically)
     pub fn maintain_cache(&self, max_cache_size: usize) {
         let mut cache = self.page_cache.write();
-        
+
         if cache.len() <= max_cache_size {
             return;
         }
 
         // Remove least recently used entries
-        let mut entries: Vec<_> = cache.iter().map(|(&page_id, entry)| {
-            let last_access = entry.last_access.load(Ordering::Relaxed);
-            let access_count = entry.access_count.load(Ordering::Relaxed);
-            (page_id, last_access, access_count)
-        }).collect();
+        let mut entries: Vec<_> = cache
+            .iter()
+            .map(|(&page_id, entry)| {
+                let last_access = entry.last_access.load(Ordering::Relaxed);
+                let access_count = entry.access_count.load(Ordering::Relaxed);
+                (page_id, last_access, access_count)
+            })
+            .collect();
 
         // Sort by access time and count (LRU with frequency consideration)
         entries.sort_by_key(|(_, last_access, access_count)| {
@@ -402,7 +406,7 @@ pub fn create_critical_path_optimizer() -> CriticalPathOptimizer {
 
     // Choose optimal batch size based on workload characteristics
     let batch_size = if enable_simd { 128 } else { 64 };
-    
+
     CriticalPathOptimizer::new(batch_size, enable_simd)
 }
 
@@ -413,25 +417,27 @@ mod tests {
     #[test]
     fn test_critical_path_optimizer() {
         let optimizer = create_critical_path_optimizer();
-        
+
         // Test optimized put
         let result = optimizer.optimized_put(b"test_key", b"test_value").unwrap();
         assert!(result); // Should succeed in batching
-        
+
         // Test optimized get (cache miss)
         let result = optimizer.optimized_get(b"test_key").unwrap();
         assert!(result.is_none()); // Cache miss expected
-        
+
         // Test batch operations
         for i in 0..10 {
             let key = format!("key_{}", i);
             let value = format!("value_{}", i);
-            optimizer.optimized_put(key.as_bytes(), value.as_bytes()).unwrap();
+            optimizer
+                .optimized_put(key.as_bytes(), value.as_bytes())
+                .unwrap();
         }
-        
+
         let batch = optimizer.flush_batch();
         assert!(!batch.is_empty());
-        
+
         // Test stats
         let stats = optimizer.get_stats();
         assert!(stats.avg_put_latency_ns > 0);
@@ -440,13 +446,13 @@ mod tests {
     #[test]
     fn test_lock_free_write_batch() {
         let batch = LockFreeWriteBatch::new(100);
-        
+
         // Add operations
         assert!(batch.add_put(b"key1", b"value1"));
         assert!(batch.add_delete(b"key2"));
-        
+
         assert_eq!(batch.len(), 2);
-        
+
         // Flush
         let ops = batch.flush();
         assert_eq!(ops.len(), 2);
@@ -456,11 +462,11 @@ mod tests {
     #[test]
     fn test_optimized_page_entry() {
         let entry = OptimizedPageEntry::new(1, vec![1, 2, 3, 4]);
-        
+
         // Test access recording
         entry.record_access();
         assert_eq!(entry.access_count.load(Ordering::Relaxed), 1);
-        
+
         entry.record_access();
         assert_eq!(entry.access_count.load(Ordering::Relaxed), 2);
     }

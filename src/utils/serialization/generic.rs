@@ -8,22 +8,27 @@ pub struct SerializationUtils;
 impl SerializationUtils {
     /// Serialize a value to bytes using serde_json for simplicity
     pub fn serialize<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-        serde_json::to_vec(value).map_err(|e| Error::Serialization(format!("Failed to serialize: {}", e)))
+        serde_json::to_vec(value)
+            .map_err(|e| Error::Serialization(format!("Failed to serialize: {}", e)))
     }
 
     /// Deserialize bytes to a value using serde_json
     pub fn deserialize<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T> {
-        serde_json::from_slice(bytes).map_err(|e| Error::DeserializationError(format!("Failed to deserialize: {}", e)))
+        serde_json::from_slice(bytes)
+            .map_err(|e| Error::DeserializationError(format!("Failed to deserialize: {}", e)))
     }
 
     /// Serialize a value and write to a writer
     pub fn serialize_to_writer<T: Serialize, W: Write>(value: &T, writer: W) -> Result<()> {
-        serde_json::to_writer(writer, value).map_err(|e| Error::Serialization(format!("Failed to serialize to writer: {}", e)))
+        serde_json::to_writer(writer, value)
+            .map_err(|e| Error::Serialization(format!("Failed to serialize to writer: {}", e)))
     }
 
     /// Read from a reader and deserialize to a value
     pub fn deserialize_from_reader<T: for<'de> Deserialize<'de>, R: Read>(reader: R) -> Result<T> {
-        serde_json::from_reader(reader).map_err(|e| Error::DeserializationError(format!("Failed to deserialize from reader: {}", e)))
+        serde_json::from_reader(reader).map_err(|e| {
+            Error::DeserializationError(format!("Failed to deserialize from reader: {}", e))
+        })
     }
 
     /// Serialize with size prefix (4-byte little-endian length + data)
@@ -39,14 +44,20 @@ impl SerializationUtils {
     /// Deserialize with size prefix
     pub fn deserialize_with_size<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T> {
         if bytes.len() < 4 {
-            return Err(Error::DeserializationError("Insufficient data for size prefix".to_string()));
+            return Err(Error::DeserializationError(
+                "Insufficient data for size prefix".to_string(),
+            ));
         }
-        
+
         let size = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
         if bytes.len() < 4 + size {
-            return Err(Error::DeserializationError(format!("Insufficient data: expected {} bytes, got {}", 4 + size, bytes.len())));
+            return Err(Error::DeserializationError(format!(
+                "Insufficient data: expected {} bytes, got {}",
+                4 + size,
+                bytes.len()
+            )));
         }
-        
+
         Self::deserialize(&bytes[4..4 + size])
     }
 
@@ -60,16 +71,27 @@ impl SerializationUtils {
     pub fn serialize_to_buffer<T: Serialize>(value: &T, buffer: &mut [u8]) -> Result<usize> {
         let serialized = Self::serialize(value)?;
         if serialized.len() > buffer.len() {
-            return Err(Error::Serialization(format!("Buffer too small: need {}, got {}", serialized.len(), buffer.len())));
+            return Err(Error::Serialization(format!(
+                "Buffer too small: need {}, got {}",
+                serialized.len(),
+                buffer.len()
+            )));
         }
         buffer[..serialized.len()].copy_from_slice(&serialized);
         Ok(serialized.len())
     }
 
     /// Deserialize from a buffer with known length
-    pub fn deserialize_from_buffer<T: for<'de> Deserialize<'de>>(buffer: &[u8], length: usize) -> Result<T> {
+    pub fn deserialize_from_buffer<T: for<'de> Deserialize<'de>>(
+        buffer: &[u8],
+        length: usize,
+    ) -> Result<T> {
         if length > buffer.len() {
-            return Err(Error::DeserializationError(format!("Buffer too small: need {}, got {}", length, buffer.len())));
+            return Err(Error::DeserializationError(format!(
+                "Buffer too small: need {}, got {}",
+                length,
+                buffer.len()
+            )));
         }
         Self::deserialize(&buffer[..length])
     }
@@ -109,17 +131,17 @@ impl AdvancedSerialization {
     /// Serialize with optional compression and checksums
     pub fn serialize<T: Serialize>(&self, value: &T) -> Result<Vec<u8>> {
         let mut data = SerializationUtils::serialize(value)?;
-        
+
         // Apply compression if enabled and data is large enough
         if self.config.use_compression && data.len() >= self.config.compression_threshold {
             data = self.compress(&data)?;
         }
-        
+
         // Add checksum if enabled
         if self.config.enable_checksums {
             data = self.add_checksum(data)?;
         }
-        
+
         Ok(data)
     }
 
@@ -131,14 +153,14 @@ impl AdvancedSerialization {
         } else {
             data
         };
-        
+
         // Decompress if compression was used
         let decompressed_data = if self.is_compressed(data)? {
             self.decompress(data)?
         } else {
             data.to_vec()
         };
-        
+
         SerializationUtils::deserialize(&decompressed_data)
     }
 
@@ -153,7 +175,9 @@ impl AdvancedSerialization {
 
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>> {
         if data.is_empty() || data[0] != 1 {
-            return Err(Error::DeserializationError("Invalid compression marker".to_string()));
+            return Err(Error::DeserializationError(
+                "Invalid compression marker".to_string(),
+            ));
         }
         Ok(data[1..].to_vec())
     }
@@ -171,23 +195,30 @@ impl AdvancedSerialization {
 
     fn verify_and_remove_checksum<'a>(&self, data: &'a [u8]) -> Result<&'a [u8]> {
         if data.len() < 4 {
-            return Err(Error::DeserializationError("Data too short for checksum".to_string()));
+            return Err(Error::DeserializationError(
+                "Data too short for checksum".to_string(),
+            ));
         }
-        
+
         let data_len = data.len() - 4;
         let data_part = &data[..data_len];
         let checksum_bytes = &data[data_len..];
-        
+
         let expected_checksum = crc32fast::hash(data_part);
-        let actual_checksum = u32::from_le_bytes([checksum_bytes[0], checksum_bytes[1], checksum_bytes[2], checksum_bytes[3]]);
-        
+        let actual_checksum = u32::from_le_bytes([
+            checksum_bytes[0],
+            checksum_bytes[1],
+            checksum_bytes[2],
+            checksum_bytes[3],
+        ]);
+
         if expected_checksum != actual_checksum {
             return Err(Error::CorruptedData(format!(
                 "Checksum mismatch: expected {}, got {}",
                 expected_checksum, actual_checksum
             )));
         }
-        
+
         Ok(data_part)
     }
 }
@@ -196,10 +227,12 @@ impl AdvancedSerialization {
 pub trait CustomSerializable {
     /// Serialize to bytes
     fn to_bytes(&self) -> Result<Vec<u8>>;
-    
+
     /// Deserialize from bytes
-    fn from_bytes(bytes: &[u8]) -> Result<Self> where Self: Sized;
-    
+    fn from_bytes(bytes: &[u8]) -> Result<Self>
+    where
+        Self: Sized;
+
     /// Get the serialized size hint
     fn size_hint(&self) -> Option<usize> {
         None
@@ -292,7 +325,8 @@ mod tests {
         };
 
         let serialized = SerializationUtils::serialize_with_size(&test_data).unwrap();
-        let deserialized: TestStruct = SerializationUtils::deserialize_with_size(&serialized).unwrap();
+        let deserialized: TestStruct =
+            SerializationUtils::deserialize_with_size(&serialized).unwrap();
 
         assert_eq!(test_data, deserialized);
     }
@@ -320,9 +354,21 @@ mod tests {
         let mut batch = BatchSerializer::new(config.clone());
 
         let items = vec![
-            TestStruct { id: 1, name: "item1".to_string(), data: vec![1] },
-            TestStruct { id: 2, name: "item2".to_string(), data: vec![2] },
-            TestStruct { id: 3, name: "item3".to_string(), data: vec![3] },
+            TestStruct {
+                id: 1,
+                name: "item1".to_string(),
+                data: vec![1],
+            },
+            TestStruct {
+                id: 2,
+                name: "item2".to_string(),
+                data: vec![2],
+            },
+            TestStruct {
+                id: 3,
+                name: "item3".to_string(),
+                data: vec![3],
+            },
         ];
 
         for item in &items {
@@ -330,7 +376,7 @@ mod tests {
         }
 
         let serialized = batch.serialize_batch().unwrap();
-        
+
         let deserializer = BatchDeserializer::new(config);
         let deserialized: Vec<TestStruct> = deserializer.deserialize_batch(&serialized).unwrap();
 

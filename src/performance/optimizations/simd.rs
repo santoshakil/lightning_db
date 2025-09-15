@@ -314,10 +314,10 @@ pub mod safe {
                         return a_word.cmp(&b_word);
                     }
                 }
-            },
+            }
             _ => {}
         }
-        
+
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("sse4.2") && (a.len() >= 8 || b.len() >= 8) {

@@ -167,12 +167,8 @@ pub enum Error {
     #[error("Commit failed: {0}")]
     CommitFailed(String),
 
-
     #[error("Connection pool exhausted")]
     ConnectionPoolExhausted,
-
-
-
 
     #[error("Custom error: {0}")]
     Custom(String),
@@ -198,9 +194,6 @@ pub enum Error {
     #[error("Invalid page ID")]
     InvalidPageId,
 
-
-
-
     #[error("Snapshot not found: {0}")]
     SnapshotNotFound(u64),
 
@@ -209,7 +202,6 @@ pub enum Error {
 
     #[error("Transaction retry needed: {0}")]
     TransactionRetry(String),
-
 
     #[error("Transaction {id} in invalid state: {state}")]
     TransactionInvalidState { id: u64, state: String },
@@ -292,7 +284,9 @@ pub enum Error {
     #[error("Database not found: {path}")]
     DatabaseNotFound { path: String },
 
-    #[error("WAL partial entry at offset {offset}: expected {expected_size} bytes, found {actual_size}")]
+    #[error(
+        "WAL partial entry at offset {offset}: expected {expected_size} bytes, found {actual_size}"
+    )]
     WalPartialEntry {
         offset: u64,
         expected_size: usize,
@@ -300,25 +294,16 @@ pub enum Error {
     },
 
     #[error("Recovery dependency error: {dependency} - {issue}")]
-    RecoveryDependencyError {
-        dependency: String,
-        issue: String,
-    },
+    RecoveryDependencyError { dependency: String, issue: String },
 
     #[error("Transaction limit reached: {limit}")]
     TransactionLimitReached { limit: usize },
 
     #[error("Checkpoint not found at LSN {checkpoint_lsn}: {path}")]
-    CheckpointNotFound {
-        checkpoint_lsn: u64,
-        path: String,
-    },
+    CheckpointNotFound { checkpoint_lsn: u64, path: String },
 
     #[error("Checkpoint corrupted at LSN {checkpoint_lsn}: {reason}")]
-    CheckpointCorrupted {
-        checkpoint_lsn: u64,
-        reason: String,
-    },
+    CheckpointCorrupted { checkpoint_lsn: u64, reason: String },
 
     #[error("WAL corruption at offset {offset}: {reason}")]
     WalCorruption { offset: u64, reason: String },
@@ -354,7 +339,6 @@ impl From<std::io::Error> for Error {
     }
 }
 
-
 impl From<serde_json::Error> for Error {
     fn from(err: serde_json::Error) -> Self {
         Error::Serialization(err.to_string())
@@ -382,13 +366,15 @@ impl From<bincode::error::EncodeError> for Error {
 impl Clone for Error {
     fn clone(&self) -> Self {
         match self {
-            Error::IOError { path, operation, source } => {
-                Error::IOError {
-                    path: path.clone(),
-                    operation: operation.clone(),
-                    source: std::io::Error::new(source.kind(), source.to_string()),
-                }
-            }
+            Error::IOError {
+                path,
+                operation,
+                source,
+            } => Error::IOError {
+                path: path.clone(),
+                operation: operation.clone(),
+                source: std::io::Error::new(source.kind(), source.to_string()),
+            },
             _ => {
                 // For all other variants, use a generic representation
                 Error::Generic(self.to_string())

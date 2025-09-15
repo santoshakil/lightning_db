@@ -1,4 +1,5 @@
 use crate::core::error::{Error, Result};
+use super::{TransactionId, TransactionState};
 use bytes::Bytes;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -20,7 +21,7 @@ pub enum RecoveryStrategy {
 pub struct RecoveryPoint {
     pub lsn: u64,
     pub timestamp: u64,
-    pub active_transactions: Vec<super::TransactionId>,
+    pub active_transactions: Vec<TransactionId>,
     pub dirty_pages: Vec<DirtyPage>,
     pub checkpoint_lsn: u64,
 }
@@ -47,7 +48,7 @@ pub struct CheckpointManager {
     last_checkpoint: Arc<RwLock<Instant>>,
     checkpoint_in_progress: Arc<std::sync::atomic::AtomicBool>,
     checkpoints: Arc<DashMap<u64, Checkpoint>>,
-    active_transactions: Arc<DashMap<super::TransactionId, TransactionSnapshot>>,
+    active_transactions: Arc<DashMap<TransactionId, TransactionSnapshot>>,
     dirty_page_table: Arc<DashMap<u64, DirtyPageEntry>>,
 }
 
@@ -57,15 +58,15 @@ struct Checkpoint {
     begin_lsn: u64,
     end_lsn: u64,
     timestamp: u64,
-    transaction_table: HashMap<super::TransactionId, TransactionSnapshot>,
+    transaction_table: HashMap<TransactionId, TransactionSnapshot>,
     dirty_page_table: HashMap<u64, DirtyPageEntry>,
     completed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TransactionSnapshot {
-    txn_id: super::TransactionId,
-    state: super::TransactionState,
+    txn_id: TransactionId,
+    state: TransactionState,
     first_lsn: u64,
     last_lsn: u64,
     undo_next_lsn: Option<u64>,
@@ -86,13 +87,13 @@ struct ARIESRecovery {
 }
 
 struct AnalysisPhase {
-    transaction_table: Arc<DashMap<super::TransactionId, TransactionAnalysis>>,
+    transaction_table: Arc<DashMap<TransactionId, TransactionAnalysis>>,
     dirty_page_table: Arc<DashMap<u64, DirtyPageAnalysis>>,
     redo_lsn: Arc<std::sync::atomic::AtomicU64>,
 }
 
 struct TransactionAnalysis {
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
     state: TransactionRecoveryState,
     last_lsn: u64,
     undo_next_lsn: Option<u64>,
@@ -122,7 +123,7 @@ struct RedoOperation {
     lsn: u64,
     page_id: u64,
     operation: super::transaction_log::RedoOperation,
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
 }
 
 struct PageRecoveryInfo {
@@ -133,14 +134,14 @@ struct PageRecoveryInfo {
 }
 
 struct UndoPhase {
-    undo_list: Arc<RwLock<Vec<super::TransactionId>>>,
+    undo_list: Arc<RwLock<Vec<TransactionId>>>,
     compensation_log: Arc<DashMap<u64, CompensationLogRecord>>,
     undo_progress: Arc<std::sync::atomic::AtomicU64>,
 }
 
 struct CompensationLogRecord {
     clr_lsn: u64,
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
     undo_next_lsn: Option<u64>,
     compensated_lsn: u64,
 }
@@ -165,7 +166,7 @@ enum RecoveryPhase {
 struct ShadowPagingRecovery {
     shadow_directory: Arc<RwLock<ShadowDirectory>>,
     page_table: Arc<DashMap<u64, ShadowPage>>,
-    commit_table: Arc<DashMap<super::TransactionId, CommitRecord>>,
+    commit_table: Arc<DashMap<TransactionId, CommitRecord>>,
 }
 
 struct ShadowDirectory {
@@ -185,11 +186,11 @@ struct ShadowPage {
     shadow_id: u64,
     original_data: Bytes,
     shadow_data: Bytes,
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
 }
 
 struct CommitRecord {
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
     commit_time: u64,
     pages_modified: Vec<u64>,
     committed: bool,
@@ -523,7 +524,7 @@ impl RecoveryManager {
 
     async fn write_compensation_log(
         &self,
-        txn_id: super::TransactionId,
+        txn_id: TransactionId,
         compensated_lsn: u64,
     ) -> Result<()> {
         let clr_lsn = self
@@ -670,7 +671,7 @@ impl RecoveryManager {
         })
     }
 
-    async fn get_recovered_transactions(&self) -> Vec<super::TransactionId> {
+    async fn get_recovered_transactions(&self) -> Vec<TransactionId> {
         self.aries_recovery
             .analysis_phase
             .transaction_table
@@ -739,7 +740,7 @@ impl CheckpointManager {
 
 #[derive(Debug, Clone, Default)]
 pub struct RecoveryResult {
-    pub recovered_transactions: Vec<super::TransactionId>,
+    pub recovered_transactions: Vec<TransactionId>,
     pub recovered_pages: u64,
     pub recovery_time: Duration,
     pub recovery_point: RecoveryPoint,

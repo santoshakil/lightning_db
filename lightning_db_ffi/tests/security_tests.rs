@@ -102,8 +102,8 @@ fn test_integer_overflow_protection() {
         lightning_db_create_with_config(
             path.as_ptr(),
             u64::MAX, // Extremely large cache size
-            0, // CompressionType::None
-            0, // WalSyncMode::Sync
+            0,        // CompressionType::None
+            0,        // WalSyncMode::Sync
             &mut db_handle,
         )
     };
@@ -114,8 +114,8 @@ fn test_integer_overflow_protection() {
         lightning_db_create_with_config(
             path.as_ptr(),
             1024 * 1024, // 1MB cache
-            0, // CompressionType::None
-            0, // WalSyncMode::Sync
+            0,           // CompressionType::None
+            0,           // WalSyncMode::Sync
             &mut db_handle,
         )
     };

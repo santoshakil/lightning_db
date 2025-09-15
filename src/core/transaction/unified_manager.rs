@@ -928,9 +928,8 @@ impl VisibilityTracker {
     }
 
     fn cleanup_old_transactions(&mut self, keep_after_timestamp: u64) {
-        self.committed_transactions.retain(|_, &mut timestamp| {
-            timestamp >= keep_after_timestamp
-        });
+        self.committed_transactions
+            .retain(|_, &mut timestamp| timestamp >= keep_after_timestamp);
     }
 }
 

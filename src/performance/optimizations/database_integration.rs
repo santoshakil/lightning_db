@@ -11,16 +11,15 @@
 use crate::core::error::{Error, Result};
 // Temporarily skip the problematic imports to focus on major compilation issues
 // use super::super::{GlobalPerformanceMetrics, get_global_metrics, PerformanceStats};
+use crate::performance::optimizations::simd;
 use crate::performance::optimizations::{
-    CriticalPathOptimizer, TransactionBatcher, WorkloadType,
-    TransactionPriority, BatchedTransaction, create_critical_path_optimizer,
-    create_transaction_batcher,
+    create_critical_path_optimizer, create_transaction_batcher, BatchedTransaction,
+    CriticalPathOptimizer, TransactionBatcher, TransactionPriority, WorkloadType,
+};
+use crate::performance::thread_local::optimized_storage::{
+    CachedPage, CachedTransactionState, IsolationLevel,
 };
 use crate::performance::thread_local::ThreadLocalStorage;
-use crate::performance::optimizations::simd;
-use crate::performance::thread_local::optimized_storage::{
-    CachedTransactionState, CachedPage, IsolationLevel,
-};
 use bytes::Bytes;
 use std::sync::Arc;
 use std::time::Instant;
@@ -49,12 +48,10 @@ impl OptimizedDatabaseOps {
             }
         };
 
-        let critical_path_optimizer = Arc::new(
-            create_critical_path_optimizer()
-        );
-        
+        let critical_path_optimizer = Arc::new(create_critical_path_optimizer());
+
         let transaction_batcher = create_transaction_batcher(workload_type);
-        
+
         Self {
             critical_path_optimizer,
             transaction_batcher,
@@ -67,7 +64,7 @@ impl OptimizedDatabaseOps {
     /// Optimized get operation with all performance enhancements
     pub fn optimized_get(&self, key: &[u8]) -> Result<Option<Bytes>> {
         let start = Instant::now();
-        
+
         // Record operation start
         // self.global_metrics.record_operation();
 
@@ -80,21 +77,21 @@ impl OptimizedDatabaseOps {
 
         // Use critical path optimizer for the actual lookup
         let result = self.critical_path_optimizer.optimized_get(key)?;
-        
+
         if result.is_some() {
             // self.global_metrics.record_cache_miss();
         }
 
         // Record operation completion
         ThreadLocalStorage::record_operation("get", start.elapsed());
-        
+
         Ok(result)
     }
 
     /// Optimized put operation with batching and SIMD
     pub fn optimized_put(&self, key: &[u8], value: &[u8]) -> Result<()> {
         let start = Instant::now();
-        
+
         // self.global_metrics.record_operation();
 
         // Try to use critical path optimizer first
@@ -108,14 +105,14 @@ impl OptimizedDatabaseOps {
         // Fall back to direct write for large data
         self.direct_put(key, value)?;
         ThreadLocalStorage::record_operation("put_direct", start.elapsed());
-        
+
         Ok(())
     }
 
     /// Optimized delete operation
     pub fn optimized_delete(&self, key: &[u8]) -> Result<bool> {
         let start = Instant::now();
-        
+
         // self.global_metrics.record_operation();
 
         // Try batched delete first
@@ -128,17 +125,17 @@ impl OptimizedDatabaseOps {
         // Fall back to direct delete
         let result = self.direct_delete(key)?;
         ThreadLocalStorage::record_operation("delete_direct", start.elapsed());
-        
+
         Ok(result)
     }
 
     /// Optimized transaction begin with thread-local caching
     pub fn optimized_begin_transaction(&self, isolation_level: IsolationLevel) -> Result<u64> {
         let start = Instant::now();
-        
+
         // Create transaction ID (simplified - real implementation would use transaction manager)
         let tx_id = self.generate_transaction_id();
-        
+
         // Cache transaction state in thread-local storage
         let cached_state = CachedTransactionState {
             tx_id,
@@ -149,17 +146,17 @@ impl OptimizedDatabaseOps {
             isolation_level,
             priority: self.determine_transaction_priority(),
         };
-        
+
         ThreadLocalStorage::cache_transaction(cached_state);
         ThreadLocalStorage::record_operation("begin_transaction", start.elapsed());
-        
+
         Ok(tx_id)
     }
 
     /// Optimized transaction commit with batching
     pub fn optimized_commit_transaction(&self, tx_id: u64) -> Result<()> {
         let start = Instant::now();
-        
+
         // Get cached transaction state
         let cached_state = ThreadLocalStorage::get_transaction(tx_id)
             .ok_or(Error::TransactionNotFound { id: tx_id })?;
@@ -174,13 +171,13 @@ impl OptimizedDatabaseOps {
 
         // Submit to transaction batcher
         self.transaction_batcher.submit_transaction(batched_tx)?;
-        
+
         // Remove from thread-local cache
         ThreadLocalStorage::remove_transaction(tx_id);
-        
+
         // self.global_metrics.record_batch_operation();
         ThreadLocalStorage::record_operation("commit_transaction", start.elapsed());
-        
+
         Ok(())
     }
 
@@ -200,7 +197,7 @@ impl OptimizedDatabaseOps {
         while let Some(tx_batch) = self.transaction_batcher.get_next_batch() {
             let result = self.transaction_batcher.process_batch(tx_batch)?;
             processed_batches += 1;
-            
+
             // Log batch processing results
             if result.failed_commits > 0 {
                 tracing::warn!(
@@ -239,7 +236,7 @@ impl OptimizedDatabaseOps {
     pub fn warm_caches(&self, pages: Vec<(u32, Vec<u8>)>) -> Result<()> {
         // Warm up critical path cache
         self.critical_path_optimizer.warm_cache(pages.clone());
-        
+
         // Warm up thread-local page cache
         for (page_id, data) in pages {
             let cached_page = CachedPage {
@@ -270,7 +267,7 @@ impl OptimizedDatabaseOps {
     }
 
     // Helper methods (simplified implementations)
-    
+
     fn check_thread_local_cache(&self, key: &[u8]) -> Option<Bytes> {
         // Convert key to page ID and check thread-local cache
         let page_id = self.key_to_page_id(key);
@@ -340,7 +337,10 @@ impl OptimizedDatabaseOps {
         }
     }
 
-    fn process_write_batch(&self, batch: smallvec::SmallVec<[crate::performance::optimizations::critical_path::WriteOp; 32]>) -> Result<()> {
+    fn process_write_batch(
+        &self,
+        batch: smallvec::SmallVec<[crate::performance::optimizations::critical_path::WriteOp; 32]>,
+    ) -> Result<()> {
         // Process the batch of write operations
         for op in &batch {
             match op.operation_type {
@@ -363,8 +363,10 @@ impl OptimizedDatabaseOps {
 pub struct OptimizedDatabaseStats {
     // pub global_stats: PerformanceStats,
     pub critical_path_stats: crate::performance::optimizations::critical_path::CriticalPathStats,
-    pub transaction_batcher_stats: crate::performance::optimizations::transaction_batching::TransactionBatcherStats,
-    pub thread_local_stats: crate::performance::thread_local::optimized_storage::ThreadLocalStorageStats,
+    pub transaction_batcher_stats:
+        crate::performance::optimizations::transaction_batching::TransactionBatcherStats,
+    pub thread_local_stats:
+        crate::performance::thread_local::optimized_storage::ThreadLocalStorageStats,
     pub simd_enabled: bool,
     pub workload_type: WorkloadType,
 }
@@ -372,7 +374,9 @@ pub struct OptimizedDatabaseStats {
 impl OptimizedDatabaseStats {
     /// Calculate overall throughput estimate
     pub fn estimated_throughput_ops_per_sec(&self) -> f64 {
-        let avg_latency_ns = (self.critical_path_stats.avg_get_latency_ns + self.critical_path_stats.avg_put_latency_ns) / 2;
+        let avg_latency_ns = (self.critical_path_stats.avg_get_latency_ns
+            + self.critical_path_stats.avg_put_latency_ns)
+            / 2;
         if avg_latency_ns > 0 {
             1_000_000_000.0 / avg_latency_ns as f64
         } else {
@@ -485,26 +489,31 @@ mod tests {
     #[test]
     fn test_optimized_database_ops() {
         let ops = OptimizedDatabaseOps::new(WorkloadType::Mixed);
-        
+
         // Test optimized get (cache miss)
         let result = ops.optimized_get(b"test_key").unwrap();
         assert!(result.is_none());
-        
+
         // Test optimized put
         ops.optimized_put(b"test_key", b"test_value").unwrap();
-        
+
         // Test transaction operations
-        let tx_id = ops.optimized_begin_transaction(IsolationLevel::ReadCommitted).unwrap();
+        let tx_id = ops
+            .optimized_begin_transaction(IsolationLevel::ReadCommitted)
+            .unwrap();
         ops.optimized_commit_transaction(tx_id).unwrap();
-        
+
         // Test batch processing
         let processed = ops.process_batches().unwrap();
         assert!(processed > 0);
-        
+
         // Test statistics
         let stats = ops.get_performance_stats();
-        assert!(stats.critical_path_stats.simd_operations > 0 || stats.transaction_batcher_stats.batches_processed > 0);
-        
+        assert!(
+            stats.critical_path_stats.simd_operations > 0
+                || stats.transaction_batcher_stats.batches_processed > 0
+        );
+
         println!("{}", stats.generate_report());
     }
 
@@ -513,16 +522,22 @@ mod tests {
         // Test different workload types
         let high_throughput = OptimizedDatabaseOps::new(WorkloadType::HighThroughput);
         let low_latency = OptimizedDatabaseOps::new(WorkloadType::LowLatency);
-        
+
         // Both should work with different internal optimizations
         high_throughput.optimized_put(b"key1", b"value1").unwrap();
         low_latency.optimized_put(b"key2", b"value2").unwrap();
-        
+
         let ht_stats = high_throughput.get_performance_stats();
         let ll_stats = low_latency.get_performance_stats();
-        
+
         // Both should show operation counts
-        assert!(ht_stats.critical_path_stats.simd_operations > 0 || ht_stats.transaction_batcher_stats.batches_processed > 0);
-        assert!(ll_stats.critical_path_stats.simd_operations > 0 || ll_stats.transaction_batcher_stats.batches_processed > 0);
+        assert!(
+            ht_stats.critical_path_stats.simd_operations > 0
+                || ht_stats.transaction_batcher_stats.batches_processed > 0
+        );
+        assert!(
+            ll_stats.critical_path_stats.simd_operations > 0
+                || ll_stats.transaction_batcher_stats.batches_processed > 0
+        );
     }
 }

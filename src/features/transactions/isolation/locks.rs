@@ -77,7 +77,10 @@ impl LockMode {
 
     /// Check if this lock mode provides write access
     pub fn provides_write_access(self) -> bool {
-        matches!(self, LockMode::Exclusive | LockMode::SharedIntentionExclusive | LockMode::Update)
+        matches!(
+            self,
+            LockMode::Exclusive | LockMode::SharedIntentionExclusive | LockMode::Update
+        )
     }
 }
 
@@ -552,7 +555,9 @@ impl LockManager {
         let mut deadlocked = Vec::new();
 
         for &tx_id in wait_graph.keys() {
-            if !visited.contains(&tx_id) && self.dfs_cycle_detection(tx_id, wait_graph, &mut visited, &mut rec_stack) {
+            if !visited.contains(&tx_id)
+                && self.dfs_cycle_detection(tx_id, wait_graph, &mut visited, &mut rec_stack)
+            {
                 deadlocked.push(tx_id);
             }
         }

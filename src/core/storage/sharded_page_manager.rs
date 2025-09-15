@@ -55,7 +55,10 @@ impl ShardedPageManager {
 
         for shard_id in 0..NUM_SHARDS {
             let shard_path = base_path.with_extension(format!("shard{}", shard_id));
-            let manager = Arc::new(OptimizedPageManager::open(&shard_path, crate::LightningDbConfig::default())?);
+            let manager = Arc::new(OptimizedPageManager::open(
+                &shard_path,
+                crate::LightningDbConfig::default(),
+            )?);
             managers.push(manager);
         }
 

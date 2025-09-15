@@ -230,7 +230,7 @@ impl BTreeNode {
         if self.entries.len() >= MAX_KEYS_PER_NODE {
             return true;
         }
-        
+
         // More precise size check only when needed
         let estimated_size = self.get_size_estimate();
         estimated_size > PAGE_SIZE - 256
@@ -245,7 +245,7 @@ impl BTreeNode {
     #[inline]
     pub fn find_key_position(&self, key: &[u8]) -> (bool, usize) {
         let len = self.entries.len();
-        
+
         // For very small nodes, linear search is faster
         if len <= 4 {
             for (i, entry) in self.entries.iter().enumerate() {
@@ -257,7 +257,7 @@ impl BTreeNode {
             }
             return (false, len);
         }
-        
+
         // Use SIMD for larger nodes when available
         #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
         {
@@ -267,7 +267,10 @@ impl BTreeNode {
         }
 
         // Binary search for medium-sized nodes
-        match self.entries.binary_search_by(|entry| entry.key.as_slice().cmp(key)) {
+        match self
+            .entries
+            .binary_search_by(|entry| entry.key.as_slice().cmp(key))
+        {
             Ok(pos) => (true, pos),
             Err(pos) => (false, pos),
         }

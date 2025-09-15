@@ -26,10 +26,6 @@ pub enum WALOperation {
     TransactionBegin { tx_id: u64 },
     TransactionCommit { tx_id: u64 },
     TransactionAbort { tx_id: u64 },
-    // Compatibility aliases for the old naming
-    BeginTransaction { tx_id: u64 },
-    CommitTransaction { tx_id: u64 },
-    AbortTransaction { tx_id: u64 },
     Checkpoint { lsn: u64 },
 }
 
@@ -53,10 +49,7 @@ impl WALEntry {
         let tx_id = match &operation {
             WALOperation::TransactionBegin { tx_id }
             | WALOperation::TransactionCommit { tx_id }
-            | WALOperation::TransactionAbort { tx_id }
-            | WALOperation::BeginTransaction { tx_id }
-            | WALOperation::CommitTransaction { tx_id }
-            | WALOperation::AbortTransaction { tx_id } => Some(*tx_id),
+            | WALOperation::TransactionAbort { tx_id } => Some(*tx_id),
             _ => None,
         };
 
@@ -102,18 +95,6 @@ impl WALEntry {
                 hasher.update(b"TXABORT");
                 hasher.update(&tx_id.to_le_bytes());
             }
-            WALOperation::BeginTransaction { tx_id } => {
-                hasher.update(b"BEGIN");
-                hasher.update(&tx_id.to_le_bytes());
-            }
-            WALOperation::CommitTransaction { tx_id } => {
-                hasher.update(b"COMMIT");
-                hasher.update(&tx_id.to_le_bytes());
-            }
-            WALOperation::AbortTransaction { tx_id } => {
-                hasher.update(b"ABORT");
-                hasher.update(&tx_id.to_le_bytes());
-            }
             WALOperation::Checkpoint { lsn } => {
                 hasher.update(b"CHECKPOINT");
                 hasher.update(&lsn.to_le_bytes());
@@ -140,9 +121,6 @@ impl WALEntry {
             WALOperation::TransactionBegin { .. } |
             WALOperation::TransactionCommit { .. } |
             WALOperation::TransactionAbort { .. } |
-            WALOperation::BeginTransaction { .. } |
-            WALOperation::CommitTransaction { .. } |
-            WALOperation::AbortTransaction { .. } |
             WALOperation::Checkpoint { .. } => 1 + 8,
         }
     }
@@ -847,8 +825,7 @@ impl UnifiedWriteAheadLog {
 
                         // Handle transaction operations
                         match &entry.operation {
-                            WALOperation::TransactionBegin { tx_id }
-                            | WALOperation::BeginTransaction { tx_id } => {
+                            WALOperation::TransactionBegin { tx_id } => {
                                 current_tx_id = Some(*tx_id);
                                 recovery_info.recovered_transactions.insert(
                                     *tx_id,
@@ -857,8 +834,7 @@ impl UnifiedWriteAheadLog {
                                     },
                                 );
                             }
-                            WALOperation::TransactionCommit { tx_id }
-                            | WALOperation::CommitTransaction { tx_id } => {
+                            WALOperation::TransactionCommit { tx_id } => {
                                 // Clone operations before applying
                                 let ops_to_apply =
                                     if let Some(TransactionRecoveryState::InProgress {
@@ -884,8 +860,7 @@ impl UnifiedWriteAheadLog {
                                     current_tx_id = None;
                                 }
                             }
-                            WALOperation::TransactionAbort { tx_id }
-                            | WALOperation::AbortTransaction { tx_id } => {
+                            WALOperation::TransactionAbort { tx_id } => {
                                 recovery_info
                                     .recovered_transactions
                                     .insert(*tx_id, TransactionRecoveryState::Aborted);

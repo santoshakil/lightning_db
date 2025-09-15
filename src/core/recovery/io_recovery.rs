@@ -209,10 +209,7 @@ impl IoRecoveryManager {
         }
 
         error!("Failed to auto-repair file: {:?}", path);
-        Err(Error::Corruption(format!(
-            "Cannot repair file: {:?}",
-            path
-        )))
+        Err(Error::Corruption(format!("Cannot repair file: {:?}", path)))
     }
 
     async fn find_backup_copy(&self, _path: &Path) -> Result<Vec<u8>> {

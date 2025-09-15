@@ -1,7 +1,7 @@
 use crate::core::error::Result;
-use zeroize::ZeroizeOnDrop;
-use serde::{Deserialize, Serialize};
 use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+use zeroize::ZeroizeOnDrop;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct HSMKeyHandle {
@@ -58,7 +58,7 @@ impl SecureKey {
             created_at: std::time::SystemTime::now(),
         }
     }
-    
+
     pub fn from_material(algorithm: SecureAlgorithm, key_material: Vec<u8>) -> Self {
         Self {
             algorithm,
@@ -87,7 +87,13 @@ impl SecureCryptoProvider {
         Self { algorithm }
     }
 
-    pub fn encrypt(&self, key: &SecureKey, plaintext: &[u8], associated_data: &[u8], nonce: Option<&[u8]>) -> Result<SecureEncryptionResult> {
+    pub fn encrypt(
+        &self,
+        key: &SecureKey,
+        plaintext: &[u8],
+        associated_data: &[u8],
+        nonce: Option<&[u8]>,
+    ) -> Result<SecureEncryptionResult> {
         let _ = (key, associated_data, nonce);
         Ok(SecureEncryptionResult {
             ciphertext: plaintext.to_vec(),
@@ -95,8 +101,12 @@ impl SecureCryptoProvider {
             tag: vec![0; 16],
         })
     }
-    
-    pub fn encrypt_with_nonce(&self, key: &SecureKey, plaintext: &[u8]) -> Result<SecureEncryptionResult> {
+
+    pub fn encrypt_with_nonce(
+        &self,
+        key: &SecureKey,
+        plaintext: &[u8],
+    ) -> Result<SecureEncryptionResult> {
         self.encrypt(key, plaintext, &[], None)
     }
 
@@ -105,19 +115,29 @@ impl SecureCryptoProvider {
         constant_time_eq(a, b)
     }
 
-    pub fn decrypt(&self, key: &SecureKey, result: &SecureEncryptionResult, associated_data: &[u8], nonce: Option<&[u8]>) -> Result<Vec<u8>> {
+    pub fn decrypt(
+        &self,
+        key: &SecureKey,
+        result: &SecureEncryptionResult,
+        associated_data: &[u8],
+        nonce: Option<&[u8]>,
+    ) -> Result<Vec<u8>> {
         let _ = (key, associated_data, nonce);
         Ok(result.ciphertext.clone())
     }
-    
-    pub fn decrypt_simple(&self, key: &SecureKey, result: &SecureEncryptionResult) -> Result<Vec<u8>> {
+
+    pub fn decrypt_simple(
+        &self,
+        key: &SecureKey,
+        result: &SecureEncryptionResult,
+    ) -> Result<Vec<u8>> {
         self.decrypt(key, result, &[], None)
     }
 
     pub fn generate_key(&self) -> Result<SecureKey> {
         Ok(SecureKey::random(self.algorithm))
     }
-    
+
     pub fn generate_key_with_algorithm(&self, algorithm: SecureAlgorithm) -> Result<SecureKey> {
         Ok(SecureKey::random(algorithm))
     }
