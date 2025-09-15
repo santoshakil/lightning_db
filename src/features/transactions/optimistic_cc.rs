@@ -407,7 +407,7 @@ impl OptimisticController {
             .timestamp_cache
             .get(&txn_id)
             .map(|t| *t)
-            .ok_or_else(|| Error::Custom("Transaction not found".to_string()))?;
+            .ok_or_else(|| Error::Generic("Transaction not found".to_string()))?;
 
         if let Some(write_buffer) = self.write_set_buffer.write_buffers.get(&txn_id) {
             for write in write_buffer.writes.iter().rev() {
@@ -476,7 +476,7 @@ impl OptimisticController {
             .timestamp_cache
             .get(&txn_id)
             .map(|t| *t)
-            .ok_or_else(|| Error::Custom("Transaction not found".to_string()))?;
+            .ok_or_else(|| Error::Generic("Transaction not found".to_string()))?;
 
         if let Some(mut write_buffer) = self.write_set_buffer.write_buffers.get_mut(&txn_id) {
             write_buffer.writes.push(BufferedWrite {
@@ -544,7 +544,7 @@ impl OptimisticController {
             .snapshot_validator
             .snapshots
             .get(&txn_id)
-            .ok_or_else(|| Error::Custom("Snapshot not found".to_string()))?;
+            .ok_or_else(|| Error::Generic("Snapshot not found".to_string()))?;
 
         if let Some(read_set) = self.read_set_tracker.read_sets.get(&txn_id) {
             for read in read_set.iter() {
@@ -709,11 +709,11 @@ impl OptimisticController {
             }
             ValidationResult::Invalid => {
                 self.abort(txn_id).await?;
-                Err(Error::Custom("Validation failed".to_string()))
+                Err(Error::Generic("Validation failed".to_string()))
             }
             ValidationResult::Retry => {
                 self.schedule_retry(txn_id).await?;
-                Err(Error::Custom("Transaction needs retry".to_string()))
+                Err(Error::Generic("Transaction needs retry".to_string()))
             }
         }
     }

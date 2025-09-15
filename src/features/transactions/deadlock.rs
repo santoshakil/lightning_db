@@ -535,7 +535,7 @@ impl DeadlockDetector {
             dist.probe_sender
                 .send(probe)
                 .await
-                .map_err(|_| Error::Custom("Failed to send deadlock probe".to_string()))?;
+                .map_err(|_| Error::Generic("Failed to send deadlock probe".to_string()))?;
         }
 
         Ok(())

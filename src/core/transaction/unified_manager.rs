@@ -219,7 +219,7 @@ impl UnifiedTransactionManager {
         let current_ts = self.next_timestamp.load(Ordering::Acquire);
         if current_ts >= u64::MAX - 1000 {
             // Reserve 1000 for safety
-            return Err(Error::TimestampOverflow);
+            return Err(Error::Internal("Timestamp overflow".to_string()));
         }
 
         // Atomically get transaction ID and read timestamp

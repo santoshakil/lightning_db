@@ -531,7 +531,7 @@ impl SagaCoordinator {
         )
         .await;
 
-        Err(Error::Custom(
+        Err(Error::Generic(
             last_error.unwrap_or_else(|| "Step failed".to_string()),
         ))
     }

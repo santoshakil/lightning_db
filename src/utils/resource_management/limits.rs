@@ -188,9 +188,9 @@ impl ResourceEnforcer {
                 self.limits.max_memory_bytes,
                 current_mem + bytes,
             );
-            return Err(Error::ResourceLimitExceeded(
-                "Memory limit exceeded".to_string(),
-            ));
+            return Err(Error::ResourceExhausted {
+                resource: "Memory limit exceeded".to_string(),
+            });
         }
 
         // Check disk limit
@@ -201,9 +201,9 @@ impl ResourceEnforcer {
                 self.limits.max_disk_bytes,
                 current_disk + bytes,
             );
-            return Err(Error::ResourceLimitExceeded(
-                "Disk space limit exceeded".to_string(),
-            ));
+            return Err(Error::ResourceExhausted {
+                resource: "Disk space limit exceeded".to_string(),
+            });
         }
 
         // Check write throughput
@@ -221,7 +221,9 @@ impl ResourceEnforcer {
                 current_throughput + bytes - self.limits.max_write_throughput_bytes_per_sec;
             let throttle_ms = excess * 1000 / self.limits.max_write_throughput_bytes_per_sec;
 
-            return Err(Error::Throttled(format!("{} ms", throttle_ms)));
+            return Err(Error::ResourceExhausted {
+                resource: format!("Throttled: {} ms", throttle_ms),
+            });
         }
 
         Ok(())
@@ -247,7 +249,9 @@ impl ResourceEnforcer {
             let excess = current_throughput + bytes - self.limits.max_read_throughput_bytes_per_sec;
             let throttle_ms = excess * 1000 / self.limits.max_read_throughput_bytes_per_sec;
 
-            return Err(Error::Throttled(format!("{} ms", throttle_ms)));
+            return Err(Error::ResourceExhausted {
+                resource: format!("Throttled: {} ms", throttle_ms),
+            });
         }
 
         Ok(())
@@ -266,9 +270,9 @@ impl ResourceEnforcer {
                 self.limits.max_concurrent_operations as u64,
                 current as u64,
             );
-            return Err(Error::ResourceLimitExceeded(
-                "Concurrent operation limit exceeded".to_string(),
-            ));
+            return Err(Error::ResourceExhausted {
+                resource: "Concurrent operation limit exceeded".to_string(),
+            });
         }
 
         self.current_operations.fetch_add(1, Ordering::Relaxed);
@@ -288,9 +292,9 @@ impl ResourceEnforcer {
                 self.limits.max_open_files as u64,
                 current as u64,
             );
-            return Err(Error::ResourceLimitExceeded(
-                "Open file limit exceeded".to_string(),
-            ));
+            return Err(Error::ResourceExhausted {
+                resource: "Open file limit exceeded".to_string(),
+            });
         }
 
         self.current_open_files.fetch_add(1, Ordering::Relaxed);

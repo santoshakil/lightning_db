@@ -211,13 +211,13 @@ impl IsolationManager {
                 self.serialization_validator.commit_transaction(tx_id)?;
             }
             ValidationResult::Invalid { reason, conflicts } => {
-                return Err(Error::ValidationError(format!(
+                return Err(Error::InvalidArgument(format!(
                     "Transaction {} validation failed: {} (conflicts with {:?})",
                     tx_id, reason, conflicts
                 )));
             }
             ValidationResult::Retry { reason } => {
-                return Err(Error::TransactionRetry(format!(
+                return Err(Error::Transaction(format!(
                     "Transaction {} should retry: {}",
                     tx_id, reason
                 )));

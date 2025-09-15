@@ -341,17 +341,16 @@ impl IoRecoveryManager {
             ErrorKind::NotFound => Error::DatabaseNotFound {
                 path: path.to_string_lossy().to_string(),
             },
-            ErrorKind::PermissionDenied => Error::RecoveryPermissionError {
-                path: path.to_string_lossy().to_string(),
-                required_permissions: "read/write access".to_string(),
-            },
+            ErrorKind::PermissionDenied => Error::RecoveryFailed(format!(
+                "Permission denied: {}",
+                path.display()
+            )),
             ErrorKind::InvalidData => {
                 Error::Corruption(format!("Invalid data in file: {:?}", path))
             }
-            ErrorKind::UnexpectedEof => Error::WalPartialEntry {
+            ErrorKind::UnexpectedEof => Error::WalCorruption {
                 offset: 0,
-                expected_size: 0,
-                actual_size: 0,
+                reason: "Unexpected EOF".to_string(),
             },
             ErrorKind::OutOfMemory => Error::Memory,
             ErrorKind::TimedOut => Error::Timeout(format!("I/O timeout for file: {:?}", path)),

@@ -84,7 +84,7 @@ impl CostModel {
     ) -> Result<CostEstimate, Error> {
         let table_stats = stats
             .get_table(&scan.table_name)
-            .ok_or(Error::InvalidInput(format!(
+            .ok_or(Error::InvalidArgument(format!(
                 "No stats for table {}",
                 scan.table_name
             )))?;
@@ -225,7 +225,7 @@ impl CostModel {
     ) -> Result<CostEstimate, Error> {
         let table_stats = stats
             .get_table(&index.table_name)
-            .ok_or(Error::InvalidInput(format!(
+            .ok_or(Error::InvalidArgument(format!(
                 "No stats for table {}",
                 index.table_name
             )))?;

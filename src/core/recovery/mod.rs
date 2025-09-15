@@ -115,24 +115,19 @@ impl RecoveryManager {
         // Step 1: Recover metadata
         self.progress.set_phase("Recovering metadata");
         let metadata = RedundantMetadata::new(Path::new(&self.db_path));
-        let header = metadata.read_header().map_err(|e| {
-            crate::core::error::Error::PartialRecoveryFailure {
-                completed_stages: vec![],
-                failed_stage: "Metadata Recovery".to_string(),
-                cause: Box::new(e),
-                rollback_available: false,
-            }
+        let header = metadata.read_header().map_err(|_e| {
+            crate::core::error::Error::RecoveryFailed(
+                "Metadata recovery failed".to_string()
+            )
         })?;
 
         // Step 2: Recover from double-write buffer
         self.progress.set_phase("Checking double-write buffer");
         let dwb = DoubleWriteBuffer::new(Path::new(&self.db_path), header.page_size as usize, 32)
-            .map_err(|e| crate::core::error::Error::PartialRecoveryFailure {
-            completed_stages: vec!["Metadata Recovery".to_string()],
-            failed_stage: "Double-Write Buffer Setup".to_string(),
-            cause: Box::new(e),
-            rollback_available: false,
-        })?;
+            .map_err(|e| crate::core::error::Error::RecoveryFailed(
+                format!("Double-Write Buffer setup failed: {}", e)
+            )
+)?;
 
         let recovered_pages = dwb
             .recover(|page_id, _data| {
@@ -140,15 +135,9 @@ impl RecoveryManager {
                 println!("Recovered page {} from double-write buffer", page_id);
                 Ok(())
             })
-            .map_err(|e| crate::core::error::Error::PartialRecoveryFailure {
-                completed_stages: vec![
-                    "Metadata Recovery".to_string(),
-                    "Double-Write Buffer Setup".to_string(),
-                ],
-                failed_stage: "Double-Write Buffer Recovery".to_string(),
-                cause: Box::new(e),
-                rollback_available: false,
-            })?;
+            .map_err(|e| crate::core::error::Error::RecoveryFailed(
+                format!("Double-Write Buffer recovery failed: {}", e)
+            ))?;
 
         if recovered_pages > 0 {
             println!(
@@ -167,27 +156,18 @@ impl RecoveryManager {
                 // In real implementation, apply entry to database
                 Ok(())
             })
-            .map_err(|e| crate::core::error::Error::PartialRecoveryFailure {
-                completed_stages: vec![
-                    "Metadata Recovery".to_string(),
-                    "Double-Write Buffer Setup".to_string(),
-                    "Double-Write Buffer Recovery".to_string(),
-                ],
-                failed_stage: "WAL Recovery".to_string(),
-                cause: Box::new(e),
-                rollback_available: false,
-            })?;
+            .map_err(|e| crate::core::error::Error::RecoveryFailed(
+                format!("WAL recovery failed: {}", e)
+            ))?;
 
         println!("WAL recovery stats: {:?}", stats);
 
         // Step 4: Open database normally
         self.progress.set_phase("Opening database");
         let db = Database::open(&self.db_path, self.config.clone()).map_err(|e| {
-            crate::core::error::Error::RecoveryVerificationFailed {
-                check_name: "Database Open".to_string(),
-                details: e.to_string(),
-                critical: true,
-            }
+            crate::core::error::Error::RecoveryFailed(
+                format!("Database open verification failed: {}", e)
+            )
         })?;
 
         self.progress.set_phase("Recovery complete");
@@ -222,10 +202,9 @@ impl RecoveryManager {
         let dwb_path = db_path.join("double_write.buffer");
         if dwb_path.exists() {
             let dwb_size = std::fs::metadata(&dwb_path)
-                .map_err(|e| crate::core::error::Error::RecoveryDependencyError {
-                    dependency: "double_write.buffer".to_string(),
-                    issue: format!("Cannot check file: {}", e),
-                })?
+                .map_err(|e| crate::core::error::Error::RecoveryFailed(
+                    format!("Cannot check double_write.buffer: {}", e)
+                ))?
                 .len();
             if dwb_size > 8 {
                 // Has more than just header
@@ -251,10 +230,9 @@ impl RecoveryManager {
         let wal_dir = db_path.join("wal");
         if wal_dir.exists() {
             let wal_files = std::fs::read_dir(&wal_dir).map_err(|e| {
-                crate::core::error::Error::RecoveryPermissionError {
-                    path: wal_dir.to_string_lossy().to_string(),
-                    required_permissions: format!("read access: {}", e),
-                }
+                crate::core::error::Error::RecoveryFailed(
+                    format!("Cannot read WAL directory {}: {}", wal_dir.display(), e)
+                )
             })?;
 
             let wal_count = wal_files

@@ -693,7 +693,7 @@ impl CheckpointManager {
             )
             .is_err()
         {
-            return Err(Error::Custom("Checkpoint already in progress".to_string()));
+            return Err(Error::Generic("Checkpoint already in progress".to_string()));
         }
 
         let checkpoint_id = SystemTime::now()

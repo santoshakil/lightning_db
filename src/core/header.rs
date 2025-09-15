@@ -41,7 +41,7 @@ impl Header {
 
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
         if data.len() < 16 {
-            return Err(crate::core::error::Error::InvalidFormat(
+            return Err(crate::core::error::Error::InvalidArgument(
                 "Header too small".to_string(),
             ));
         }

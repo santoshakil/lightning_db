@@ -321,7 +321,7 @@ impl Participant {
                         self.lock_manager.locks.remove(key);
                     }
 
-                    return Err(Error::Custom("Lock conflict detected".to_string()));
+                    return Err(Error::Generic("Lock conflict detected".to_string()));
                 }
             }
 

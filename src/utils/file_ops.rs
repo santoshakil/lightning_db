@@ -12,11 +12,7 @@ impl FileOps {
     pub fn open_for_read<P: AsRef<Path>>(path: P) -> Result<File> {
         let path = path.as_ref();
         Self::retry_operation(|| {
-            File::open(path).map_err(|e| Error::IOError {
-                path: path.to_path_buf(),
-                operation: "open_read".to_string(),
-                source: e,
-            })
+            File::open(path).map_err(|e| Error::Io(format!("open_read on {}: {}", path.display(), e)))
         })
     }
 
@@ -29,11 +25,7 @@ impl FileOps {
                 .create(true)
                 .truncate(true)
                 .open(path)
-                .map_err(|e| Error::IOError {
-                    path: path.to_path_buf(),
-                    operation: "open_write".to_string(),
-                    source: e,
-                })
+                .map_err(|e| Error::Io(format!("open_write on {}: {}", path.display(), e)))
         })
     }
 
@@ -46,11 +38,7 @@ impl FileOps {
                 .create(true)
                 .append(true)
                 .open(path)
-                .map_err(|e| Error::IOError {
-                    path: path.to_path_buf(),
-                    operation: "open_append".to_string(),
-                    source: e,
-                })
+                .map_err(|e| Error::Io(format!("open_append on {}: {}", path.display(), e)))
         })
     }
 
@@ -63,11 +51,7 @@ impl FileOps {
                 .write(true)
                 .create(true)
                 .open(path)
-                .map_err(|e| Error::IOError {
-                    path: path.to_path_buf(),
-                    operation: "open_read_write".to_string(),
-                    source: e,
-                })
+                .map_err(|e| Error::Io(format!("open_read_write on {}: {}", path.display(), e)))
         })
     }
 
@@ -75,11 +59,7 @@ impl FileOps {
     pub fn read_to_vec<P: AsRef<Path>>(path: P) -> Result<Vec<u8>> {
         let path = path.as_ref();
         Self::retry_operation(|| {
-            std::fs::read(path).map_err(|e| Error::IOError {
-                path: path.to_path_buf(),
-                operation: "read_to_vec".to_string(),
-                source: e,
-            })
+            std::fs::read(path).map_err(|e| Error::Io(format!("read_to_vec on {}: {}", path.display(), e)))
         })
     }
 
@@ -87,11 +67,7 @@ impl FileOps {
     pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
         let path = path.as_ref();
         Self::retry_operation(|| {
-            std::fs::read_to_string(path).map_err(|e| Error::IOError {
-                path: path.to_path_buf(),
-                operation: "read_to_string".to_string(),
-                source: e,
-            })
+            std::fs::read_to_string(path).map_err(|e| Error::Io(format!("read_to_string on {}: {}", path.display(), e)))
         })
     }
 
@@ -102,20 +78,12 @@ impl FileOps {
 
         // Write to temporary file first
         Self::retry_operation(|| {
-            std::fs::write(&temp_path, data).map_err(|e| Error::IOError {
-                path: temp_path.clone(),
-                operation: "write_temp".to_string(),
-                source: e,
-            })
+            std::fs::write(&temp_path, data).map_err(|e| Error::Io(format!("write_temp on {}: {}", temp_path.display(), e)))
         })?;
 
         // Atomic rename
         Self::retry_operation(|| {
-            std::fs::rename(&temp_path, path).map_err(|e| Error::IOError {
-                path: path.to_path_buf(),
-                operation: "atomic_rename".to_string(),
-                source: e,
-            })
+            std::fs::rename(&temp_path, path).map_err(|e| Error::Io(format!("atomic_rename on {}: {}", path.display(), e)))
         })
     }
 
@@ -124,11 +92,7 @@ impl FileOps {
         let from = from.as_ref();
         let to = to.as_ref();
         Self::retry_operation(|| {
-            std::fs::copy(from, to).map_err(|e| Error::IOError {
-                path: from.to_path_buf(),
-                operation: format!("copy_to_{}", to.display()),
-                source: e,
-            })
+            std::fs::copy(from, to).map_err(|e| Error::Io(format!("copy_to_{} on {}: {}", to.display(), from.display(), e)))
         })
     }
 
@@ -136,11 +100,7 @@ impl FileOps {
     pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
         let path = path.as_ref();
         Self::retry_operation(|| {
-            std::fs::create_dir_all(path).map_err(|e| Error::IOError {
-                path: path.to_path_buf(),
-                operation: "create_dir_all".to_string(),
-                source: e,
-            })
+            std::fs::create_dir_all(path).map_err(|e| Error::Io(format!("create_dir_all on {}: {}", path.display(), e)))
         })
     }
 
@@ -148,11 +108,7 @@ impl FileOps {
     pub fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
         let path = path.as_ref();
         Self::retry_operation(|| {
-            std::fs::remove_file(path).map_err(|e| Error::IOError {
-                path: path.to_path_buf(),
-                operation: "remove_file".to_string(),
-                source: e,
-            })
+            std::fs::remove_file(path).map_err(|e| Error::Io(format!("remove_file on {}: {}", path.display(), e)))
         })
     }
 
@@ -160,11 +116,7 @@ impl FileOps {
     pub fn remove_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
         let path = path.as_ref();
         Self::retry_operation(|| {
-            std::fs::remove_dir_all(path).map_err(|e| Error::IOError {
-                path: path.to_path_buf(),
-                operation: "remove_dir_all".to_string(),
-                source: e,
-            })
+            std::fs::remove_dir_all(path).map_err(|e| Error::Io(format!("remove_dir_all on {}: {}", path.display(), e)))
         })
     }
 
@@ -172,11 +124,7 @@ impl FileOps {
     pub fn metadata<P: AsRef<Path>>(path: P) -> Result<Metadata> {
         let path = path.as_ref();
         Self::retry_operation(|| {
-            std::fs::metadata(path).map_err(|e| Error::IOError {
-                path: path.to_path_buf(),
-                operation: "metadata".to_string(),
-                source: e,
-            })
+            std::fs::metadata(path).map_err(|e| Error::Io(format!("metadata on {}: {}", path.display(), e)))
         })
     }
 
@@ -204,22 +152,14 @@ impl FileOps {
     /// Sync file data to disk
     pub fn sync_data(file: &mut File) -> Result<()> {
         Self::retry_operation(|| {
-            file.sync_data().map_err(|e| Error::IOError {
-                path: PathBuf::from("<unknown>"),
-                operation: "sync_data".to_string(),
-                source: e,
-            })
+            file.sync_data().map_err(|e| Error::Io(format!("sync_data on <unknown>: {}", e)))
         })
     }
 
     /// Sync file data and metadata to disk
     pub fn sync_all(file: &mut File) -> Result<()> {
         Self::retry_operation(|| {
-            file.sync_all().map_err(|e| Error::IOError {
-                path: PathBuf::from("<unknown>"),
-                operation: "sync_all".to_string(),
-                source: e,
-            })
+            file.sync_all().map_err(|e| Error::Io(format!("sync_all on <unknown>: {}", e)))
         })
     }
 
@@ -244,33 +184,21 @@ impl FileOps {
     /// Seek to a position in a file
     pub fn seek(file: &mut File, pos: SeekFrom) -> Result<u64> {
         Self::retry_operation(|| {
-            file.seek(pos).map_err(|e| Error::IOError {
-                path: PathBuf::from("<unknown>"),
-                operation: "seek".to_string(),
-                source: e,
-            })
+            file.seek(pos).map_err(|e| Error::Io(format!("seek on <unknown>: {}", e)))
         })
     }
 
     /// Read exact number of bytes from a file
     pub fn read_exact(file: &mut File, buf: &mut [u8]) -> Result<()> {
         Self::retry_operation(|| {
-            file.read_exact(buf).map_err(|e| Error::IOError {
-                path: PathBuf::from("<unknown>"),
-                operation: "read_exact".to_string(),
-                source: e,
-            })
+            file.read_exact(buf).map_err(|e| Error::Io(format!("read_exact on <unknown>: {}", e)))
         })
     }
 
     /// Write all bytes to a file
     pub fn write_all(file: &mut File, buf: &[u8]) -> Result<()> {
         Self::retry_operation(|| {
-            file.write_all(buf).map_err(|e| Error::IOError {
-                path: PathBuf::from("<unknown>"),
-                operation: "write_all".to_string(),
-                source: e,
-            })
+            file.write_all(buf).map_err(|e| Error::Io(format!("write_all on <unknown>: {}", e)))
         })
     }
 
@@ -289,7 +217,7 @@ impl FileOps {
         let mut temp_path = original.to_path_buf();
         let mut file_name = original
             .file_name()
-            .ok_or_else(|| Error::InvalidInput("Invalid file path".to_string()))?
+            .ok_or_else(|| Error::InvalidArgument("Invalid file path".to_string()))?
             .to_os_string();
 
         file_name.push(".tmp");
@@ -390,11 +318,7 @@ impl ConfigurableFileOps {
 
         // Atomic rename
         FileOps::retry_operation(|| {
-            std::fs::rename(&temp_path, path).map_err(|e| Error::IOError {
-                path: path.to_path_buf(),
-                operation: "atomic_rename".to_string(),
-                source: e,
-            })
+            std::fs::rename(&temp_path, path).map_err(|e| Error::Io(format!("atomic_rename on {}: {}", path.display(), e)))
         })
     }
 
@@ -418,11 +342,7 @@ impl ConfigurableFileOps {
 
         reader
             .read_to_end(&mut buffer)
-            .map_err(|e| Error::IOError {
-                path: PathBuf::from("<buffered_read>"),
-                operation: "read_buffered".to_string(),
-                source: e,
-            })?;
+            .map_err(|e| Error::Io(format!("read_buffered on <buffered_read>: {}", e)))?;
 
         Ok(buffer)
     }
@@ -448,22 +368,14 @@ impl ConfigurableFileOps {
         let mut copied = 0u64;
 
         loop {
-            let bytes_read = src.read(&mut buffer).map_err(|e| Error::IOError {
-                path: from.to_path_buf(),
-                operation: "copy_read".to_string(),
-                source: e,
-            })?;
+            let bytes_read = src.read(&mut buffer).map_err(|e| Error::Io(format!("copy_read on {}: {}", from.display(), e)))?;
 
             if bytes_read == 0 {
                 break;
             }
 
             dst.write_all(&buffer[..bytes_read])
-                .map_err(|e| Error::IOError {
-                    path: to.to_path_buf(),
-                    operation: "copy_write".to_string(),
-                    source: e,
-                })?;
+                .map_err(|e| Error::Io(format!("copy_write on {}: {}", to.display(), e)))?;
 
             copied += bytes_read as u64;
             progress_callback(copied, total_size);

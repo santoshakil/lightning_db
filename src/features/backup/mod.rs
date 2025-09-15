@@ -946,7 +946,7 @@ impl BackupManager {
 
                     #[cfg(not(feature = "zstd-compression"))]
                     {
-                        return Err(Error::Decompression(
+                        return Err(Error::Compression(
                             "Zstd decompression not available in this build".to_string(),
                         ));
                     }

@@ -375,10 +375,12 @@ impl RateLimiter {
         let mut current = self.tokens.load(Ordering::Relaxed);
         loop {
             if current < tokens {
-                return Err(Error::Throttled(format!(
-                    "{} ms",
-                    ((tokens - current) * 1000) / self.refill_rate
-                )));
+                return Err(Error::ResourceExhausted {
+                    resource: format!(
+                        "Throttled: {} ms",
+                        ((tokens - current) * 1000) / self.refill_rate
+                    ),
+                });
             }
 
             match self.tokens.compare_exchange(
