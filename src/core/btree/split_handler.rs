@@ -191,7 +191,7 @@ mod tests {
         node.children.push(200); // One more child than entries
 
         // Trigger split - use simpler parameters
-        let result = handler.handle_split(
+        let result = handler._handle_split(
             &mut node,
             1,
             &[], // Empty path
