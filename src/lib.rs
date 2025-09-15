@@ -127,9 +127,6 @@ pub mod utils;
 // Security module for comprehensive security hardening
 pub mod security;
 
-// New simplified manager modules
-pub mod managers;
-
 // Re-export core types and functionality
 pub use crate::core::error::{Error, Result};
 use crate::core::index;

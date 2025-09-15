@@ -149,7 +149,6 @@ impl LockOrdering {
         let mut indexed_locks: Vec<(usize, &Arc<RwLock<T>>)> = locks
             .iter()
             .enumerate()
-            .map(|(i, lock)| (i, lock))
             .collect();
 
         indexed_locks.sort_by_key(|(_, lock)| lock.as_ref() as *const RwLock<T> as usize);

@@ -280,7 +280,7 @@ impl AuthenticationManager {
             let dummy_hash =
                 "$2b$12$dummy.hash.for.constant.time.comparison.purposes.only".to_string();
 
-            let hash_to_check = if hash_str.len() > 0 {
+            let hash_to_check = if !hash_str.is_empty() {
                 hash_str
             } else {
                 &dummy_hash

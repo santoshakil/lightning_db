@@ -770,11 +770,8 @@ impl RecoveryManager {
         self.recovery_state.recovery_progress.current_phase = phase;
         self.recovery_state.recovery_progress.phase_progress = 0.0;
 
-        match phase {
-            RecoveryPhase::Completed => {
-                self.recovery_state.recovery_progress.phase_progress = 100.0;
-            }
-            _ => {}
+        if let RecoveryPhase::Completed = phase {
+            self.recovery_state.recovery_progress.phase_progress = 100.0;
         }
 
         Ok(())
