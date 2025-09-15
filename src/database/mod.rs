@@ -5,5 +5,3 @@ pub mod maintenance;
 pub mod metrics;
 pub mod lifecycle;
 
-// Re-export types defined in metrics module
-pub use metrics::{TransactionStats, PerformanceMetrics};

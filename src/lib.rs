@@ -141,12 +141,11 @@ use core::lsm::LSMTree;
 use features::adaptive_compression::CompressionAlgorithm as CompType;
 use features::encryption;
 use features::monitoring;
-use features::statistics::{MetricsCollector, OperationType};
+use features::statistics::MetricsCollector;
 use parking_lot::RwLock;
 use performance::prefetch::PrefetchManager;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 pub use utils::batching::FastAutoBatcher as AutoBatcher;
 pub use utils::batching::FastAutoBatcher;
 use utils::resource_management::quotas::QuotaConfig;
@@ -155,10 +154,7 @@ use crate::core::transaction::{
     version_cleanup::VersionCleanupThread, UnifiedTransactionManager,
     UnifiedVersionStore as VersionStore,
 };
-use crate::core::wal::{
-    UnifiedTransactionRecoveryState, UnifiedWalConfig, UnifiedWalSyncMode, UnifiedWriteAheadLog,
-};
-use utils::batching::BatchOperation;
+use crate::core::wal::{UnifiedWalSyncMode, UnifiedWriteAheadLog};
 pub use utils::batching::WriteBatch;
 
 // Include protobuf generated code if available
