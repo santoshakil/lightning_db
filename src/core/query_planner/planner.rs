@@ -129,7 +129,6 @@ pub struct QueryCost {
 
 #[derive(Debug, Clone)]
 pub struct QueryPlanner {
-    cost_model: Arc<super::cost_model::CostModel>,
     optimizer: Arc<super::optimizer::QueryOptimizer>,
     statistics: Arc<RwLock<super::statistics::TableStatistics>>,
     config: PlannerConfig,
@@ -506,7 +505,6 @@ impl CostEstimate {
 impl QueryPlanner {
     pub fn new(config: PlannerConfig) -> Self {
         Self {
-            cost_model: Arc::new(super::cost_model::CostModel::default()),
             optimizer: Arc::new(super::optimizer::QueryOptimizer::new()),
             statistics: Arc::new(RwLock::new(super::statistics::TableStatistics::new())),
             config,

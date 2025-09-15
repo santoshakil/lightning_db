@@ -68,7 +68,6 @@ pub struct MemoryRecoveryManager {
     emergency_reserve: Arc<Mutex<Option<Vec<u8>>>>,
     cache_managers: Arc<RwLock<Vec<Weak<dyn CacheManager>>>>,
     allocation_tracker: Arc<Mutex<AllocationTracker>>,
-    memory_pressure: Arc<AtomicU64>,
 }
 
 impl MemoryRecoveryManager {
@@ -85,7 +84,6 @@ impl MemoryRecoveryManager {
             emergency_reserve: Arc::new(Mutex::new(emergency_reserve)),
             cache_managers: Arc::new(RwLock::new(Vec::new())),
             allocation_tracker: Arc::new(Mutex::new(AllocationTracker::new())),
-            memory_pressure: Arc::new(AtomicU64::new(0)),
         }
     }
 

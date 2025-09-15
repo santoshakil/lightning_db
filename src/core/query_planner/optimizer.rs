@@ -1,4 +1,3 @@
-use super::cost_model::CostModel;
 use super::planner::{Expression, FilterNode, JoinNode, PlanNode, Predicate, QueryPlan};
 use super::statistics::TableStatistics;
 use crate::core::error::Error;
@@ -7,7 +6,6 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct QueryOptimizer {
     rules: Vec<Arc<dyn OptimizationRule>>,
-    cost_model: Arc<CostModel>,
     config: OptimizerConfig,
 }
 
@@ -75,7 +73,6 @@ impl QueryOptimizer {
         ];
         Self {
             rules,
-            cost_model: Arc::new(CostModel::default()),
             config: OptimizerConfig::default(),
         }
     }
@@ -271,7 +268,7 @@ impl JoinReordering {
         }
     }
 
-    fn extract_joins(&self, node: &PlanNode) -> Result<Vec<JoinInfo>, Error> {
+    fn extract_joins(&self, node: &PlanNode) -> Result<Vec<()>, Error> {
         let mut joins = Vec::new();
         self.extract_joins_recursive(node, &mut joins)?;
         Ok(joins)
@@ -280,18 +277,12 @@ impl JoinReordering {
     fn extract_joins_recursive(
         &self,
         node: &PlanNode,
-        joins: &mut Vec<JoinInfo>,
+        joins: &mut Vec<()>,
     ) -> Result<(), Error> {
-        if let PlanNode::Join(join) = node {
-            joins.push(JoinInfo {
-                left_table: self.get_table_name(&join.left)?,
-                right_table: self.get_table_name(&join.right)?,
-                join_type: join.join_type,
-                condition: join.join_condition.clone(),
-                estimated_rows: join.estimated_rows,
-            });
-            self.extract_joins_recursive(&join.left, joins)?;
-            self.extract_joins_recursive(&join.right, joins)?;
+        if let PlanNode::Join(_join) = node {
+            joins.push(());
+            self.extract_joins_recursive(&_join.left, joins)?;
+            self.extract_joins_recursive(&_join.right, joins)?;
         }
         Ok(())
     }
@@ -305,25 +296,17 @@ impl JoinReordering {
 
     fn find_best_join_order(
         &self,
-        joins: Vec<JoinInfo>,
+        joins: Vec<()>,
         _stats: &TableStatistics,
-    ) -> Result<Vec<JoinInfo>, Error> {
+    ) -> Result<Vec<()>, Error> {
         Ok(joins)
     }
 
-    fn build_join_tree(&self, _joins: Vec<JoinInfo>) -> Result<Box<PlanNode>, Error> {
+    fn build_join_tree(&self, _joins: Vec<()>) -> Result<Box<PlanNode>, Error> {
         Err(Error::NotImplemented("Join tree building".to_string()))
     }
 }
 
-#[derive(Debug, Clone)]
-struct JoinInfo {
-    left_table: String,
-    right_table: String,
-    join_type: super::planner::JoinType,
-    condition: super::planner::JoinCondition,
-    estimated_rows: usize,
-}
 
 impl OptimizationRule for ConstantFolding {
     fn name(&self) -> &str {
