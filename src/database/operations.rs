@@ -241,7 +241,7 @@ impl Database {
             } else {
                 // For non-LSM databases, delete directly from B+Tree
                 if let Some(ref write_buffer) = self.btree_write_buffer {
-                    write_buffer.remove(key)?
+                    write_buffer.delete(key)?
                 } else {
                     // Direct B+Tree delete
                     let mut btree = self.btree.write();
