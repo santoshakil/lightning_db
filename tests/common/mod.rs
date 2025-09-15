@@ -1,4 +1,4 @@
-use lightning_db::{Database, LightningDbConfig};
+use lightning_db::Database;
 use tempfile::TempDir;
 
 // Simple init function that doesn't interfere with global state

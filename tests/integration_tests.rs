@@ -2,7 +2,6 @@ use lightning_db::{Database, Key, LightningDbConfig, WriteBatch};
 use tempfile::tempdir;
 
 mod common;
-use common::*;
 
 #[test]
 fn test_complete_crud_operations() {

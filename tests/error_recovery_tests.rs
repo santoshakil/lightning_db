@@ -6,7 +6,6 @@ use std::thread;
 use tempfile::{tempdir, TempDir};
 
 mod common;
-use common::*;
 
 #[test]
 fn test_invalid_operations() {
