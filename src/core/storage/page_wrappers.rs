@@ -160,13 +160,13 @@ pub struct OptimizedPageManagerStats {
 
 #[derive(Debug, Clone)]
 pub struct PageCacheAdapterWrapper {
-    inner: Arc<super::PageCacheAdapter>,
+    _inner: Arc<super::PageCacheAdapter>,
 }
 
 impl PageCacheAdapterWrapper {
     pub fn new(adapter: super::PageCacheAdapter) -> Self {
         Self {
-            inner: Arc::new(adapter),
+            _inner: Arc::new(adapter),
         }
     }
 }

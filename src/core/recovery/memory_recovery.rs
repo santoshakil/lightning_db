@@ -258,7 +258,7 @@ impl MemoryRecoveryManager {
         Ok(())
     }
 
-    async fn release_emergency_reserve(&self) {
+    async fn _release_emergency_reserve(&self) {
         let mut reserve = self.emergency_reserve.lock().await;
         if let Some(reserve_data) = reserve.take() {
             let size = reserve_data.len();

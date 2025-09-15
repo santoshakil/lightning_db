@@ -531,7 +531,7 @@ impl SSTableIterator<'_> {
 
 /// SSTable manager for managing multiple SSTables
 pub struct SSTableManager {
-    data_dir: PathBuf,
+    _data_dir: PathBuf,
     sstables: Arc<RwLock<Vec<Arc<SSTableReader>>>>,
 }
 
@@ -541,7 +541,7 @@ impl SSTableManager {
         std::fs::create_dir_all(&data_dir)?;
 
         Ok(Self {
-            data_dir,
+            _data_dir: data_dir,
             sstables: Arc::new(RwLock::new(Vec::new())),
         })
     }

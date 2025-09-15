@@ -508,14 +508,14 @@ impl JoinOptimizer {
             .unwrap_or(1_000_000)
     }
 
-    fn estimate_table_size(&self, table_name: &str, stats: &TableStatistics) -> usize {
+    fn _estimate_table_size(&self, table_name: &str, stats: &TableStatistics) -> usize {
         stats
             .get_table(table_name)
             .map(|t| t.data_size)
             .unwrap_or(100_000_000)
     }
 
-    fn estimate_join_selectivity(
+    fn _estimate_join_selectivity(
         &self,
         _condition: &JoinCondition,
         _stats: &TableStatistics,

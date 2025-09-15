@@ -40,13 +40,13 @@ pub struct RecoveryStats {
 }
 
 pub struct RedundantMetadata {
-    path: std::path::PathBuf,
+    _path: std::path::PathBuf,
 }
 
 impl RedundantMetadata {
     pub fn new(path: &Path) -> Self {
         Self {
-            path: path.to_path_buf(),
+            _path: path.to_path_buf(),
         }
     }
 
@@ -60,17 +60,17 @@ pub struct DatabaseHeader {
 }
 
 pub struct DoubleWriteBuffer {
-    path: std::path::PathBuf,
-    page_size: usize,
-    buffer_size: usize,
+    _path: std::path::PathBuf,
+    _page_size: usize,
+    _buffer_size: usize,
 }
 
 impl DoubleWriteBuffer {
     pub fn new(_path: &Path, page_size: usize, buffer_size: usize) -> Result<Self> {
         Ok(Self {
-            path: _path.to_path_buf(),
-            page_size,
-            buffer_size,
+            _path: _path.to_path_buf(),
+            _page_size: page_size,
+            _buffer_size: buffer_size,
         })
     }
 
@@ -83,13 +83,13 @@ impl DoubleWriteBuffer {
 }
 
 pub struct EnhancedWalRecovery {
-    path: std::path::PathBuf,
-    progress: Arc<RecoveryProgress>,
+    _path: std::path::PathBuf,
+    _progress: Arc<RecoveryProgress>,
 }
 
 impl EnhancedWalRecovery {
     pub fn new(path: std::path::PathBuf, progress: Arc<RecoveryProgress>) -> Self {
-        Self { path, progress }
+        Self { _path: path, _progress: progress }
     }
 
     pub fn recover<F>(&self, _callback: F) -> Result<RecoveryStats>

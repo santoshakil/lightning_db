@@ -111,8 +111,8 @@ pub struct WarmingStats {
 struct AccessHistoryEntry {
     page_id: u64,
     timestamp: Instant,
-    access_type: AccessType,
-    context: AccessContext,
+    _access_type: AccessType,
+    _context: AccessContext,
 }
 
 /// Type of access operation
@@ -127,10 +127,10 @@ pub enum AccessType {
 /// Context information for access
 #[derive(Debug, Clone)]
 struct AccessContext {
-    workload_type: WorkloadType,
-    transaction_id: Option<u64>,
-    query_type: QueryType,
-    user_session: Option<String>,
+    _workload_type: WorkloadType,
+    _transaction_id: Option<u64>,
+    _query_type: QueryType,
+    _user_session: Option<String>,
 }
 
 /// Query type classification
@@ -571,12 +571,12 @@ impl CachePrewarmer {
         let entry = AccessHistoryEntry {
             page_id,
             timestamp: Instant::now(),
-            access_type,
-            context: AccessContext {
-                workload_type,
-                transaction_id,
-                query_type: self.infer_query_type(access_type, workload_type),
-                user_session: None,
+            _access_type: access_type,
+            _context: AccessContext {
+                _workload_type: workload_type,
+                _transaction_id: transaction_id,
+                _query_type: self.infer_query_type(access_type, workload_type),
+                _user_session: None,
             },
         };
 
@@ -1053,12 +1053,12 @@ mod tests {
             let entry = AccessHistoryEntry {
                 page_id: i,
                 timestamp: Instant::now(),
-                access_type: AccessType::Read,
-                context: AccessContext {
-                    workload_type: WorkloadType::OLTP,
-                    transaction_id: Some(1),
-                    query_type: QueryType::PointLookup,
-                    user_session: None,
+                _access_type: AccessType::Read,
+                _context: AccessContext {
+                    _workload_type: WorkloadType::OLTP,
+                    _transaction_id: Some(1),
+                    _query_type: QueryType::PointLookup,
+                    _user_session: None,
                 },
             };
             detector.record_access(entry);

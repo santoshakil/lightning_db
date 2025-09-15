@@ -29,7 +29,7 @@ use std::time::{Duration, Instant};
 
 // Cache line size for alignment optimization
 const CACHE_LINE_SIZE: usize = 64;
-const SIMD_CHUNK_SIZE: usize = 16;
+const _SIMD_CHUNK_SIZE: usize = 16;
 const DEFAULT_CAPACITY: usize = 1000;
 
 /// Safe optimized hash function using FNV-1a with safe byte operations
@@ -61,7 +61,7 @@ fn safe_hash_fnv1a(data: &[u8]) -> u64 {
 
 /// Safe optimized key comparison using standard library functions
 #[inline(always)]
-fn safe_compare_keys(a: &[u8], b: &[u8]) -> bool {
+fn _safe_compare_keys(a: &[u8], b: &[u8]) -> bool {
     // Use standard library's highly optimized slice comparison
     // This is often as fast or faster than manual SIMD code due to:
     // 1. LLVM auto-vectorization
@@ -247,7 +247,7 @@ pub struct UnifiedCache {
 
     // Thread-local segments for hot path optimization
     segments: Vec<Arc<RwLock<ThreadLocalSegment>>>,
-    num_segments: usize,
+    _num_segments: usize,
     segment_mask: usize,
 
     // ARC algorithm components for adaptive replacement
@@ -306,7 +306,7 @@ impl UnifiedCache {
         Self {
             cache: DashMap::with_capacity(config.capacity),
             segments,
-            num_segments,
+            _num_segments: num_segments,
             segment_mask: num_segments - 1,
             t1: Arc::new(RwLock::new(VecDeque::with_capacity(config.capacity / 2))),
             t2: Arc::new(RwLock::new(VecDeque::with_capacity(config.capacity / 2))),

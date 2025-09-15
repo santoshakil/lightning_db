@@ -62,7 +62,7 @@ pub struct UnifiedTransactionManager {
     // Configuration
     max_active_transactions: usize,
     lock_timeout: Duration,
-    gc_interval: Duration,
+    _gc_interval: Duration,
 
     // Performance optimizations
     tx_pool: Arc<Mutex<Vec<UnifiedTransaction>>>,
@@ -185,7 +185,7 @@ impl UnifiedTransactionManager {
             read_locks: Arc::new(DashMap::new()),
             max_active_transactions,
             lock_timeout: Duration::from_millis(50),
-            gc_interval: Duration::from_secs(30),
+            _gc_interval: Duration::from_secs(30),
             tx_pool: Arc::new(Mutex::new(Vec::with_capacity(64))),
             batch_commit_size: 16,
             pending_commits: Arc::new(DashMap::new()),

@@ -490,7 +490,7 @@ pub mod page_validators {
     }
 
     /// Validate LSM page structure
-    fn validate_lsm_page_structure(_page: &Page, _location: &str) -> ValidationResult<()> {
+    fn _validate_lsm_page_structure(_page: &Page, _location: &str) -> ValidationResult<()> {
         // Validation implementation pending storage module integration LSM specific validations
         // - Key range consistency
         // - Compression integrity

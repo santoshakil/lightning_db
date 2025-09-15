@@ -372,7 +372,7 @@ impl OptimizedMmapManager {
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn advise_huge_pages(&self, _mmap: &mut MmapMut) {
+    fn _advise_huge_pages(&self, _mmap: &mut MmapMut) {
         // No-op on non-Linux platforms
     }
 

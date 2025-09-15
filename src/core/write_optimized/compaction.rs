@@ -207,7 +207,7 @@ impl CompactionJob {
 type IterItem = (SSTableIteratorWrapper, Option<(Vec<u8>, Vec<u8>)>);
 struct SSTableMerger {
     iterators: Vec<IterItem>,
-    current_key: Option<Vec<u8>>,
+    _current_key: Option<Vec<u8>>,
 }
 
 impl SSTableMerger {
@@ -222,7 +222,7 @@ impl SSTableMerger {
 
         let mut merger = Self {
             iterators,
-            current_key: None,
+            _current_key: None,
         };
 
         // Prime all iterators
@@ -288,7 +288,7 @@ impl SSTableMerger {
 
 /// Wrapper for SSTable iterator to handle errors
 struct SSTableIteratorWrapper {
-    sstable: Arc<SSTableReader>,
+    _sstable: Arc<SSTableReader>,
     entries: Vec<(Vec<u8>, Vec<u8>)>,
     index: usize,
 }
@@ -300,7 +300,7 @@ impl SSTableIteratorWrapper {
         let entries = Vec::new();
 
         Ok(Self {
-            sstable,
+            _sstable: sstable,
             entries,
             index: 0,
         })
@@ -415,7 +415,7 @@ pub struct CompactionManager {
     /// Compaction strategy
     strategy: CompactionStrategy,
     /// Job queue
-    job_queue: Arc<Mutex<VecDeque<CompactionJob>>>,
+    _job_queue: Arc<Mutex<VecDeque<CompactionJob>>>,
     /// Job sender
     job_sender: Sender<CompactionJob>,
     /// Job receiver
@@ -457,7 +457,7 @@ impl CompactionManager {
         Ok(Self {
             levels: Arc::new(RwLock::new(levels)),
             strategy,
-            job_queue: Arc::new(Mutex::new(VecDeque::new())),
+            _job_queue: Arc::new(Mutex::new(VecDeque::new())),
             job_sender,
             job_receiver,
             workers: Vec::new(),
