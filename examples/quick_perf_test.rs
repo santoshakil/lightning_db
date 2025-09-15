@@ -125,14 +125,22 @@ fn main() {
     );
 
     // Print cache statistics
-    if let Ok(stats) = db.get_cache_stats() {
+    {
+        use std::sync::atomic::Ordering;
+        let stats = db.cache_stats();
+        let hits = stats.hits.load(Ordering::Relaxed);
+        let misses = stats.misses.load(Ordering::Relaxed);
+        let evictions = stats.evictions.load(Ordering::Relaxed);
+
         println!("Cache Statistics:");
-        println!("  Hits: {}", stats.hits);
-        println!("  Misses: {}", stats.misses);
-        println!(
-            "  Hit ratio: {:.2}%",
-            stats.hits as f64 / (stats.hits + stats.misses) as f64 * 100.0
-        );
-        println!("  Evictions: {}", stats.evictions);
+        println!("  Hits: {}", hits);
+        println!("  Misses: {}", misses);
+        if hits + misses > 0 {
+            println!(
+                "  Hit ratio: {:.2}%",
+                hits as f64 / (hits + misses) as f64 * 100.0
+            );
+        }
+        println!("  Evictions: {}", evictions);
     }
 }

@@ -370,17 +370,21 @@ impl HealthCheckSystem {
         let mut details = HashMap::new();
         let mut status = HealthStatus::Healthy;
 
-        let cache_stats = db.get_cache_stats()?;
-        let hit_rate = cache_stats.hits as f64 / (cache_stats.hits + cache_stats.misses) as f64;
+        use std::sync::atomic::Ordering;
+        let cache_stats = db.cache_stats();
+        let hits = cache_stats.hits.load(Ordering::Relaxed);
+        let misses = cache_stats.misses.load(Ordering::Relaxed);
+        let hit_rate = if hits + misses > 0 { hits as f64 / (hits + misses) as f64 } else { 0.0 };
 
         details.insert("hit_rate".to_string(), serde_json::json!(hit_rate));
+        // Note: size_bytes and entry_count not available in current CacheStats
         details.insert(
             "size_bytes".to_string(),
-            serde_json::json!(cache_stats.size_bytes),
+            serde_json::json!(0), // Placeholder
         );
         details.insert(
             "entry_count".to_string(),
-            serde_json::json!(cache_stats.entry_count),
+            serde_json::json!(0), // Placeholder
         );
 
         if hit_rate < config.thresholds.healthy_cache_hit_rate {

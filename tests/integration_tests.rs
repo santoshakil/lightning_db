@@ -2,6 +2,7 @@ use lightning_db::{Database, Key, LightningDbConfig, WriteBatch};
 use tempfile::tempdir;
 
 mod common;
+use common::{TestDatabase, FAST_TEST_SIZE, MEDIUM_TEST_SIZE};
 
 #[test]
 fn test_complete_crud_operations() {
@@ -414,7 +415,7 @@ fn test_iterator_consistency() {
     // Range scan
     let start = b"iter_020";
     let end = b"iter_030";
-    let iter = db.scan(Some(start.to_vec()), Some(end.to_vec())).unwrap();
+    let iter = db.scan(Some(start), Some(end)).unwrap();
     let results: Vec<_> = iter.collect();
     assert!(results.len() >= 10);
 
