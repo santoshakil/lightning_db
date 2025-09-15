@@ -44,8 +44,8 @@ impl Database {
         // First put the data
         self.put(key, value)?;
 
-        // Then update indexes
-        self.index_manager.update_indexes(key, record)?;
+        // Then insert into indexes (new record, so using insert_into_indexes)
+        self.index_manager.insert_into_indexes(key, record)?;
 
         Ok(())
     }
@@ -67,14 +67,11 @@ impl Database {
         new_value: &[u8],
         new_record: &dyn IndexableRecord,
     ) -> Result<()> {
-        // Remove old index entries
-        self.index_manager.delete_from_indexes(key, old_record)?;
+        // Update indexes (passing both old and new records)
+        self.index_manager.update_indexes(key, old_record, new_record)?;
 
         // Update the data
         self.put(key, new_value)?;
-
-        // Add new index entries
-        self.index_manager.update_indexes(key, new_record)?;
 
         Ok(())
     }
