@@ -182,11 +182,12 @@ impl RecoveryState {
 
     pub fn check_timeout(&self, stage: &RecoveryStage) -> Result<()> {
         if self.start_time.elapsed() > self.stage_timeout {
-            return Err(Error::RecoveryTimeout {
-                stage: stage.name().to_string(),
-                timeout_seconds: self.stage_timeout.as_secs(),
-                progress: self.calculate_progress(),
-            });
+            return Err(Error::RecoveryFailed(format!(
+                "Recovery timeout in stage {} after {} seconds (progress: {:.1}%)",
+                stage.name(),
+                self.stage_timeout.as_secs(),
+                self.calculate_progress() * 100.0
+            )));
         }
         Ok(())
     }
@@ -264,13 +265,11 @@ impl CrashRecoveryManager {
             // Check dependencies
             for dep in stage.dependencies() {
                 if !self.state.is_stage_completed(&dep) {
-                    return Err(Error::RecoveryStageDependencyFailed {
-                        stage: stage.name().to_string(),
-                        dependency: dep.name().to_string(),
-                        dependency_error: Box::new(Error::Generic(
-                            "Dependency not completed".to_string(),
-                        )),
-                    });
+                    return Err(Error::RecoveryFailed(format!(
+                        "Stage {} dependency failed: {} not completed",
+                        stage.name(),
+                        dep.name()
+                    )));
                 }
             }
 
@@ -288,15 +287,11 @@ impl CrashRecoveryManager {
                     // Handle failure based on stage criticality and rollback capability
                     if stage.is_critical() || !stage.supports_rollback() {
                         // Critical failure - cannot continue
-                        return Err(Error::PartialRecoveryFailure {
-                            completed_stages: completed_stages
-                                .iter()
-                                .map(|s| s.name().to_string())
-                                .collect(),
-                            failed_stage: stage.name().to_string(),
-                            cause: Box::new(error),
-                            rollback_available: false,
-                        });
+                        return Err(Error::RecoveryFailed(format!(
+                            "Critical failure in stage {} (completed: {})",
+                            stage.name(),
+                            completed_stages.iter().map(|s| s.name()).collect::<Vec<_>>().join(", ")
+                        )));
                     }
                     // Non-critical failure - attempt rollback
                     warn!("Attempting rollback for failed stage: {}", stage.name());
@@ -308,22 +303,18 @@ impl CrashRecoveryManager {
                             stage.name(),
                             rollback_error
                         );
-                        return Err(Error::RecoveryRollbackFailed {
-                            stage: stage.name().to_string(),
-                            reason: rollback_error.to_string(),
-                            manual_intervention_needed: true,
-                        });
+                        return Err(Error::RecoveryFailed(format!(
+                            "Rollback failed for stage {}: {}",
+                            stage.name(),
+                            rollback_error
+                        )));
                     }
 
-                    return Err(Error::PartialRecoveryFailure {
-                        completed_stages: completed_stages
-                            .iter()
-                            .map(|s| s.name().to_string())
-                            .collect(),
-                        failed_stage: stage.name().to_string(),
-                        cause: Box::new(error),
-                        rollback_available: true,
-                    });
+                    return Err(Error::RecoveryFailed(format!(
+                        "Failed in stage {} after rollback (completed: {})",
+                        stage.name(),
+                        completed_stages.iter().map(|s| s.name()).collect::<Vec<_>>().join(", ")
+                    )));
                 }
             }
 
@@ -334,11 +325,10 @@ impl CrashRecoveryManager {
         // All stages completed successfully - open the database
         info!("All recovery stages completed successfully");
         let database = Database::open(&self.db_path, self.config.clone()).map_err(|e| {
-            Error::RecoveryVerificationFailed {
-                check_name: "Database Open".to_string(),
-                details: e.to_string(),
-                critical: true,
-            }
+            Error::RecoveryFailed(format!(
+                "Database open verification failed: {}",
+                e
+            ))
         })?;
 
         // Final verification
@@ -417,10 +407,10 @@ impl CrashRecoveryManager {
 
         // Check if database directory exists
         if !self.db_path.exists() {
-            return Err(Error::RecoveryImpossible {
-                reason: format!("Database directory does not exist: {:?}", self.db_path),
-                suggested_action: "Verify database path and permissions".to_string(),
-            });
+            return Err(Error::RecoveryFailed(format!(
+                "Database directory does not exist: {:?}",
+                self.db_path
+            )));
         }
 
         // Initialize progress tracking
@@ -462,19 +452,15 @@ impl CrashRecoveryManager {
 
         // Validate critical configuration settings
         if self.config.page_size == 0 {
-            return Err(Error::RecoveryConfigurationError {
-                setting: "page_size".to_string(),
-                issue: "Page size cannot be zero".to_string(),
-                fix: "Set a valid page size (e.g., 4096)".to_string(),
-            });
+            return Err(Error::RecoveryFailed(
+                "Page size cannot be zero - set a valid page size (e.g., 4096)".to_string()
+            ));
         }
 
         if self.config.cache_size == 0 {
-            return Err(Error::RecoveryConfigurationError {
-                setting: "cache_size".to_string(),
-                issue: "Cache size cannot be zero".to_string(),
-                fix: "Set a valid cache size".to_string(),
-            });
+            return Err(Error::RecoveryFailed(
+                "Cache size cannot be zero - set a valid cache size".to_string()
+            ));
         }
 
         let mut metrics = HashMap::new();
@@ -495,10 +481,11 @@ impl CrashRecoveryManager {
         let wal_dir = self.db_path.join("wal");
         let wal_count = if wal_dir.exists() {
             std::fs::read_dir(&wal_dir)
-                .map_err(|_e| Error::RecoveryPermissionError {
-                    path: wal_dir.to_string_lossy().to_string(),
-                    required_permissions: "read access".to_string(),
-                })?
+                .map_err(|e| Error::RecoveryFailed(format!(
+                    "Cannot read WAL directory {}: {}",
+                    wal_dir.display(),
+                    e
+                )))?
                 .filter_map(|entry| {
                     entry.ok().and_then(|e| {
                         if e.path().extension()?.to_str()? == "wal" {
@@ -677,10 +664,11 @@ impl RecoveryLockManager {
             std::time::SystemTime::now()
         );
         std::fs::write(&self.lock_file, lock_content).map_err(|e| {
-            Error::RecoveryPermissionError {
-                path: self.lock_file.to_string_lossy().to_string(),
-                required_permissions: format!("write access: {}", e),
-            }
+            Error::RecoveryFailed(format!(
+                "Cannot write lock file {}: {}",
+                self.lock_file.display(),
+                e
+            ))
         })?;
 
         self.lock_acquired.store(true, Ordering::SeqCst);
@@ -797,19 +785,17 @@ impl RollbackManager {
         match action {
             RollbackAction::DeleteFile(path) => {
                 if path.exists() {
-                    std::fs::remove_file(path).map_err(|e| Error::RecoveryRollbackFailed {
-                        stage: "file_deletion".to_string(),
-                        reason: e.to_string(),
-                        manual_intervention_needed: false,
-                    })?;
+                    std::fs::remove_file(path).map_err(|e| Error::RecoveryFailed(format!(
+                        "Rollback file deletion failed: {}",
+                        e
+                    )))?;
                 }
             }
             RollbackAction::RestoreFile { path, content } => {
-                std::fs::write(path, content).map_err(|e| Error::RecoveryRollbackFailed {
-                    stage: "file_restoration".to_string(),
-                    reason: e.to_string(),
-                    manual_intervention_needed: false,
-                })?;
+                std::fs::write(path, content).map_err(|e| Error::RecoveryFailed(format!(
+                    "Rollback file restoration failed: {}",
+                    e
+                )))?;
             }
             RollbackAction::ReleaseLock(lock_name) => {
                 debug!("Releasing lock: {}", lock_name);

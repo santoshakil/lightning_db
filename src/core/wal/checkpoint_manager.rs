@@ -253,9 +253,9 @@ impl CheckpointManager {
             .join(format!("checkpoint_{:016}.chk", checkpoint_lsn));
 
         if !checkpoint_path.exists() {
-            return Err(Error::CheckpointNotFound {
-                checkpoint_lsn,
-                path: checkpoint_path.to_string_lossy().to_string(),
+            return Err(Error::WalCorruption {
+                offset: checkpoint_lsn,
+                reason: format!("Checkpoint not found at path: {}", checkpoint_path.display()),
             });
         }
 
@@ -263,15 +263,15 @@ impl CheckpointManager {
 
         // Verify checkpoint integrity
         if !metadata.verify_checksum() {
-            return Err(Error::CheckpointCorrupted {
-                checkpoint_lsn,
+            return Err(Error::WalCorruption {
+                offset: checkpoint_lsn,
                 reason: "Checksum verification failed".to_string(),
             });
         }
 
         if metadata.checkpoint_lsn != checkpoint_lsn {
-            return Err(Error::CheckpointCorrupted {
-                checkpoint_lsn,
+            return Err(Error::WalCorruption {
+                offset: checkpoint_lsn,
                 reason: format!(
                     "LSN mismatch: expected {}, found {}",
                     checkpoint_lsn, metadata.checkpoint_lsn
@@ -382,16 +382,16 @@ impl CheckpointManager {
         reader.read_exact(&mut wal_file_size)?;
 
         if u32::from_le_bytes(magic) != CheckpointMetadata::MAGIC {
-            return Err(Error::CheckpointCorrupted {
-                checkpoint_lsn: 0,
+            return Err(Error::WalCorruption {
+                offset: 0,
                 reason: "Invalid checkpoint magic".to_string(),
             });
         }
 
         let version = u32::from_le_bytes(version);
         if version != CheckpointMetadata::VERSION {
-            return Err(Error::CheckpointCorrupted {
-                checkpoint_lsn: 0,
+            return Err(Error::WalCorruption {
+                offset: 0,
                 reason: format!("Unsupported checkpoint version: {}", version),
             });
         }
@@ -430,23 +430,23 @@ impl CheckpointManager {
         let metadata = self.read_checkpoint_metadata(checkpoint_path)?;
 
         if !metadata.verify_checksum() {
-            return Err(Error::CheckpointCorrupted {
-                checkpoint_lsn: metadata.checkpoint_lsn,
+            return Err(Error::WalCorruption {
+                offset: metadata.checkpoint_lsn,
                 reason: "Checksum verification failed".to_string(),
             });
         }
 
         // Additional validation checks
         if metadata.checkpoint_lsn == 0 {
-            return Err(Error::CheckpointCorrupted {
-                checkpoint_lsn: metadata.checkpoint_lsn,
+            return Err(Error::WalCorruption {
+                offset: metadata.checkpoint_lsn,
                 reason: "Invalid LSN (zero)".to_string(),
             });
         }
 
         if metadata.committed_lsn > metadata.checkpoint_lsn {
-            return Err(Error::CheckpointCorrupted {
-                checkpoint_lsn: metadata.checkpoint_lsn,
+            return Err(Error::WalCorruption {
+                offset: metadata.checkpoint_lsn,
                 reason: format!(
                     "Committed LSN {} > checkpoint LSN {}",
                     metadata.committed_lsn, metadata.checkpoint_lsn

@@ -324,7 +324,7 @@ impl SSTableReader {
 
         // Verify magic number
         if footer.magic != SSTABLE_MAGIC {
-            return Err(Error::InvalidFormat(
+            return Err(Error::InvalidArgument(
                 "Invalid SSTable magic number".to_string(),
             ));
         }

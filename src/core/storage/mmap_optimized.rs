@@ -198,7 +198,7 @@ impl OptimizedMmapManager {
         let region_size = self.config.region_size.min(remaining as usize);
 
         if region_size == 0 {
-            return Err(Error::InvalidPageId);
+            return Err(Error::PageNotFound(0));
         }
 
         // Create memory mapping with huge pages support
@@ -386,14 +386,14 @@ impl OptimizedMmapManager {
             let region_id = self.get_or_create_region(file_offset)?;
 
             let regions = self.regions.read();
-            let region = regions.get(&region_id).ok_or(Error::InvalidPageId)?;
+            let region = regions.get(&region_id).ok_or(Error::PageNotFound(0))?;
 
             let region_offset = file_offset - region.offset;
             let available = region.size.saturating_sub(region_offset as usize);
             let to_read = remaining.min(available);
 
             if to_read == 0 {
-                return Err(Error::InvalidPageId);
+                return Err(Error::PageNotFound(0));
             }
 
             buf[buf_offset..buf_offset + to_read].copy_from_slice(
@@ -418,14 +418,14 @@ impl OptimizedMmapManager {
             let region_id = self.get_or_create_region(file_offset)?;
 
             let mut regions = self.regions.write();
-            let region = regions.get_mut(&region_id).ok_or(Error::InvalidPageId)?;
+            let region = regions.get_mut(&region_id).ok_or(Error::PageNotFound(0))?;
 
             let region_offset = file_offset - region.offset;
             let available = region.size.saturating_sub(region_offset as usize);
             let to_write = remaining.min(available);
 
             if to_write == 0 {
-                return Err(Error::InvalidPageId);
+                return Err(Error::PageNotFound(0));
             }
 
             region.mmap[region_offset as usize..region_offset as usize + to_write]

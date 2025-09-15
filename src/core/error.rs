@@ -68,9 +68,6 @@ pub enum Error {
     #[error("WAL not available")]
     WalNotAvailable,
 
-    #[error("Generic error: {0}")]
-    Generic(String),
-
     #[error("Memory allocation error")]
     Memory,
 
@@ -104,26 +101,14 @@ pub enum Error {
     #[error("Storage error: {0}")]
     Storage(String),
 
-    #[error("Buffer overflow")]
-    BufferOverflow,
-
     #[error("Migration error: {0}")]
     Migration(String),
 
     #[error("Query error: {0}")]
     QueryError(String),
 
-    #[error("Integrity violation: {0}")]
-    IntegrityViolation(String),
-
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
-
-    #[error("Thread panic: {0}")]
-    ThreadPanic(String),
-
-    #[error("Resource limit exceeded: {0}")]
-    ResourceLimitExceeded(String),
 
     #[error("Version mismatch: expected {expected}, got {got}")]
     VersionMismatch { expected: String, got: String },
@@ -134,12 +119,6 @@ pub enum Error {
     #[error("Already exists: {0}")]
     AlreadyExists(String),
 
-    #[error("Invalid state: {0}")]
-    InvalidState(String),
-
-    #[error("Network error: {0}")]
-    NetworkError(String),
-
     #[error("Shutdown in progress")]
     ShutdownInProgress,
 
@@ -147,37 +126,13 @@ pub enum Error {
     RecoveryFailed(String),
 
     #[error("Backup error: {0}")]
-    BackupError(String),
-
-    #[error("Schema error: {0}")]
-    SchemaError(String),
-
-    #[error("Validation error: {0}")]
-    ValidationError(String),
-
-    #[error("Throttled: {0}")]
-    Throttled(String),
+    Backup(String),
 
     #[error("Quota exceeded: {0}")]
     QuotaExceeded(String),
 
-    #[error("Backup failed: {0}")]
-    Backup(String),
-
     #[error("Commit failed: {0}")]
     CommitFailed(String),
-
-    #[error("Connection pool exhausted")]
-    ConnectionPoolExhausted,
-
-    #[error("Custom error: {0}")]
-    Custom(String),
-
-    #[error("Deadlock victim")]
-    DeadlockVictim,
-
-    #[error("Decompression error: {0}")]
-    Decompression(String),
 
     #[error("Internal error: {0}")]
     Internal(String),
@@ -185,94 +140,14 @@ pub enum Error {
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
 
-    #[error("Invalid format: {0}")]
-    InvalidFormat(String),
-
-    #[error("Invalid input: {0}")]
-    InvalidInput(String),
-
-    #[error("Invalid page ID")]
-    InvalidPageId,
-
     #[error("Snapshot not found: {0}")]
     SnapshotNotFound(u64),
-
-    #[error("Timestamp overflow")]
-    TimestampOverflow,
-
-    #[error("Transaction retry needed: {0}")]
-    TransactionRetry(String),
 
     #[error("Transaction {id} in invalid state: {state}")]
     TransactionInvalidState { id: u64, state: String },
 
     #[error("Unsupported feature: {feature}")]
     UnsupportedFeature { feature: String },
-
-    #[error("Recovery timeout: stage {stage} after {timeout_seconds}s")]
-    RecoveryTimeout {
-        stage: String,
-        timeout_seconds: u64,
-        progress: f64,
-    },
-
-    #[error("Recovery stage {stage} depends on {dependency} which failed")]
-    RecoveryStageDependencyFailed {
-        stage: String,
-        dependency: String,
-        dependency_error: Box<Error>,
-    },
-
-    #[error("Partial recovery failure in stage {failed_stage}")]
-    PartialRecoveryFailure {
-        completed_stages: Vec<String>,
-        failed_stage: String,
-        cause: Box<Error>,
-        rollback_available: bool,
-    },
-
-    #[error("Recovery rollback failed for stage {stage}: {reason}")]
-    RecoveryRollbackFailed {
-        stage: String,
-        reason: String,
-        manual_intervention_needed: bool,
-    },
-
-    #[error("Recovery verification failed: {check_name} - {details}")]
-    RecoveryVerificationFailed {
-        check_name: String,
-        details: String,
-        critical: bool,
-    },
-
-    #[error("Recovery impossible: {reason} - {suggested_action}")]
-    RecoveryImpossible {
-        reason: String,
-        suggested_action: String,
-    },
-
-    #[error("Recovery configuration error: {setting} - {issue}")]
-    RecoveryConfigurationError {
-        setting: String,
-        issue: String,
-        fix: String,
-    },
-
-    #[error("WAL checksum mismatch at offset {offset}")]
-    WalChecksumMismatch {
-        offset: u64,
-        expected: u32,
-        found: u32,
-    },
-
-    #[error("WAL binary corruption at offset {offset}: {details}")]
-    WalBinaryCorruption { offset: u64, details: String },
-
-    #[error("Recovery permission error: {path} requires {required_permissions}")]
-    RecoveryPermissionError {
-        path: String,
-        required_permissions: String,
-    },
 
     #[error("Insufficient resources: {resource} - required: {required}, available: {available}")]
     InsufficientResources {
@@ -284,44 +159,14 @@ pub enum Error {
     #[error("Database not found: {path}")]
     DatabaseNotFound { path: String },
 
-    #[error(
-        "WAL partial entry at offset {offset}: expected {expected_size} bytes, found {actual_size}"
-    )]
-    WalPartialEntry {
-        offset: u64,
-        expected_size: usize,
-        actual_size: usize,
-    },
-
-    #[error("Recovery dependency error: {dependency} - {issue}")]
-    RecoveryDependencyError { dependency: String, issue: String },
-
     #[error("Transaction limit reached: {limit}")]
     TransactionLimitReached { limit: usize },
-
-    #[error("Checkpoint not found at LSN {checkpoint_lsn}: {path}")]
-    CheckpointNotFound { checkpoint_lsn: u64, path: String },
-
-    #[error("Checkpoint corrupted at LSN {checkpoint_lsn}: {reason}")]
-    CheckpointCorrupted { checkpoint_lsn: u64, reason: String },
 
     #[error("WAL corruption at offset {offset}: {reason}")]
     WalCorruption { offset: u64, reason: String },
 
-    #[error("Deserialization error: {0}")]
-    DeserializationError(String),
-
-    #[error("Corrupted data: {0}")]
-    CorruptedData(String),
-
-    #[error("IO error: {operation} on {path}: {source}")]
-    IOError {
-        path: std::path::PathBuf,
-        operation: String,
-        #[serde(skip)]
-        #[source]
-        source: std::io::Error,
-    },
+    #[error("Generic error: {0}")]
+    Generic(String),
 }
 
 impl From<std::io::Error> for Error {
@@ -365,21 +210,7 @@ impl From<bincode::error::EncodeError> for Error {
 
 impl Clone for Error {
     fn clone(&self) -> Self {
-        match self {
-            Error::IOError {
-                path,
-                operation,
-                source,
-            } => Error::IOError {
-                path: path.clone(),
-                operation: operation.clone(),
-                source: std::io::Error::new(source.kind(), source.to_string()),
-            },
-            _ => {
-                // For all other variants, use a generic representation
-                Error::Generic(self.to_string())
-            }
-        }
+        Error::Generic(self.to_string())
     }
 }
 
@@ -390,7 +221,6 @@ impl Error {
             Error::Timeout(_)
                 | Error::LockTimeout(_)
                 | Error::LockFailed { .. }
-                | Error::Throttled(_)
                 | Error::ResourceExhausted { .. }
         )
     }
@@ -401,7 +231,7 @@ impl Error {
             Error::Corruption(_)
                 | Error::ChecksumMismatch { .. }
                 | Error::InvalidDatabase
-                | Error::IntegrityViolation(_)
+                | Error::WalCorruption { .. }
         )
     }
 
@@ -417,10 +247,7 @@ impl Error {
     }
 
     pub fn is_recoverable(&self) -> bool {
-        !matches!(
-            self,
-            Error::Corruption(_) | Error::RecoveryImpossible { .. }
-        )
+        !matches!(self, Error::Corruption(_) | Error::InvalidDatabase)
     }
 }
 

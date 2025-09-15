@@ -15,7 +15,7 @@ impl SerializationUtils {
     /// Deserialize bytes to a value using serde_json
     pub fn deserialize<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T> {
         serde_json::from_slice(bytes)
-            .map_err(|e| Error::DeserializationError(format!("Failed to deserialize: {}", e)))
+            .map_err(|e| Error::Serialization(format!("Failed to deserialize: {}", e)))
     }
 
     /// Serialize a value and write to a writer
@@ -27,7 +27,7 @@ impl SerializationUtils {
     /// Read from a reader and deserialize to a value
     pub fn deserialize_from_reader<T: for<'de> Deserialize<'de>, R: Read>(reader: R) -> Result<T> {
         serde_json::from_reader(reader).map_err(|e| {
-            Error::DeserializationError(format!("Failed to deserialize from reader: {}", e))
+            Error::Serialization(format!("Failed to deserialize from reader: {}", e))
         })
     }
 
@@ -44,14 +44,14 @@ impl SerializationUtils {
     /// Deserialize with size prefix
     pub fn deserialize_with_size<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T> {
         if bytes.len() < 4 {
-            return Err(Error::DeserializationError(
+            return Err(Error::Serialization(
                 "Insufficient data for size prefix".to_string(),
             ));
         }
 
         let size = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
         if bytes.len() < 4 + size {
-            return Err(Error::DeserializationError(format!(
+            return Err(Error::Serialization(format!(
                 "Insufficient data: expected {} bytes, got {}",
                 4 + size,
                 bytes.len()
@@ -87,7 +87,7 @@ impl SerializationUtils {
         length: usize,
     ) -> Result<T> {
         if length > buffer.len() {
-            return Err(Error::DeserializationError(format!(
+            return Err(Error::Serialization(format!(
                 "Buffer too small: need {}, got {}",
                 length,
                 buffer.len()
@@ -175,7 +175,7 @@ impl AdvancedSerialization {
 
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>> {
         if data.is_empty() || data[0] != 1 {
-            return Err(Error::DeserializationError(
+            return Err(Error::Serialization(
                 "Invalid compression marker".to_string(),
             ));
         }
@@ -195,7 +195,7 @@ impl AdvancedSerialization {
 
     fn verify_and_remove_checksum<'a>(&self, data: &'a [u8]) -> Result<&'a [u8]> {
         if data.len() < 4 {
-            return Err(Error::DeserializationError(
+            return Err(Error::Serialization(
                 "Data too short for checksum".to_string(),
             ));
         }
@@ -213,7 +213,7 @@ impl AdvancedSerialization {
         ]);
 
         if expected_checksum != actual_checksum {
-            return Err(Error::CorruptedData(format!(
+            return Err(Error::Corruption(format!(
                 "Checksum mismatch: expected {}, got {}",
                 expected_checksum, actual_checksum
             )));

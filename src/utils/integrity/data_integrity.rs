@@ -39,9 +39,9 @@ impl DataIntegrityValidator {
                 ValidationResult::Valid(result) => Ok(result),
                 ValidationResult::Invalid(_) => {
                     // In skip mode, we don't fail on validation errors
-                    Err(Error::ValidationError("Validation skipped".to_string()))
+                    Err(Error::InvalidArgument("Validation skipped".to_string()))
                 }
-                ValidationResult::Error(err) => Err(Error::ValidationError(err.to_string())),
+                ValidationResult::Error(err) => Err(Error::InvalidArgument(err.to_string())),
             };
         }
 
@@ -59,7 +59,7 @@ impl DataIntegrityValidator {
             ValidationResult::Valid(value) => Ok(value),
             ValidationResult::Invalid(violations) => {
                 self.handle_violations(violations, operation, location)?;
-                Err(Error::ValidationError(format!(
+                Err(Error::InvalidArgument(format!(
                     "Data integrity validation failed for {} at {}",
                     operation, location
                 )))
@@ -71,7 +71,7 @@ impl DataIntegrityValidator {
                     location,
                     error
                 );
-                Err(Error::ValidationError(error.to_string()))
+                Err(Error::InvalidArgument(error.to_string()))
             }
         }
     }

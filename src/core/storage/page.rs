@@ -288,12 +288,12 @@ impl PageManager {
 
     pub fn get_page(&self, page_id: u32) -> Result<Page> {
         if page_id >= self.next_page_id {
-            return Err(Error::InvalidPageId);
+            return Err(Error::PageNotFound(0));
         }
 
         let offset = page_id as usize * PAGE_SIZE;
         if offset + PAGE_SIZE > self.mmap.len() {
-            return Err(Error::InvalidPageId);
+            return Err(Error::PageNotFound(0));
         }
 
         let mut page_data = [0u8; PAGE_SIZE];
@@ -314,12 +314,12 @@ impl PageManager {
 
     pub fn write_page(&mut self, page: &Page) -> Result<()> {
         if page.id >= self.next_page_id {
-            return Err(Error::InvalidPageId);
+            return Err(Error::PageNotFound(0));
         }
 
         let offset = page.id as usize * PAGE_SIZE;
         if offset + PAGE_SIZE > self.mmap.len() {
-            return Err(Error::InvalidPageId);
+            return Err(Error::PageNotFound(0));
         }
 
         // Calculate and update checksum before writing

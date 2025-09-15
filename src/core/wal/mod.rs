@@ -272,24 +272,23 @@ impl WriteAheadLog for BasicWriteAheadLog {
                 Ok((entry, _)) => {
                     if !entry.verify_checksum() {
                         // CRITICAL: Checksum verification failed - corruption detected
-                        return Err(crate::core::error::Error::WalChecksumMismatch {
+                        return Err(crate::core::error::Error::WalCorruption {
                             offset: file.stream_position().unwrap_or(0),
-                            expected: {
+                            reason: {
                                 let mut test_entry = entry.clone();
                                 test_entry.checksum = 0;
                                 test_entry.calculate_checksum();
-                                test_entry.checksum
+                                format!("Checksum verification failed - expected: {}, found: {}", test_entry.checksum, entry.checksum)
                             },
-                            found: entry.checksum,
                         });
                     }
                     operations.push(entry.operation);
                 }
                 Err(deserialization_error) => {
                     // CRITICAL: Deserialization failed - binary corruption detected
-                    return Err(crate::core::error::Error::WalBinaryCorruption {
+                    return Err(crate::core::error::Error::WalCorruption {
                         offset: file.stream_position().unwrap_or(0),
-                        details: format!("Entry deserialization failed: {}", deserialization_error),
+                        reason: format!("Entry deserialization failed: {}", deserialization_error),
                     });
                 }
             }

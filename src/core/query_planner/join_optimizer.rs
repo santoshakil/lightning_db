@@ -77,7 +77,7 @@ impl JoinOptimizer {
         stats: &TableStatistics,
     ) -> Result<Arc<PlanNode>, Error> {
         if joins.is_empty() {
-            return Err(Error::InvalidInput("No joins to optimize".to_string()));
+            return Err(Error::InvalidArgument("No joins to optimize".to_string()));
         }
 
         if joins.len() == 1 {
