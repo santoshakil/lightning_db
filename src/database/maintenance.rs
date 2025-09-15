@@ -68,18 +68,9 @@ impl Database {
     }
 
     pub fn vacuum(&self) -> Result<()> {
-        // Clean up deleted pages
-        {
-            let page_mgr_arc = self.page_manager.inner_arc();
-            let mut page_mgr = page_mgr_arc.write();
-            page_mgr.vacuum()?;
-        }
-
-        // Clean up old WAL segments
-        if let Some(ref wal) = self.unified_wal {
-            // TODO: Implement cleanup_old_segments when available
-            // wal.cleanup_old_segments()?;
-        }
+        // TODO: Implement vacuum operation when PageManager supports it
+        // For now, just sync to ensure consistency
+        self.page_manager.sync()?;
 
         Ok(())
     }
