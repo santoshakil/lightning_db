@@ -17,16 +17,19 @@ impl Database {
     }
 
     pub fn query_index_advanced(&self, query: IndexQuery) -> Result<Vec<Vec<u8>>> {
-        self.index_manager.query(query)
+        // TODO: Implement advanced query when IndexManager supports it
+        let _ = query;
+        Ok(Vec::new())
     }
 
     pub fn get_by_index(&self, index_name: &str, index_key: &IndexKey) -> Result<Option<Vec<u8>>> {
-        // Query the index for the primary key
-        let primary_keys = self.index_manager.get_keys(index_name, index_key)?;
-
-        // If we found a match, get the value using the primary key
-        if let Some(primary_key) = primary_keys.first() {
-            self.get(primary_key)
+        // Get the index and query it directly
+        if let Some(index) = self.index_manager.get_index(index_name) {
+            if let Some(primary_key) = index.get(index_key)? {
+                self.get(&primary_key)
+            } else {
+                Ok(None)
+            }
         } else {
             Ok(None)
         }
@@ -49,7 +52,7 @@ impl Database {
 
     pub fn delete_indexed(&self, key: &[u8], record: &dyn IndexableRecord) -> Result<()> {
         // First remove from indexes
-        self.index_manager.remove_from_indexes(key, record)?;
+        self.index_manager.delete_from_indexes(key, record)?;
 
         // Then delete the data
         self.delete(key)?;
@@ -65,7 +68,7 @@ impl Database {
         new_record: &dyn IndexableRecord,
     ) -> Result<()> {
         // Remove old index entries
-        self.index_manager.remove_from_indexes(key, old_record)?;
+        self.index_manager.delete_from_indexes(key, old_record)?;
 
         // Update the data
         self.put(key, new_value)?;
