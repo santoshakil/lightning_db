@@ -3,32 +3,43 @@ use crate::{Database, DatabaseStats};
 
 impl Database {
     pub fn stats(&self) -> DatabaseStats {
-        let btree_stats = {
+        let page_count = self.page_manager.page_count() as u32;
+        let free_page_count = self.page_manager.free_page_count();
+
+        let tree_height = {
             let btree = self.btree.read();
-            btree.stats()
+            btree.height()
         };
 
-        let lsm_stats = self.lsm_tree.as_ref().map(|lsm| lsm.stats());
+        let active_transactions = self.transaction_manager.active_transaction_count();
 
-        let cache_stats = self
-            .unified_cache
-            .as_ref()
-            .map(|cache| cache.stats())
-            .unwrap_or_default();
-
-        let wal_stats = self.unified_wal.as_ref().map(|wal| wal.stats());
+        let cache_hit_rate = if let Some(ref cache) = self.unified_cache {
+            let stats = cache.stats();
+            let total = stats.hits.load(std::sync::atomic::Ordering::Relaxed) +
+                       stats.misses.load(std::sync::atomic::Ordering::Relaxed);
+            if total > 0 {
+                Some(stats.hits.load(std::sync::atomic::Ordering::Relaxed) as f64 / total as f64)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         DatabaseStats {
-            btree_stats,
-            lsm_stats,
-            cache_stats,
-            wal_stats,
-            transaction_count: self.transaction_manager.get_active_transactions().len(),
+            page_count,
+            free_page_count,
+            tree_height,
+            active_transactions,
+            cache_hit_rate,
+            memory_usage_bytes: self.get_memory_usage() as u64,
+            disk_usage_bytes: self.get_disk_usage().unwrap_or(0),
+            active_connections: 0, // TODO: Track active connections
         }
     }
 
     pub fn get_metrics(&self) -> crate::features::statistics::MetricsSnapshot {
-        self.metrics_collector.get_snapshot()
+        self.metrics_collector.get_current_snapshot()
     }
 
     pub fn get_metrics_reporter(&self) -> crate::features::statistics::MetricsReporter {
@@ -42,9 +53,11 @@ impl Database {
     pub fn get_cache_hit_ratio(&self) -> f64 {
         if let Some(ref cache) = self.unified_cache {
             let stats = cache.stats();
-            let total = stats.hits + stats.misses;
+            let hits = stats.hits.load(std::sync::atomic::Ordering::Relaxed);
+            let misses = stats.misses.load(std::sync::atomic::Ordering::Relaxed);
+            let total = hits + misses;
             if total > 0 {
-                stats.hits as f64 / total as f64
+                hits as f64 / total as f64
             } else {
                 0.0
             }
@@ -54,29 +67,15 @@ impl Database {
     }
 
     pub fn get_memory_usage(&self) -> usize {
+        // TODO: Implement accurate memory usage tracking when methods are available
+        // For now, estimate based on configuration
         let mut total = 0;
 
-        // B+Tree memory
-        {
-            let btree = self.btree.read();
-            total += btree.estimated_memory_usage();
-        }
+        // Estimate based on cache size configuration
+        total += self._config.cache_size as usize;
 
-        // LSM tree memory
-        if let Some(ref lsm) = self.lsm_tree {
-            total += lsm.memory_usage();
-        }
-
-        // Cache memory
-        if let Some(ref cache) = self.unified_cache {
-            total += cache.memory_usage();
-        }
-
-        // Transaction manager memory
-        total += self.transaction_manager.memory_usage();
-
-        // Version store memory
-        total += self.version_store.memory_usage();
+        // Estimate based on page count
+        total += (self.page_manager.page_count() * 4096); // Assuming 4KB pages
 
         total
     }
@@ -107,20 +106,19 @@ impl Database {
 
     pub fn get_transaction_stats(&self) -> TransactionStats {
         TransactionStats {
-            active: self.transaction_manager.get_active_transactions().len(),
-            committed: self.transaction_manager.get_committed_count(),
-            aborted: self.transaction_manager.get_aborted_count(),
-            oldest_active: self.transaction_manager.get_oldest_active_transaction(),
+            active: self.transaction_manager.active_transaction_count(),
+            committed: 0, // TODO: Track committed count
+            aborted: 0,   // TODO: Track aborted count
+            oldest_active: None, // TODO: Track oldest active transaction
         }
     }
 
     pub fn get_performance_metrics(&self) -> PerformanceMetrics {
-        let metrics = self.metrics_collector.database_metrics();
-
+        // TODO: Implement accurate performance metrics when methods are available
         PerformanceMetrics {
-            ops_per_second: metrics.get_ops_per_second(),
-            avg_latency_ms: metrics.get_avg_latency_ms(),
-            p99_latency_ms: metrics.get_p99_latency_ms(),
+            ops_per_second: 0.0,
+            avg_latency_ms: 0.0,
+            p99_latency_ms: 0.0,
             cache_hit_ratio: self.get_cache_hit_ratio(),
             write_amplification: self.get_write_amplification(),
         }
@@ -128,7 +126,7 @@ impl Database {
 
     fn get_write_amplification(&self) -> f64 {
         if let Some(ref lsm) = self.lsm_tree {
-            lsm.get_write_amplification()
+            lsm.get_write_amplification_stats().write_amplification_factor
         } else {
             1.0 // No amplification for B+Tree only
         }
