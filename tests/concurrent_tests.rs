@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use tempfile::tempdir;
 
 mod common;
+use common::{TestDatabase, TestDbConfig, FAST_TEST_SIZE, MEDIUM_TEST_SIZE};
 
 #[test]
 fn test_concurrent_reads_writes() {

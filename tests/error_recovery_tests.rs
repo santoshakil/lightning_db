@@ -6,6 +6,7 @@ use std::thread;
 use tempfile::{tempdir, TempDir};
 
 mod common;
+use common::{TestDatabase, FAST_TEST_SIZE, MEDIUM_TEST_SIZE};
 
 #[test]
 fn test_invalid_operations() {
