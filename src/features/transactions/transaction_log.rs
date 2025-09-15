@@ -1,4 +1,5 @@
 use crate::core::error::Result;
+use super::{TransactionId, TransactionState};
 use crc32fast::Hasher;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -23,7 +24,7 @@ pub enum LogType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
     pub lsn: u64,
-    pub txn_id: super::TransactionId,
+    pub txn_id: TransactionId,
     pub log_type: LogType,
     pub timestamp: u64,
     pub data: LogData,
@@ -56,7 +57,7 @@ pub enum LogData {
         coordinator_id: String,
     },
     Checkpoint {
-        active_txns: Vec<super::TransactionId>,
+        active_txns: Vec<TransactionId>,
         min_lsn: u64,
         max_lsn: u64,
     },
@@ -155,16 +156,16 @@ struct CheckpointManager {
     checkpoint_interval: Duration,
     last_checkpoint: Arc<RwLock<Instant>>,
     checkpoint_lsn: Arc<std::sync::atomic::AtomicU64>,
-    active_transactions: Arc<DashMap<super::TransactionId, TransactionLogState>>,
+    active_transactions: Arc<DashMap<TransactionId, TransactionLogState>>,
     dirty_pages: Arc<DashMap<u64, DirtyPageInfo>>,
 }
 
 struct TransactionLogState {
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
     first_lsn: u64,
     last_lsn: u64,
     undo_chain: Vec<u64>,
-    state: super::TransactionState,
+    state: TransactionState,
 }
 
 struct DirtyPageInfo {
@@ -266,7 +267,7 @@ impl TransactionLog {
     pub async fn write(
         &self,
         log_type: LogType,
-        txn_id: super::TransactionId,
+        txn_id: TransactionId,
         data: LogData,
     ) -> Result<u64> {
         let lsn = self
@@ -313,7 +314,7 @@ impl TransactionLog {
         Ok(lsn)
     }
 
-    async fn get_last_lsn_for_txn(&self, txn_id: super::TransactionId) -> Option<u64> {
+    async fn get_last_lsn_for_txn(&self, txn_id: TransactionId) -> Option<u64> {
         if let Some(state) = self.checkpoint_manager.active_transactions.get(&txn_id) {
             return Some(state.last_lsn);
         }
@@ -384,7 +385,7 @@ impl TransactionLog {
                         first_lsn: entry.lsn,
                         last_lsn: entry.lsn,
                         undo_chain: Vec::new(),
-                        state: super::TransactionState::Active,
+                        state: TransactionState::Active,
                     },
                 );
             }
@@ -461,7 +462,7 @@ impl TransactionLog {
 
         self.flush().await?;
 
-        let active_txns: Vec<super::TransactionId> = self
+        let active_txns: Vec<TransactionId> = self
             .checkpoint_manager
             .active_transactions
             .iter()
@@ -489,7 +490,7 @@ impl TransactionLog {
 
         self.write(
             LogType::Checkpoint,
-            super::TransactionId::new(),
+            0,
             checkpoint_data,
         )
         .await?;
@@ -690,7 +691,7 @@ impl TransactionLog {
 
     pub async fn log_begin(
         &self,
-        txn_id: super::TransactionId,
+        txn_id: TransactionId,
         isolation_level: super::isolation::IsolationLevel,
         participants: Vec<String>,
     ) -> Result<u64> {
@@ -730,7 +731,7 @@ impl TransactionLog {
 
     pub async fn log_prepare(
         &self,
-        txn_id: super::TransactionId,
+        txn_id: TransactionId,
         participant_id: String,
         vote: super::participant::VoteDecision,
         locks: Vec<String>,
@@ -768,7 +769,7 @@ impl TransactionLog {
 
     pub async fn log_commit(
         &self,
-        txn_id: super::TransactionId,
+        txn_id: TransactionId,
         commit_timestamp: u64,
         participants_committed: Vec<String>,
     ) -> Result<u64> {
@@ -804,7 +805,7 @@ impl TransactionLog {
 
     pub async fn log_abort(
         &self,
-        txn_id: super::TransactionId,
+        txn_id: TransactionId,
         reason: String,
         participants_aborted: Vec<String>,
     ) -> Result<u64> {
@@ -838,7 +839,7 @@ impl TransactionLog {
         Ok(lsn)
     }
 
-    async fn find_last_lsn_for_txn(&self, txn_id: super::TransactionId) -> Option<u64> {
+    async fn find_last_lsn_for_txn(&self, txn_id: TransactionId) -> Option<u64> {
         if let Some(state) = self.checkpoint_manager.active_transactions.get(&txn_id) {
             return Some(state.last_lsn);
         }
@@ -855,7 +856,7 @@ impl TransactionLog {
                 first_lsn: entry.lsn,
                 last_lsn: entry.lsn,
                 undo_chain: Vec::new(),
-                state: super::TransactionState::Active,
+                state: TransactionState::Active,
             })
             .last_lsn = entry.lsn;
 
@@ -913,14 +914,14 @@ impl Default for LogConfig {
 pub struct RecoveryInfo {
     pub start_lsn: u64,
     pub end_lsn: u64,
-    pub transactions_recovered: Vec<super::TransactionId>,
+    pub transactions_recovered: Vec<TransactionId>,
     pub redo_operations: Vec<RedoOperation>,
     pub undo_operations: Vec<UndoOperation>,
 }
 
 #[derive(Debug, Clone)]
 struct RecoveryTransaction {
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
     state: RecoveryState,
     undo_chain: Vec<u64>,
 }

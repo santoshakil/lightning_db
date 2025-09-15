@@ -1,4 +1,5 @@
 use crate::core::error::{Error, Result};
+use super::TransactionId;
 use dashmap::DashMap;
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -12,7 +13,7 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct DeadlockVictim {
-    pub txn_id: super::TransactionId,
+    pub txn_id: TransactionId,
     pub priority: i32,
     pub cost: f64,
     pub age: Duration,
@@ -22,14 +23,14 @@ pub struct DeadlockVictim {
 #[derive(Debug, Clone)]
 pub struct WaitForGraph {
     graph: DiGraph<WaitNode, WaitEdge>,
-    node_map: HashMap<super::TransactionId, NodeIndex>,
+    node_map: HashMap<TransactionId, NodeIndex>,
     last_update: u64,
     generation: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct WaitNode {
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
     priority: i32,
     start_time: u64,
     locks_held: HashSet<String>,
@@ -110,16 +111,16 @@ struct GlobalWaitGraph {
 
 struct GlobalEdge {
     from_node: String,
-    from_txn: super::TransactionId,
+    from_txn: TransactionId,
     to_node: String,
-    to_txn: super::TransactionId,
+    to_txn: TransactionId,
     resource: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DeadlockProbe {
     probe_id: u64,
-    initiator: super::TransactionId,
+    initiator: TransactionId,
     path: Vec<ProbeNode>,
     timestamp: u64,
     ttl: u8,
@@ -128,7 +129,7 @@ struct DeadlockProbe {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProbeNode {
     node_id: String,
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
     resource: String,
 }
 
@@ -181,8 +182,8 @@ impl DeadlockDetector {
 
     pub async fn add_wait(
         &self,
-        waiter: super::TransactionId,
-        holder: super::TransactionId,
+        waiter: TransactionId,
+        holder: TransactionId,
         resource: String,
     ) -> Result<()> {
         let mut graph = self.wait_graph.write().await;
@@ -258,7 +259,7 @@ impl DeadlockDetector {
         Ok(())
     }
 
-    pub async fn remove_transaction(&self, txn_id: super::TransactionId) -> Result<()> {
+    pub async fn remove_transaction(&self, txn_id: TransactionId) -> Result<()> {
         let mut graph = self.wait_graph.write().await;
 
         if let Some(node_idx) = graph.node_map.remove(&txn_id) {
@@ -322,14 +323,14 @@ impl DeadlockDetector {
         Ok(victims)
     }
 
-    fn find_cycles(&self, graph: &WaitForGraph) -> Vec<Vec<super::TransactionId>> {
+    fn find_cycles(&self, graph: &WaitForGraph) -> Vec<Vec<TransactionId>> {
         let sccs = tarjan_scc(&graph.graph);
 
         let mut cycles = Vec::new();
 
         for scc in sccs {
             if scc.len() > 1 {
-                let cycle: Vec<super::TransactionId> = scc
+                let cycle: Vec<TransactionId> = scc
                     .iter()
                     .filter_map(|idx| graph.graph.node_weight(*idx).map(|node| node.txn_id))
                     .collect();
@@ -358,7 +359,7 @@ impl DeadlockDetector {
     async fn select_victim(
         &self,
         graph: &WaitForGraph,
-        cycle: &[super::TransactionId],
+        cycle: &[TransactionId],
     ) -> Option<DeadlockVictim> {
         let mut candidates = Vec::new();
 
@@ -518,7 +519,7 @@ impl DeadlockDetector {
         Ok(())
     }
 
-    pub async fn send_probe(&self, initiator: super::TransactionId) -> Result<()> {
+    pub async fn send_probe(&self, initiator: TransactionId) -> Result<()> {
         if let Some(dist) = &self.distributed_detector {
             let probe = DeadlockProbe {
                 probe_id: rand::random(),
@@ -605,7 +606,7 @@ impl DeadlockDetector {
         }
     }
 
-    pub async fn add_transaction(&self, txn_id: super::TransactionId, priority: i32) -> Result<()> {
+    pub async fn add_transaction(&self, txn_id: TransactionId, priority: i32) -> Result<()> {
         let mut graph = self.wait_graph.write().await;
 
         if !graph.node_map.contains_key(&txn_id) {
@@ -628,7 +629,7 @@ impl DeadlockDetector {
         Ok(())
     }
 
-    pub async fn add_lock(&self, txn_id: super::TransactionId, resource: String) -> Result<()> {
+    pub async fn add_lock(&self, txn_id: TransactionId, resource: String) -> Result<()> {
         let mut graph = self.wait_graph.write().await;
 
         if let Some(&idx) = graph.node_map.get(&txn_id) {

@@ -42,7 +42,10 @@ impl IsolationLevel {
 
     /// Check if this isolation level prevents non-repeatable reads
     pub fn prevents_non_repeatable_reads(self) -> bool {
-        !matches!(self, IsolationLevel::ReadUncommitted | IsolationLevel::ReadCommitted)
+        !matches!(
+            self,
+            IsolationLevel::ReadUncommitted | IsolationLevel::ReadCommitted
+        )
     }
 
     /// Check if this isolation level prevents phantom reads
@@ -52,7 +55,12 @@ impl IsolationLevel {
 
     /// Check if this isolation level uses snapshot isolation
     pub fn uses_snapshot_isolation(self) -> bool {
-        matches!(self, IsolationLevel::Snapshot | IsolationLevel::RepeatableRead | IsolationLevel::Serializable)
+        matches!(
+            self,
+            IsolationLevel::Snapshot
+                | IsolationLevel::RepeatableRead
+                | IsolationLevel::Serializable
+        )
     }
 
     /// Check if this isolation level requires predicate locking

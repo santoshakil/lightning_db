@@ -22,3 +22,16 @@ rustflags = [
 # Disable stack probes for iOS
 [target.'cfg(target_os = "ios")']
 rustflags = ["-C", "force-frame-pointers=no"]
+
+# Test compilation optimizations
+[build]
+jobs = 8
+
+# Test-specific optimizations
+[profile.test]
+opt-level = 1          # Basic optimizations for faster execution
+debug = true           # Keep debug info for better error messages
+debug-assertions = true # Keep assertions for correctness
+overflow-checks = true  # Safety checks
+lto = false            # Disable LTO for faster compilation
+codegen-units = 8      # Parallel compilation

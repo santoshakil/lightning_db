@@ -342,19 +342,25 @@ impl ResourceEnforcer {
             disk_bytes: self.current_disk_usage.load(Ordering::Relaxed),
             open_files: self.current_open_files.load(Ordering::Relaxed),
             concurrent_operations: self.current_operations.load(Ordering::Relaxed),
-            write_throughput_bytes_per_sec: LockUtils::std_mutex_with_retry(&self.write_throughput_tracker)
-                .map(|t| t.current_throughput())
-                .unwrap_or(0),
-            read_throughput_bytes_per_sec: LockUtils::std_mutex_with_retry(&self.read_throughput_tracker)
-                .map(|t| t.current_throughput())
-                .unwrap_or(0),
+            write_throughput_bytes_per_sec: LockUtils::std_mutex_with_retry(
+                &self.write_throughput_tracker,
+            )
+            .map(|t| t.current_throughput())
+            .unwrap_or(0),
+            read_throughput_bytes_per_sec: LockUtils::std_mutex_with_retry(
+                &self.read_throughput_tracker,
+            )
+            .map(|t| t.current_throughput())
+            .unwrap_or(0),
             wal_size_bytes: self.current_wal_size.load(Ordering::Relaxed),
         }
     }
 
     /// Get resource violations
     pub fn get_violations(&self) -> Vec<ResourceViolation> {
-        LockUtils::std_mutex_with_retry(&self.violations).map(|v| v.clone()).unwrap_or_default()
+        LockUtils::std_mutex_with_retry(&self.violations)
+            .map(|v| v.clone())
+            .unwrap_or_default()
     }
 
     /// Clear violation history

@@ -376,8 +376,7 @@ impl AutoRepair {
             target_corruption: corruption.clone(),
             expected_outcome: format!(
                 "Repair {:?} using {:?}",
-                corruption.corruption_type,
-                strategy
+                corruption.corruption_type, strategy
             ),
             risk_level,
             estimated_time,
@@ -404,8 +403,7 @@ impl AutoRepair {
             target_corruption: corruption.clone(),
             expected_outcome: format!(
                 "Aggressively repair {:?} using {:?}",
-                corruption.corruption_type,
-                strategy
+                corruption.corruption_type, strategy
             ),
             risk_level,
             estimated_time,

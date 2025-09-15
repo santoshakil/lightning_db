@@ -48,7 +48,11 @@ impl CompactionStrategy for LeveledCompaction {
         let mut compact_level = None;
 
         // Check levels 0 to n-2 (can't compact last level)
-        for (i, level) in levels.iter().enumerate().take(levels.len().saturating_sub(1)) {
+        for (i, level) in levels
+            .iter()
+            .enumerate()
+            .take(levels.len().saturating_sub(1))
+        {
             let score = self.score_level(level);
 
             if score > max_score {

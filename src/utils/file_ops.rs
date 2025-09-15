@@ -1,6 +1,6 @@
 use crate::core::error::{Error, Result};
-use std::fs::{File, OpenOptions, Metadata};
-use std::io::{Read, Write, Seek, SeekFrom, BufReader, BufWriter};
+use std::fs::{File, Metadata, OpenOptions};
+use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -99,7 +99,7 @@ impl FileOps {
     pub fn write_atomic<P: AsRef<Path>>(path: P, data: &[u8]) -> Result<()> {
         let path = path.as_ref();
         let temp_path = Self::get_temp_path(path)?;
-        
+
         // Write to temporary file first
         Self::retry_operation(|| {
             std::fs::write(&temp_path, data).map_err(|e| Error::IOError {
@@ -227,7 +227,7 @@ impl FileOps {
     pub fn read_at<P: AsRef<Path>>(path: P, offset: u64, length: usize) -> Result<Vec<u8>> {
         let mut file = Self::open_for_read(path)?;
         Self::seek(&mut file, SeekFrom::Start(offset))?;
-        
+
         let mut buffer = vec![0u8; length];
         Self::read_exact(&mut file, &mut buffer)?;
         Ok(buffer)
@@ -291,7 +291,7 @@ impl FileOps {
             .file_name()
             .ok_or_else(|| Error::InvalidInput("Invalid file path".to_string()))?
             .to_os_string();
-        
+
         file_name.push(".tmp");
         temp_path.set_file_name(file_name);
         Ok(temp_path)
@@ -304,16 +304,16 @@ impl FileOps {
     {
         const MAX_RETRIES: u32 = 3;
         const BASE_DELAY: Duration = Duration::from_millis(10);
-        
+
         let mut delay = BASE_DELAY;
         let mut last_error = None;
-        
+
         for attempt in 0..=MAX_RETRIES {
             match operation() {
                 Ok(result) => return Ok(result),
                 Err(e) => {
                     last_error = Some(e);
-                    
+
                     if attempt < MAX_RETRIES {
                         std::thread::sleep(delay);
                         delay *= 2; // Exponential backoff
@@ -321,7 +321,7 @@ impl FileOps {
                 }
             }
         }
-        
+
         Err(last_error.unwrap())
     }
 }
@@ -366,7 +366,7 @@ impl ConfigurableFileOps {
     /// Write data with configuration options
     pub fn write<P: AsRef<Path>>(&self, path: P, data: &[u8]) -> Result<()> {
         let path = path.as_ref();
-        
+
         if self.config.atomic_writes {
             self.write_atomic(path, data)
         } else {
@@ -377,17 +377,17 @@ impl ConfigurableFileOps {
     /// Write data atomically
     fn write_atomic(&self, path: &Path, data: &[u8]) -> Result<()> {
         let temp_path = FileOps::get_temp_path(path)?;
-        
+
         // Write to temporary file
         let mut file = FileOps::open_for_write(&temp_path)?;
         FileOps::write_all(&mut file, data)?;
-        
+
         if self.config.sync_after_write {
             FileOps::sync_data(&mut file)?;
         }
-        
+
         drop(file); // Close the file before rename
-        
+
         // Atomic rename
         FileOps::retry_operation(|| {
             std::fs::rename(&temp_path, path).map_err(|e| Error::IOError {
@@ -402,11 +402,11 @@ impl ConfigurableFileOps {
     fn write_direct(&self, path: &Path, data: &[u8]) -> Result<()> {
         let mut file = FileOps::open_for_write(path)?;
         FileOps::write_all(&mut file, data)?;
-        
+
         if self.config.sync_after_write {
             FileOps::sync_data(&mut file)?;
         }
-        
+
         Ok(())
     }
 
@@ -415,13 +415,15 @@ impl ConfigurableFileOps {
         let file = FileOps::open_for_read(path)?;
         let mut reader = BufReader::with_capacity(self.config.buffer_size, file);
         let mut buffer = Vec::new();
-        
-        reader.read_to_end(&mut buffer).map_err(|e| Error::IOError {
-            path: PathBuf::from("<buffered_read>"),
-            operation: "read_buffered".to_string(),
-            source: e,
-        })?;
-        
+
+        reader
+            .read_to_end(&mut buffer)
+            .map_err(|e| Error::IOError {
+                path: PathBuf::from("<buffered_read>"),
+                operation: "read_buffered".to_string(),
+                source: e,
+            })?;
+
         Ok(buffer)
     }
 
@@ -437,39 +439,40 @@ impl ConfigurableFileOps {
     {
         let from = from.as_ref();
         let to = to.as_ref();
-        
+
         let total_size = FileOps::file_size(from)?;
         let mut src = FileOps::open_for_read(from)?;
         let mut dst = FileOps::open_for_write(to)?;
-        
+
         let mut buffer = vec![0u8; self.config.buffer_size];
         let mut copied = 0u64;
-        
+
         loop {
             let bytes_read = src.read(&mut buffer).map_err(|e| Error::IOError {
                 path: from.to_path_buf(),
                 operation: "copy_read".to_string(),
                 source: e,
             })?;
-            
+
             if bytes_read == 0 {
                 break;
             }
-            
-            dst.write_all(&buffer[..bytes_read]).map_err(|e| Error::IOError {
-                path: to.to_path_buf(),
-                operation: "copy_write".to_string(),
-                source: e,
-            })?;
-            
+
+            dst.write_all(&buffer[..bytes_read])
+                .map_err(|e| Error::IOError {
+                    path: to.to_path_buf(),
+                    operation: "copy_write".to_string(),
+                    source: e,
+                })?;
+
             copied += bytes_read as u64;
             progress_callback(copied, total_size);
         }
-        
+
         if self.config.sync_after_write {
             FileOps::sync_data(&mut dst)?;
         }
-        
+
         Ok(copied)
     }
 }
@@ -560,13 +563,13 @@ mod tests {
     fn test_basic_file_operations() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
-        
+
         let test_data = b"Hello, World!";
-        
+
         // Write and read
         FileOps::write_atomic(&file_path, test_data).unwrap();
         let read_data = FileOps::read_to_vec(&file_path).unwrap();
-        
+
         assert_eq!(test_data, read_data.as_slice());
     }
 
@@ -574,12 +577,12 @@ mod tests {
     fn test_atomic_write() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("atomic_test.txt");
-        
+
         let test_data = b"Atomic write test";
-        
+
         FileOps::write_atomic(&file_path, test_data).unwrap();
         assert!(file_path.exists());
-        
+
         let read_data = FileOps::read_to_vec(&file_path).unwrap();
         assert_eq!(test_data, read_data.as_slice());
     }
@@ -588,19 +591,19 @@ mod tests {
     fn test_configurable_operations() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("config_test.txt");
-        
+
         let config = FileOpConfig {
             atomic_writes: true,
             sync_after_write: false,
             ..Default::default()
         };
-        
+
         let file_ops = ConfigurableFileOps::new(config);
         let test_data = b"Configurable test data";
-        
+
         file_ops.write(&file_path, test_data).unwrap();
         let read_data = file_ops.read_buffered(&file_path).unwrap();
-        
+
         assert_eq!(test_data, read_data.as_slice());
     }
 
@@ -608,15 +611,15 @@ mod tests {
     fn test_statistics_tracking() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("stats_test.txt");
-        
+
         let config = FileOpConfig::default();
         let stats_ops = StatisticsFileOps::new(config);
-        
+
         let test_data = b"Statistics test data";
-        
+
         stats_ops.write(&file_path, test_data).unwrap();
         let _read_data = stats_ops.read(&file_path).unwrap();
-        
+
         let stats = stats_ops.get_stats();
         assert_eq!(stats.reads, 1);
         assert_eq!(stats.writes, 1);

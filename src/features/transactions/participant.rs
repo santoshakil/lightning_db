@@ -1,4 +1,5 @@
 use crate::core::error::{Error, Result};
+use super::TransactionId;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -37,7 +38,7 @@ pub struct ParticipantInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrepareRequest {
-    pub txn_id: super::TransactionId,
+    pub txn_id: TransactionId,
     pub operations: Vec<Operation>,
     pub read_set: HashSet<String>,
     pub write_set: HashSet<String>,
@@ -57,7 +58,7 @@ pub struct PrepareResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitRequest {
-    pub txn_id: super::TransactionId,
+    pub txn_id: TransactionId,
     pub commit_timestamp: u64,
     pub decision: Decision,
 }
@@ -115,7 +116,7 @@ pub struct UndoRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConflictInfo {
-    pub conflicting_txn: super::TransactionId,
+    pub conflicting_txn: TransactionId,
     pub conflicting_keys: Vec<String>,
     pub conflict_type: ConflictType,
 }
@@ -138,15 +139,15 @@ pub enum Decision {
 pub trait ParticipantProtocol: Send + Sync {
     async fn prepare(&self, request: PrepareRequest) -> Result<PrepareResponse>;
     async fn commit(&self, request: CommitRequest) -> Result<CommitResponse>;
-    async fn abort(&self, txn_id: super::TransactionId) -> Result<()>;
-    async fn query_status(&self, txn_id: super::TransactionId) -> Result<ParticipantState>;
-    async fn recover(&self) -> Result<Vec<super::TransactionId>>;
+    async fn abort(&self, txn_id: TransactionId) -> Result<()>;
+    async fn query_status(&self, txn_id: TransactionId) -> Result<ParticipantState>;
+    async fn recover(&self) -> Result<Vec<TransactionId>>;
 }
 
 pub struct Participant {
     info: ParticipantInfo,
-    state: Arc<RwLock<HashMap<super::TransactionId, ParticipantTransaction>>>,
-    prepared_txns: Arc<DashMap<super::TransactionId, PreparedTransaction>>,
+    state: Arc<RwLock<HashMap<TransactionId, ParticipantTransaction>>>,
+    prepared_txns: Arc<DashMap<TransactionId, PreparedTransaction>>,
     lock_manager: Arc<LockManager>,
     undo_log: Arc<UndoLog>,
     storage: Arc<dyn crate::core::storage::PageManagerAsync>,
@@ -156,7 +157,7 @@ pub struct Participant {
 }
 
 struct ParticipantTransaction {
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
     state: ParticipantState,
     operations: Vec<Operation>,
     locks: HashSet<String>,
@@ -168,7 +169,7 @@ struct ParticipantTransaction {
 
 #[derive(Clone)]
 struct PreparedTransaction {
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
     prepare_request: PrepareRequest,
     prepare_response: PrepareResponse,
     prepared_at: Instant,
@@ -183,10 +184,10 @@ struct LockManager {
 }
 
 struct LockInfo {
-    holder: super::TransactionId,
+    holder: TransactionId,
     lock_type: LockType,
     acquired_at: Instant,
-    waiters: Vec<super::TransactionId>,
+    waiters: Vec<TransactionId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,7 +200,7 @@ enum LockType {
 }
 
 struct LockRequest {
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
     key: String,
     lock_type: LockType,
     requested_at: Instant,
@@ -207,21 +208,21 @@ struct LockRequest {
 }
 
 struct UndoLog {
-    log: Arc<DashMap<super::TransactionId, Vec<UndoRecord>>>,
+    log: Arc<DashMap<TransactionId, Vec<UndoRecord>>>,
     persistent_log: Arc<dyn crate::core::storage::PageManagerAsync>,
     checkpoint_interval: Duration,
     last_checkpoint: Arc<RwLock<Instant>>,
 }
 
 struct RecoveryLog {
-    prepared_txns: Arc<DashMap<super::TransactionId, PreparedTransactionLog>>,
-    decision_log: Arc<DashMap<super::TransactionId, DecisionLog>>,
+    prepared_txns: Arc<DashMap<TransactionId, PreparedTransactionLog>>,
+    decision_log: Arc<DashMap<TransactionId, DecisionLog>>,
     storage: Arc<dyn crate::core::storage::PageManagerAsync>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PreparedTransactionLog {
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
     coordinator_id: String,
     prepare_request: PrepareRequest,
     prepare_response: PrepareResponse,
@@ -230,7 +231,7 @@ struct PreparedTransactionLog {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DecisionLog {
-    txn_id: super::TransactionId,
+    txn_id: TransactionId,
     decision: Decision,
     decided_at: u64,
     executed: bool,
@@ -295,7 +296,7 @@ impl Participant {
 
     async fn acquire_locks(
         &self,
-        txn_id: super::TransactionId,
+        txn_id: TransactionId,
         operations: &[Operation],
     ) -> Result<Vec<String>> {
         let mut locked_keys = Vec::new();
@@ -352,7 +353,7 @@ impl Participant {
 
     async fn execute_operations(
         &self,
-        txn_id: super::TransactionId,
+        txn_id: TransactionId,
         operations: &[Operation],
     ) -> Result<Vec<UndoRecord>> {
         let mut undo_records = Vec::new();
@@ -432,7 +433,7 @@ impl Participant {
         Ok(undo_records)
     }
 
-    async fn rollback(&self, txn_id: super::TransactionId) -> Result<()> {
+    async fn rollback(&self, txn_id: TransactionId) -> Result<()> {
         if let Some((_, undo_records)) = self.undo_log.log.remove(&txn_id) {
             for record in undo_records.iter().rev() {
                 match record.operation {
@@ -462,7 +463,7 @@ impl Participant {
         Ok(())
     }
 
-    async fn release_locks(&self, txn_id: super::TransactionId) {
+    async fn release_locks(&self, txn_id: TransactionId) {
         let mut locks_to_remove = Vec::new();
 
         for entry in self.lock_manager.locks.iter() {
@@ -476,7 +477,7 @@ impl Participant {
         }
     }
 
-    pub async fn handle_recovery(&self) -> Result<Vec<super::TransactionId>> {
+    pub async fn handle_recovery(&self) -> Result<Vec<TransactionId>> {
         self.metrics
             .recovery_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -565,7 +566,7 @@ impl ParticipantProtocol for Participant {
                     undo_log: None,
                     locks_held: Vec::new(),
                     conflict_info: Some(ConflictInfo {
-                        conflicting_txn: super::TransactionId::new(),
+                        conflicting_txn: 0,
                         conflicting_keys: Vec::new(),
                         conflict_type: ConflictType::WriteWrite,
                     }),
@@ -704,7 +705,7 @@ impl ParticipantProtocol for Participant {
         }
     }
 
-    async fn abort(&self, txn_id: super::TransactionId) -> Result<()> {
+    async fn abort(&self, txn_id: TransactionId) -> Result<()> {
         self.metrics
             .total_aborts
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -753,7 +754,7 @@ impl ParticipantProtocol for Participant {
         Ok(())
     }
 
-    async fn query_status(&self, txn_id: super::TransactionId) -> Result<ParticipantState> {
+    async fn query_status(&self, txn_id: TransactionId) -> Result<ParticipantState> {
         let state = self.state.read().await;
 
         if let Some(txn) = state.get(&txn_id) {
@@ -765,7 +766,7 @@ impl ParticipantProtocol for Participant {
         }
     }
 
-    async fn recover(&self) -> Result<Vec<super::TransactionId>> {
+    async fn recover(&self) -> Result<Vec<TransactionId>> {
         self.handle_recovery().await
     }
 }

@@ -85,17 +85,19 @@
 //! ```
 
 pub mod conflicts;
+pub mod deadlock_types;
 pub mod levels;
 pub mod locks;
 pub mod snapshot;
 pub mod validation;
 pub mod visibility;
-pub mod deadlock_types;
 
 // Re-export main types for public API
 pub use conflicts::{Conflict, ConflictResolution, ConflictResolver, ConflictStats, ConflictType};
-pub use deadlock_types::{DeadlockDetector, DeadlockResolutionStrategy, DeadlockResult, DeadlockStats, 
-    NextKeyLocker, Predicate, PredicateLock, PredicateLockManager, PredicateLockStats};
+pub use deadlock_types::{
+    DeadlockDetector, DeadlockResolutionStrategy, DeadlockResult, DeadlockStats, NextKeyLocker,
+    Predicate, PredicateLock, PredicateLockManager, PredicateLockStats,
+};
 pub use levels::{IsolationConfig, IsolationLevel, LockDurationPolicy, LockRequirements};
 pub use locks::{LockGranularity, LockManager, LockMode, TxId};
 pub use snapshot::{Snapshot, SnapshotId, SnapshotManager, SnapshotStats};
@@ -254,11 +256,14 @@ impl IsolationManager {
     /// Check for deadlocks
     pub fn detect_deadlocks(&self) -> Result<Vec<DeadlockResult>> {
         let deadlocked_txs = self.deadlock_detector.detect_deadlocks()?;
-        Ok(deadlocked_txs.into_iter().map(|tx_id| DeadlockResult {
-            deadlocked_txs: vec![tx_id],
-            victim_tx: Some(tx_id),
-            victim: Some(tx_id),
-        }).collect())
+        Ok(deadlocked_txs
+            .into_iter()
+            .map(|tx_id| DeadlockResult {
+                deadlocked_txs: vec![tx_id],
+                victim_tx: Some(tx_id),
+                victim: Some(tx_id),
+            })
+            .collect())
     }
 
     /// Get current isolation level for a transaction

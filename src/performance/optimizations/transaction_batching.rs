@@ -52,26 +52,26 @@ pub struct TransactionBatcher {
     high_priority_queue: Arc<Mutex<VecDeque<BatchedTransaction>>>,
     normal_priority_queue: Arc<Mutex<VecDeque<BatchedTransaction>>>,
     low_priority_queue: Arc<Mutex<VecDeque<BatchedTransaction>>>,
-    
+
     // Batch configuration
     max_batch_size: usize,
     max_batch_delay_ms: u64,
-    
+
     // Background processing
     batch_sender: Sender<TransactionBatch>,
     batch_receiver: Receiver<TransactionBatch>,
     processor_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
     shutdown_signal: Arc<AtomicBool>,
-    
+
     // Performance metrics
     batches_processed: AtomicU64,
     transactions_processed: AtomicU64,
     avg_batch_size: AtomicU64,
     avg_processing_time_ns: AtomicU64,
-    
+
     // Conflict detection optimization
     conflict_detector: Arc<SIMDConflictDetector>,
-    
+
     // Memory pools for transaction objects
     transaction_pool: Arc<Mutex<Vec<BatchedTransaction>>>,
     batch_pool: Arc<Mutex<Vec<TransactionBatch>>>,
@@ -80,7 +80,7 @@ pub struct TransactionBatcher {
 impl TransactionBatcher {
     pub fn new(max_batch_size: usize, max_batch_delay_ms: u64) -> Arc<Self> {
         let (batch_sender, batch_receiver) = bounded(100); // Bounded channel for back-pressure
-        
+
         let batcher = Arc::new(Self {
             high_priority_queue: Arc::new(Mutex::new(VecDeque::with_capacity(max_batch_size))),
             normal_priority_queue: Arc::new(Mutex::new(VecDeque::with_capacity(max_batch_size))),
@@ -99,12 +99,12 @@ impl TransactionBatcher {
             transaction_pool: Arc::new(Mutex::new(Vec::with_capacity(max_batch_size * 2))),
             batch_pool: Arc::new(Mutex::new(Vec::with_capacity(10))),
         });
-        
+
         // Start background batch processor
         batcher.start_processor();
         batcher
     }
-    
+
     /// Submit a transaction for batched processing
     #[inline(always)]
     pub fn submit_transaction(&self, tx: BatchedTransaction) -> Result<()> {
@@ -113,17 +113,17 @@ impl TransactionBatcher {
             TransactionPriority::Normal => &self.normal_priority_queue,
             TransactionPriority::Low => &self.low_priority_queue,
         };
-        
+
         queue.lock().push_back(tx);
         Ok(())
     }
-    
+
     /// Optimized batch creation with minimal lock contention
     fn create_batch(&self) -> Option<TransactionBatch> {
         let mut transactions = SmallVec::new();
         let mut total_operations = 0;
         let batch_id = self.batches_processed.load(Ordering::Relaxed);
-        
+
         // Process high priority first
         {
             let mut queue = self.high_priority_queue.lock();
@@ -134,7 +134,7 @@ impl TransactionBatcher {
                 }
             }
         }
-        
+
         // Fill remaining space with normal priority
         if transactions.len() < self.max_batch_size {
             let mut queue = self.normal_priority_queue.lock();
@@ -145,7 +145,7 @@ impl TransactionBatcher {
                 }
             }
         }
-        
+
         // Fill remaining with low priority
         if transactions.len() < self.max_batch_size {
             let mut queue = self.low_priority_queue.lock();
@@ -156,11 +156,11 @@ impl TransactionBatcher {
                 }
             }
         }
-        
+
         if transactions.is_empty() {
             return None;
         }
-        
+
         Some(TransactionBatch {
             transactions,
             total_operations,
@@ -168,23 +168,23 @@ impl TransactionBatcher {
             created_at: Instant::now(),
         })
     }
-    
+
     /// Start the background batch processor thread
     fn start_processor(self: &Arc<Self>) {
         let batcher = Arc::downgrade(self);
         let _receiver = self.batch_receiver.clone();
         let shutdown_signal = self.shutdown_signal.clone();
-        
+
         let handle = thread::spawn(move || {
             let mut last_batch_time = Instant::now();
-            
+
             while !shutdown_signal.load(Ordering::Relaxed) {
                 // Create batches periodically or when queues are full
                 if let Some(batcher) = batcher.upgrade() {
-                    let should_create_batch = last_batch_time.elapsed().as_millis() 
+                    let should_create_batch = last_batch_time.elapsed().as_millis()
                         >= batcher.max_batch_delay_ms as u128
                         || batcher.get_total_queued_transactions() >= batcher.max_batch_size;
-                    
+
                     if should_create_batch {
                         if let Some(batch) = batcher.create_batch() {
                             if batcher.batch_sender.send(batch).is_err() {
@@ -194,35 +194,38 @@ impl TransactionBatcher {
                         }
                     }
                 }
-                
+
                 thread::sleep(Duration::from_millis(1));
             }
         });
-        
+
         *self.processor_handle.lock() = Some(handle);
     }
-    
+
     /// Get total number of queued transactions across all priority levels
     fn get_total_queued_transactions(&self) -> usize {
-        self.high_priority_queue.lock().len() 
-        + self.normal_priority_queue.lock().len()
-        + self.low_priority_queue.lock().len()
+        self.high_priority_queue.lock().len()
+            + self.normal_priority_queue.lock().len()
+            + self.low_priority_queue.lock().len()
     }
-    
+
     /// Process a batch of transactions with SIMD-optimized conflict detection
     pub fn process_batch(&self, batch: TransactionBatch) -> Result<BatchProcessingResult> {
         let start_time = Instant::now();
-        
+
         // SIMD-optimized conflict detection
-        let conflicts = self.conflict_detector.detect_conflicts(&batch.transactions)?;
-        
+        let conflicts = self
+            .conflict_detector
+            .detect_conflicts(&batch.transactions)?;
+
         let mut successful_commits = 0;
         let mut failed_commits = 0;
         let mut conflicted_transactions = Vec::new();
-        
+
         // Process transactions in dependency order to maximize throughput
-        let ordered_transactions = self.order_transactions_for_processing(&batch.transactions, &conflicts)?;
-        
+        let ordered_transactions =
+            self.order_transactions_for_processing(&batch.transactions, &conflicts)?;
+
         for tx in ordered_transactions {
             if conflicts.contains_key(&tx.tx_id) {
                 conflicted_transactions.push(tx.tx_id);
@@ -232,11 +235,11 @@ impl TransactionBatcher {
                 successful_commits += 1;
             }
         }
-        
+
         // Update performance metrics
         let processing_time = start_time.elapsed();
         self.update_metrics(&batch, processing_time);
-        
+
         Ok(BatchProcessingResult {
             batch_id: batch.batch_id,
             successful_commits,
@@ -246,15 +249,15 @@ impl TransactionBatcher {
             total_operations: batch.total_operations,
         })
     }
-    
+
     /// Order transactions to minimize lock contention and maximize parallelism
     fn order_transactions_for_processing(
-        &self, 
+        &self,
         transactions: &[BatchedTransaction],
-        conflicts: &FxHashMap<u64, Vec<u64>>
+        conflicts: &FxHashMap<u64, Vec<u64>>,
     ) -> Result<Vec<BatchedTransaction>> {
         let mut ordered = transactions.to_vec();
-        
+
         // Sort by priority first, then by dependency order
         ordered.sort_by(|a, b| {
             // High priority first
@@ -262,21 +265,22 @@ impl TransactionBatcher {
             if priority_cmp != std::cmp::Ordering::Equal {
                 return priority_cmp;
             }
-            
+
             // Then by conflict dependencies
             let a_conflicts = conflicts.get(&a.tx_id).map(|v| v.len()).unwrap_or(0);
             let b_conflicts = conflicts.get(&b.tx_id).map(|v| v.len()).unwrap_or(0);
             a_conflicts.cmp(&b_conflicts)
         });
-        
+
         Ok(ordered)
     }
-    
+
     /// Update performance metrics with exponential moving average
     fn update_metrics(&self, batch: &TransactionBatch, processing_time: Duration) {
         self.batches_processed.fetch_add(1, Ordering::Relaxed);
-        self.transactions_processed.fetch_add(batch.transactions.len() as u64, Ordering::Relaxed);
-        
+        self.transactions_processed
+            .fetch_add(batch.transactions.len() as u64, Ordering::Relaxed);
+
         // Update average batch size
         let current_avg_size = self.avg_batch_size.load(Ordering::Relaxed);
         let new_avg_size = if current_avg_size == 0 {
@@ -285,7 +289,7 @@ impl TransactionBatcher {
             (current_avg_size * 9 + batch.transactions.len() as u64) / 10 // EMA with α=0.1
         };
         self.avg_batch_size.store(new_avg_size, Ordering::Relaxed);
-        
+
         // Update average processing time
         let processing_time_ns = processing_time.as_nanos() as u64;
         let current_avg_time = self.avg_processing_time_ns.load(Ordering::Relaxed);
@@ -294,14 +298,15 @@ impl TransactionBatcher {
         } else {
             (current_avg_time * 9 + processing_time_ns) / 10
         };
-        self.avg_processing_time_ns.store(new_avg_time, Ordering::Relaxed);
+        self.avg_processing_time_ns
+            .store(new_avg_time, Ordering::Relaxed);
     }
-    
+
     /// Get next batch for processing (non-blocking)
     pub fn get_next_batch(&self) -> Option<TransactionBatch> {
         self.batch_receiver.try_recv().ok()
     }
-    
+
     /// Get performance statistics
     pub fn get_stats(&self) -> TransactionBatcherStats {
         TransactionBatcherStats {
@@ -324,7 +329,7 @@ impl TransactionBatcher {
             },
         }
     }
-    
+
     /// Shutdown the batcher
     pub fn shutdown(&self) {
         self.shutdown_signal.store(true, Ordering::Relaxed);
@@ -348,11 +353,14 @@ impl SIMDConflictDetector {
             conflict_matrix: Arc::new(Mutex::new(Vec::with_capacity(100))),
         }
     }
-    
+
     /// Detect conflicts between transactions using SIMD-optimized key comparison
-    pub fn detect_conflicts(&self, transactions: &[BatchedTransaction]) -> Result<FxHashMap<u64, Vec<u64>>> {
+    pub fn detect_conflicts(
+        &self,
+        transactions: &[BatchedTransaction],
+    ) -> Result<FxHashMap<u64, Vec<u64>>> {
         let mut conflicts = FxHashMap::default();
-        
+
         // Build write set index for fast lookup
         let mut write_sets = FxHashMap::default();
         for tx in transactions {
@@ -362,26 +370,38 @@ impl SIMDConflictDetector {
             }
             write_sets.insert(tx.tx_id, keys);
         }
-        
+
         // Check for write-write conflicts using SIMD where beneficial
         for (i, tx1) in transactions.iter().enumerate() {
             for tx2 in transactions.iter().skip(i + 1) {
-                if let Some(conflict_keys) = self.find_key_conflicts(&tx1.write_ops, &tx2.write_ops)? {
+                if let Some(conflict_keys) =
+                    self.find_key_conflicts(&tx1.write_ops, &tx2.write_ops)?
+                {
                     if !conflict_keys.is_empty() {
-                        conflicts.entry(tx1.tx_id).or_insert_with(Vec::new).push(tx2.tx_id);
-                        conflicts.entry(tx2.tx_id).or_insert_with(Vec::new).push(tx1.tx_id);
+                        conflicts
+                            .entry(tx1.tx_id)
+                            .or_insert_with(Vec::new)
+                            .push(tx2.tx_id);
+                        conflicts
+                            .entry(tx2.tx_id)
+                            .or_insert_with(Vec::new)
+                            .push(tx1.tx_id);
                     }
                 }
             }
         }
-        
+
         Ok(conflicts)
     }
-    
+
     /// Find conflicting keys between two write sets using SIMD optimization
-    fn find_key_conflicts(&self, writes1: &[WriteOp], writes2: &[WriteOp]) -> Result<Option<Vec<Bytes>>> {
+    fn find_key_conflicts(
+        &self,
+        writes1: &[WriteOp],
+        writes2: &[WriteOp],
+    ) -> Result<Option<Vec<Bytes>>> {
         let mut conflicts = Vec::new();
-        
+
         // Use SIMD-optimized comparison for performance critical path
         for op1 in writes1 {
             for op2 in writes2 {
@@ -390,21 +410,21 @@ impl SIMDConflictDetector {
                 }
             }
         }
-        
+
         if conflicts.is_empty() {
             Ok(None)
         } else {
             Ok(Some(conflicts))
         }
     }
-    
+
     /// SIMD-optimized key comparison
     #[inline(always)]
     fn keys_conflict(&self, key1: &Bytes, key2: &Bytes) -> bool {
         if key1.len() != key2.len() {
             return false;
         }
-        
+
         // Use SIMD comparison for larger keys
         if key1.len() >= 16 {
             simd::safe::compare_keys(key1, key2) == std::cmp::Ordering::Equal
@@ -447,7 +467,7 @@ pub fn create_batched_transaction(
     priority: TransactionPriority,
 ) -> BatchedTransaction {
     let write_ops = tx.write_set.values().cloned().collect();
-    
+
     BatchedTransaction {
         tx_id: tx.id,
         write_ops,
@@ -459,12 +479,12 @@ pub fn create_batched_transaction(
 /// Factory for creating optimized transaction batchers based on workload
 pub fn create_transaction_batcher(workload: WorkloadType) -> Arc<TransactionBatcher> {
     let (max_batch_size, max_delay_ms) = match workload {
-        WorkloadType::HighThroughput => (256, 5),  // Large batches, low latency
-        WorkloadType::LowLatency => (64, 1),       // Small batches, very low latency
-        WorkloadType::Mixed => (128, 3),           // Balanced approach
+        WorkloadType::HighThroughput => (256, 5), // Large batches, low latency
+        WorkloadType::LowLatency => (64, 1),      // Small batches, very low latency
+        WorkloadType::Mixed => (128, 3),          // Balanced approach
         WorkloadType::BulkOperations => (512, 10), // Very large batches
     };
-    
+
     TransactionBatcher::new(max_batch_size, max_delay_ms)
 }
 
@@ -479,11 +499,11 @@ pub enum WorkloadType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_transaction_batcher() {
         let batcher = TransactionBatcher::new(10, 100);
-        
+
         // Create test transactions
         for i in 0..5 {
             let tx = BatchedTransaction {
@@ -494,21 +514,21 @@ mod tests {
             };
             batcher.submit_transaction(tx).unwrap();
         }
-        
+
         // Let the background processor create a batch
         thread::sleep(Duration::from_millis(150));
-        
+
         // Check that batch was created
         let stats = batcher.get_stats();
         assert!(stats.batches_processed >= 1);
-        
+
         batcher.shutdown();
     }
-    
+
     #[test]
     fn test_conflict_detection() {
         let detector = SIMDConflictDetector::new();
-        
+
         let mut tx1 = BatchedTransaction {
             tx_id: 1,
             write_ops: SmallVec::new(),
@@ -520,7 +540,7 @@ mod tests {
             value: Some(Bytes::from("value1")),
             prev_version: 0,
         });
-        
+
         let mut tx2 = BatchedTransaction {
             tx_id: 2,
             write_ops: SmallVec::new(),
@@ -532,7 +552,7 @@ mod tests {
             value: Some(Bytes::from("value2")),
             prev_version: 0,
         });
-        
+
         let conflicts = detector.detect_conflicts(&[tx1, tx2]).unwrap();
         assert!(!conflicts.is_empty());
     }

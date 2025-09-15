@@ -31,7 +31,8 @@ static OPERATION_COUNTER: Lazy<CounterVec> = Lazy::new(|| {
         "lightning_db_operations_total",
         "Total number of database operations",
         &["operation", "status"]
-    ).unwrap()
+    )
+    .unwrap()
 });
 
 // Operation latency histograms
@@ -41,7 +42,8 @@ static OPERATION_HISTOGRAM: Lazy<HistogramVec> = Lazy::new(|| {
         "Operation latency in seconds",
         &["operation"],
         vec![0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0]
-    ).unwrap()
+    )
+    .unwrap()
 });
 
 // Database size metrics
@@ -50,7 +52,8 @@ static DB_SIZE_GAUGE: Lazy<GaugeVec> = Lazy::new(|| {
         "lightning_db_size_bytes",
         "Database size in bytes",
         &["component"]
-    ).unwrap()
+    )
+    .unwrap()
 });
 
 // Cache metrics
@@ -59,7 +62,8 @@ static CACHE_HITS: Lazy<CounterVec> = Lazy::new(|| {
         "lightning_db_cache_hits_total",
         "Total number of cache hits",
         &["cache_type"]
-    ).unwrap()
+    )
+    .unwrap()
 });
 
 static CACHE_MISSES: Lazy<CounterVec> = Lazy::new(|| {
@@ -67,7 +71,8 @@ static CACHE_MISSES: Lazy<CounterVec> = Lazy::new(|| {
         "lightning_db_cache_misses_total",
         "Total number of cache misses",
         &["cache_type"]
-    ).unwrap()
+    )
+    .unwrap()
 });
 
 // Transaction metrics
@@ -76,7 +81,8 @@ static TRANSACTION_GAUGE: Lazy<GaugeVec> = Lazy::new(|| {
         "lightning_db_active_transactions",
         "Number of active transactions",
         &["type"]
-    ).unwrap()
+    )
+    .unwrap()
 });
 
 // WAL metrics
@@ -85,7 +91,8 @@ static WAL_SIZE_GAUGE: Lazy<GaugeVec> = Lazy::new(|| {
         "lightning_db_wal_size_bytes",
         "WAL size in bytes",
         &["segment"]
-    ).unwrap()
+    )
+    .unwrap()
 });
 
 // Compaction metrics
@@ -94,7 +101,8 @@ static COMPACTION_COUNTER: Lazy<CounterVec> = Lazy::new(|| {
         "lightning_db_compactions_total",
         "Total number of compactions",
         &["level"]
-    ).unwrap()
+    )
+    .unwrap()
 });
 
 static COMPACTION_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
@@ -103,7 +111,8 @@ static COMPACTION_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
         "Compaction duration in seconds",
         &["level"],
         vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 300.0]
-    ).unwrap()
+    )
+    .unwrap()
 });
 
 // Memory metrics
@@ -112,7 +121,8 @@ static MEMORY_USAGE_GAUGE: Lazy<GaugeVec> = Lazy::new(|| {
         "lightning_db_memory_usage_bytes",
         "Memory usage in bytes",
         &["component"]
-    ).unwrap()
+    )
+    .unwrap()
 });
 
 /// Metrics collection timer

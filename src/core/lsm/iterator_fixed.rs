@@ -203,7 +203,8 @@ impl LSMFullIteratorFixed {
             })
             .map(|(k, v)| {
                 // Include tombstones - use the tombstone marker if value is None
-                let value = v.clone()
+                let value = v
+                    .clone()
                     .unwrap_or_else(|| LSMTree::TOMBSTONE_MARKER.to_vec());
                 (k.clone(), value)
             })

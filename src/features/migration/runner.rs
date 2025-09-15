@@ -40,9 +40,7 @@ impl MigrationRunner {
             return Ok(());
         }
 
-        for entry in
-            std::fs::read_dir(dir_path).map_err(|e| DatabaseError::Io(e.to_string()))?
-        {
+        for entry in std::fs::read_dir(dir_path).map_err(|e| DatabaseError::Io(e.to_string()))? {
             let entry = entry.map_err(|e| DatabaseError::Io(e.to_string()))?;
             let path = entry.path();
 
@@ -63,9 +61,10 @@ impl MigrationRunner {
     }
 
     fn parse_migration_file(&self, content: &str, path: &Path) -> DatabaseResult<Migration> {
-        let filename = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
-            DatabaseError::Migration("Invalid migration filename".to_string())
-        })?;
+        let filename = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| DatabaseError::Migration("Invalid migration filename".to_string()))?;
 
         let parts: Vec<&str> = filename.split('_').collect();
         if parts.len() < 2 {

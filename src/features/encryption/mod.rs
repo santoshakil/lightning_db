@@ -18,12 +18,12 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use zeroize::Zeroize;
 
+pub mod encryption_stubs;
 pub mod envelope_encryption;
 pub mod key_manager;
 pub mod key_rotation;
 pub mod page_encryptor;
 pub mod wal_encryptor;
-pub mod encryption_stubs;
 
 /// Configuration for encryption
 #[derive(Debug, Clone, Serialize, Deserialize)]

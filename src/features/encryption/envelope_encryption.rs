@@ -8,8 +8,8 @@
 
 use crate::core::error::{Error, Result};
 use crate::features::encryption::encryption_stubs::{
-    HSMEncryptResult, HSMKeyHandle, HSMProvider,
-    SecureAlgorithm, SecureCryptoProvider, SecureEncryptionResult, SecureKey,
+    HSMEncryptResult, HSMKeyHandle, HSMProvider, SecureAlgorithm, SecureCryptoProvider,
+    SecureEncryptionResult, SecureKey,
 };
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -276,9 +276,7 @@ impl EnvelopeEncryptionManager {
             }
             EnvelopeKEK::HSM(hsm_handle) => {
                 if let Some(hsm) = &self.hsm_provider {
-                    let encrypted_key = hsm
-                        .encrypt(&dek.key.material)
-                        .await?;
+                    let encrypted_key = hsm.encrypt(&dek.key.material).await?;
 
                     Ok(EnvelopeDEK::HSM {
                         encrypted_key,
@@ -308,7 +306,9 @@ impl EnvelopeEncryptionManager {
                 if software_kek.id.parse::<u64>().unwrap_or(0) != *kek_id {
                     return Err(Error::Encryption("KEK ID mismatch".to_string()));
                 }
-                let material = self.crypto_provider.decrypt(software_kek, encrypted_key, &[], None)?;
+                let material =
+                    self.crypto_provider
+                        .decrypt(software_kek, encrypted_key, &[], None)?;
                 (material, *kek_id)
             }
             (
@@ -322,7 +322,9 @@ impl EnvelopeEncryptionManager {
                     if kek_handle.id != hsm_handle.id {
                         return Err(Error::Encryption("HSM key handle mismatch".to_string()));
                     }
-                    let material = hsm.decrypt(&encrypted_key.encrypted_data, hsm_handle).await?;
+                    let material = hsm
+                        .decrypt(&encrypted_key.encrypted_data, hsm_handle)
+                        .await?;
                     (material, 0) // HSM handles don't have numeric IDs
                 } else {
                     return Err(Error::Encryption("HSM provider not available".to_string()));
@@ -452,7 +454,9 @@ impl EnvelopeEncryptionManager {
         let mut result = Vec::with_capacity(payload.total_size as usize);
 
         for chunk in &payload.chunks {
-            let decrypted = self.crypto_provider.decrypt(dek, &chunk.encrypted_data, &[], None)?;
+            let decrypted = self
+                .crypto_provider
+                .decrypt(dek, &chunk.encrypted_data, &[], None)?;
 
             // Verify chunk integrity
             let computed_hash = blake3::hash(&decrypted).as_bytes().to_vec();
@@ -490,7 +494,8 @@ impl EnvelopeEncryptionManager {
             let task = task::spawn(async move {
                 let _permit = permit.acquire().await.unwrap();
 
-                let decrypted = crypto_provider.decrypt(&dek_clone, &chunk.encrypted_data, &[], None)?;
+                let decrypted =
+                    crypto_provider.decrypt(&dek_clone, &chunk.encrypted_data, &[], None)?;
 
                 // Verify chunk integrity
                 let computed_hash = blake3::hash(&decrypted).as_bytes().to_vec();
@@ -644,9 +649,7 @@ mod tests {
         let manager = EnvelopeEncryptionManager::new(crypto_provider.clone(), None, config);
 
         // Generate KEK
-        let kek_key = crypto_provider
-            .generate_key()
-            .unwrap();
+        let kek_key = crypto_provider.generate_key().unwrap();
         let kek = EnvelopeKEK::Software(kek_key);
 
         // Test data
@@ -671,9 +674,7 @@ mod tests {
 
         let manager = EnvelopeEncryptionManager::new(crypto_provider.clone(), None, config);
 
-        let kek_key = crypto_provider
-            .generate_key()
-            .unwrap();
+        let kek_key = crypto_provider.generate_key().unwrap();
         let kek = EnvelopeKEK::Software(kek_key);
 
         // Large test data (>10KB)
@@ -694,9 +695,7 @@ mod tests {
 
         let manager = EnvelopeEncryptionManager::new(crypto_provider.clone(), None, config);
 
-        let kek_key = crypto_provider
-            .generate_key()
-            .unwrap();
+        let kek_key = crypto_provider.generate_key().unwrap();
         let kek = EnvelopeKEK::Software(kek_key);
 
         let data = b"sensitive data";

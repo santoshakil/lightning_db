@@ -317,15 +317,14 @@ impl HistoryManager {
         let json_content = serde_json::to_string_pretty(&history)
             .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
-        std::fs::write(export_path, json_content)
-            .map_err(|e| DatabaseError::Io(e.to_string()))?;
+        std::fs::write(export_path, json_content).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         Ok(())
     }
 
     pub fn import_history(&self, db_path: &str, import_path: &str) -> DatabaseResult<()> {
-        let json_content = std::fs::read_to_string(import_path)
-            .map_err(|e| DatabaseError::Io(e.to_string()))?;
+        let json_content =
+            std::fs::read_to_string(import_path).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         let history: Vec<MigrationHistoryEntry> = serde_json::from_str(&json_content)
             .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
@@ -420,8 +419,8 @@ impl HistoryManager {
             return Ok(Vec::new());
         }
 
-        let content = std::fs::read_to_string(&history_file)
-            .map_err(|e| DatabaseError::Io(e.to_string()))?;
+        let content =
+            std::fs::read_to_string(&history_file).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         if content.trim().is_empty() {
             return Ok(Vec::new());
@@ -447,8 +446,7 @@ impl HistoryManager {
         let content = serde_json::to_string_pretty(history)
             .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
-        std::fs::write(&history_file, content)
-            .map_err(|e| DatabaseError::Io(e.to_string()))?;
+        std::fs::write(&history_file, content).map_err(|e| DatabaseError::Io(e.to_string()))?;
 
         Ok(())
     }

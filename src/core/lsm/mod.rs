@@ -387,12 +387,12 @@ impl LSMTree {
                 if key < sstable.min_key() || key > sstable.max_key() {
                     continue;
                 }
-                
+
                 // Bloom filter check to avoid disk I/O
                 if !sstable.might_contain(key) {
                     continue;
                 }
-                
+
                 // Actually try to get the value
                 if let Some(value) = sstable.get(key)? {
                     // Check if this is a tombstone

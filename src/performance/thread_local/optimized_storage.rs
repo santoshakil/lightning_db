@@ -5,11 +5,11 @@
 //! page buffers, and SIMD-aligned data structures.
 
 use crate::performance::optimizations::memory_layout::{CacheAlignedAllocator, CompactRecord};
+use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use rustc_hash::FxHashMap;
 
 // Thread-local storage constants
 const MAX_CACHED_TRANSACTIONS: usize = 64;
@@ -52,7 +52,10 @@ pub use crate::performance::optimizations::transaction_batching::TransactionPrio
 impl ThreadLocalTransactionCache {
     fn new() -> Self {
         Self {
-            active_transactions: FxHashMap::with_capacity_and_hasher(MAX_CACHED_TRANSACTIONS, Default::default()),
+            active_transactions: FxHashMap::with_capacity_and_hasher(
+                MAX_CACHED_TRANSACTIONS,
+                Default::default(),
+            ),
             free_tx_slots: VecDeque::with_capacity(MAX_CACHED_TRANSACTIONS),
             last_gc_time: Instant::now(),
             gc_interval: Duration::from_secs(30),
@@ -106,10 +109,9 @@ impl ThreadLocalTransactionCache {
 
         let now = Instant::now();
         let timeout = Duration::from_secs(300); // 5 minutes
-        
-        self.active_transactions.retain(|_, state| {
-            now.duration_since(state.last_access) < timeout
-        });
+
+        self.active_transactions
+            .retain(|_, state| now.duration_since(state.last_access) < timeout);
 
         self.last_gc_time = now;
     }
@@ -162,13 +164,13 @@ impl ThreadLocalPageCache {
             page.last_access = Instant::now();
             page.access_count += 1;
             self.hit_count += 1;
-            
+
             // Move to end of LRU
             if let Some(pos) = self.lru_order.iter().position(|&id| id == page_id) {
                 self.lru_order.remove(pos);
                 self.lru_order.push_back(page_id);
             }
-            
+
             Some(page)
         } else {
             self.miss_count += 1;
@@ -225,7 +227,8 @@ impl SIMDWorkingBuffers {
     /// Get key buffer, resizing if necessary
     pub fn get_key_buffer(&mut self, min_size: usize) -> &mut Vec<u8> {
         if self.key_buffer.capacity() < min_size {
-            self.key_buffer.reserve(min_size - self.key_buffer.capacity());
+            self.key_buffer
+                .reserve(min_size - self.key_buffer.capacity());
         }
         self.key_buffer.clear();
         &mut self.key_buffer
@@ -234,7 +237,8 @@ impl SIMDWorkingBuffers {
     /// Get value buffer, resizing if necessary
     pub fn get_value_buffer(&mut self, min_size: usize) -> &mut Vec<u8> {
         if self.value_buffer.capacity() < min_size {
-            self.value_buffer.reserve(min_size - self.value_buffer.capacity());
+            self.value_buffer
+                .reserve(min_size - self.value_buffer.capacity());
         }
         self.value_buffer.clear();
         &mut self.value_buffer
@@ -288,8 +292,11 @@ impl ThreadLocalStats {
     /// Record an operation
     pub fn record_operation(&mut self, operation: &'static str, latency: Duration) {
         *self.operations_count.entry(operation).or_insert(0) += 1;
-        
-        let samples = self.latency_samples.entry(operation).or_insert_with(|| VecDeque::with_capacity(self.max_samples));
+
+        let samples = self
+            .latency_samples
+            .entry(operation)
+            .or_insert_with(|| VecDeque::with_capacity(self.max_samples));
         if samples.len() >= self.max_samples {
             samples.pop_front();
         }
@@ -307,7 +314,7 @@ impl ThreadLocalStats {
             if samples.is_empty() {
                 return None;
             }
-            
+
             let total: Duration = samples.iter().sum();
             Some(total / samples.len() as u32)
         } else {
@@ -349,58 +356,42 @@ pub struct ThreadLocalStorage;
 impl ThreadLocalStorage {
     /// Cache a transaction for quick access
     pub fn cache_transaction(state: CachedTransactionState) -> bool {
-        TRANSACTION_CACHE.with(|cache| {
-            cache.borrow_mut().cache_transaction(state)
-        })
+        TRANSACTION_CACHE.with(|cache| cache.borrow_mut().cache_transaction(state))
     }
 
     /// Get cached transaction state
     pub fn get_transaction(tx_id: u64) -> Option<CachedTransactionState> {
-        TRANSACTION_CACHE.with(|cache| {
-            cache.borrow().get_transaction(tx_id).cloned()
-        })
+        TRANSACTION_CACHE.with(|cache| cache.borrow().get_transaction(tx_id).cloned())
     }
 
     /// Touch transaction (update access time and counters)
     pub fn touch_transaction(tx_id: u64, is_write: bool) {
-        TRANSACTION_CACHE.with(|cache| {
-            cache.borrow_mut().touch_transaction(tx_id, is_write)
-        })
+        TRANSACTION_CACHE.with(|cache| cache.borrow_mut().touch_transaction(tx_id, is_write))
     }
 
     /// Remove transaction from cache
     pub fn remove_transaction(tx_id: u64) -> Option<CachedTransactionState> {
-        TRANSACTION_CACHE.with(|cache| {
-            cache.borrow_mut().remove_transaction(tx_id)
-        })
+        TRANSACTION_CACHE.with(|cache| cache.borrow_mut().remove_transaction(tx_id))
     }
 
     /// Cache a page
     pub fn cache_page(page: CachedPage) {
-        PAGE_CACHE.with(|cache| {
-            cache.borrow_mut().cache_page(page)
-        })
+        PAGE_CACHE.with(|cache| cache.borrow_mut().cache_page(page))
     }
 
     /// Get cached page
     pub fn get_cached_page(page_id: u32) -> Option<CachedPage> {
-        PAGE_CACHE.with(|cache| {
-            cache.borrow_mut().get_page(page_id).cloned()
-        })
+        PAGE_CACHE.with(|cache| cache.borrow_mut().get_page(page_id).cloned())
     }
 
     /// Mark page as dirty
     pub fn mark_page_dirty(page_id: u32) {
-        PAGE_CACHE.with(|cache| {
-            cache.borrow_mut().mark_dirty(page_id)
-        })
+        PAGE_CACHE.with(|cache| cache.borrow_mut().mark_dirty(page_id))
     }
 
     /// Get page cache hit rate
     pub fn page_cache_hit_rate() -> f64 {
-        PAGE_CACHE.with(|cache| {
-            cache.borrow().hit_rate()
-        })
+        PAGE_CACHE.with(|cache| cache.borrow().hit_rate())
     }
 
     /// Execute with SIMD working buffers
@@ -408,45 +399,38 @@ impl ThreadLocalStorage {
     where
         F: FnOnce(&mut SIMDWorkingBuffers) -> R,
     {
-        SIMD_BUFFERS.with(|buffers| {
-            f(&mut buffers.borrow_mut())
-        })
+        SIMD_BUFFERS.with(|buffers| f(&mut buffers.borrow_mut()))
     }
 
     /// Record operation statistics
     pub fn record_operation(operation: &'static str, latency: Duration) {
-        TL_STATS.with(|stats| {
-            stats.borrow_mut().record_operation(operation, latency)
-        })
+        TL_STATS.with(|stats| stats.borrow_mut().record_operation(operation, latency))
     }
 
     /// Get operation statistics
     pub fn get_operation_stats(operation: &str) -> (u64, Option<Duration>) {
         TL_STATS.with(|stats| {
             let stats = stats.borrow();
-            (stats.get_operation_count(operation), stats.get_avg_latency(operation))
+            (
+                stats.get_operation_count(operation),
+                stats.get_avg_latency(operation),
+            )
         })
     }
 
     /// Check if should update global statistics
     pub fn should_update_stats() -> bool {
-        TL_STATS.with(|stats| {
-            stats.borrow().should_update()
-        })
+        TL_STATS.with(|stats| stats.borrow().should_update())
     }
 
     /// Mark statistics as updated
     pub fn mark_stats_updated() {
-        TL_STATS.with(|stats| {
-            stats.borrow_mut().mark_updated()
-        })
+        TL_STATS.with(|stats| stats.borrow_mut().mark_updated())
     }
 
     /// Allocate compact record from thread-local allocator
     pub fn allocate_compact_record(size: usize) -> Option<CompactRecord> {
-        COMPACT_ALLOCATOR.with(|allocator| {
-            allocator.borrow_mut().allocate(size)
-        })
+        COMPACT_ALLOCATOR.with(|allocator| allocator.borrow_mut().allocate(size))
     }
 
     /// Clear all thread-local caches (for testing/cleanup)
@@ -476,9 +460,8 @@ impl ThreadLocalStorage {
             (tx_size, page_size, hit_rate)
         };
 
-        let total_operations = TL_STATS.with(|stats| {
-            stats.borrow().operations_count.values().sum()
-        });
+        let total_operations =
+            TL_STATS.with(|stats| stats.borrow().operations_count.values().sum());
 
         ThreadLocalStorageStats {
             transaction_cache_size: tx_cache_size,
@@ -505,7 +488,9 @@ macro_rules! time_operation {
         let start = std::time::Instant::now();
         let result = $code;
         let duration = start.elapsed();
-        $crate::performance::thread_local::optimized_storage::ThreadLocalStorage::record_operation($operation, duration);
+        $crate::performance::thread_local::optimized_storage::ThreadLocalStorage::record_operation(
+            $operation, duration,
+        );
         result
     }};
 }
@@ -517,7 +502,7 @@ mod tests {
     #[test]
     fn test_transaction_cache() {
         ThreadLocalStorage::clear_all_caches();
-        
+
         let state = CachedTransactionState {
             tx_id: 1,
             read_timestamp: 100,
@@ -530,11 +515,11 @@ mod tests {
 
         assert!(ThreadLocalStorage::cache_transaction(state.clone()));
         assert_eq!(ThreadLocalStorage::get_transaction(1).unwrap().tx_id, 1);
-        
+
         ThreadLocalStorage::touch_transaction(1, true);
         let updated = ThreadLocalStorage::get_transaction(1).unwrap();
         assert_eq!(updated.write_count, 1);
-        
+
         assert!(ThreadLocalStorage::remove_transaction(1).is_some());
         assert!(ThreadLocalStorage::get_transaction(1).is_none());
     }
@@ -542,7 +527,7 @@ mod tests {
     #[test]
     fn test_page_cache() {
         ThreadLocalStorage::clear_all_caches();
-        
+
         let page = CachedPage {
             page_id: 1,
             data: Arc::new(vec![1, 2, 3, 4]),
@@ -553,7 +538,7 @@ mod tests {
 
         ThreadLocalStorage::cache_page(page);
         assert!(ThreadLocalStorage::get_cached_page(1).is_some());
-        
+
         ThreadLocalStorage::mark_page_dirty(1);
         let cached_page = ThreadLocalStorage::get_cached_page(1).unwrap();
         assert!(cached_page.is_dirty);
@@ -566,27 +551,27 @@ mod tests {
             key_buf.extend_from_slice(b"test_key");
             key_buf.len()
         });
-        
+
         assert_eq!(result, 8);
     }
 
     #[test]
     fn test_operation_stats() {
         ThreadLocalStorage::clear_all_caches();
-        
+
         ThreadLocalStorage::record_operation("test_op", Duration::from_millis(10));
         ThreadLocalStorage::record_operation("test_op", Duration::from_millis(20));
-        
+
         let (count, avg_latency) = ThreadLocalStorage::get_operation_stats("test_op");
         assert_eq!(count, 2);
         assert!(avg_latency.is_some());
         assert!(avg_latency.unwrap().as_millis() > 10);
     }
 
-    #[test] 
+    #[test]
     fn test_comprehensive_stats() {
         ThreadLocalStorage::clear_all_caches();
-        
+
         // Add some test data
         let state = CachedTransactionState {
             tx_id: 1,
@@ -598,9 +583,9 @@ mod tests {
             priority: TransactionPriority::Normal,
         };
         ThreadLocalStorage::cache_transaction(state);
-        
+
         ThreadLocalStorage::record_operation("test", Duration::from_millis(1));
-        
+
         let stats = ThreadLocalStorage::get_comprehensive_stats();
         assert_eq!(stats.transaction_cache_size, 1);
         assert_eq!(stats.total_operations, 1);

@@ -45,7 +45,9 @@ mod tests {
             let tx_id = manager.begin().unwrap();
             let key = format!("key{}", i);
             let value = format!("value{}", i);
-            manager.put(tx_id, key.as_bytes(), value.as_bytes()).unwrap();
+            manager
+                .put(tx_id, key.as_bytes(), value.as_bytes())
+                .unwrap();
             tx_ids.push(tx_id);
         }
 
@@ -223,7 +225,9 @@ mod tests {
                                 // Increment
                                 let new_value = (current + 1).to_string();
 
-                                if mgr.put(tx_id, key, new_value.as_bytes()).is_ok() && mgr.commit_sync(tx_id).is_ok() {
+                                if mgr.put(tx_id, key, new_value.as_bytes()).is_ok()
+                                    && mgr.commit_sync(tx_id).is_ok()
+                                {
                                     counter.fetch_add(1, Ordering::Relaxed);
                                     break;
                                 }

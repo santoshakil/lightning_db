@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 pub trait DatabaseIterator {
     /// The type of key returned by this iterator
     type Key: AsRef<[u8]> + Clone;
-    
+
     /// The type of value returned by this iterator
     type Value: AsRef<[u8]> + Clone;
 
@@ -161,16 +161,16 @@ impl IteratorStats {
 pub struct IteratorConfig {
     /// Maximum number of keys to prefetch
     pub prefetch_size: usize,
-    
+
     /// Whether to use caching
     pub enable_cache: bool,
-    
+
     /// Read timestamp for MVCC
     pub read_timestamp: Option<u64>,
-    
+
     /// Whether to skip tombstones
     pub skip_tombstones: bool,
-    
+
     /// Buffer size for I/O operations
     pub buffer_size: usize,
 }
@@ -455,11 +455,11 @@ mod tests {
         iter.set_end_bound(Some(b"key8".to_vec()), false);
 
         // Test keys
-        assert!(!iter.is_key_in_bounds(b"key1"));  // Before start
-        assert!(iter.is_key_in_bounds(b"key2"));   // At start (inclusive)
-        assert!(iter.is_key_in_bounds(b"key5"));   // In range
-        assert!(!iter.is_key_in_bounds(b"key8"));  // At end (exclusive)
-        assert!(!iter.is_key_in_bounds(b"key9"));  // After end
+        assert!(!iter.is_key_in_bounds(b"key1")); // Before start
+        assert!(iter.is_key_in_bounds(b"key2")); // At start (inclusive)
+        assert!(iter.is_key_in_bounds(b"key5")); // In range
+        assert!(!iter.is_key_in_bounds(b"key8")); // At end (exclusive)
+        assert!(!iter.is_key_in_bounds(b"key9")); // After end
     }
 
     #[test]
@@ -470,13 +470,13 @@ mod tests {
         iter.set_limit(Some(3));
 
         assert!(!iter.is_limit_reached());
-        
+
         iter.update_current(b"key1".to_vec(), b"value1".to_vec());
         assert!(!iter.is_limit_reached());
-        
+
         iter.update_current(b"key2".to_vec(), b"value2".to_vec());
         assert!(!iter.is_limit_reached());
-        
+
         iter.update_current(b"key3".to_vec(), b"value3".to_vec());
         assert!(iter.is_limit_reached());
     }
@@ -494,14 +494,20 @@ mod tests {
         assert_eq!(next_key(b"ke\xff"), Some(b"kf".to_vec()));
 
         // Test key comparison
-        assert_eq!(compare_keys(b"a", b"b", ScanDirection::Forward), Ordering::Less);
-        assert_eq!(compare_keys(b"a", b"b", ScanDirection::Backward), Ordering::Greater);
+        assert_eq!(
+            compare_keys(b"a", b"b", ScanDirection::Forward),
+            Ordering::Less
+        );
+        assert_eq!(
+            compare_keys(b"a", b"b", ScanDirection::Backward),
+            Ordering::Greater
+        );
     }
 
     #[test]
     fn test_iterator_stats() {
         let mut stats = IteratorStats::new();
-        
+
         stats.record_key_read(10, 20);
         stats.record_cache_hit();
         stats.record_cache_miss();

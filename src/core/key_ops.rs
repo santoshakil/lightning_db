@@ -1,8 +1,8 @@
 use crate::core::error::Result;
 use crate::features::logging;
+use crate::performance::optimizations::simd::safe::compare_keys;
 use crate::utils::batching::WriteBatch;
 use crate::{ConsistencyLevel, Database, Key};
-use crate::performance::optimizations::simd::safe::compare_keys;
 
 impl Database {
     /// Get value by key using zero-copy key type
@@ -55,7 +55,7 @@ impl Database {
     /// Batch get using zero-copy keys with optimized batching
     pub fn get_batch_keys(&self, keys: &[Key]) -> Result<Vec<Option<Vec<u8>>>> {
         let mut results = Vec::with_capacity(keys.len());
-        
+
         // Optimize for small batches
         if keys.len() <= 4 {
             // Unrolled loop for small batches
@@ -64,18 +64,18 @@ impl Database {
             }
             return Ok(results);
         }
-        
+
         // For larger batches, consider sorting keys for better cache locality
         if keys.len() > 16 {
             let mut indexed_keys: Vec<(usize, &Key)> = keys.iter().enumerate().collect();
             indexed_keys.sort_by(|(_, a), (_, b)| compare_keys(a.as_bytes(), b.as_bytes()));
-            
+
             let mut sorted_results = Vec::with_capacity(keys.len());
             for (original_idx, key) in indexed_keys {
                 let value = self.get(key.as_bytes())?;
                 sorted_results.push((original_idx, value));
             }
-            
+
             // Restore original order
             sorted_results.sort_by(|(a, _), (b, _)| a.cmp(b));
             results = sorted_results.into_iter().map(|(_, value)| value).collect();

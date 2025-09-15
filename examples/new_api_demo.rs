@@ -10,7 +10,7 @@ fn main() -> Result<()> {
     // === 1. SIMPLE DATABASE CREATION ===
     println!("\n1. Creating database with config:");
     let config = LightningDbConfig {
-        cache_size: 50 * 1024 * 1024,        // 50MB cache
+        cache_size: 50 * 1024 * 1024, // 50MB cache
         compression_enabled: true,
         compression_level: Some(3),
         ..Default::default()
@@ -51,7 +51,10 @@ fn main() -> Result<()> {
     // Batch get
     let keys = vec![b"batch:1".to_vec(), b"batch:2".to_vec()];
     let values = db.get_batch(&keys)?;
-    println!("   ✅ Batch retrieved {} values", values.iter().filter(|v| v.is_some()).count());
+    println!(
+        "   ✅ Batch retrieved {} values",
+        values.iter().filter(|v| v.is_some()).count()
+    );
 
     // === 4. RANGE QUERIES ===
     println!("\n4. Range and scan operations:");
@@ -107,7 +110,11 @@ fn main() -> Result<()> {
     db_arc.delete(b"user:2")?;
 
     // Clean up batch data
-    let batch_keys = vec![b"batch:1".to_vec(), b"batch:2".to_vec(), b"batch:3".to_vec()];
+    let batch_keys = vec![
+        b"batch:1".to_vec(),
+        b"batch:2".to_vec(),
+        b"batch:3".to_vec(),
+    ];
     db_arc.delete_batch(&batch_keys)?;
 
     println!("   ✅ Test data cleaned up");

@@ -6,8 +6,8 @@ pub mod page_integrity;
 pub mod page_manager_async;
 pub mod page_manager_trait;
 pub mod page_type;
-pub mod sharded_page_manager;
 pub mod page_wrappers;
+pub mod sharded_page_manager;
 
 pub use mmap_optimized::{MmapConfig, MmapStatistics, OptimizedMmapManager};
 pub use page::{Page, PageId, PageManager, ThreadSafePageManager, MAGIC, PAGE_SIZE};
@@ -16,5 +16,7 @@ pub use page_integrity::{page_validators, ValidatedPage};
 pub use page_manager_async::PageManagerAsync;
 pub use page_manager_trait::PageManagerTrait;
 pub use page_type::PageType;
-pub use page_wrappers::{OptimizedPageManager, OptimizedPageManagerStats, PageCacheAdapterWrapper, PageManagerWrapper};
+pub use page_wrappers::{
+    OptimizedPageManager, OptimizedPageManagerStats, PageCacheAdapterWrapper, PageManagerWrapper,
+};
 pub use sharded_page_manager::ShardedPageManager;
