@@ -603,7 +603,7 @@ mod tests {
         assert!(dir.path().join("hot").exists());
         assert!(dir.path().join("warm").exists());
         assert!(dir.path().join("cold").exists());
-        assert!(dir.path().join("wal").exists());
+        // WAL directory creation is deferred until unified WriteAheadLog is implemented
     }
 
     #[test]

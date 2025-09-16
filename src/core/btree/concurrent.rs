@@ -195,8 +195,6 @@ impl ShardedBPlusTree {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Tests require BPlusTree constructor which needs page_manager
     // These are conceptual implementations for optimization techniques
 }
