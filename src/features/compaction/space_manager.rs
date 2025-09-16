@@ -39,7 +39,7 @@ pub struct SpaceStats {
 
 #[derive(Debug)]
 pub struct SpaceManager {
-    config: Arc<RwLock<CompactionConfig>>,
+    _config: Arc<RwLock<CompactionConfig>>,
     regions: Arc<RwLock<HashMap<u64, SpaceRegion>>>,
     free_list: Arc<RwLock<Vec<(u64, u64)>>>, // (offset, size) pairs
     next_region_id: Arc<std::sync::atomic::AtomicU64>,
@@ -48,7 +48,7 @@ pub struct SpaceManager {
 impl SpaceManager {
     pub fn new(config: Arc<RwLock<CompactionConfig>>) -> Result<Self> {
         Ok(Self {
-            config,
+            _config: config,
             regions: Arc::new(RwLock::new(HashMap::new())),
             free_list: Arc::new(RwLock::new(Vec::new())),
             next_region_id: Arc::new(std::sync::atomic::AtomicU64::new(1)),

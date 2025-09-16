@@ -72,7 +72,7 @@ pub struct ErrorAnalysis {
 
 #[derive(Debug)]
 pub struct StatsCollector {
-    config: Arc<RwLock<CompactionConfig>>,
+    _config: Arc<RwLock<CompactionConfig>>,
     stats: Arc<RwLock<CompactionStats>>,
     detailed_stats: Arc<RwLock<DetailedCompactionStats>>,
     hourly_buckets: Arc<RwLock<[HourlyStats; 24]>>,
@@ -132,7 +132,7 @@ impl StatsCollector {
         };
 
         Ok(Self {
-            config,
+            _config: config,
             stats,
             detailed_stats: Arc::new(RwLock::new(detailed_stats)),
             hourly_buckets: Arc::new(RwLock::new(hourly_buckets.try_into().unwrap())),

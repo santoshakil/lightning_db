@@ -99,51 +99,6 @@ impl IncrementalCompactor {
         result
     }
 
-    pub(crate) async fn resume_compaction(
-        &self,
-        compaction_id: u64,
-        checkpoint: CompactionCheckpoint,
-    ) -> Result<u64> {
-        let cancel_token = tokio_util::sync::CancellationToken::new();
-        let progress = Arc::new(RwLock::new(CompactionProgress {
-            compaction_id,
-            compaction_type: CompactionType::Incremental,
-            state: CompactionState::Running,
-            progress_pct: self.calculate_resume_progress(&checkpoint).await?,
-            bytes_processed: checkpoint._bytes_processed,
-            bytes_total: 0, // Will be updated
-            items_processed: checkpoint._processed_items,
-            items_total: 0, // Will be updated
-            started_at: Instant::now(),
-            estimated_completion: None,
-            error: None,
-        }));
-
-        let context = CompactionContext {
-            _compaction_id: compaction_id,
-            started_at: Instant::now(),
-            progress: progress.clone(),
-            cancel_token: cancel_token.clone(),
-            checkpoint,
-        };
-
-        {
-            let mut active = self.active_compactions.write().await;
-            active.insert(compaction_id, context);
-        }
-
-        let result = self
-            .resume_incremental_compaction(compaction_id, progress.clone(), cancel_token)
-            .await;
-
-        // Clean up
-        {
-            let mut active = self.active_compactions.write().await;
-            active.remove(&compaction_id);
-        }
-
-        result
-    }
 
     pub async fn cancel(&self, compaction_id: u64) -> Result<()> {
         let active = self.active_compactions.read().await;
@@ -227,6 +182,7 @@ impl IncrementalCompactor {
         Ok(total_bytes_reclaimed)
     }
 
+    #[allow(dead_code)]
     async fn resume_incremental_compaction(
         &self,
         compaction_id: u64,
@@ -352,6 +308,7 @@ impl IncrementalCompactor {
         Ok(total_bytes_reclaimed)
     }
 
+    #[allow(dead_code)]
     async fn compact_region_from_checkpoint(
         &self,
         _compaction_id: u64,
@@ -458,6 +415,7 @@ impl IncrementalCompactor {
         Ok(bytes_reclaimed)
     }
 
+    #[allow(dead_code)]
     async fn compact_chunk_from_offset(
         &self,
         region: &str,
@@ -514,6 +472,7 @@ impl IncrementalCompactor {
         Ok(())
     }
 
+    #[allow(dead_code)]
     async fn calculate_resume_progress(&self, checkpoint: &CompactionCheckpoint) -> Result<f64> {
         // Calculate progress based on checkpoint position
         let total_regions = 5.0; // btree_pages, lsm_l0, lsm_l1, lsm_l2, indexes
@@ -534,6 +493,7 @@ impl IncrementalCompactor {
         Ok(completed_regions + current_region_progress)
     }
 
+    #[allow(dead_code)]
     async fn get_remaining_regions(&self, current_region: &str) -> Result<Vec<String>> {
         let all_regions = ["btree_pages", "lsm_l0", "lsm_l1", "lsm_l2", "indexes"];
 
@@ -548,10 +508,12 @@ impl IncrementalCompactor {
             .collect())
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn get_checkpoint_state(&self) -> CheckpointState {
         self.checkpoint_state.read().await.clone()
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn list_checkpoints(&self) -> Result<Vec<CompactionCheckpoint>> {
         // Implementation pending checkpoint loading
         Ok(vec![])

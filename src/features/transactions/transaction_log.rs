@@ -156,7 +156,7 @@ struct LogSegment {
 
 struct LsnGenerator {
     current_lsn: Arc<std::sync::atomic::AtomicU64>,
-    checkpoint_lsn: Arc<std::sync::atomic::AtomicU64>,
+    _checkpoint_lsn: Arc<std::sync::atomic::AtomicU64>,
     recovery_lsn: Arc<std::sync::atomic::AtomicU64>,
 }
 
@@ -164,7 +164,7 @@ struct BufferPool {
     write_buffer: Arc<RwLock<LogBuffer>>,
     flush_buffer: Arc<RwLock<LogBuffer>>,
     buffer_size: usize,
-    flush_interval: Duration,
+    _flush_interval: Duration,
     last_flush: Arc<RwLock<Instant>>,
 }
 
@@ -176,31 +176,31 @@ struct LogBuffer {
 }
 
 struct CheckpointManager {
-    checkpoint_interval: Duration,
+    _checkpoint_interval: Duration,
     last_checkpoint: Arc<RwLock<Instant>>,
     checkpoint_lsn: Arc<std::sync::atomic::AtomicU64>,
     active_transactions: Arc<DashMap<TransactionId, TransactionLogState>>,
-    dirty_pages: Arc<DashMap<u64, DirtyPageInfo>>,
+    _dirty_pages: Arc<DashMap<u64, DirtyPageInfo>>,
 }
 
 struct TransactionLogState {
-    txn_id: TransactionId,
+    _txn_id: TransactionId,
     first_lsn: u64,
     last_lsn: u64,
     undo_chain: Vec<u64>,
-    state: TransactionState,
+    _state: TransactionState,
 }
 
 struct DirtyPageInfo {
-    page_id: u64,
-    recovery_lsn: u64,
-    last_update_lsn: u64,
-    dirty_since: Instant,
+    _page_id: u64,
+    _recovery_lsn: u64,
+    _last_update_lsn: u64,
+    _dirty_since: Instant,
 }
 
 struct LogArchiver {
     archive_path: String,
-    retention_period: Duration,
+    _retention_period: Duration,
     compression_enabled: bool,
     archive_queue: Arc<RwLock<VecDeque<u64>>>,
     last_archive: Arc<RwLock<Instant>>,
@@ -222,7 +222,7 @@ impl TransactionLog {
     ) -> Self {
         let lsn_generator = Arc::new(LsnGenerator {
             current_lsn: Arc::new(std::sync::atomic::AtomicU64::new(1)),
-            checkpoint_lsn: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            _checkpoint_lsn: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             recovery_lsn: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         });
 
@@ -259,19 +259,19 @@ impl TransactionLog {
                     dirty: false,
                 })),
                 buffer_size: config.buffer_size,
-                flush_interval: config.flush_interval,
+                _flush_interval: config.flush_interval,
                 last_flush: Arc::new(RwLock::new(Instant::now())),
             }),
             checkpoint_manager: Arc::new(CheckpointManager {
-                checkpoint_interval: config.checkpoint_interval,
+                _checkpoint_interval: config.checkpoint_interval,
                 last_checkpoint: Arc::new(RwLock::new(Instant::now())),
                 checkpoint_lsn: Arc::new(std::sync::atomic::AtomicU64::new(0)),
                 active_transactions: Arc::new(DashMap::new()),
-                dirty_pages: Arc::new(DashMap::new()),
+                _dirty_pages: Arc::new(DashMap::new()),
             }),
             archiver: Arc::new(LogArchiver {
                 archive_path: config.archive_path,
-                retention_period: config.retention_period,
+                _retention_period: config.retention_period,
                 compression_enabled: config.compression_enabled,
                 archive_queue: Arc::new(RwLock::new(VecDeque::new())),
                 last_archive: Arc::new(RwLock::new(Instant::now())),
@@ -404,11 +404,11 @@ impl TransactionLog {
                 self.checkpoint_manager.active_transactions.insert(
                     entry.txn_id,
                     TransactionLogState {
-                        txn_id: entry.txn_id,
+                        _txn_id: entry.txn_id,
                         first_lsn: entry.lsn,
                         last_lsn: entry.lsn,
                         undo_chain: Vec::new(),
-                        state: TransactionState::Active,
+                        _state: TransactionState::Active,
                     },
                 );
             }
@@ -556,7 +556,7 @@ impl TransactionLog {
                     active_txns.insert(
                         entry.txn_id,
                         RecoveryTransaction {
-                            txn_id: entry.txn_id,
+                            _txn_id: entry.txn_id,
                             state: RecoveryState::Active,
                             undo_chain: Vec::new(),
                         },
@@ -875,11 +875,11 @@ impl TransactionLog {
             .active_transactions
             .entry(entry.txn_id)
             .or_insert(TransactionLogState {
-                txn_id: entry.txn_id,
+                _txn_id: entry.txn_id,
                 first_lsn: entry.lsn,
                 last_lsn: entry.lsn,
                 undo_chain: Vec::new(),
-                state: TransactionState::Active,
+                _state: TransactionState::Active,
             })
             .last_lsn = entry.lsn;
 
@@ -944,7 +944,7 @@ pub struct RecoveryInfo {
 
 #[derive(Debug, Clone)]
 struct RecoveryTransaction {
-    txn_id: TransactionId,
+    _txn_id: TransactionId,
     state: RecoveryState,
     undo_chain: Vec<u64>,
 }

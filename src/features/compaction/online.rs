@@ -14,8 +14,8 @@ pub struct OnlineCompactor {
 
 #[derive(Debug)]
 struct CompactionContext {
-    compaction_id: u64,
-    started_at: Instant,
+    _compaction_id: u64,
+    _started_at: Instant,
     progress: Arc<RwLock<CompactionProgress>>,
     cancel_token: tokio_util::sync::CancellationToken,
 }
@@ -59,8 +59,8 @@ impl OnlineCompactor {
         }));
 
         let context = CompactionContext {
-            compaction_id,
-            started_at: Instant::now(),
+            _compaction_id: compaction_id,
+            _started_at: Instant::now(),
             progress: progress.clone(),
             cancel_token: cancel_token.clone(),
         };
@@ -108,8 +108,8 @@ impl OnlineCompactor {
         }));
 
         let context = CompactionContext {
-            compaction_id,
-            started_at: Instant::now(),
+            _compaction_id: compaction_id,
+            _started_at: Instant::now(),
             progress: progress.clone(),
             cancel_token: cancel_token.clone(),
         };
