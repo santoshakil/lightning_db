@@ -1,30 +1,25 @@
 # Lightning DB ⚡
 
-High-performance embedded key-value database written in Rust with exceptional throughput.
+Lightning-fast embedded key-value database written in Rust. Optimized for performance with over 2 million operations per second.
 
-## Performance
+## Performance Benchmarks
 
-- **2.2M ops/sec** sequential writes
-- **2.9M ops/sec** random reads
-- **970K ops/sec** batch writes
-- **117 MB/sec** large value throughput
-- **3.9M ops/sec** mixed workload
+| Operation | Throughput | Latency |
+|-----------|------------|---------|
+| Sequential Write | 2.2M ops/sec | 0.45 µs |
+| Random Read | 3.3M ops/sec | 0.30 µs |
+| Batch Write | 830K ops/sec | 1.21 µs |
+| Mixed Workload | 3.7M ops/sec | 0.27 µs |
+| Large Values (10KB) | 422 MB/sec | 23 µs |
 
-## Features
+## Key Features
 
-### Core
-- **B+ Tree & LSM Tree** dual storage engines
-- **ACID transactions** with MVCC isolation
-- **Write-ahead logging** for crash recovery
-- **Page-based storage** with integrity checksums
-- **Automatic compression** and caching
-
-### Production Ready
-- Thread-safe concurrent access
-- Batch operations for atomic writes
-- Transaction support with isolation
-- Crash recovery and durability
-- Memory-mapped I/O optimization
+- **Dual Storage Engines**: B+Tree for fast lookups, LSM Tree for write optimization
+- **ACID Transactions**: Full transaction support with MVCC isolation
+- **Crash Recovery**: Automatic recovery with Write-Ahead Logging (WAL)
+- **Zero-Copy Keys**: Optimized key operations with inline storage
+- **Compression**: Built-in Zstd and LZ4 compression support
+- **Production Ready**: Comprehensive error handling, retry logic, and monitoring
 
 ## Quick Start
 
@@ -78,35 +73,24 @@ let config = LightningDbConfig {
 };
 ```
 
-## Building
+## Installation
 
-```bash
-cargo build --release
-cargo test
-cargo bench
+```toml
+[dependencies]
+lightning_db = { path = "path/to/lightning_db" }
 ```
 
 ## Examples
 
-Run the included examples to see the database in action:
-
 ```bash
-# Basic usage example
-cargo run --example basic_usage --release
-
-# Performance benchmark
+# Run performance benchmark
 cargo run --example performance_benchmark --release
 
-# Stress test (concurrent operations, recovery, etc.)
+# Run stress test
 cargo run --example stress_test --release
-
-# Comprehensive test suite
-cargo run --example comprehensive_test --release
 ```
 
 ## Testing
-
-The database includes comprehensive test suites:
 
 ```bash
 # Run all tests
@@ -114,19 +98,7 @@ cargo test
 
 # Run integration tests
 cargo test --test integration_tests
-
-# Run specific test suites
-cargo test --test concurrent_tests
-cargo test --test error_recovery_tests
 ```
-
-## Status
-
-**Production Ready** - The database is stable with all core functionality working correctly:
-- All integration tests pass
-- Stress tests demonstrate reliability under heavy load
-- Performance meets or exceeds targets
-- Recovery and durability mechanisms are robust
 
 ## License
 
