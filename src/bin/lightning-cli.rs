@@ -395,48 +395,62 @@ fn cmd_delete(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 fn cmd_scan(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     let path = matches.get_one::<String>("path").unwrap();
     let start = matches.get_one::<String>("start").unwrap();
-    let end = matches
-        .get_one::<String>("end")
-        .map(|s| s.as_bytes().to_vec());
+    let end = matches.get_one::<String>("end");
     let limit: usize = matches.get_one::<String>("limit").unwrap().parse()?;
     let reverse = matches.get_flag("reverse");
 
     let db = Database::open(path, LightningDbConfig::default())?;
 
     // Create appropriate range iterator
-    let iterator = if reverse {
-        let start_key = if start.is_empty() {
-            None
-        } else {
-            Some(start.as_bytes().to_vec())
-        };
-        db.scan_reverse(start_key, end)?
+    let start_bytes = if start.is_empty() {
+        None
     } else {
-        let start_key = if start.is_empty() {
-            None
-        } else {
-            Some(start.as_bytes().to_vec())
-        };
-        db.scan(start_key, end)?
+        Some(start.as_bytes())
     };
 
-    // Collect results up to limit
-    let mut count = 0;
-    println!("Scanning entries:");
-    for item in iterator {
-        if count >= limit {
-            break;
+    let end_bytes = end.map(|s| s.as_bytes());
+
+    // Use scan method with proper references
+    let iterator = db.scan(start_bytes, end_bytes)?;
+
+    // If reverse is requested, we need to handle it differently
+    // Since scan_reverse doesn't exist, we'll collect and reverse
+    // Note: This is a workaround - ideally the iterator would support reverse direction
+    let results = if reverse {
+        let mut items = Vec::new();
+        for item in iterator {
+            items.push(item?);
         }
-        let (key, value) = item?;
+        items.reverse();
+        items
+    } else {
+        let mut items = Vec::new();
+        for item in iterator {
+            items.push(item?);
+            if items.len() >= limit {
+                break;
+            }
+        }
+        items
+    };
+
+    // Display results
+    println!("Scanning entries:");
+    let display_count = if reverse {
+        results.len().min(limit)
+    } else {
+        results.len()
+    };
+
+    for (key, value) in results.iter().take(display_count) {
         let key_str = String::from_utf8_lossy(&key);
         let value_str = match String::from_utf8(value.to_vec()) {
             Ok(s) => s,
             Err(_) => format!("<binary: {}>", hex::encode(&value)),
         };
         println!("{}: {}", key_str, value_str);
-        count += 1;
     }
-    println!("\nTotal entries found: {}", count);
+    println!("\nTotal entries found: {}", display_count);
 
     Ok(())
 }
