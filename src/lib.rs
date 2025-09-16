@@ -96,14 +96,10 @@ pub mod performance {
 // Optional features
 pub mod features {
     pub mod adaptive_compression;
-    pub mod admin;
     pub mod async_support;
     pub mod backup;
     pub mod compaction;
     pub mod encryption;
-    pub mod integrity;
-    pub mod logging;
-    pub mod migration;
     pub mod monitoring;
     pub mod statistics;
     pub mod transactions;
@@ -111,11 +107,6 @@ pub mod features {
 
 // Utilities and helpers
 pub mod utils;
-
-// Testing infrastructure
-
-// Security module for comprehensive security hardening
-pub mod security;
 
 // Database module with split implementations
 mod database;
