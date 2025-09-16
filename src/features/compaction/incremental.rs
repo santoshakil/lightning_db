@@ -110,9 +110,9 @@ impl IncrementalCompactor {
             compaction_type: CompactionType::Incremental,
             state: CompactionState::Running,
             progress_pct: self.calculate_resume_progress(&checkpoint).await?,
-            bytes_processed: checkpoint.bytes_processed,
+            bytes_processed: checkpoint._bytes_processed,
             bytes_total: 0, // Will be updated
-            items_processed: checkpoint.processed_items,
+            items_processed: checkpoint._processed_items,
             items_total: 0, // Will be updated
             started_at: Instant::now(),
             estimated_completion: None,
@@ -246,9 +246,9 @@ impl IncrementalCompactor {
                 .ok_or_else(|| Error::Generic("Compaction context not found".into()))?
         };
 
-        let remaining_regions = self.get_remaining_regions(&checkpoint.region).await?;
-        let mut total_bytes_reclaimed = checkpoint.bytes_processed;
-        let mut _current_chunk_id = checkpoint.chunk_id;
+        let remaining_regions = self.get_remaining_regions(&checkpoint._region).await?;
+        let mut total_bytes_reclaimed = checkpoint._bytes_processed;
+        let mut _current_chunk_id = checkpoint._chunk_id;
 
         // Resume from current region
         if !remaining_regions.is_empty() {
@@ -370,7 +370,7 @@ impl IncrementalCompactor {
             _ => 100,
         };
 
-        let start_chunk = checkpoint.chunk_id;
+        let start_chunk = checkpoint._chunk_id;
         let mut total_bytes_reclaimed = 0u64;
 
         for chunk_idx in start_chunk..estimated_chunks {
@@ -384,7 +384,7 @@ impl IncrementalCompactor {
                     region,
                     chunk_idx,
                     chunk_size,
-                    checkpoint.offset,
+                    checkpoint._offset,
                     cancel_token,
                 )
                 .await?
@@ -519,7 +519,7 @@ impl IncrementalCompactor {
         let total_regions = 5.0; // btree_pages, lsm_l0, lsm_l1, lsm_l2, indexes
         let region_weight = 100.0 / total_regions; // Each region is 20% of work
 
-        let region_index = match checkpoint.region.as_str() {
+        let region_index = match checkpoint._region.as_str() {
             "btree_pages" => 0,
             "lsm_l0" => 1,
             "lsm_l1" => 2,
@@ -529,7 +529,7 @@ impl IncrementalCompactor {
         };
 
         let completed_regions = region_index as f64 * region_weight;
-        let current_region_progress = (checkpoint.chunk_id as f64 / 100.0) * region_weight; // Assume 100 chunks per region
+        let current_region_progress = (checkpoint._chunk_id as f64 / 100.0) * region_weight; // Assume 100 chunks per region
 
         Ok(completed_regions + current_region_progress)
     }
