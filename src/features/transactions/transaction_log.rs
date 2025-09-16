@@ -9,6 +9,29 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum VoteDecision {
+    Commit,
+    Abort,
+    Uncertain,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Decision {
+    Commit,
+    Abort,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum OperationType {
+    Read,
+    Write,
+    Update,
+    Delete,
+    Lock,
+    Unlock,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum LogType {
     Begin,
     Prepare,
@@ -41,7 +64,7 @@ pub enum LogData {
     },
     Prepare {
         participant_id: String,
-        vote: super::participant::VoteDecision,
+        vote: VoteDecision,
         locks: Vec<String>,
     },
     Commit {
@@ -53,7 +76,7 @@ pub enum LogData {
         participants_aborted: Vec<String>,
     },
     Decision {
-        decision: super::participant::Decision,
+        decision: Decision,
         coordinator_id: String,
     },
     Checkpoint {
@@ -80,7 +103,7 @@ pub enum LogData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UndoOperation {
     pub key: String,
-    pub operation_type: super::participant::OperationType,
+    pub operation_type: OperationType,
     pub page_id: u64,
     pub offset: usize,
     pub length: usize,
@@ -89,7 +112,7 @@ pub struct UndoOperation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RedoOperation {
     pub key: String,
-    pub operation_type: super::participant::OperationType,
+    pub operation_type: OperationType,
     pub page_id: u64,
     pub offset: usize,
     pub length: usize,
@@ -733,7 +756,7 @@ impl TransactionLog {
         &self,
         txn_id: TransactionId,
         participant_id: String,
-        vote: super::participant::VoteDecision,
+        vote: VoteDecision,
         locks: Vec<String>,
     ) -> Result<u64> {
         let lsn = self
