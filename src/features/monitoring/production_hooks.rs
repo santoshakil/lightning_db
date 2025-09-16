@@ -392,22 +392,7 @@ impl MonitoringHook for PrometheusMonitoringHook {
 }
 
 /// OpenTelemetry monitoring hook implementation (feature-gated)
-/// Enable with --features="opentelemetry"
-#[cfg(feature = "opentelemetry")]
-pub struct OpenTelemetryMonitoringHook {
-    _placeholder: (), // Placeholder until opentelemetry integration is complete
-}
-
-#[cfg(feature = "opentelemetry")]
-impl MonitoringHook for OpenTelemetryMonitoringHook {
-    fn on_event(&self, _event: &MonitoringEvent) {
-        // OpenTelemetry integration placeholder
-    }
-
-    fn collect_metrics(&self) -> HashMap<String, f64> {
-        HashMap::new()
-    }
-}
+// OpenTelemetry support removed - use PrometheusMonitoringHook instead
 
 impl Default for ProductionMonitor {
     fn default() -> Self {
