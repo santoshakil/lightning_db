@@ -279,10 +279,16 @@ impl Database {
     }
 
     pub fn sync(&self) -> Result<()> {
+        // Flush LSM tree if present to ensure all memtable data is persisted
+        if let Some(ref lsm) = self.lsm_tree {
+            lsm.flush()?;
+        }
+
         // Sync WAL if present
         if let Some(ref wal) = self.unified_wal {
             wal.sync()?;
         }
+
         // Sync page manager
         self.page_manager.sync()?;
         Ok(())
@@ -290,37 +296,64 @@ impl Database {
 
     pub fn scan(&self, start: Option<&[u8]>, end: Option<&[u8]>) -> Result<crate::core::iterator::RangeIterator> {
         use crate::core::iterator::{RangeIterator, ScanDirection};
-        Ok(RangeIterator::new(
+
+        let mut iterator = RangeIterator::new(
             start.map(|s| s.to_vec()),
             end.map(|e| e.to_vec()),
             ScanDirection::Forward,
             0, // TODO: Use proper read timestamp
-        ))
+        );
+
+        // Attach data sources
+        if let Some(ref lsm) = self.lsm_tree {
+            iterator.attach_lsm(lsm)?;
+        } else {
+            // For non-LSM mode, attach B+Tree
+            let btree = self.btree.read();
+            iterator.attach_btree(&*btree)?;
+        }
+
+        Ok(iterator)
     }
 
     pub fn scan_prefix(&self, prefix: &[u8]) -> Result<crate::core::iterator::RangeIterator> {
         use crate::core::iterator::{RangeIterator, ScanDirection};
         // Calculate end key for prefix scan
         let mut end = prefix.to_vec();
-        for i in (0..end.len()).rev() {
-            if end[i] < 255 {
-                end[i] += 1;
-                end.truncate(i + 1);
-                return Ok(RangeIterator::new(
-                    Some(prefix.to_vec()),
-                    Some(end),
-                    ScanDirection::Forward,
-                    0, // TODO: Use proper read timestamp
-                ));
+        let end_key = {
+            let mut found_non_255 = false;
+            for i in (0..end.len()).rev() {
+                if end[i] < 255 {
+                    end[i] += 1;
+                    end.truncate(i + 1);
+                    found_non_255 = true;
+                    break;
+                }
             }
-        }
-        // If all bytes are 255, scan from prefix to end
-        Ok(RangeIterator::new(
+            if found_non_255 {
+                Some(end)
+            } else {
+                None
+            }
+        };
+
+        let mut iterator = RangeIterator::new(
             Some(prefix.to_vec()),
-            None,
+            end_key,
             ScanDirection::Forward,
             0, // TODO: Use proper read timestamp
-        ))
+        );
+
+        // Attach data sources
+        if let Some(ref lsm) = self.lsm_tree {
+            iterator.attach_lsm(lsm)?;
+        } else {
+            // For non-LSM mode, attach B+Tree
+            let btree = self.btree.read();
+            iterator.attach_btree(&*btree)?;
+        }
+
+        Ok(iterator)
     }
 
     pub fn range(&self, start: Option<&[u8]>, end: Option<&[u8]>) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
