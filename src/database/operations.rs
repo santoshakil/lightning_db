@@ -409,8 +409,8 @@ impl Database {
                 }
             }
         } else {
-            // B+Tree range scan not implemented yet
-            return Err(crate::Error::Internal("B+Tree range scan not implemented".to_string()));
+            // B+Tree range scan requires implementing iterator on BPlusTree
+            return Err(crate::Error::NotSupported("Range scan is only supported with LSM tree storage engine".to_string()));
         }
 
         Ok(result)
