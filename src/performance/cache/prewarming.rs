@@ -140,11 +140,11 @@ enum QueryType {
     RangeScan,
     IndexScan,
     FullTableScan,
-    Aggregation,
-    Join,
+    _Aggregation,
+    _Join,
     Update,
     Insert,
-    Delete,
+    _Delete,
 }
 
 /// Pattern detector for identifying access patterns

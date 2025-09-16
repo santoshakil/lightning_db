@@ -248,7 +248,7 @@ impl CompressionBenchmark {
                 let dataset = TestDataset {
                     data: data.to_vec(),
                     data_type: DataType::Mixed, // Default
-                    size,
+                    _size: size,
                 };
 
                 let result =
@@ -372,7 +372,7 @@ impl CompressionBenchmark {
                 datasets.push(TestDataset {
                     data,
                     data_type: data_type.clone(),
-                    size,
+                    _size: size,
                 });
             }
         }
@@ -726,7 +726,7 @@ impl CompressionBenchmark {
 struct TestDataset {
     data: Vec<u8>,
     data_type: DataType,
-    size: usize,
+    _size: usize,
 }
 
 impl Default for BenchmarkConfig {
