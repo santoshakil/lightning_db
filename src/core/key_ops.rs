@@ -1,5 +1,4 @@
 use crate::core::error::Result;
-use crate::features::logging;
 use crate::performance::optimizations::simd::safe::compare_keys;
 use crate::utils::batching::WriteBatch;
 use crate::{ConsistencyLevel, Database, Key};
@@ -22,7 +21,6 @@ impl Database {
     /// Put key-value pair using zero-copy key type
     #[inline]
     pub fn put_key(&self, key: &Key, value: &[u8]) -> Result<()> {
-        let _timer = logging::OperationTimer::with_key("put_key", key.as_bytes());
 
         // Hot path optimization: For small inline keys and values, use fast path
         if key.is_inline() {
