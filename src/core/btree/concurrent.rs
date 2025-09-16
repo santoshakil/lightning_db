@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub struct ConcurrentBPlusTree {
     inner: Arc<RwLock<BPlusTree>>,
     /// Page-level locks for fine-grained concurrency
-    page_locks: Arc<dashmap::DashMap<u32, Arc<RwLock<()>>>>,
+    _page_locks: Arc<dashmap::DashMap<u32, Arc<RwLock<()>>>>,
     /// Version counter for optimistic reads
     version: Arc<AtomicU64>,
 }
@@ -17,7 +17,7 @@ impl ConcurrentBPlusTree {
     pub fn new(inner: BPlusTree) -> Self {
         Self {
             inner: Arc::new(RwLock::new(inner)),
-            page_locks: Arc::new(dashmap::DashMap::new()),
+            _page_locks: Arc::new(dashmap::DashMap::new()),
             version: Arc::new(AtomicU64::new(0)),
         }
     }
