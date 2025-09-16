@@ -48,21 +48,21 @@ impl Database {
         }
         // Fast path for non-transactional puts with LSM
         if let Some(ref lsm) = self.lsm_tree {
+            // Convert to vec once and reuse
+            let key_vec = key.to_vec();
+            let value_vec = value.to_vec();
+
             // Write to WAL first for durability
             if let Some(ref unified_wal) = self.unified_wal {
                 use crate::core::wal::WALOperation;
                 unified_wal.append(WALOperation::Put {
-                    key: key.to_vec(),
-                    value: value.to_vec(),
+                    key: key_vec.clone(),
+                    value: value_vec.clone(),
                 })?;
             }
 
             // Write to LSM
-            let key_vec = key.to_vec();
-            let value_vec = value.to_vec();
             lsm.insert(key_vec, value_vec)?;
-
-            // UnifiedCache integration implemented
 
             return Ok(());
         }
@@ -374,12 +374,37 @@ impl Database {
                 }
             }
 
-            // TODO: Also need to read from SSTables, but that's not implemented in LSMFullIterator yet
-            // For now, convert the sorted entries to result
-            for (key, value) in entries {
-                if start.is_none() || key.as_slice() >= start.unwrap() {
-                    if end.is_none() || key.as_slice() < end.unwrap() {
+            // Convert the sorted entries to result
+            match (start, end) {
+                (None, None) => {
+                    // No bounds - add all entries
+                    for (key, value) in entries {
                         result.push((key, value));
+                    }
+                }
+                (Some(s), None) => {
+                    // Only start bound
+                    for (key, value) in entries {
+                        if key.as_slice() >= s {
+                            result.push((key, value));
+                        }
+                    }
+                }
+                (None, Some(e)) => {
+                    // Only end bound
+                    for (key, value) in entries {
+                        if key.as_slice() < e {
+                            result.push((key, value));
+                        }
+                    }
+                }
+                (Some(s), Some(e)) => {
+                    // Both bounds
+                    for (key, value) in entries {
+                        let k = key.as_slice();
+                        if k >= s && k < e {
+                            result.push((key, value));
+                        }
                     }
                 }
             }
