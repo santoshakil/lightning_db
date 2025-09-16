@@ -460,7 +460,7 @@ impl CompressionAlgorithmFactory {
 
     /// Get available algorithms
     pub fn available_algorithms() -> Vec<CompressionAlgorithm> {
-        let mut algorithms = vec![
+        let algorithms = vec![
             CompressionAlgorithm::None,
             CompressionAlgorithm::LZ4,
             CompressionAlgorithm::Zstd,
