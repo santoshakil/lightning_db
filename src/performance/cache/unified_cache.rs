@@ -61,7 +61,7 @@ fn safe_hash_fnv1a(data: &[u8]) -> u64 {
 
 /// Safe optimized key comparison using standard library functions
 #[inline(always)]
-fn safe_compare_keys(a: &[u8], b: &[u8]) -> bool {
+fn _safe_compare_keys(a: &[u8], b: &[u8]) -> bool {
     // Use standard library's highly optimized slice comparison
     // This is often as fast or faster than manual SIMD code due to:
     // 1. LLVM auto-vectorization
@@ -738,8 +738,8 @@ mod tests {
         let data2 = b"hello world test data";
         let data3 = b"different test data!!";
 
-        assert!(safe_compare_keys(data1, data2));
-        assert!(!safe_compare_keys(data1, data3));
+        assert!(_safe_compare_keys(data1, data2));
+        assert!(!_safe_compare_keys(data1, data3));
 
         let hash1 = safe_hash_fnv1a(data1);
         let hash2 = safe_hash_fnv1a(data2);
