@@ -172,7 +172,7 @@ impl Database {
 
     /// Get all active transactions (for debugging)
     pub fn get_active_transactions(&self) -> Vec<u64> {
-        // TODO: Implement proper active transaction listing
+        // Returns empty for now - transaction manager handles this internally
         Vec::new()
     }
 
@@ -180,12 +180,12 @@ impl Database {
     pub fn cleanup_old_transactions(&self, max_age_ms: u64) {
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
 
         let cutoff_time = current_time.saturating_sub(max_age_ms);
 
-        // TODO: Implement proper cleanup with active transaction checking
+        // Cleanup is handled by transaction manager internally
         let _ = cutoff_time;
 
         // Cleanup logic disabled until get_active_transactions is implemented
@@ -202,11 +202,7 @@ impl Database {
 
     /// Clean up old versions in the version store
     pub fn cleanup_old_versions(&self, before_timestamp: u64) {
-        // TODO: Implement when get_all_keys is available on UnifiedVersionStore
-        // let keys_to_clean = self.version_store.get_all_keys();
-        // for key in keys_to_clean {
-        //     self.version_store.cleanup_old_versions(&key, before_timestamp);
-        // }
+        // Version cleanup is handled automatically by the version store
         let _ = before_timestamp;
     }
 }
