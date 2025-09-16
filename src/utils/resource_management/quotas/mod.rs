@@ -211,10 +211,10 @@ pub struct QuotaManager {
 struct TenantResourceUsage {
     memory_used: AtomicU64,
     disk_used: AtomicU64,
-    read_ops: AtomicU64,
-    write_ops: AtomicU64,
-    connections: AtomicUsize,
-    last_update: Mutex<Instant>,
+    _read_ops: AtomicU64,
+    _write_ops: AtomicU64,
+    _connections: AtomicUsize,
+    _last_update: Mutex<Instant>,
 }
 
 impl Default for TenantResourceUsage {
@@ -222,10 +222,10 @@ impl Default for TenantResourceUsage {
         Self {
             memory_used: AtomicU64::new(0),
             disk_used: AtomicU64::new(0),
-            read_ops: AtomicU64::new(0),
-            write_ops: AtomicU64::new(0),
-            connections: AtomicUsize::new(0),
-            last_update: Mutex::new(Instant::now()),
+            _read_ops: AtomicU64::new(0),
+            _write_ops: AtomicU64::new(0),
+            _connections: AtomicUsize::new(0),
+            _last_update: Mutex::new(Instant::now()),
         }
     }
 }

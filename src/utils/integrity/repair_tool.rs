@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 /// Database repair tool
 pub struct RepairTool {
-    database: Arc<Database>,
+    _database: Arc<Database>,
     page_manager: Arc<RwLock<PageManager>>,
     actions_taken: Arc<RwLock<Vec<RepairAction>>>,
 }
@@ -22,7 +22,7 @@ impl RepairTool {
         let page_manager = database.get_page_manager().inner_arc();
 
         Self {
-            database,
+            _database: database,
             page_manager,
             actions_taken: Arc::new(RwLock::new(Vec::new())),
         }

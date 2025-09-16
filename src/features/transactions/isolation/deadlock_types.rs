@@ -29,7 +29,7 @@ pub struct DeadlockStats {
 
 #[derive(Debug)]
 pub struct DeadlockDetector {
-    strategy: DeadlockResolutionStrategy,
+    _strategy: DeadlockResolutionStrategy,
 }
 
 impl DeadlockDetector {
@@ -38,7 +38,7 @@ impl DeadlockDetector {
         _check_interval: Duration,
         _timeout: Duration,
     ) -> Self {
-        Self { strategy }
+        Self { _strategy: strategy }
     }
 
     pub fn detect(&self) -> Result<DeadlockResult> {
@@ -82,7 +82,7 @@ pub struct PredicateLock {
 
 #[derive(Debug)]
 pub struct PredicateLockManager {
-    locks: Arc<parking_lot::RwLock<HashMap<Vec<u8>, PredicateLock>>>,
+    _locks: Arc<parking_lot::RwLock<HashMap<Vec<u8>, PredicateLock>>>,
 }
 
 impl PredicateLockManager {
@@ -90,7 +90,7 @@ impl PredicateLockManager {
         _lock_manager: Arc<crate::features::transactions::isolation::locks::LockManager>,
     ) -> Self {
         Self {
-            locks: Arc::new(parking_lot::RwLock::new(HashMap::new())),
+            _locks: Arc::new(parking_lot::RwLock::new(HashMap::new())),
         }
     }
 

@@ -217,7 +217,7 @@ pub struct IntegrityValidator {
     config: IntegrityConfig,
     database: Arc<Database>,
     report: Arc<RwLock<IntegrityReport>>,
-    error_count: Arc<RwLock<usize>>,
+    _error_count: Arc<RwLock<usize>>,
 }
 
 impl IntegrityValidator {
@@ -239,7 +239,7 @@ impl IntegrityValidator {
                 repair_actions: Vec::new(),
                 status: IntegrityStatus::Clean,
             })),
-            error_count: Arc::new(RwLock::new(0)),
+            _error_count: Arc::new(RwLock::new(0)),
         }
     }
 

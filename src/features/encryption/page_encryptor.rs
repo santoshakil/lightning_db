@@ -29,15 +29,6 @@ pub struct PageEncryptor {
     pages_decrypted: Arc<AtomicU64>,
 }
 
-/// Encrypted page format
-#[derive(Debug)]
-struct EncryptedPage {
-    /// Encryption metadata
-    metadata: EncryptionMetadata,
-    /// Encrypted data with authentication tag
-    ciphertext: Vec<u8>,
-}
-
 impl PageEncryptor {
     /// Create a new page encryptor
     pub fn new(key_manager: Arc<KeyManager>, algorithm: EncryptionAlgorithm) -> Result<Self> {

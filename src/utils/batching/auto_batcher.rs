@@ -9,17 +9,6 @@ use std::time::{Duration, Instant};
 
 /// Branch prediction hints - using stable intrinsics
 #[inline(always)]
-fn likely(b: bool) -> bool {
-    #[cold]
-    fn cold() {}
-
-    if !b {
-        cold();
-    }
-    b
-}
-
-#[inline(always)]
 fn unlikely(b: bool) -> bool {
     #[cold]
     fn cold() {}
@@ -65,11 +54,6 @@ impl SafeStackBuffer {
     #[inline(always)]
     fn len(&self) -> usize {
         self.data.len()
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        self.data.clear();
     }
 
     #[inline(always)]

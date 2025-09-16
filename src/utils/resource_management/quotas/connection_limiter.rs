@@ -38,8 +38,8 @@ pub struct ConnectionLimiter {
 #[derive(Debug, Clone)]
 struct TenantConnectionLimit {
     max_connections: usize,
-    max_idle_connections: usize,
-    priority: i32,
+    _max_idle_connections: usize,
+    _priority: i32,
 }
 
 impl ConnectionLimiter {
@@ -222,8 +222,8 @@ impl ConnectionLimiter {
     ) -> Result<()> {
         let limit = TenantConnectionLimit {
             max_connections,
-            max_idle_connections,
-            priority,
+            _max_idle_connections: max_idle_connections,
+            _priority: priority,
         };
 
         self.tenant_limits.insert(tenant_id.clone(), limit);

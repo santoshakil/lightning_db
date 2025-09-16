@@ -937,7 +937,7 @@ impl BackupManager {
                         // Decompress file
                         let compressed_data = fs::read(&path)?;
                         let decompressed = zstd::decode_all(compressed_data.as_slice())
-                            .map_err(|e| Error::Decompression(e.to_string()))?;
+                            .map_err(|e| Error::Compression(e.to_string()))?;
 
                         // Remove .zst extension
                         let actual_dest = dest_path.with_extension("");

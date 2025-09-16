@@ -120,15 +120,15 @@ pub struct RateLimiter {
 
     // Configuration
     allow_burst: bool,
-    burst_duration: Duration,
+    _burst_duration: Duration,
 }
 
 #[derive(Debug)]
 struct TenantRateLimiter {
     read_bucket: Arc<TokenBucket>,
     write_bucket: Arc<TokenBucket>,
-    scan_bucket: Arc<TokenBucket>,
-    transaction_bucket: Arc<TokenBucket>,
+    _scan_bucket: Arc<TokenBucket>,
+    _transaction_bucket: Arc<TokenBucket>,
 }
 
 impl RateLimiter {
@@ -157,7 +157,7 @@ impl RateLimiter {
             transaction_bucket,
             tenant_limiters: Arc::new(DashMap::new()),
             allow_burst,
-            burst_duration,
+            _burst_duration: burst_duration,
         })
     }
 
@@ -237,12 +237,12 @@ impl RateLimiter {
                 write_ops_per_sec,
                 burst_multiplier,
             )),
-            scan_bucket: Arc::new(TokenBucket::new(
+            _scan_bucket: Arc::new(TokenBucket::new(
                 scan_ops_per_sec,
                 scan_ops_per_sec,
                 burst_multiplier,
             )),
-            transaction_bucket: Arc::new(TokenBucket::new(
+            _transaction_bucket: Arc::new(TokenBucket::new(
                 transaction_ops_per_sec,
                 transaction_ops_per_sec,
                 burst_multiplier,
