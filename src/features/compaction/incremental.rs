@@ -14,7 +14,7 @@ pub struct IncrementalCompactor {
 
 #[derive(Debug)]
 struct CompactionContext {
-    compaction_id: u64,
+    _compaction_id: u64,
     started_at: Instant,
     progress: Arc<RwLock<CompactionProgress>>,
     cancel_token: tokio_util::sync::CancellationToken,
@@ -25,19 +25,19 @@ struct CompactionContext {
 pub(crate) struct CheckpointState {
     last_checkpoint: Option<Instant>,
     total_chunks_processed: u64,
-    estimated_chunks_remaining: u64,
+    _estimated_chunks_remaining: u64,
     bytes_processed: u64,
     current_region: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct CompactionCheckpoint {
-    chunk_id: u64,
-    region: String,
-    offset: u64,
-    processed_items: u64,
-    bytes_processed: u64,
-    last_key: Option<Vec<u8>>,
+    _chunk_id: u64,
+    _region: String,
+    _offset: u64,
+    _processed_items: u64,
+    _bytes_processed: u64,
+    _last_key: Option<Vec<u8>>,
 }
 
 impl IncrementalCompactor {
@@ -48,7 +48,7 @@ impl IncrementalCompactor {
             checkpoint_state: Arc::new(RwLock::new(CheckpointState {
                 last_checkpoint: None,
                 total_chunks_processed: 0,
-                estimated_chunks_remaining: 0,
+                _estimated_chunks_remaining: 0,
                 bytes_processed: 0,
                 current_region: None,
             })),
@@ -74,7 +74,7 @@ impl IncrementalCompactor {
         let checkpoint = self.create_initial_checkpoint().await?;
 
         let context = CompactionContext {
-            compaction_id,
+            _compaction_id: compaction_id,
             started_at: Instant::now(),
             progress: progress.clone(),
             cancel_token: cancel_token.clone(),
@@ -120,7 +120,7 @@ impl IncrementalCompactor {
         }));
 
         let context = CompactionContext {
-            compaction_id,
+            _compaction_id: compaction_id,
             started_at: Instant::now(),
             progress: progress.clone(),
             cancel_token: cancel_token.clone(),
@@ -480,12 +480,12 @@ impl IncrementalCompactor {
 
     async fn create_initial_checkpoint(&self) -> Result<CompactionCheckpoint> {
         Ok(CompactionCheckpoint {
-            chunk_id: 0,
-            region: "btree_pages".to_string(),
-            offset: 0,
-            processed_items: 0,
-            bytes_processed: 0,
-            last_key: None,
+            _chunk_id: 0,
+            _region: "btree_pages".to_string(),
+            _offset: 0,
+            _processed_items: 0,
+            _bytes_processed: 0,
+            _last_key: None,
         })
     }
 

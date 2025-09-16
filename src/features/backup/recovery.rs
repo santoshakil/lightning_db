@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 /// Point-in-time recovery manager
 pub struct RecoveryManager {
     config: RecoveryConfig,
-    backup_manager: IncrementalBackupManager,
+    _backup_manager: IncrementalBackupManager,
     encryption_manager: Option<EncryptionManager>,
     recovery_state: RecoveryState,
     recovery_cache: RecoveryCache,
@@ -154,7 +154,7 @@ pub struct RecoveryStatistics {
 struct RecoveryCache {
     chunk_cache: HashMap<String, Vec<u8>>,
     wal_cache: BTreeMap<SystemTime, Vec<WALEntry>>,
-    backup_metadata_cache: HashMap<String, BackupMetadata>,
+    _backup_metadata_cache: HashMap<String, BackupMetadata>,
     decryption_cache: HashMap<String, Vec<u8>>,
     max_cache_size_bytes: usize,
     current_cache_size: usize,
@@ -363,7 +363,7 @@ impl RecoveryManager {
         let recovery_cache = RecoveryCache {
             chunk_cache: HashMap::new(),
             wal_cache: BTreeMap::new(),
-            backup_metadata_cache: HashMap::new(),
+            _backup_metadata_cache: HashMap::new(),
             decryption_cache: HashMap::new(),
             max_cache_size_bytes: 256 * 1024 * 1024, // 256MB
             current_cache_size: 0,
@@ -371,7 +371,7 @@ impl RecoveryManager {
 
         Ok(Self {
             config,
-            backup_manager,
+            _backup_manager: backup_manager,
             encryption_manager,
             recovery_state,
             recovery_cache,

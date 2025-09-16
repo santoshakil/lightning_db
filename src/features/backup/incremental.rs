@@ -19,7 +19,7 @@ pub struct IncrementalBackupManager {
     chunk_store: ChunkStore,
     file_index: FileIndex,
     dedup_index: DeduplicationIndex,
-    delta_engine: DeltaEngine,
+    _delta_engine: DeltaEngine,
 }
 
 /// Configuration for incremental backups
@@ -169,22 +169,22 @@ struct SnapshotEntry {
 /// Deduplication index for content similarity
 struct DeduplicationIndex {
     content_hashes: HashMap<String, Vec<PathBuf>>,
-    similarity_index: HashMap<String, SimilarityEntry>,
+    _similarity_index: HashMap<String, SimilarityEntry>,
     chunk_references: HashMap<String, HashSet<PathBuf>>,
 }
 
 /// Similarity entry for near-duplicate detection
 #[derive(Debug, Clone)]
 struct SimilarityEntry {
-    pub file_path: PathBuf,
-    pub fingerprint: Vec<u64>,
-    pub size: u64,
-    pub similarity_scores: HashMap<PathBuf, f64>,
+    pub _file_path: PathBuf,
+    pub _fingerprint: Vec<u64>,
+    pub _size: u64,
+    pub _similarity_scores: HashMap<PathBuf, f64>,
 }
 
 /// Delta compression engine
 struct DeltaEngine {
-    config: IncrementalConfig,
+    _config: IncrementalConfig,
 }
 
 /// Incremental backup result
@@ -258,12 +258,12 @@ impl IncrementalBackupManager {
 
         let dedup_index = DeduplicationIndex {
             content_hashes: HashMap::new(),
-            similarity_index: HashMap::new(),
+            _similarity_index: HashMap::new(),
             chunk_references: HashMap::new(),
         };
 
         let delta_engine = DeltaEngine {
-            config: config.clone(),
+            _config: config.clone(),
         };
 
         Ok(Self {
@@ -271,7 +271,7 @@ impl IncrementalBackupManager {
             chunk_store,
             file_index,
             dedup_index,
-            delta_engine,
+            _delta_engine: delta_engine,
         })
     }
 

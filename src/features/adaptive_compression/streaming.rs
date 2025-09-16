@@ -201,7 +201,7 @@ pub struct StreamingReader<R: Read> {
 pub struct StreamingWriter<W: Write> {
     inner: BufWriter<W>,
     compressor: StreamingCompressor,
-    pending_data: Vec<u8>,
+    _pending_data: Vec<u8>,
 }
 
 impl StreamingCompressor {
@@ -783,7 +783,7 @@ impl<W: Write> StreamingWriter<W> {
         Ok(Self {
             inner: BufWriter::new(writer),
             compressor,
-            pending_data: Vec::new(),
+            _pending_data: Vec::new(),
         })
     }
 }
