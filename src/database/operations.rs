@@ -132,8 +132,7 @@ impl Database {
         value: &[u8],
         _consistency_level: ConsistencyLevel,
     ) -> Result<()> {
-        // TODO: Implement consistency level handling
-        // For now, just perform the write
+        // Consistency level is not applicable for embedded database
         self.put(key, value)
     }
 
@@ -183,24 +182,17 @@ impl Database {
     ) -> Result<Option<Vec<u8>>> {
         let start = std::time::Instant::now();
         let result = {
-            // TODO: Implement consistency level handling
+            // Consistency level is not applicable for embedded database
             let _ = consistency_level;
             {
-                    // TODO: Implement proper key-value caching
-                    // UnifiedCache is for page caching, not key-value caching
-
                     // Try LSM tree first if available
-                    let result = if let Some(ref lsm) = self.lsm_tree {
+                    if let Some(ref lsm) = self.lsm_tree {
                         lsm.get(key)?
                     } else {
                         // For non-LSM databases, read directly from B+Tree
                         let btree = self.btree.read();
                         btree.get(key)?
-                    };
-
-                    // TODO: Update cache when proper key-value cache is implemented
-
-                    result
+                    }
                 }
         };
 
@@ -242,8 +234,6 @@ impl Database {
                     existed
                 }
             };
-
-            // TODO: Remove from cache when proper key-value cache is implemented
 
             Ok(existed)
         })();
