@@ -2,6 +2,7 @@ mod delete;
 pub mod integrity_validation;
 mod iterator;
 pub mod write_buffer;
+pub mod concurrent;
 // SAFETY WARNING: lock_free_btree module disabled due to critical concurrency bugs
 // This implementation has known memory safety issues including:
 // - Potential use-after-free in concurrent scenarios

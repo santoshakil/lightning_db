@@ -4,4 +4,5 @@ pub mod indexing;
 pub mod maintenance;
 pub mod metrics;
 pub mod lifecycle;
+pub mod optimizations;
 
