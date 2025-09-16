@@ -163,10 +163,6 @@ path = "src/bin/lightning-cli.rs"
 required-features = ["cli"]
 
 
-[[bin]]
-name = "lightning-admin-server"
-path = "src/bin/lightning-admin-server.rs"
-required-features = ["cli"]
 
 [profile.release]
 lto = true
