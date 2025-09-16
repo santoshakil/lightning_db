@@ -101,11 +101,11 @@ struct AlgorithmWeights {
     /// Weight for compression speed (higher is better)
     compression_speed: f64,
     /// Weight for decompression speed (higher is better)
-    decompression_speed: f64,
+    _decompression_speed: f64,
     /// Weight for memory usage (lower is better)
-    memory_usage: f64,
+    _memory_usage: f64,
     /// Weight for CPU usage (lower is better)
-    cpu_usage: f64,
+    _cpu_usage: f64,
     /// Weight for historical performance (higher is better)
     historical_performance: f64,
 }
@@ -114,7 +114,7 @@ struct AlgorithmWeights {
 #[derive(Debug, Clone)]
 struct LearningParameters {
     /// Learning rate for algorithm performance updates
-    learning_rate: f64,
+    _learning_rate: f64,
     /// Exploration vs exploitation balance (0.0 = exploit, 1.0 = explore)
     exploration_rate: f64,
     /// Minimum samples required for reliable statistics
@@ -775,9 +775,9 @@ impl AlgorithmWeights {
         Self {
             compression_ratio: 1.0,
             compression_speed: 1.0,
-            decompression_speed: 0.8,
-            memory_usage: 0.5,
-            cpu_usage: 0.5,
+            _decompression_speed: 0.8,
+            _memory_usage: 0.5,
+            _cpu_usage: 0.5,
             historical_performance: 0.7,
         }
     }
@@ -786,9 +786,9 @@ impl AlgorithmWeights {
         Self {
             compression_ratio: 2.0,
             compression_speed: 0.3,
-            decompression_speed: 0.5,
-            memory_usage: 0.2,
-            cpu_usage: 0.2,
+            _decompression_speed: 0.5,
+            _memory_usage: 0.2,
+            _cpu_usage: 0.2,
             historical_performance: 0.8,
         }
     }
@@ -797,9 +797,9 @@ impl AlgorithmWeights {
         Self {
             compression_ratio: 0.3,
             compression_speed: 2.0,
-            decompression_speed: 2.0,
-            memory_usage: 0.8,
-            cpu_usage: 1.0,
+            _decompression_speed: 2.0,
+            _memory_usage: 0.8,
+            _cpu_usage: 1.0,
             historical_performance: 0.9,
         }
     }
@@ -808,9 +808,9 @@ impl AlgorithmWeights {
         Self {
             compression_ratio: 0.8,
             compression_speed: 0.8,
-            decompression_speed: 0.8,
-            memory_usage: 2.0,
-            cpu_usage: 0.5,
+            _decompression_speed: 0.8,
+            _memory_usage: 2.0,
+            _cpu_usage: 0.5,
             historical_performance: 0.7,
         }
     }
@@ -819,9 +819,9 @@ impl AlgorithmWeights {
         Self {
             compression_ratio: 0.5,
             compression_speed: 1.5,
-            decompression_speed: 1.5,
-            memory_usage: 0.5,
-            cpu_usage: 2.0,
+            _decompression_speed: 1.5,
+            _memory_usage: 0.5,
+            _cpu_usage: 2.0,
             historical_performance: 0.8,
         }
     }
@@ -830,9 +830,9 @@ impl AlgorithmWeights {
         Self {
             compression_ratio: 1.2,
             compression_speed: 1.2,
-            decompression_speed: 1.0,
-            memory_usage: 0.8,
-            cpu_usage: 0.8,
+            _decompression_speed: 1.0,
+            _memory_usage: 0.8,
+            _cpu_usage: 0.8,
             historical_performance: 1.0,
         }
     }
@@ -841,7 +841,7 @@ impl AlgorithmWeights {
 impl Default for LearningParameters {
     fn default() -> Self {
         Self {
-            learning_rate: 0.1,
+            _learning_rate: 0.1,
             exploration_rate: 0.1,
             min_samples: 10,
             confidence_threshold: 0.7,

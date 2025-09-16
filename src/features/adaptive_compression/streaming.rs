@@ -47,15 +47,15 @@ struct CompressionChunk {
     /// Compressed data
     compressed: Vec<u8>,
     /// Algorithm used
-    algorithm: CompressionAlgorithm,
+    _algorithm: CompressionAlgorithm,
     /// Compression level used
-    level: CompressionLevel,
+    _level: CompressionLevel,
     /// Compression ratio achieved
     ratio: f64,
     /// Time taken to compress
-    compression_time: Duration,
+    _compression_time: Duration,
     /// Chunk sequence number
-    sequence: u64,
+    _sequence: u64,
 }
 
 /// Streaming compression statistics
@@ -105,7 +105,7 @@ impl CompressorBuffers {
         }
     }
 
-    fn clear(&mut self) {
+    fn _clear(&mut self) {
         self.input_buffer.clear();
         self.output_buffer.clear();
         self.chunk_queue.clear();
@@ -129,32 +129,32 @@ pub struct StreamingCompressor {
 /// Streaming decompressor
 pub struct StreamingDecompressor {
     /// Configuration
-    config: StreamingConfig,
+    _config: StreamingConfig,
     /// Adaptive compression engine
-    engine: Arc<AdaptiveCompressionEngine>,
+    _engine: Arc<AdaptiveCompressionEngine>,
     /// Input buffer
-    input_buffer: Arc<Mutex<VecDeque<u8>>>,
+    _input_buffer: Arc<Mutex<VecDeque<u8>>>,
     /// Output buffer
-    output_buffer: Arc<Mutex<VecDeque<u8>>>,
+    _output_buffer: Arc<Mutex<VecDeque<u8>>>,
     /// Chunk metadata queue
-    chunk_metadata: Arc<Mutex<VecDeque<ChunkMetadata>>>,
+    _chunk_metadata: Arc<Mutex<VecDeque<ChunkMetadata>>>,
     /// Statistics
-    stats: Arc<RwLock<DecompressionStats>>,
+    _stats: Arc<RwLock<DecompressionStats>>,
 }
 
 /// Chunk metadata for decompression
 #[derive(Debug, Clone)]
 struct ChunkMetadata {
     /// Algorithm used for compression
-    algorithm: CompressionAlgorithm,
+    _algorithm: CompressionAlgorithm,
     /// Compression level used
-    level: CompressionLevel,
+    _level: CompressionLevel,
     /// Original size
-    original_size: usize,
+    _original_size: usize,
     /// Compressed size
-    compressed_size: usize,
+    _compressed_size: usize,
     /// Sequence number
-    sequence: u64,
+    _sequence: u64,
 }
 
 /// Decompression statistics
@@ -383,11 +383,11 @@ impl StreamingCompressor {
         let chunk = CompressionChunk {
             data,
             compressed: compressed.data,
-            algorithm,
-            level,
+            _algorithm: algorithm,
+            _level: level,
             ratio,
-            compression_time,
-            sequence,
+            _compression_time: compression_time,
+            _sequence: sequence,
         };
 
         // Add to output buffer and store processed chunk

@@ -417,7 +417,7 @@ impl CacheInfo {
         Self::default()
     }
 
-    fn parse_cache_size(size_str: &str) -> Result<u32, std::num::ParseIntError> {
+    fn _parse_cache_size(size_str: &str) -> Result<u32, std::num::ParseIntError> {
         let trimmed = size_str.trim();
         if let Some(without_suffix) = trimmed.strip_suffix("KB") {
             without_suffix.parse::<u32>()
@@ -632,7 +632,7 @@ impl StorageCapabilities {
         }
     }
 
-    fn nvme_defaults() -> Self {
+    fn _nvme_defaults() -> Self {
         Self {
             storage_type: "NVMe".to_string(),
             seq_read_mb_s: 3500,
@@ -643,7 +643,7 @@ impl StorageCapabilities {
         }
     }
 
-    fn ssd_defaults() -> Self {
+    fn _ssd_defaults() -> Self {
         Self {
             storage_type: "SSD".to_string(),
             seq_read_mb_s: 550,
