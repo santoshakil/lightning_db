@@ -89,7 +89,22 @@ impl KeyManager {
             enabled: false,
             ..Default::default()
         })
-        .unwrap_or_else(|_| panic!("Failed to create disabled key manager"))
+        .unwrap_or_else(|_| {
+            // Fallback to a minimal key manager if creation fails
+            Self {
+                config: EncryptionConfig {
+                    enabled: false,
+                    ..Default::default()
+                },
+                master_key: Arc::new(RwLock::new(None)),
+                kek_cache: Arc::new(RwLock::new(HashMap::new())),
+                dek_cache: Arc::new(RwLock::new(HashMap::new())),
+                current_kek_id: Arc::new(RwLock::new(None)),
+                current_dek_id: Arc::new(RwLock::new(None)),
+                key_store_path: None,
+                next_key_id: Arc::new(RwLock::new(1)),
+            }
+        })
     }
 
     /// Initialize with a master key
