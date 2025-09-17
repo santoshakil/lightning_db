@@ -347,14 +347,22 @@ impl WriteOptimizedEngine {
 
     /// Execute a write batch atomically
     pub fn write_batch(&self, batch: WriteBatch) -> Result<()> {
-        // Apply operations to MemTable
-        for operation in &batch.operations {
+        // Track statistics while applying operations
+        let mut total_writes = 0u64;
+        let mut bytes_written = 0u64;
+        let mut total_deletes = 0u64;
+
+        // Apply operations to MemTable (consume batch to avoid cloning)
+        for operation in batch.operations {
             match operation {
                 WriteOperation::Put { key, value } => {
-                    self.memtable_manager.put(key.clone(), value.clone())?;
+                    total_writes += 1;
+                    bytes_written += key.len() as u64 + value.len() as u64;
+                    self.memtable_manager.put(key, value)?;
                 }
                 WriteOperation::Delete { key } => {
-                    self.memtable_manager.delete(key.clone())?;
+                    total_deletes += 1;
+                    self.memtable_manager.delete(key)?;
                 }
             }
         }
@@ -362,17 +370,9 @@ impl WriteOptimizedEngine {
         // Update statistics
         {
             let mut stats = self.stats.write();
-            for operation in &batch.operations {
-                match operation {
-                    WriteOperation::Put { key, value } => {
-                        stats.total_writes += 1;
-                        stats.bytes_written += key.len() as u64 + value.len() as u64;
-                    }
-                    WriteOperation::Delete { .. } => {
-                        stats.total_deletes += 1;
-                    }
-                }
-            }
+            stats.total_writes += total_writes;
+            stats.bytes_written += bytes_written;
+            stats.total_deletes += total_deletes;
         }
 
         Ok(())
@@ -417,7 +417,7 @@ impl WriteOptimizedEngine {
             match entry.entry_type {
                 crate::core::write_optimized::memtable::EntryType::Put => {
                     if let Some(value) = entry.value {
-                        builder.add(key.clone().to_vec(), value.clone().to_vec())?;
+                        builder.add(key.to_vec(), value.to_vec())?;
                         flushed_bytes += key.len() + value.len();
                     }
                 }
