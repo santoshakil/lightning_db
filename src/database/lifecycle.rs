@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use crate::performance::small_alloc::SmallAllocPool;
 use std::time::Duration;
 use parking_lot::RwLock;
 
@@ -245,6 +246,7 @@ impl Database {
             quota_manager,
             compaction_manager: None, // Will be initialized when first needed
             isolation_manager,
+            small_alloc_pool: Arc::new(SmallAllocPool::new()),
             _config: config,
         })
     }
@@ -567,6 +569,7 @@ impl Database {
                 quota_manager,
                 compaction_manager: None, // Will be initialized when first needed
                 isolation_manager,
+                small_alloc_pool: Arc::new(SmallAllocPool::new()),
                 _config: config,
             })
         } else {

@@ -5,6 +5,7 @@ const SMALL_KEY_SIZE: usize = 64;
 const SMALL_VALUE_SIZE: usize = 1024;
 const POOL_SIZE: usize = 1000;
 
+#[derive(Debug)]
 pub struct SmallAllocPool {
     key_pool: Mutex<VecDeque<Vec<u8>>>,
     value_pool: Mutex<VecDeque<Vec<u8>>>,
@@ -52,7 +53,7 @@ impl SmallAllocPool {
     pub fn recycle_key(&self, mut buf: Vec<u8>) {
         if buf.capacity() <= SMALL_KEY_SIZE {
             buf.clear();
-            if let Ok(mut pool) = self.key_pool.try_lock() {
+            if let Some(mut pool) = self.key_pool.try_lock() {
                 if pool.len() < POOL_SIZE {
                     pool.push_back(buf);
                 }
@@ -63,7 +64,7 @@ impl SmallAllocPool {
     pub fn recycle_value(&self, mut buf: Vec<u8>) {
         if buf.capacity() <= SMALL_VALUE_SIZE {
             buf.clear();
-            if let Ok(mut pool) = self.value_pool.try_lock() {
+            if let Some(mut pool) = self.value_pool.try_lock() {
                 if pool.len() < POOL_SIZE {
                     pool.push_back(buf);
                 }

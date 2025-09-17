@@ -90,6 +90,8 @@ pub mod core {
 pub mod performance {
     pub mod cache;
     pub mod prefetch;
+    pub mod read_cache;
+    pub mod small_alloc;
 }
 
 // Optional features
@@ -132,6 +134,7 @@ use features::monitoring;
 use features::statistics::MetricsCollector;
 use parking_lot::RwLock;
 use performance::prefetch::PrefetchManager;
+use crate::performance::small_alloc::SmallAllocPool;
 use std::path::PathBuf;
 use std::sync::Arc;
 pub use utils::batching::FastAutoBatcher as AutoBatcher;
@@ -241,6 +244,7 @@ pub struct Database {
     quota_manager: Option<Arc<utils::quotas::QuotaManager>>,
     compaction_manager: Option<Arc<features::compaction::CompactionManager>>,
     isolation_manager: Arc<features::transactions::isolation::IsolationManager>,
+    small_alloc_pool: Arc<SmallAllocPool>,
     _config: LightningDbConfig,
 }
 
@@ -268,6 +272,7 @@ impl Clone for Database {
             quota_manager: self.quota_manager.clone(),
             compaction_manager: self.compaction_manager.clone(),
             isolation_manager: self.isolation_manager.clone(),
+            small_alloc_pool: self.small_alloc_pool.clone(),
             _config: self._config.clone(),
         }
     }
