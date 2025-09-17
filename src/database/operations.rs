@@ -417,18 +417,22 @@ impl Database {
     }
 
     pub(crate) fn put_small_optimized(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        // Fast path for small data - minimize allocations
+        // Fast path for small data - use allocation pool
         if let Some(ref lsm) = self.lsm_tree {
+            // Use allocation pool for small keys/values
+            let key_vec = self.small_alloc_pool.alloc_key(key);
+            let value_vec = self.small_alloc_pool.alloc_value(value);
+
             // Write to WAL first
             if let Some(ref unified_wal) = self.unified_wal {
                 unified_wal.append(WALOperation::Put {
-                    key: key.to_vec(),
-                    value: value.to_vec(),
+                    key: key_vec.clone(),
+                    value: value_vec.clone(),
                 })?;
             }
 
             // Insert to LSM
-            lsm.insert(key.to_vec(), value.to_vec())?;
+            lsm.insert(key_vec, value_vec)?;
             Ok(())
         } else {
             self.put_standard(key, value)
