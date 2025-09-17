@@ -172,4 +172,8 @@ path = "examples/basic_usage.rs"
 name = "stress_test"
 path = "examples/stress_test.rs"
 
+[[example]]
+name = "performance_test"
+path = "examples/performance_test.rs"
+
 
