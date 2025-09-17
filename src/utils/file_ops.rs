@@ -1,4 +1,5 @@
 use crate::core::error::{Error, Result};
+use crate::utils::retry::RetryableOperations;
 use std::fs::{File, Metadata, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -11,7 +12,7 @@ impl FileOps {
     /// Open a file for reading with retry logic
     pub fn open_for_read<P: AsRef<Path>>(path: P) -> Result<File> {
         let path = path.as_ref();
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             File::open(path).map_err(|e| Error::Io(format!("open_read on {}: {}", path.display(), e)))
         })
     }
@@ -19,7 +20,7 @@ impl FileOps {
     /// Open a file for writing with retry logic
     pub fn open_for_write<P: AsRef<Path>>(path: P) -> Result<File> {
         let path = path.as_ref();
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             OpenOptions::new()
                 .write(true)
                 .create(true)
@@ -32,7 +33,7 @@ impl FileOps {
     /// Open a file for appending with retry logic
     pub fn open_for_append<P: AsRef<Path>>(path: P) -> Result<File> {
         let path = path.as_ref();
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             OpenOptions::new()
                 
                 .create(true)
@@ -45,7 +46,7 @@ impl FileOps {
     /// Open a file for read/write with retry logic
     pub fn open_for_read_write<P: AsRef<Path>>(path: P) -> Result<File> {
         let path = path.as_ref();
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             OpenOptions::new()
                 .read(true)
                 .write(true)
@@ -59,7 +60,7 @@ impl FileOps {
     /// Read entire file contents into a vector
     pub fn read_to_vec<P: AsRef<Path>>(path: P) -> Result<Vec<u8>> {
         let path = path.as_ref();
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             std::fs::read(path).map_err(|e| Error::Io(format!("read_to_vec on {}: {}", path.display(), e)))
         })
     }
@@ -67,7 +68,7 @@ impl FileOps {
     /// Read entire file contents into a string
     pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
         let path = path.as_ref();
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             std::fs::read_to_string(path).map_err(|e| Error::Io(format!("read_to_string on {}: {}", path.display(), e)))
         })
     }
@@ -78,12 +79,12 @@ impl FileOps {
         let temp_path = Self::get_temp_path(path)?;
 
         // Write to temporary file first
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             std::fs::write(&temp_path, data).map_err(|e| Error::Io(format!("write_temp on {}: {}", temp_path.display(), e)))
         })?;
 
         // Atomic rename
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             std::fs::rename(&temp_path, path).map_err(|e| Error::Io(format!("atomic_rename on {}: {}", path.display(), e)))
         })
     }
@@ -92,7 +93,7 @@ impl FileOps {
     pub fn copy_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<u64> {
         let from = from.as_ref();
         let to = to.as_ref();
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             std::fs::copy(from, to).map_err(|e| Error::Io(format!("copy_to_{} on {}: {}", to.display(), from.display(), e)))
         })
     }
@@ -100,7 +101,7 @@ impl FileOps {
     /// Create directory and all parent directories
     pub fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
         let path = path.as_ref();
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             std::fs::create_dir_all(path).map_err(|e| Error::Io(format!("create_dir_all on {}: {}", path.display(), e)))
         })
     }
@@ -108,7 +109,7 @@ impl FileOps {
     /// Remove a file with retry logic
     pub fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
         let path = path.as_ref();
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             std::fs::remove_file(path).map_err(|e| Error::Io(format!("remove_file on {}: {}", path.display(), e)))
         })
     }
@@ -116,7 +117,7 @@ impl FileOps {
     /// Remove a directory and all its contents
     pub fn remove_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
         let path = path.as_ref();
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             std::fs::remove_dir_all(path).map_err(|e| Error::Io(format!("remove_dir_all on {}: {}", path.display(), e)))
         })
     }
@@ -124,7 +125,7 @@ impl FileOps {
     /// Get file metadata with retry logic
     pub fn metadata<P: AsRef<Path>>(path: P) -> Result<Metadata> {
         let path = path.as_ref();
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             std::fs::metadata(path).map_err(|e| Error::Io(format!("metadata on {}: {}", path.display(), e)))
         })
     }
@@ -152,14 +153,14 @@ impl FileOps {
 
     /// Sync file data to disk
     pub fn sync_data(file: &mut File) -> Result<()> {
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             file.sync_data().map_err(|e| Error::Io(format!("sync_data on <unknown>: {}", e)))
         })
     }
 
     /// Sync file data and metadata to disk
     pub fn sync_all(file: &mut File) -> Result<()> {
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             file.sync_all().map_err(|e| Error::Io(format!("sync_all on <unknown>: {}", e)))
         })
     }
@@ -184,21 +185,21 @@ impl FileOps {
 
     /// Seek to a position in a file
     pub fn seek(file: &mut File, pos: SeekFrom) -> Result<u64> {
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             file.seek(pos).map_err(|e| Error::Io(format!("seek on <unknown>: {}", e)))
         })
     }
 
     /// Read exact number of bytes from a file
     pub fn read_exact(file: &mut File, buf: &mut [u8]) -> Result<()> {
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             file.read_exact(buf).map_err(|e| Error::Io(format!("read_exact on <unknown>: {}", e)))
         })
     }
 
     /// Write all bytes to a file
     pub fn write_all(file: &mut File, buf: &[u8]) -> Result<()> {
-        Self::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             file.write_all(buf).map_err(|e| Error::Io(format!("write_all on <unknown>: {}", e)))
         })
     }
@@ -226,33 +227,6 @@ impl FileOps {
         Ok(temp_path)
     }
 
-    /// Retry an operation with exponential backoff
-    fn retry_operation<T, F>(mut operation: F) -> Result<T>
-    where
-        F: FnMut() -> Result<T>,
-    {
-        const MAX_RETRIES: u32 = 3;
-        const BASE_DELAY: Duration = Duration::from_millis(10);
-
-        let mut delay = BASE_DELAY;
-        let mut last_error = None;
-
-        for attempt in 0..=MAX_RETRIES {
-            match operation() {
-                Ok(result) => return Ok(result),
-                Err(e) => {
-                    last_error = Some(e);
-
-                    if attempt < MAX_RETRIES {
-                        std::thread::sleep(delay);
-                        delay *= 2; // Exponential backoff
-                    }
-                }
-            }
-        }
-
-        Err(last_error.unwrap())
-    }
 }
 
 /// Configuration for file operations
@@ -318,7 +292,7 @@ impl ConfigurableFileOps {
         drop(file); // Close the file before rename
 
         // Atomic rename
-        FileOps::retry_operation(|| {
+        RetryableOperations::file_operation(|| {
             std::fs::rename(&temp_path, path).map_err(|e| Error::Io(format!("atomic_rename on {}: {}", path.display(), e)))
         })
     }
