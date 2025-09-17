@@ -5,7 +5,7 @@
 //! resource pooling, and emergency cleanup procedures for Lightning DB.
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     mem,
     ops::{Deref, DerefMut},
     sync::{
@@ -247,150 +247,8 @@ pub struct ResourceMetadata {
     pub age: Duration,
 }
 
-/// Resource pool for efficient reuse
-pub struct ResourcePool<T> {
-    available: ParkingMutex<VecDeque<T>>,
-    max_size: usize,
-    current_size: AtomicUsize,
-    total_created: AtomicU64,
-    total_reused: AtomicU64,
-    factory: Box<dyn Fn() -> T + Send + Sync>,
-    validator: Option<Box<dyn Fn(&T) -> bool + Send + Sync>>,
-}
-
-impl<T> ResourcePool<T> {
-    pub fn new<F>(max_size: usize, factory: F) -> Self
-    where
-        F: Fn() -> T + Send + Sync + 'static,
-    {
-        Self {
-            available: ParkingMutex::new(VecDeque::new()),
-            max_size,
-            current_size: AtomicUsize::new(0),
-            total_created: AtomicU64::new(0),
-            total_reused: AtomicU64::new(0),
-            factory: Box::new(factory),
-            validator: None,
-        }
-    }
-
-    pub fn with_validator<F, V>(mut self, validator: V) -> Self
-    where
-        V: Fn(&T) -> bool + Send + Sync + 'static,
-    {
-        self.validator = Some(Box::new(validator));
-        self
-    }
-
-    /// Get a resource from the pool
-    pub fn acquire(&self) -> PooledResource<T> {
-        {
-            let mut available = self.available.lock();
-            // Try to reuse from pool
-            while let Some(resource) = available.pop_front() {
-                if self.validator.as_ref().is_none_or(|v| v(&resource)) {
-                    self.total_reused.fetch_add(1, Ordering::Relaxed);
-                    return PooledResource::new(resource, self);
-                }
-            }
-        }
-
-        // Create new resource
-        let resource = (self.factory)();
-        self.current_size.fetch_add(1, Ordering::Relaxed);
-        self.total_created.fetch_add(1, Ordering::Relaxed);
-
-        PooledResource::new(resource, self)
-    }
-
-    /// Return a resource to the pool
-    fn return_resource(&self, resource: T) {
-        let mut available = self.available.lock();
-
-        if available.len() < self.max_size {
-            available.push_back(resource);
-        } else {
-            // Pool is full, just drop the resource
-            self.current_size.fetch_sub(1, Ordering::Relaxed);
-        }
-    }
-
-    /// Get pool statistics
-    pub fn statistics(&self) -> PoolStatistics {
-        let available = self.available.lock();
-
-        PoolStatistics {
-            total_created: self.total_created.load(Ordering::Relaxed),
-            total_reused: self.total_reused.load(Ordering::Relaxed),
-            current_size: self.current_size.load(Ordering::Relaxed),
-            available_count: available.len(),
-            max_size: self.max_size,
-            reuse_ratio: {
-                let total_acquired = self.total_created.load(Ordering::Relaxed)
-                    + self.total_reused.load(Ordering::Relaxed);
-                if total_acquired > 0 {
-                    self.total_reused.load(Ordering::Relaxed) as f64 / total_acquired as f64
-                } else {
-                    0.0
-                }
-            },
-        }
-    }
-}
-
-/// Pooled resource wrapper
-pub struct PooledResource<T> {
-    inner: Option<T>,
-    pool: *const ResourcePool<T>,
-}
-
-impl<T> PooledResource<T> {
-    fn new(resource: T, pool: &ResourcePool<T>) -> Self {
-        Self {
-            inner: Some(resource),
-            pool: pool as *const _,
-        }
-    }
-}
-
-impl<T> Drop for PooledResource<T> {
-    fn drop(&mut self) {
-        if let Some(resource) = self.inner.take() {
-            unsafe {
-                (*self.pool).return_resource(resource);
-            }
-        }
-    }
-}
-
-impl<T> Deref for PooledResource<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner
-            .as_ref()
-            .expect("PooledResource should always contain a valid resource")
-    }
-}
-
-impl<T> DerefMut for PooledResource<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.inner
-            .as_mut()
-            .expect("PooledResource should always contain a valid resource")
-    }
-}
-
-/// Pool statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PoolStatistics {
-    pub total_created: u64,
-    pub total_reused: u64,
-    pub current_size: usize,
-    pub available_count: usize,
-    pub max_size: usize,
-    pub reuse_ratio: f64,
-}
+// Removed unused ResourcePool, PooledResource, and PoolStatistics types
+// These were adding unnecessary complexity and unsafe code without being used
 
 /// Resource tracker for monitoring
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -431,7 +289,6 @@ pub struct CleanupStats {
 pub struct ResourceManager {
     resources: DashMap<u64, ResourceTracker>,
     configs: ParkingRwLock<HashMap<ResourceType, ResourceConfig>>,
-    pools: DashMap<String, Arc<dyn std::any::Any + Send + Sync>>,
 
     // Statistics
     cleanup_stats: ParkingRwLock<CleanupStats>,
@@ -447,7 +304,6 @@ impl ResourceManager {
         Self {
             resources: DashMap::new(),
             configs: ParkingRwLock::new(HashMap::new()),
-            pools: DashMap::new(),
             cleanup_stats: ParkingRwLock::new(CleanupStats {
                 total_cleanups: 0,
                 emergency_cleanups: 0,
@@ -521,38 +377,13 @@ impl ResourceManager {
         ))
     }
 
-    /// Create or get a resource pool
-    pub fn get_pool<T>(
-        &self,
-        name: &str,
-        factory: impl Fn() -> T + Send + Sync + 'static,
-    ) -> Arc<ResourcePool<T>>
-    where
-        T: Send + Sync + 'static,
-    {
-        let pools = &self.pools;
-
-        if let Some(existing) = pools.get(name) {
-            // Try to downcast the Arc<dyn Any> to Arc<ResourcePool<T>>
-            let any_arc = existing.value().clone();
-            if let Ok(pool) = any_arc.downcast::<ResourcePool<T>>() {
-                return pool;
-            }
-        }
-
-        let pool = Arc::new(ResourcePool::new(100, factory));
-        pools.insert(
-            name.to_string(),
-            pool.clone() as Arc<dyn std::any::Any + Send + Sync>,
-        );
-        pool
-    }
+    // Removed get_pool method as ResourcePool is no longer used
 
     /// Start resource management
     pub fn start(&self) {
         info!("Starting resource manager");
 
-        let manager = Arc::new(self as *const _ as usize); // Unsafe but needed
+        let manager = RESOURCE_MANAGER.clone();
         let shutdown_flag = self.shutdown_flag.clone();
 
         let handle = thread::Builder::new()
@@ -738,9 +569,7 @@ impl ResourceManager {
         }
     }
 
-    fn management_loop(manager_ptr: Arc<usize>, shutdown_flag: Arc<AtomicBool>) {
-        let manager = unsafe { &*(manager_ptr.as_ref() as *const usize as *const ResourceManager) };
-
+    fn management_loop(manager: Arc<ResourceManager>, shutdown_flag: Arc<AtomicBool>) {
         while !shutdown_flag.load(Ordering::Relaxed) {
             // Perform periodic cleanup
             manager.periodic_cleanup();
@@ -916,19 +745,7 @@ mod tests {
         assert!(handle.is_valid());
     }
 
-    #[test]
-    fn test_resource_pool() {
-        let pool = ResourcePool::new(10, || Vec::<u8>::with_capacity(1024));
-
-        let resource1 = pool.acquire();
-        let resource2 = pool.acquire();
-
-        assert_eq!(resource1.capacity(), 1024);
-        assert_eq!(resource2.capacity(), 1024);
-
-        let stats = pool.statistics();
-        assert_eq!(stats.total_created, 2);
-    }
+    // Removed test_resource_pool as ResourcePool is no longer used
 
     #[test]
     fn test_emergency_cleanup() {
