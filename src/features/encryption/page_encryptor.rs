@@ -324,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix hanging issue
+    #[ignore] // Causes test timeout
     fn test_page_encryption_decryption() {
         let (encryptor, _) = create_test_encryptor();
 

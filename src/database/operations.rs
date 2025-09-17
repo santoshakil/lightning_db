@@ -34,7 +34,7 @@ impl Database {
         // Check resource quotas
         if let Some(ref quota_manager) = self.quota_manager {
             let size_bytes = key.len() as u64 + value.len() as u64;
-            quota_manager.check_write_allowed(None, size_bytes)?;
+            quota_manager.check_write_allowed(size_bytes)?;
         }
 
         // Check if we have a write batcher
@@ -169,7 +169,7 @@ impl Database {
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         // Check resource quotas
         if let Some(ref quota_manager) = self.quota_manager {
-            quota_manager.check_read_allowed(None, key.len() as u64)?;
+            quota_manager.check_read_allowed()?;
         }
 
         self.get_with_consistency(key, self._config.consistency_config.default_level)

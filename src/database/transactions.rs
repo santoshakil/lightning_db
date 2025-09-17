@@ -7,7 +7,7 @@ impl Database {
     pub fn begin_transaction(&self) -> Result<u64> {
         // Check resource quotas for transaction
         if let Some(ref quota_manager) = self.quota_manager {
-            quota_manager.check_connection_allowed(None)?; // Treat transaction as a connection for quota purposes
+            quota_manager.check_connection_allowed()?; // Treat transaction as a connection for quota purposes
         }
 
         self.transaction_manager.begin()
@@ -133,7 +133,7 @@ impl Database {
     ) -> Result<u64> {
         // Check resource quotas for transaction
         if let Some(ref quota_manager) = self.quota_manager {
-            quota_manager.check_connection_allowed(None)?; // Treat transaction as a connection for quota purposes
+            quota_manager.check_connection_allowed()?; // Treat transaction as a connection for quota purposes
         }
 
         // Begin transaction with the existing transaction manager
