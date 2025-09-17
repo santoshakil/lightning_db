@@ -89,7 +89,6 @@ pub mod core {
 // Performance optimizations
 pub mod performance {
     pub mod cache;
-    pub mod optimizations;
     pub mod prefetch;
 }
 

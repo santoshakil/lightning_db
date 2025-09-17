@@ -1,9 +1,5 @@
 pub mod cache;
-pub mod optimizations;
 pub mod prefetch;
-
-// Re-export key performance optimization types
-pub use optimizations::simd_ops;
 
 
 // Performance metrics aggregation
@@ -13,7 +9,6 @@ use std::sync::Arc;
 /// Global performance metrics collector
 pub struct GlobalPerformanceMetrics {
     total_operations: AtomicU64,
-    total_simd_operations: AtomicU64,
     total_cache_hits: AtomicU64,
     total_cache_misses: AtomicU64,
     total_batch_operations: AtomicU64,
@@ -24,7 +19,6 @@ impl GlobalPerformanceMetrics {
     pub fn new() -> Self {
         Self {
             total_operations: AtomicU64::new(0),
-            total_simd_operations: AtomicU64::new(0),
             total_cache_hits: AtomicU64::new(0),
             total_cache_misses: AtomicU64::new(0),
             total_batch_operations: AtomicU64::new(0),
@@ -36,9 +30,6 @@ impl GlobalPerformanceMetrics {
         self.total_operations.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn record_simd_operation(&self) {
-        self.total_simd_operations.fetch_add(1, Ordering::Relaxed);
-    }
 
     pub fn record_cache_hit(&self) {
         self.total_cache_hits.fetch_add(1, Ordering::Relaxed);
@@ -59,7 +50,6 @@ impl GlobalPerformanceMetrics {
     pub fn get_stats(&self) -> PerformanceStats {
         PerformanceStats {
             total_operations: self.total_operations.load(Ordering::Relaxed),
-            total_simd_operations: self.total_simd_operations.load(Ordering::Relaxed),
             cache_hit_rate: {
                 let hits = self.total_cache_hits.load(Ordering::Relaxed);
                 let misses = self.total_cache_misses.load(Ordering::Relaxed);
@@ -71,15 +61,6 @@ impl GlobalPerformanceMetrics {
             },
             total_batch_operations: self.total_batch_operations.load(Ordering::Relaxed),
             total_lock_free_operations: self.total_lock_free_operations.load(Ordering::Relaxed),
-            simd_utilization: {
-                let total = self.total_operations.load(Ordering::Relaxed);
-                let simd = self.total_simd_operations.load(Ordering::Relaxed);
-                if total > 0 {
-                    simd as f64 / total as f64
-                } else {
-                    0.0
-                }
-            },
         }
     }
 }
@@ -94,11 +75,9 @@ impl Default for GlobalPerformanceMetrics {
 #[derive(Debug, Clone)]
 pub struct PerformanceStats {
     pub total_operations: u64,
-    pub total_simd_operations: u64,
     pub cache_hit_rate: f64,
     pub total_batch_operations: u64,
     pub total_lock_free_operations: u64,
-    pub simd_utilization: f64,
 }
 
 // Global metrics instance
