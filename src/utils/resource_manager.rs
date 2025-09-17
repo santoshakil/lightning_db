@@ -299,8 +299,8 @@ pub struct ResourceManager {
     shutdown_flag: Arc<AtomicBool>,
 }
 
-impl ResourceManager {
-    pub fn new() -> Self {
+impl Default for ResourceManager {
+    fn default() -> Self {
         Self {
             resources: DashMap::new(),
             configs: ParkingRwLock::new(HashMap::new()),
@@ -316,6 +316,12 @@ impl ResourceManager {
             cleanup_thread: ParkingMutex::new(None),
             shutdown_flag: Arc::new(AtomicBool::new(false)),
         }
+    }
+}
+
+impl ResourceManager {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Configure resource type

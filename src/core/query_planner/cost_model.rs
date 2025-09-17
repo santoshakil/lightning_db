@@ -12,7 +12,7 @@ const INDEX_SCAN_COST: f64 = 2.0;
 const HASH_BUILD_COST: f64 = 0.05;
 const SORT_COST_FACTOR: f64 = 0.02;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CostModel {
     config: CostModelConfig,
     calibration_data: HashMap<String, f64>,
@@ -43,14 +43,6 @@ impl Default for CostModelConfig {
     }
 }
 
-impl Default for CostModel {
-    fn default() -> Self {
-        Self {
-            config: CostModelConfig::default(),
-            calibration_data: HashMap::new(),
-        }
-    }
-}
 
 impl CostModel {
     pub fn new(config: CostModelConfig) -> Self {

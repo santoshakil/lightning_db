@@ -761,9 +761,15 @@ pub struct RollbackManager {
     // Internal state for managing rollbacks
 }
 
+impl Default for RollbackManager {
+    fn default() -> Self {
+        Self {}
+    }
+}
+
 impl RollbackManager {
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 
     pub fn rollback_stage(&self, state: &RecoveryState, stage: &RecoveryStage) -> Result<()> {

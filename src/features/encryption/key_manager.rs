@@ -154,7 +154,7 @@ impl KeyManager {
 
         let key_id = self.get_next_key_id();
         let key_material =
-            self.derive_key(master_key, &format!("kek_{}", key_id).as_bytes(), 32)?;
+            self.derive_key(master_key, format!("kek_{}", key_id).as_bytes(), 32)?;
 
         let key = EncryptionKey {
             key_id,
@@ -201,7 +201,7 @@ impl KeyManager {
 
         let key_id = self.get_next_key_id();
         let key_material =
-            self.derive_key(&kek.key_material, &format!("dek_{}", key_id).as_bytes(), 32)?;
+            self.derive_key(&kek.key_material, format!("dek_{}", key_id).as_bytes(), 32)?;
 
         let key = EncryptionKey {
             key_id,

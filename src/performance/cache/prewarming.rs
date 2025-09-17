@@ -259,7 +259,7 @@ impl PatternDetector {
             if stride1 == stride2 && stride1 > 1 {
                 stride_patterns
                     .entry(stride1)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .extend_from_slice(&[
                         self.access_history[i].page_id,
                         self.access_history[i + 1].page_id,
@@ -308,7 +308,7 @@ impl PatternDetector {
             let cluster_center = (entry.page_id / CLUSTER_RADIUS) * CLUSTER_RADIUS;
             clusters
                 .entry(cluster_center)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(entry.page_id);
         }
 
@@ -359,7 +359,7 @@ impl PatternDetector {
             let bucket = entry.timestamp.elapsed().as_millis() as u64 / TIME_BUCKET_SIZE_MS;
             time_buckets
                 .entry(bucket)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(entry.page_id);
         }
 

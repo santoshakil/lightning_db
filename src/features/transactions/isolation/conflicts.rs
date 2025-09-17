@@ -63,6 +63,8 @@ pub struct SerializationNode {
     pub start_time: Instant,
 }
 
+type RangeReads = Arc<RwLock<HashMap<TxId, Vec<(Option<Bytes>, Option<Bytes>)>>>>;
+
 /// Conflict detection and resolution system
 #[derive(Debug)]
 pub struct ConflictResolver {
@@ -77,7 +79,7 @@ pub struct ConflictResolver {
     /// Write sets for transactions
     write_sets: Arc<RwLock<HashMap<TxId, HashSet<Bytes>>>>,
     /// Range read sets for phantom detection
-    range_reads: Arc<RwLock<HashMap<TxId, Vec<(Option<Bytes>, Option<Bytes>)>>>>,
+    range_reads: RangeReads,
     /// Conflict statistics
     stats: Arc<RwLock<ConflictStats>>,
 }
@@ -93,8 +95,8 @@ pub struct ConflictStats {
     pub transactions_aborted: u64,
 }
 
-impl ConflictResolver {
-    pub fn new() -> Self {
+impl Default for ConflictResolver {
+    fn default() -> Self {
         Self {
             conflicts: Arc::new(RwLock::new(HashMap::new())),
             next_conflict_id: Arc::new(AtomicU64::new(1)),
@@ -104,6 +106,12 @@ impl ConflictResolver {
             range_reads: Arc::new(RwLock::new(HashMap::new())),
             stats: Arc::new(RwLock::new(ConflictStats::default())),
         }
+    }
+}
+
+impl ConflictResolver {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Register a transaction for conflict tracking

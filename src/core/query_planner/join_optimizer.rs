@@ -158,7 +158,7 @@ impl JoinOptimizer {
         let n = graph.nodes.len();
 
         if n > 20 {
-            return self.optimize_with_greedy(&graph, stats);
+            return self.optimize_with_greedy(graph, stats);
         }
 
         let mut dp: HashMap<BTreeSet<usize>, DPEntry> = HashMap::new();

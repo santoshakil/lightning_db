@@ -76,8 +76,8 @@ pub struct ValidationStats {
     pub active_transactions: usize,
 }
 
-impl SerializationValidator {
-    pub fn new() -> Self {
+impl Default for SerializationValidator {
+    fn default() -> Self {
         Self {
             tx_info: Arc::new(RwLock::new(HashMap::new())),
             global_timestamp: Arc::new(AtomicU64::new(1)),
@@ -85,6 +85,12 @@ impl SerializationValidator {
             active_validations: Arc::new(RwLock::new(HashMap::new())),
             stats: Arc::new(RwLock::new(ValidationStats::default())),
         }
+    }
+}
+
+impl SerializationValidator {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Begin tracking a transaction for validation

@@ -414,8 +414,8 @@ pub struct IntegrityReport {
     pub recommendations: Vec<String>,
 }
 
-impl IntegrityReport {
-    pub fn new() -> Self {
+impl Default for IntegrityReport {
+    fn default() -> Self {
         Self {
             validation_time: chrono::Utc::now(),
             operations_validated: 0,
@@ -423,6 +423,12 @@ impl IntegrityReport {
             metrics_summary: String::new(),
             recommendations: Vec::new(),
         }
+    }
+}
+
+impl IntegrityReport {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn add_violation(&mut self, violation: IntegrityViolation) {

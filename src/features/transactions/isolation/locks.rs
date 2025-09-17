@@ -328,7 +328,7 @@ impl LockManager {
             // Track the lock for this transaction
             self.tx_locks
                 .entry(tx_id)
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(granularity.clone());
 
             self.metrics.lock().locks_acquired += 1;
@@ -504,7 +504,7 @@ impl LockManager {
                             // Track the lock for this transaction
                             self.tx_locks
                                 .entry(tx_id)
-                                .or_insert_with(HashSet::new)
+                                .or_default()
                                 .insert(granularity.clone());
 
                             self.metrics.lock().locks_acquired += 1;

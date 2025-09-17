@@ -128,11 +128,17 @@ pub struct BTreeMemoryTracker {
     allocated_pages: parking_lot::Mutex<HashSet<u32>>,
 }
 
-impl BTreeMemoryTracker {
-    pub fn new() -> Self {
+impl Default for BTreeMemoryTracker {
+    fn default() -> Self {
         Self {
             allocated_pages: parking_lot::Mutex::new(HashSet::new()),
         }
+    }
+}
+
+impl BTreeMemoryTracker {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn track_allocation(&self, page_id: u32) {

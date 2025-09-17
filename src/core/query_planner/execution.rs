@@ -151,13 +151,19 @@ pub struct QueryExecutor {
     _scheduler: Arc<TaskScheduler>,
 }
 
-impl QueryExecutor {
-    pub fn new() -> Self {
+impl Default for QueryExecutor {
+    fn default() -> Self {
         Self {
             _operators: HashMap::new(),
             _memory_manager: Arc::new(MemoryManager::new(1024 * 1024 * 1024)),
             _scheduler: Arc::new(TaskScheduler::new(num_cpus::get())),
         }
+    }
+}
+
+impl QueryExecutor {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub async fn execute_plan(
@@ -471,7 +477,7 @@ impl HashTable {
     }
 
     fn insert_batch(&mut self, batch: RecordBatch, _keys: &[String]) -> Result<(), Error> {
-        self.buckets.entry(0).or_insert_with(Vec::new).push(batch);
+        self.buckets.entry(0).or_default().push(batch);
         Ok(())
     }
 }

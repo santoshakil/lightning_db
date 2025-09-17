@@ -59,8 +59,8 @@ struct IndexSelection;
 #[derive(Debug)]
 struct PartitionPruning;
 
-impl QueryOptimizer {
-    pub fn new() -> Self {
+impl Default for QueryOptimizer {
+    fn default() -> Self {
         let rules: Vec<Arc<dyn OptimizationRule>> = vec![
             Arc::new(PredicatePushdown),
             Arc::new(ProjectionPushdown),
@@ -75,6 +75,12 @@ impl QueryOptimizer {
             rules,
             config: OptimizerConfig::default(),
         }
+    }
+}
+
+impl QueryOptimizer {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn optimize(&self, plan: QueryPlan, stats: &TableStatistics) -> Result<QueryPlan, Error> {

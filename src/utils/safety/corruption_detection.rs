@@ -274,14 +274,14 @@ fn check_page_integrity(
     }
 
     // Calculate and verify checksum
-    let calculated_checksum = calculate_checksum(&page_data);
+    let calculated_checksum = calculate_checksum(page_data);
 
     let mut checksum_cache = checksums.write().unwrap();
     match checksum_cache.get(&page_id) {
         Some(&stored_checksum) => {
             if calculated_checksum != stored_checksum {
                 // Check if it's bit rot or actual corruption
-                let corruption_type = detect_corruption_pattern(&page_data);
+                let corruption_type = detect_corruption_pattern(page_data);
 
                 return Ok(Some(CorruptionInfo {
                     corruption_type,
@@ -307,7 +307,7 @@ fn check_page_integrity(
     }
 
     // Check page header structure
-    if !validate_page_header(&page_data) {
+    if !validate_page_header(page_data) {
         return Ok(Some(CorruptionInfo {
             corruption_type: CorruptionType::InvalidPageHeader,
             page_id,

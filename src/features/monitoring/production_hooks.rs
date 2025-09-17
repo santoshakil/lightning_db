@@ -393,7 +393,6 @@ impl MonitoringHook for PrometheusMonitoringHook {
 
 /// OpenTelemetry monitoring hook implementation (feature-gated)
 // OpenTelemetry support removed - use PrometheusMonitoringHook instead
-
 impl Default for ProductionMonitor {
     fn default() -> Self {
         Self::new()

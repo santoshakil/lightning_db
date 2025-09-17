@@ -2,11 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// SQL standard transaction isolation levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default)]
 pub enum IsolationLevel {
     /// Lowest isolation level - allows dirty reads, non-repeatable reads, and phantom reads
     ReadUncommitted,
     /// Prevents dirty reads, allows non-repeatable reads and phantom reads
+    #[default]
     ReadCommitted,
     /// Prevents dirty reads and non-repeatable reads, allows phantom reads
     RepeatableRead,
@@ -16,11 +17,6 @@ pub enum IsolationLevel {
     Snapshot,
 }
 
-impl Default for IsolationLevel {
-    fn default() -> Self {
-        IsolationLevel::ReadCommitted
-    }
-}
 
 impl fmt::Display for IsolationLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

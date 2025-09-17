@@ -10,13 +10,19 @@ pub struct RecoveryProgress {
     total_steps: Arc<Mutex<usize>>,
 }
 
-impl RecoveryProgress {
-    pub fn new() -> Self {
+impl Default for RecoveryProgress {
+    fn default() -> Self {
         Self {
             phase: Arc::new(Mutex::new(String::new())),
             progress: Arc::new(Mutex::new(0)),
             total_steps: Arc::new(Mutex::new(0)),
         }
+    }
+}
+
+impl RecoveryProgress {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn set_phase(&self, phase: &str) {

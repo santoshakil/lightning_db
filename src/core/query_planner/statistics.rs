@@ -16,14 +16,20 @@ pub struct TableStatistics {
     last_update: Arc<RwLock<std::time::SystemTime>>,
 }
 
-impl TableStatistics {
-    pub fn new() -> Self {
+impl Default for TableStatistics {
+    fn default() -> Self {
         Self {
             tables: Arc::new(RwLock::new(HashMap::new())),
             columns: Arc::new(RwLock::new(HashMap::new())),
             indexes: Arc::new(RwLock::new(HashMap::new())),
             last_update: Arc::new(RwLock::new(std::time::SystemTime::now())),
         }
+    }
+}
+
+impl TableStatistics {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn get_table(&self, table_name: &str) -> Option<TableStats> {
@@ -55,7 +61,7 @@ impl TableStatistics {
         self.columns
             .write()
             .entry(table_name)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .insert(column_name, stats);
     }
 
@@ -440,11 +446,17 @@ pub struct StatisticsCollector {
     max_sample_size: usize,
 }
 
-impl StatisticsCollector {
-    pub fn new() -> Self {
+impl Default for StatisticsCollector {
+    fn default() -> Self {
         Self {
             max_sample_size: SAMPLE_SIZE,
         }
+    }
+}
+
+impl StatisticsCollector {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub async fn analyze_table(&self, table_name: &str) -> Result<TableStats, Error> {
