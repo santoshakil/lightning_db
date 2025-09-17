@@ -1020,7 +1020,7 @@ mod tests {
         assert!(estimated_size > 0);
 
         let locality_score = estimator.get_locality_score();
-        assert!(locality_score >= 0.0 && locality_score <= 1.0);
+        assert!((0.0..=1.0).contains(&locality_score));
     }
 
     #[test]
@@ -1033,10 +1033,10 @@ mod tests {
         predictor.record_performance(256 * 1024 * 1024, 0.85); // 256MB, 85% hit rate
 
         let predicted = predictor.predict_hit_rate(512 * 1024 * 1024);
-        assert!(predicted >= 0.0 && predicted <= 1.0);
+        assert!((0.0..=1.0).contains(&predicted));
 
         let confidence = predictor.get_confidence();
-        assert!(confidence >= 0.0 && confidence <= 1.0);
+        assert!((0.0..=1.0).contains(&confidence));
     }
 
     #[test]

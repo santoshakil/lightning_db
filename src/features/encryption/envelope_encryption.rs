@@ -668,9 +668,11 @@ mod tests {
     #[tokio::test]
     async fn test_large_data_parallel_encryption() {
         let crypto_provider = Arc::new(SecureCryptoProvider::new(SecureAlgorithm::AES256GCM));
-        let mut config = EnvelopeConfig::default();
-        config.chunk_size = 1024; // Small chunks for testing
-        config.parallel_chunks = true;
+        let config = EnvelopeConfig {
+            chunk_size: 1024, // Small chunks for testing
+            parallel_chunks: true,
+            ..Default::default()
+        };
 
         let manager = EnvelopeEncryptionManager::new(crypto_provider.clone(), None, config);
 
