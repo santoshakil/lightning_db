@@ -307,7 +307,6 @@ mod tests {
 
     #[test]
     #[serial]
-    #[ignore] // Ignored due to lazy_static race conditions in parallel test execution
     fn test_metrics_timer() {
         // Initialize metrics lazily to ensure they're registered
         let _ = &*OPERATION_COUNTER;
@@ -320,7 +319,6 @@ mod tests {
 
     #[test]
     #[serial]
-    #[ignore] // Ignored due to lazy_static race conditions in parallel test execution
     fn test_metrics_recording() {
         // Initialize metrics lazily to ensure they're registered
         let _ = &*OPERATION_COUNTER;
@@ -339,7 +337,6 @@ mod tests {
 
     #[test]
     #[serial]
-    #[ignore] // Ignored due to lazy_static race conditions in parallel test execution
     fn test_export_metrics() {
         // Initialize metrics lazily to ensure they're registered
         let _ = &*OPERATION_COUNTER;
