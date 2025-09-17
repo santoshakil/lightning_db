@@ -293,8 +293,11 @@ impl LSMTree {
                 let memtable = self.memtable.read();
 
                 // Fast path: if memtable has space, insert directly
-                if memtable.size_bytes() + key.len() + value.len() + 32 <= self.config.memtable_size
-                {
+                let required_size = memtable.size_bytes()
+                    .saturating_add(key.len())
+                    .saturating_add(value.len())
+                    .saturating_add(32);
+                if required_size <= self.config.memtable_size {
                     memtable.insert(key, value);
                     return Ok(());
                 }
@@ -306,9 +309,11 @@ impl LSMTree {
                 let mut memtable_guard = self.memtable.write();
 
                 // Double-check after acquiring write lock
-                if memtable_guard.size_bytes() + key.len() + value.len() + 32
-                    <= self.config.memtable_size
-                {
+                let required_size = memtable_guard.size_bytes()
+                    .saturating_add(key.len())
+                    .saturating_add(value.len())
+                    .saturating_add(32);
+                if required_size <= self.config.memtable_size {
                     memtable_guard.insert(key, value);
                     return Ok(());
                 }
