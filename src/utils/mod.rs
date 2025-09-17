@@ -1,4 +1,5 @@
 pub mod batching;
+pub mod error_recovery;
 pub mod file_ops;
 pub mod integrity;
 pub mod leak_detector;
@@ -12,6 +13,7 @@ pub mod serialization;
 pub mod task_cancellation;
 pub mod timeout_locks;
 
+pub use error_recovery::{ErrorRecovery, RecoveryStrategy};
 pub use file_ops::{ConfigurableFileOps, FileOpConfig, FileOpStats, FileOps, StatisticsFileOps};
 pub use leak_detector::{get_leak_detector, LeakDetector, LeakReport, LeakType};
 pub use lock_utils::{ArcRwLockExt, LockUtils, RwLockExt, StdMutexExt};
