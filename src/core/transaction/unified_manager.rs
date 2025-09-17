@@ -640,7 +640,13 @@ impl UnifiedTransactionManager {
                 self.run_garbage_collection();
             }
 
-            thread::sleep(Duration::from_millis(100));
+            // Check shutdown more frequently during sleep
+            for _ in 0..10 {
+                if self.shutdown.load(Ordering::Acquire) != 0 {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
         }
 
         debug!("Unified transaction manager background loop stopped");

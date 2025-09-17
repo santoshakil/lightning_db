@@ -40,7 +40,14 @@ impl VersionCleanupThread {
 
     fn run(&self) {
         while !self.should_stop.load(Ordering::Acquire) {
-            thread::sleep(self.cleanup_interval);
+            // Sleep in smaller intervals to check for shutdown more frequently
+            let sleep_steps = self.cleanup_interval.as_millis() / 100;
+            for _ in 0..sleep_steps.max(1) {
+                if self.should_stop.load(Ordering::Acquire) {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
 
             if self.should_stop.load(Ordering::Acquire) {
                 break;
