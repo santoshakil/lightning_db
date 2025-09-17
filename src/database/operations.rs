@@ -410,7 +410,7 @@ impl Database {
             }
         } else {
             // B+Tree range scan requires implementing iterator on BPlusTree
-            return Err(crate::Error::NotSupported("Range scan is only supported with LSM tree storage engine".to_string()));
+            return Err(crate::Error::Internal("Range scan is only supported with LSM tree storage engine".to_string()));
         }
 
         Ok(result)
