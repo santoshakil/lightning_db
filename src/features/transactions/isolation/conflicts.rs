@@ -516,7 +516,7 @@ impl ConflictResolver {
         for &tx_id in graph.keys() {
             if !visited.contains(&tx_id) {
                 if let Some(cycle) =
-                    self.dfs_cycle_detection(tx_id, graph, &mut visited, &mut rec_stack)
+                    Self::dfs_cycle_detection(tx_id, graph, &mut visited, &mut rec_stack)
                 {
                     cycles.push(cycle);
                 }
@@ -528,7 +528,6 @@ impl ConflictResolver {
 
     /// DFS helper for cycle detection
     fn dfs_cycle_detection(
-        &self,
         tx_id: TxId,
         graph: &HashMap<TxId, SerializationNode>,
         visited: &mut HashSet<TxId>,
@@ -540,7 +539,7 @@ impl ConflictResolver {
         if let Some(node) = graph.get(&tx_id) {
             for &dep_tx in &node.depends_on {
                 if !visited.contains(&dep_tx) {
-                    if let Some(cycle) = self.dfs_cycle_detection(dep_tx, graph, visited, rec_stack)
+                    if let Some(cycle) = Self::dfs_cycle_detection(dep_tx, graph, visited, rec_stack)
                     {
                         return Some(cycle);
                     }

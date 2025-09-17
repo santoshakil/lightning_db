@@ -128,19 +128,24 @@ impl LockOrdering {
         let addr1 = lock1.as_ref() as *const RwLock<T1> as usize;
         let addr2 = lock2.as_ref() as *const RwLock<T2> as usize;
 
-        if addr1 < addr2 {
-            let guard1 = lock1.write_timeout(timeout)?;
-            let guard2 = lock2.write_timeout(timeout)?;
-            Ok((guard1, guard2))
-        } else if addr1 > addr2 {
-            let guard2 = lock2.write_timeout(timeout)?;
-            let guard1 = lock1.write_timeout(timeout)?;
-            Ok((guard1, guard2))
-        } else {
-            // Same lock
-            let guard1 = lock1.write_timeout(timeout)?;
-            let guard2 = lock2.write_timeout(timeout)?;
-            Ok((guard1, guard2))
+        use std::cmp::Ordering;
+        match addr1.cmp(&addr2) {
+            Ordering::Less => {
+                let guard1 = lock1.write_timeout(timeout)?;
+                let guard2 = lock2.write_timeout(timeout)?;
+                Ok((guard1, guard2))
+            }
+            Ordering::Greater => {
+                let guard2 = lock2.write_timeout(timeout)?;
+                let guard1 = lock1.write_timeout(timeout)?;
+                Ok((guard1, guard2))
+            }
+            Ordering::Equal => {
+                // Same lock
+                let guard1 = lock1.write_timeout(timeout)?;
+                let guard2 = lock2.write_timeout(timeout)?;
+                Ok((guard1, guard2))
+            }
         }
     }
 

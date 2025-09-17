@@ -134,7 +134,7 @@ fn test_scan_operations() {
     for _ in iter {
         range_count += 1;
     }
-    assert!(range_count >= 3 && range_count <= 4);
+    assert!((3..=4).contains(&range_count));
 }
 
 #[test]

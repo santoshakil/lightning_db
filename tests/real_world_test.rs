@@ -154,11 +154,8 @@ fn test_transaction_workload() {
     for i in 0..num_accounts {
         let key = format!("account:{}", i);
 
-        match db.get(key.as_bytes()) {
-            Ok(Some(val)) => {
-                total += String::from_utf8_lossy(&val).parse::<i32>().unwrap_or(0);
-            }
-            _ => {}
+        if let Ok(Some(val)) = db.get(key.as_bytes()) {
+            total += String::from_utf8_lossy(&val).parse::<i32>().unwrap_or(0);
         }
     }
 

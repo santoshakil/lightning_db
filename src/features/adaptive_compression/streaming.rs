@@ -955,8 +955,10 @@ mod tests {
     #[test]
     fn test_chunk_processing() {
         let engine = Arc::new(AdaptiveCompressionEngine::new().unwrap());
-        let mut config = StreamingConfig::default();
-        config.chunk_size = 32; // Small chunks for testing
+        let config = StreamingConfig {
+            chunk_size: 32, // Small chunks for testing
+            ..Default::default()
+        };
 
         let mut compressor = StreamingCompressor::new(config, engine).unwrap();
 

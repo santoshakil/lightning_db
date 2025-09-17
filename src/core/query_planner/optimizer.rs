@@ -276,19 +276,18 @@ impl JoinReordering {
 
     fn extract_joins(&self, node: &PlanNode) -> Result<Vec<()>, Error> {
         let mut joins = Vec::new();
-        self.extract_joins_recursive(node, &mut joins)?;
+        Self::extract_joins_recursive(node, &mut joins)?;
         Ok(joins)
     }
 
     fn extract_joins_recursive(
-        &self,
         node: &PlanNode,
         joins: &mut Vec<()>,
     ) -> Result<(), Error> {
         if let PlanNode::Join(_join) = node {
             joins.push(());
-            self.extract_joins_recursive(&_join.left, joins)?;
-            self.extract_joins_recursive(&_join.right, joins)?;
+            Self::extract_joins_recursive(&_join.left, joins)?;
+            Self::extract_joins_recursive(&_join.right, joins)?;
         }
         Ok(())
     }

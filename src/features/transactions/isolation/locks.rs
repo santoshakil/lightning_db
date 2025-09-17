@@ -556,7 +556,7 @@ impl LockManager {
 
         for &tx_id in wait_graph.keys() {
             if !visited.contains(&tx_id)
-                && self.dfs_cycle_detection(tx_id, wait_graph, &mut visited, &mut rec_stack)
+                && Self::dfs_cycle_detection(tx_id, wait_graph, &mut visited, &mut rec_stack)
             {
                 deadlocked.push(tx_id);
             }
@@ -567,7 +567,6 @@ impl LockManager {
 
     /// DFS helper for cycle detection
     fn dfs_cycle_detection(
-        &self,
         tx_id: TxId,
         wait_graph: &HashMap<TxId, HashSet<TxId>>,
         visited: &mut HashSet<TxId>,
@@ -579,7 +578,7 @@ impl LockManager {
         if let Some(waiting_for) = wait_graph.get(&tx_id) {
             for &dep_tx in waiting_for {
                 if !visited.contains(&dep_tx) {
-                    if self.dfs_cycle_detection(dep_tx, wait_graph, visited, rec_stack) {
+                    if Self::dfs_cycle_detection(dep_tx, wait_graph, visited, rec_stack) {
                         return true;
                     }
                 } else if rec_stack.contains(&dep_tx) {
