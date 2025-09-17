@@ -171,31 +171,9 @@ impl WriteAheadLog for BasicWriteAheadLog {
         file.write_all(&write_buf)
             .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
 
-        // Use fdatasync for better performance (metadata sync not needed)
-        #[cfg(unix)]
-        {
-            use std::os::unix::io::AsRawFd;
-            let fd = file.as_raw_fd();
-            // Use fsync for compatibility (fdatasync not available on all platforms)
-            match unsafe { libc::fsync(fd) } {
-                0 => {}
-                _ => {
-                    // Fallback to fsync if fdatasync fails
-                    match unsafe { libc::fsync(fd) } {
-                        0 => {}
-                        _ => {
-                            file.sync_all()
-                                .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
-                        }
-                    }
-                }
-            }
-        }
-        #[cfg(not(unix))]
-        {
-            file.sync_all()
-                .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
-        }
+        // Sync to disk for durability
+        file.sync_all()
+            .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
 
         Ok(lsn)
     }
@@ -205,25 +183,9 @@ impl WriteAheadLog for BasicWriteAheadLog {
             resource: "WAL file mutex".to_string(),
         })?;
 
-        // Use fdatasync for better performance while maintaining durability
-        #[cfg(unix)]
-        {
-            use std::os::unix::io::AsRawFd;
-            let fd = file.as_raw_fd();
-            match unsafe { libc::fsync(fd) } {
-                0 => {}
-                _ => {
-                    // Fallback to sync_all on fdatasync failure
-                    file.sync_all()
-                        .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
-                }
-            }
-        }
-        #[cfg(not(unix))]
-        {
-            file.sync_all()
-                .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
-        }
+        // Sync to disk for durability
+        file.sync_all()
+            .map_err(|e| crate::core::error::Error::Io(e.to_string()))?;
         Ok(())
     }
 
