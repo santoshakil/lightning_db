@@ -1,5 +1,4 @@
 pub mod batching;
-pub mod config;
 pub mod file_ops;
 pub mod integrity;
 pub mod leak_detector;
