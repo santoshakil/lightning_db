@@ -1,9 +1,5 @@
 pub mod unified_cache;
-
-// Keep adaptive sizing for the unified cache
 pub mod adaptive_sizing;
-// Integration with UnifiedCache completed - memory_pool legacy code preserved for compatibility
-// pub mod memory_pool;
 pub mod prewarming;
 
 use crate::core::storage::Page;
@@ -20,7 +16,6 @@ pub use adaptive_sizing::{
     AdaptiveCacheSizer, AdaptiveSizingConfig, AdaptiveSizingStats, CacheAllocation,
     CachePerformanceMetrics, CacheTier, CacheWarmer, SizingDecision, SizingReason, WorkloadPattern,
 };
-// pub use memory_pool::MemoryPool;
 pub use prewarming::{
     AccessPattern, CachePrewarmer, PatternType, PrefetchRequest, PrewarmingConfig, WarmingPriority,
     WarmingStats,
