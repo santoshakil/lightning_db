@@ -1,5 +1,7 @@
 pub mod cache;
 pub mod prefetch;
+pub mod read_cache;
+pub mod small_alloc;
 
 
 // Performance metrics aggregation
