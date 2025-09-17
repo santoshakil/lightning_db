@@ -1,7 +1,7 @@
 use lightning_db::{Database, WriteBatch};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 fn main() {
