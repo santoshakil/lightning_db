@@ -136,7 +136,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 pub use utils::batching::FastAutoBatcher as AutoBatcher;
 pub use utils::batching::FastAutoBatcher;
-use utils::resource_management::quotas::QuotaConfig;
+use utils::quotas::QuotaConfig;
 use utils::safety::consistency::ConsistencyManager;
 use crate::core::transaction::{
     version_cleanup::VersionCleanupThread, UnifiedTransactionManager,
@@ -187,7 +187,7 @@ pub struct LightningDbConfig {
     pub wal_sync_mode: WalSyncMode,
     pub write_batch_size: usize,
     pub encryption_config: features::encryption::EncryptionConfig,
-    pub quota_config: utils::resource_management::quotas::QuotaConfig,
+    pub quota_config: utils::quotas::QuotaConfig,
     pub enable_statistics: bool,
 }
 
@@ -238,7 +238,7 @@ pub struct Database {
     production_monitor: Arc<monitoring::production_hooks::ProductionMonitor>,
     _version_cleanup_thread: Option<Arc<VersionCleanupThread>>,
     encryption_manager: Option<Arc<encryption::EncryptionManager>>,
-    quota_manager: Option<Arc<utils::resource_management::quotas::QuotaManager>>,
+    quota_manager: Option<Arc<utils::quotas::QuotaManager>>,
     compaction_manager: Option<Arc<features::compaction::CompactionManager>>,
     isolation_manager: Arc<features::transactions::isolation::IsolationManager>,
     _config: LightningDbConfig,

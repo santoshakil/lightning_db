@@ -58,7 +58,7 @@ impl Database {
         // Initialize quota manager if enabled
         let quota_manager = if config.quota_config.enabled {
             Some(Arc::new(
-                crate::utils::resource_management::quotas::QuotaManager::new(config.quota_config.clone())?,
+                crate::utils::quotas::QuotaManager::new(config.quota_config.clone())?,
             ))
         } else {
             None
@@ -284,7 +284,7 @@ impl Database {
             // Initialize quota manager if enabled
             let quota_manager = if config.quota_config.enabled {
                 Some(Arc::new(
-                    crate::utils::resource_management::quotas::QuotaManager::new(
+                    crate::utils::quotas::QuotaManager::new(
                         config.quota_config.clone(),
                     )?,
                 ))
