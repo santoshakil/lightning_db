@@ -176,4 +176,9 @@ path = "examples/stress_test.rs"
 name = "performance_test"
 path = "examples/performance_test.rs"
 
+[[bench]]
+name = "critical_operations"
+harness = false
+path = "benches/critical_operations.rs"
+
 
