@@ -141,21 +141,15 @@ fn range_query_example(dir: &tempfile::TempDir) -> Result<(), Box<dyn Error>> {
 fn custom_config_example(dir: &tempfile::TempDir) -> Result<(), Box<dyn Error>> {
     println!("\n=== Custom Configuration Example ===");
 
-    let mut config = LightningDbConfig::default();
-
-    // Configure cache
-    config.cache_size = 32 * 1024 * 1024; // 32MB cache
-    config.prefetch_enabled = true;
-
-    // Configure compression
-    config.compression_enabled = true;
-    config.compression_type = 2; // LZ4
-
-    // Configure write-ahead log
-    config.wal_sync_mode = WalSyncMode::Periodic { interval_ms: 100 };
-
-    // Configure transactions
-    config.max_active_transactions = 100;
+    let config = LightningDbConfig {
+        cache_size: 32 * 1024 * 1024, // 32MB cache
+        prefetch_enabled: true,
+        compression_enabled: true,
+        compression_type: 2, // LZ4
+        wal_sync_mode: WalSyncMode::Periodic { interval_ms: 100 },
+        max_active_transactions: 100,
+        ..Default::default()
+    };
 
     let db = Database::create(dir.path().join("custom"), config)?;
 

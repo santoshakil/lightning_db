@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use lru::LruCache;
 use parking_lot::RwLock;
-use crate::Result;
 
 const DEFAULT_CACHE_SIZE: usize = 10000;
 
