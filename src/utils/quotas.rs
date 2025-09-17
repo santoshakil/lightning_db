@@ -2,25 +2,14 @@ use crate::{Error, Result};
 use serde::{Serialize, Deserialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct QuotaConfig {
+    #[serde(default)]
     pub enabled: bool,
     pub max_database_size: Option<u64>,
     pub max_transaction_size: Option<u64>,
     pub max_concurrent_transactions: Option<usize>,
     pub max_connections: Option<usize>,
-}
-
-impl Default for QuotaConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            max_database_size: None,
-            max_transaction_size: None,
-            max_concurrent_transactions: None,
-            max_connections: None,
-        }
-    }
 }
 
 #[derive(Debug)]
