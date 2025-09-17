@@ -519,7 +519,7 @@ impl CompactionManager {
         for worker in self.workers.drain(..) {
             worker
                 .join()
-                .map_err(|_| Error::Generic("Failed to join worker thread".to_string()))?;
+                .map_err(|_| Error::Generic("Failed to join compaction worker thread - thread panicked or was terminated".to_string()))?;
         }
 
         Ok(())
@@ -594,7 +594,7 @@ impl CompactionManager {
 
         self.job_sender
             .send(job)
-            .map_err(|_| Error::Generic("Failed to schedule compaction job".to_string()))?;
+            .map_err(|e| Error::Generic(format!("Failed to schedule compaction job - job queue full or poisoned: {:?}", e)))?;
 
         Ok(())
     }

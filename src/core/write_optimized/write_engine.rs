@@ -243,7 +243,7 @@ impl WriteOptimizedEngine {
         for worker in self.workers.drain(..) {
             worker
                 .join()
-                .map_err(|_| Error::Generic("Failed to join worker thread".to_string()))?;
+                .map_err(|_| Error::Generic("Failed to join write engine worker thread - thread panicked or was terminated".to_string()))?;
         }
 
         // Stop compaction manager

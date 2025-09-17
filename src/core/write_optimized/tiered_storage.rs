@@ -560,7 +560,7 @@ impl TieredStorageManager {
         for worker in self.workers.drain(..) {
             worker
                 .join()
-                .map_err(|_| Error::Generic("Failed to join worker thread".to_string()))?;
+                .map_err(|_| Error::Generic("Failed to join tiered storage worker thread - thread panicked or was terminated".to_string()))?;
         }
 
         Ok(())
