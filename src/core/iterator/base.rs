@@ -88,16 +88,11 @@ pub trait MergeableIterator: DatabaseIterator {
 }
 
 /// Scan direction for iterators
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScanDirection {
+    #[default]
     Forward,
     Backward,
-}
-
-impl Default for ScanDirection {
-    fn default() -> Self {
-        ScanDirection::Forward
-    }
 }
 
 /// Iterator source identification

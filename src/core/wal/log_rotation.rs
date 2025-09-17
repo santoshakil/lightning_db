@@ -225,7 +225,7 @@ impl LogRotationManager {
         segment_metadata.is_archived = is_archived;
 
         // Try to extract LSN range by scanning the file
-        if let Ok((start_lsn, end_lsn, entry_count)) = self.scan_segment_for_lsn_range(&file_path) {
+        if let Ok((start_lsn, end_lsn, entry_count)) = self.scan_segment_for_lsn_range(file_path) {
             segment_metadata.start_lsn = start_lsn;
             segment_metadata.end_lsn = end_lsn;
             segment_metadata.entry_count = entry_count;

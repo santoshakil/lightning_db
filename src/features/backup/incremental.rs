@@ -817,7 +817,7 @@ impl IncrementalBackupManager {
             self.dedup_index
                 .chunk_references
                 .entry(chunk_hash.clone())
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(file_path.to_path_buf());
         }
         Ok(())

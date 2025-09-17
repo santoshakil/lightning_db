@@ -50,7 +50,7 @@ pub struct CacheInfo {
 }
 
 /// Instruction set extensions
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct InstructionSets {
     /// SSE support
     pub sse: bool,
@@ -486,25 +486,6 @@ impl InstructionSets {
     }
 }
 
-impl Default for InstructionSets {
-    fn default() -> Self {
-        Self {
-            sse: false,
-            sse2: false,
-            sse3: false,
-            sse4_1: false,
-            sse4_2: false,
-            avx: false,
-            avx2: false,
-            avx512: false,
-            aes_ni: false,
-            crc32: false,
-            popcnt: false,
-            bmi1: false,
-            bmi2: false,
-        }
-    }
-}
 
 impl MemoryCapabilities {
     fn detect() -> Self {

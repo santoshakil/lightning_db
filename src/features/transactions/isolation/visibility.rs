@@ -59,8 +59,8 @@ pub struct VisibilityEngine {
     next_snapshot_id: Arc<AtomicU64>,
 }
 
-impl VisibilityEngine {
-    pub fn new() -> Self {
+impl Default for VisibilityEngine {
+    fn default() -> Self {
         Self {
             transactions: Arc::new(RwLock::new(HashMap::new())),
             versions: Arc::new(RwLock::new(HashMap::new())),
@@ -68,6 +68,12 @@ impl VisibilityEngine {
             snapshots: Arc::new(RwLock::new(HashMap::new())),
             next_snapshot_id: Arc::new(AtomicU64::new(1)),
         }
+    }
+}
+
+impl VisibilityEngine {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Begin a new transaction
@@ -177,7 +183,7 @@ impl VisibilityEngine {
         let mut versions = self.versions.write();
         versions
             .entry(key.clone())
-            .or_insert_with(BTreeMap::new)
+            .or_default()
             .insert(version, version_info);
 
         trace!(

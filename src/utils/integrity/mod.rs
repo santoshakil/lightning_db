@@ -486,9 +486,15 @@ pub struct DataIntegrityChecker {
     // Implementation details
 }
 
+impl Default for DataIntegrityChecker {
+    fn default() -> Self {
+        Self {}
+    }
+}
+
 impl DataIntegrityChecker {
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 
     pub async fn check_file(&self, path: &std::path::Path) -> Result<IntegrityResult> {
@@ -536,9 +542,15 @@ pub struct IntegrityResult {
 pub struct ChecksumValidatorStub;
 pub struct ConsistencyCheckerStub;
 
+impl Default for ChecksumValidatorStub {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl ChecksumValidatorStub {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
     pub async fn validate_file(&self, path: &std::path::Path) -> Result<bool> {
@@ -565,9 +577,15 @@ impl ChecksumValidatorStub {
     }
 }
 
+impl Default for ConsistencyCheckerStub {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl ConsistencyCheckerStub {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
     pub async fn check_file(&self, path: &std::path::Path) -> Result<ConsistencyResult> {

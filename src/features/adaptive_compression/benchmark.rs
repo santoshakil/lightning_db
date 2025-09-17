@@ -157,12 +157,18 @@ pub struct CompressionBenchmark {
     config: BenchmarkConfig,
 }
 
-impl CompressionBenchmark {
-    /// Create a new benchmark suite
-    pub fn new() -> Self {
+impl Default for CompressionBenchmark {
+    fn default() -> Self {
         Self {
             config: BenchmarkConfig::default(),
         }
+    }
+}
+
+impl CompressionBenchmark {
+    /// Create a new benchmark suite
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Create benchmark with custom configuration

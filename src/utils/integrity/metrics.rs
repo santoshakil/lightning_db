@@ -73,8 +73,8 @@ struct ValidationEntry {
     error_type: Option<String>,
 }
 
-impl IntegrityMetrics {
-    pub fn new() -> Self {
+impl Default for IntegrityMetrics {
+    fn default() -> Self {
         Self {
             total_validations: AtomicU64::new(0),
             successful_validations: AtomicU64::new(0),
@@ -93,6 +93,12 @@ impl IntegrityMetrics {
             paths: RwLock::new(HashMap::new()),
             history: RwLock::new(ValidationHistory::new()),
         }
+    }
+}
+
+impl IntegrityMetrics {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Record a validation operation

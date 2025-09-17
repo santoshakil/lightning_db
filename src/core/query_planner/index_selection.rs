@@ -286,11 +286,11 @@ impl IndexSelector {
             )
         });
 
-        if index.unique && has_equality && self.covers_all_key_columns(&index, predicates) {
+        if index.unique && has_equality && self.covers_all_key_columns(index, predicates) {
             IndexAccessType::UniqueAccess
         } else if has_range {
             IndexAccessType::RangeScan
-        } else if self.can_use_skip_scan(&index, predicates) {
+        } else if self.can_use_skip_scan(index, predicates) {
             IndexAccessType::SkipScan
         } else {
             IndexAccessType::RangeScan

@@ -50,6 +50,7 @@ impl FileOps {
                 .read(true)
                 .write(true)
                 .create(true)
+                .truncate(false)
                 .open(path)
                 .map_err(|e| Error::Io(format!("open_read_write on {}: {}", path.display(), e)))
         })

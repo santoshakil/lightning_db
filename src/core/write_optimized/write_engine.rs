@@ -439,7 +439,7 @@ impl WriteOptimizedEngine {
         // Add to level 0
         self.sstables_by_level
             .entry(0)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(Arc::clone(&sstable_reader));
 
         // Add to tiered storage

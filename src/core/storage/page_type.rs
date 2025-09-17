@@ -5,12 +5,13 @@
 use serde::{Deserialize, Serialize};
 
 /// Type of database page
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum PageType {
     /// Metadata page containing database configuration
     Meta = 0,
 
     /// Data page containing B+Tree nodes or key-value pairs
+    #[default]
     Data = 1,
 
     /// Overflow page for large values
@@ -38,8 +39,3 @@ impl PageType {
     }
 }
 
-impl Default for PageType {
-    fn default() -> Self {
-        PageType::Data
-    }
-}

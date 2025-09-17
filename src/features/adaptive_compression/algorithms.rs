@@ -38,9 +38,15 @@ pub trait CompressionAlgorithmTrait: Send + Sync {
 /// No compression (pass-through)
 pub struct NoCompression;
 
+impl Default for NoCompression {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl NoCompression {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 }
 
@@ -67,11 +73,17 @@ pub struct LZ4Compression {
     high_compression: bool,
 }
 
-impl LZ4Compression {
-    pub fn new() -> Self {
+impl Default for LZ4Compression {
+    fn default() -> Self {
         Self {
             high_compression: false,
         }
+    }
+}
+
+impl LZ4Compression {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn with_high_compression() -> Self {
@@ -135,9 +147,15 @@ impl CompressionAlgorithmTrait for LZ4Compression {
 /// Zstandard compression implementation
 pub struct ZstdCompression;
 
+impl Default for ZstdCompression {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl ZstdCompression {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 }
 
@@ -210,9 +228,15 @@ impl CompressionAlgorithmTrait for ZstdCompression {
 /// Snappy compression implementation
 pub struct SnappyCompression;
 
+impl Default for SnappyCompression {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl SnappyCompression {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 }
 

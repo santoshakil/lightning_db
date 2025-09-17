@@ -933,14 +933,20 @@ impl VisibilityTracker {
     }
 }
 
-impl UnifiedVersionStore {
-    pub fn new() -> Self {
+impl Default for UnifiedVersionStore {
+    fn default() -> Self {
         Self {
             versions: Arc::new(DashMap::new()),
             total_versions: AtomicU64::new(0),
             garbage_collected: AtomicU64::new(0),
             reserved_slots: Arc::new(DashMap::new()),
         }
+    }
+}
+
+impl UnifiedVersionStore {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     fn put_version(&self, key: Vec<u8>, value: Option<Vec<u8>>, timestamp: u64, tx_id: u64) {

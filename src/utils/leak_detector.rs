@@ -299,8 +299,8 @@ pub struct LeakDetector {
     total_objects_tracked: AtomicUsize,
 }
 
-impl LeakDetector {
-    pub fn new() -> Self {
+impl Default for LeakDetector {
+    fn default() -> Self {
         Self {
             config: RwLock::new(LeakDetectionConfig::default()),
             tracked_objects: DashMap::new(),
@@ -312,6 +312,12 @@ impl LeakDetector {
             total_leaks_detected: AtomicU64::new(0),
             total_objects_tracked: AtomicUsize::new(0),
         }
+    }
+}
+
+impl LeakDetector {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Configure leak detection
