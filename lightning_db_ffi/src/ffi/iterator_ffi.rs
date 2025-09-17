@@ -91,7 +91,7 @@ pub unsafe extern "C" fn lightning_db_scan(
         Some(unsafe { bytes_to_vec(end_key, end_key_len) })
     };
 
-    let iterator = ffi_try!(db.scan(start, end));
+    let iterator = ffi_try!(db.scan(start.as_deref(), end.as_deref()));
     let handle = ITERATOR_REGISTRY.insert(iterator);
 
     unsafe {

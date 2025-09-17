@@ -67,7 +67,7 @@ impl ErrorRecovery {
 
                     // Apply exponential backoff
                     if strategy.exponential_backoff {
-                        delay = delay * 2;
+                        delay *= 2;
                     }
                 }
             }
