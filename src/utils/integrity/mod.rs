@@ -482,15 +482,11 @@ pub fn calculate_checksum(data: &[u8]) -> u32 {
 }
 
 // For compatibility with recovery module
+#[derive(Default)]
 pub struct DataIntegrityChecker {
     // Implementation details
 }
 
-impl Default for DataIntegrityChecker {
-    fn default() -> Self {
-        Self {}
-    }
-}
 
 impl DataIntegrityChecker {
     pub fn new() -> Self {
@@ -550,7 +546,7 @@ impl Default for ChecksumValidatorStub {
 
 impl ChecksumValidatorStub {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 
     pub async fn validate_file(&self, path: &std::path::Path) -> Result<bool> {
@@ -585,7 +581,7 @@ impl Default for ConsistencyCheckerStub {
 
 impl ConsistencyCheckerStub {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 
     pub async fn check_file(&self, path: &std::path::Path) -> Result<ConsistencyResult> {

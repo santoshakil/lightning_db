@@ -153,17 +153,11 @@ pub struct BenchmarkMetadata {
 }
 
 /// Compression benchmark suite
+#[derive(Default)]
 pub struct CompressionBenchmark {
     config: BenchmarkConfig,
 }
 
-impl Default for CompressionBenchmark {
-    fn default() -> Self {
-        Self {
-            config: BenchmarkConfig::default(),
-        }
-    }
-}
 
 impl CompressionBenchmark {
     /// Create a new benchmark suite

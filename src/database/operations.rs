@@ -300,7 +300,7 @@ impl Database {
         } else {
             // For non-LSM mode, attach B+Tree
             let btree = self.btree.read();
-            iterator.attach_btree(&*btree)?;
+            iterator.attach_btree(&btree)?;
         }
 
         Ok(iterator)
@@ -340,7 +340,7 @@ impl Database {
         } else {
             // For non-LSM mode, attach B+Tree
             let btree = self.btree.read();
-            iterator.attach_btree(&*btree)?;
+            iterator.attach_btree(&btree)?;
         }
 
         Ok(iterator)
@@ -356,7 +356,7 @@ impl Database {
         if let Some(ref lsm) = self.lsm_tree {
             // Collect from memtable using iterator
             let mut iter = LSMFullIterator::new(
-                &lsm,
+                lsm,
                 start.map(|s| s.to_vec()),
                 end.map(|e| e.to_vec()),
                 true, // forward

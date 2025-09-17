@@ -757,15 +757,11 @@ impl ResourceChecker {
 }
 
 /// Rollback manager for failed recovery stages
+#[derive(Default)]
 pub struct RollbackManager {
     // Internal state for managing rollbacks
 }
 
-impl Default for RollbackManager {
-    fn default() -> Self {
-        Self {}
-    }
-}
 
 impl RollbackManager {
     pub fn new() -> Self {

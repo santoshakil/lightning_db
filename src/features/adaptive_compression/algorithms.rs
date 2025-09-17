@@ -46,7 +46,7 @@ impl Default for NoCompression {
 
 impl NoCompression {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 
@@ -69,17 +69,11 @@ impl CompressionAlgorithmTrait for NoCompression {
 }
 
 /// LZ4 compression implementation
+#[derive(Default)]
 pub struct LZ4Compression {
     high_compression: bool,
 }
 
-impl Default for LZ4Compression {
-    fn default() -> Self {
-        Self {
-            high_compression: false,
-        }
-    }
-}
 
 impl LZ4Compression {
     pub fn new() -> Self {
@@ -155,7 +149,7 @@ impl Default for ZstdCompression {
 
 impl ZstdCompression {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 
@@ -236,7 +230,7 @@ impl Default for SnappyCompression {
 
 impl SnappyCompression {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 
