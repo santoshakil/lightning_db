@@ -10,6 +10,15 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+/// Parameters for recursive tree validation
+struct TreeValidationParams<'a> {
+    page_id: u32,
+    expected_level: u32,
+    min_key: Option<&'a [u8]>,
+    max_key: Option<&'a [u8]>,
+    actual_level: u32,
+}
+
 /// B+Tree integrity validator
 pub struct BTreeIntegrityValidator {
     validator: Arc<DataIntegrityValidator>,
@@ -63,14 +72,16 @@ impl BTreeIntegrityValidator {
 
         // Validate tree structure recursively
         self.validate_tree_recursive(
-            root_page_id,
-            height,
-            None,
-            None,
+            TreeValidationParams {
+                page_id: root_page_id,
+                expected_level: height,
+                min_key: None,
+                max_key: None,
+                actual_level: 0,
+            },
             page_manager,
             &mut visited_pages,
             &mut report,
-            0,
         )?;
 
         // Check for orphaned pages (pages not reachable from root)
@@ -340,15 +351,18 @@ impl BTreeIntegrityValidator {
     /// Recursively validate tree structure
     fn validate_tree_recursive<P: PageManagerTrait>(
         &self,
-        page_id: u32,
-        expected_level: u32,
-        min_key: Option<&[u8]>,
-        max_key: Option<&[u8]>,
+        params: TreeValidationParams,
         page_manager: &P,
         visited_pages: &mut HashSet<u32>,
         report: &mut TreeConsistencyReport,
-        actual_level: u32,
     ) -> Result<()> {
+        let TreeValidationParams {
+            page_id,
+            expected_level,
+            min_key,
+            max_key,
+            actual_level
+        } = params;
         // Check for cycles
         if visited_pages.contains(&page_id) {
             report.add_error(TreeConsistencyError::CyclicReference {
@@ -420,14 +434,16 @@ impl BTreeIntegrityValidator {
                 };
 
                 self.validate_tree_recursive(
-                    child_page_id,
-                    expected_level - 1,
-                    child_min_key,
-                    child_max_key,
+                    TreeValidationParams {
+                        page_id: child_page_id,
+                        expected_level: expected_level - 1,
+                        min_key: child_min_key,
+                        max_key: child_max_key,
+                        actual_level: actual_level + 1,
+                    },
                     page_manager,
                     visited_pages,
                     report,
-                    actual_level + 1,
                 )?;
             }
         }
