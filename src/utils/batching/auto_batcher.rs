@@ -375,7 +375,10 @@ impl FastAutoBatcher {
             let (submitted, completed, _, errors) = self.get_stats();
 
             if errors > 0 {
-                return Err(Error::Generic(format!("{} writes failed", errors)));
+                return Err(Error::Generic(format!(
+                    "{} writes failed during auto-batch flush (submitted: {}, completed: {})",
+                    errors, submitted, completed
+                )));
             }
 
             if completed >= submitted {
