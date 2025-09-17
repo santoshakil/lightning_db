@@ -61,7 +61,7 @@ impl Database {
                 })?;
             }
 
-            // Write to LSM
+            // Write to LSM (moves the vecs, no clone needed)
             lsm.insert(key_vec, value_vec)?;
 
             return Ok(());
