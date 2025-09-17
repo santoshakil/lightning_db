@@ -6,7 +6,6 @@
 use crate::core::error::{Error, Result};
 use aes_gcm::{AeadInPlace, Aes256Gcm, Key, KeyInit, Nonce};
 use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use base64::{engine::general_purpose, Engine as _};
 use chacha20poly1305::{ChaCha20Poly1305, Key as ChaChaKey};
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -449,11 +448,7 @@ impl EncryptionManager {
     /// Derive master key hash from password
     fn derive_master_key_hash(&self, password: &str) -> Result<String> {
         // Generate salt using cryptographically secure OsRng
-        let mut salt_bytes = [0u8; 16];
-        OsRng.fill_bytes(&mut salt_bytes);
-        let salt = general_purpose::STANDARD.encode(salt_bytes);
-        let salt = SaltString::from_b64(&salt)
-            .map_err(|e| Error::Generic(format!("Failed to create salt: {}", e)))?;
+        let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
 
         let password_hash = argon2
@@ -483,13 +478,14 @@ impl EncryptionManager {
 
     /// Generate a new encryption key
     fn generate_new_key(&self, master_password: &str) -> Result<EncryptionKey> {
-        // Generate key ID
+        // Generate key ID with nanosecond precision for uniqueness
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default();
         let key_id = format!(
-            "key_{}",
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs()
+            "key_{}_{}",
+            timestamp.as_secs(),
+            timestamp.subsec_nanos()
         );
 
         // Generate random key material using cryptographically secure OsRng
@@ -711,7 +707,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix test failure
     fn test_key_generation() {
         let mut manager = EncryptionManager::new(true).unwrap();
 
@@ -723,7 +718,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix test failure
     fn test_encryption_decryption() {
         let mut manager = EncryptionManager::new(true).unwrap();
         manager.initialize("SecureTestPassword123!").unwrap();
@@ -743,7 +737,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix test failure
     fn test_key_rotation() {
         let mut manager = EncryptionManager::new(true).unwrap();
         manager.initialize("SecureTestPassword123!").unwrap();
@@ -761,7 +754,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix test failure
     fn test_encryption_statistics() {
         let mut manager = EncryptionManager::new(true).unwrap();
         manager.initialize("SecureTestPassword123!").unwrap();
