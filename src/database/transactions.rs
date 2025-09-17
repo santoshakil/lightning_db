@@ -184,20 +184,7 @@ impl Database {
             .as_millis() as u64;
 
         let cutoff_time = current_time.saturating_sub(max_age_ms);
-
-        // Cleanup is handled by transaction manager internally
         let _ = cutoff_time;
-
-        // Cleanup logic disabled until get_active_transactions is implemented
-        // for tx_id in active_txs {
-        //     if let Ok(tx_arc) = self.transaction_manager.get_transaction(tx_id) {
-        //         let tx = tx_arc.read();
-        //         if tx.start_timestamp < cutoff_time {
-        //             drop(tx); // Release lock before aborting
-        //             let _ = self.transaction_manager.abort(tx_id);
-        //         }
-        //     }
-        // }
     }
 
     /// Clean up old versions in the version store

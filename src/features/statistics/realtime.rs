@@ -1,5 +1,4 @@
 use crate::performance::cache::CacheStats;
-// use crate::metrics::METRICS;
 use parking_lot::RwLock;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -182,13 +181,6 @@ impl RealtimeStatsCollector {
                 stats.p95_latency_us = p95_latency;
                 stats.p99_latency_us = p99_latency;
                 stats.throughput_ops_sec = total_ops as f64 / update_interval.as_secs_f64();
-
-                // Implementation pending METRICS global definition
-                // METRICS.read().update_database_size(
-                //     stats.data_size_bytes,
-                //     stats.index_size_bytes,
-                //     stats.wal_size_bytes,
-                // );
             }
         });
     }
