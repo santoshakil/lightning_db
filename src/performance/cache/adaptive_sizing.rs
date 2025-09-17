@@ -30,44 +30,12 @@ pub struct HardwareInfo {
 use crate::core::error::{Error, Result};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-// SIMD-optimized statistical calculations
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-fn simd_mean_f64(values: &[f64]) -> f64 {
-    if values.is_empty() {
-        return 0.0;
-    }
-
-    let mut sum = 0.0;
-    let mut i = 0;
-
-    unsafe {
-        // Process 2 f64 values at a time with SSE2
-        while i + 2 <= values.len() {
-            let v = _mm_loadu_pd(values.as_ptr().add(i));
-            let sum_v = _mm_add_pd(_mm_setzero_pd(), v);
-            let result = _mm_cvtsd_f64(_mm_hadd_pd(sum_v, sum_v));
-            sum += result;
-            i += 2;
-        }
-
-        // Handle remaining values
-        for j in i..values.len() {
-            sum += values[j];
-        }
-    }
-
-    sum / values.len() as f64
-}
-
-#[cfg(not(target_arch = "x86_64"))]
+// Statistical calculations (previously SIMD-optimized)
 #[inline(always)]
 fn simd_mean_f64(values: &[f64]) -> f64 {
     if values.is_empty() {
@@ -76,40 +44,6 @@ fn simd_mean_f64(values: &[f64]) -> f64 {
     values.iter().sum::<f64>() / values.len() as f64
 }
 
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-fn simd_variance_f64(values: &[f64], mean: f64) -> f64 {
-    if values.len() <= 1 {
-        return 0.0;
-    }
-
-    let mut sum_sq_diff = 0.0;
-    let mut i = 0;
-
-    unsafe {
-        let mean_v = _mm_set1_pd(mean);
-
-        // Process 2 f64 values at a time with SSE2
-        while i + 2 <= values.len() {
-            let v = _mm_loadu_pd(values.as_ptr().add(i));
-            let diff = _mm_sub_pd(v, mean_v);
-            let sq_diff = _mm_mul_pd(diff, diff);
-            let result = _mm_cvtsd_f64(_mm_hadd_pd(sq_diff, sq_diff));
-            sum_sq_diff += result;
-            i += 2;
-        }
-
-        // Handle remaining values
-        for j in i..values.len() {
-            let diff = values[j] - mean;
-            sum_sq_diff += diff * diff;
-        }
-    }
-
-    sum_sq_diff / (values.len() - 1) as f64
-}
-
-#[cfg(not(target_arch = "x86_64"))]
 #[inline(always)]
 fn simd_variance_f64(values: &[f64], mean: f64) -> f64 {
     if values.len() <= 1 {
