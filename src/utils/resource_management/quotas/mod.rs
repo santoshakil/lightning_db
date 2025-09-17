@@ -257,9 +257,6 @@ impl Default for QuotaStatistics {
 impl QuotaManager {
     /// Create a new quota manager
     pub fn new(config: QuotaConfig) -> Result<Self> {
-        if !config.enabled {
-            return Ok(Self::disabled());
-        }
 
         let rate_limiter = Arc::new(rate_limiter::RateLimiter::new(
             config.read_ops_per_sec,
