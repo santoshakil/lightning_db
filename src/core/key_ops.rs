@@ -1,5 +1,4 @@
 use crate::core::error::Result;
-use crate::performance::optimizations::simd::safe::compare_keys;
 use crate::utils::batching::WriteBatch;
 use crate::{ConsistencyLevel, Database, Key};
 
@@ -66,7 +65,7 @@ impl Database {
         // For larger batches, consider sorting keys for better cache locality
         if keys.len() > 16 {
             let mut indexed_keys: Vec<(usize, &Key)> = keys.iter().enumerate().collect();
-            indexed_keys.sort_by(|(_, a), (_, b)| compare_keys(a.as_bytes(), b.as_bytes()));
+            indexed_keys.sort_by(|(_, a), (_, b)| a.as_bytes().cmp(b.as_bytes()));
 
             let mut sorted_results = Vec::with_capacity(keys.len());
             for (original_idx, key) in indexed_keys {
