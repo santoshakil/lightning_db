@@ -90,8 +90,8 @@ impl ConcurrentBPlusTree {
 
         // Perform scan
         let iter = tree.range(
-            start.map(|s| s).or(Some(&[][..])),
-            end.map(|e| e).or(Some(&[u8::MAX; 256][..]))
+            start.or(Some(&[][..])),
+            end.or(Some(&[u8::MAX; 256][..]))
         )?;
         for (key, value) in iter {
             results.push((key.to_vec(), value.to_vec()));
@@ -104,8 +104,8 @@ impl ConcurrentBPlusTree {
             let tree = self.inner.read();
             results.clear();
             let iter = tree.range(
-                start.map(|s| s).or(Some(&[][..])),
-                end.map(|e| e).or(Some(&[u8::MAX; 256][..]))
+                start.or(Some(&[][..])),
+                end.or(Some(&[u8::MAX; 256][..]))
             )?;
             for (key, value) in iter {
                 results.push((key.to_vec(), value.to_vec()));
@@ -171,8 +171,8 @@ impl ShardedBPlusTree {
                 let shard = shard.read();
                 let mut local_results = Vec::new();
                 let iter = shard.range(
-                    start.map(|s| s).or(Some(&[][..])),
-                    end.map(|e| e).or(Some(&[u8::MAX; 256][..]))
+                    start.or(Some(&[][..])),
+                    end.or(Some(&[u8::MAX; 256][..]))
                 )?;
                 for (key, value) in iter {
                     local_results.push((key.to_vec(), value.to_vec()));
