@@ -385,11 +385,24 @@ impl UnifiedCache {
         if self.enable_thread_local {
             let segment_idx = self.get_segment_idx(page_id);
             if let Some(segment) = self.segments.get(segment_idx) {
+                // Check global capacity before inserting
+                let current_global_size = self.size.load(Ordering::Relaxed);
+                if current_global_size >= self.capacity {
+                    // Need to evict before inserting
+                    self.batch_evict(self.eviction_batch_size)?;
+                }
+
+                let prev_size = segment.read().size.load(Ordering::Relaxed);
                 if segment
                     .write()
                     .insert(page_id, cached_page.clone(), timestamp)
                 {
-                    // Successfully inserted in thread-local segment
+                    // Check if this was a new insertion by comparing segment size
+                    let new_size = segment.read().size.load(Ordering::Relaxed);
+                    if new_size > prev_size {
+                        // This was a new insertion, increment global counter
+                        self.size.fetch_add(1, Ordering::Relaxed);
+                    }
                     return Ok(());
                 }
             }
@@ -479,6 +492,7 @@ impl UnifiedCache {
         self.b1.lock().clear();
         self.b2.lock().clear();
 
+        // Reset global size counter
         self.size.store(0, Ordering::Relaxed);
         self.p.store(self.capacity / 2, Ordering::Relaxed);
         self.stats.reset();
@@ -649,7 +663,8 @@ impl UnifiedCacheConfig {
             num_segments: num_cpus::get().next_power_of_two(),
             eviction_batch_size: 32,
             enable_adaptive_sizing: true,
-            enable_thread_local: true,
+            // Disable thread-local segments for small caches to ensure proper eviction
+            enable_thread_local: capacity > 100,
             enable_prefetching: true,
             adaptive_config: AdaptiveSizingConfig::default(),
         }

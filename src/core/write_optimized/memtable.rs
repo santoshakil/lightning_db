@@ -114,6 +114,16 @@ impl MemTable {
         let entry = MemTableEntry::put(key.clone(), value, seq);
         let entry_size = entry.size();
 
+        // Check if adding this entry would exceed the limit
+        let current_size = self.size.load(Ordering::Relaxed);
+        if current_size + entry_size > self.max_size {
+            // Revert sequence number increment
+            self.sequence_number.fetch_sub(1, Ordering::SeqCst);
+            return Err(Error::InvalidOperation {
+                reason: "MemTable size limit exceeded".to_string(),
+            });
+        }
+
         let mut data = self.data.write();
         data.insert(Bytes::from(key), entry);
 
