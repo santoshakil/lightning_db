@@ -287,11 +287,16 @@ impl Database {
     pub fn scan(&self, start: Option<&[u8]>, end: Option<&[u8]>) -> Result<crate::core::iterator::RangeIterator> {
         use crate::core::iterator::{RangeIterator, ScanDirection};
 
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
         let mut iterator = RangeIterator::new(
             start.map(|s| s.to_vec()),
             end.map(|e| e.to_vec()),
             ScanDirection::Forward,
-            0, // TODO: Use proper read timestamp
+            timestamp,
         );
 
         // Attach data sources
@@ -327,11 +332,16 @@ impl Database {
             }
         };
 
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
         let mut iterator = RangeIterator::new(
             Some(prefix.to_vec()),
             end_key,
             ScanDirection::Forward,
-            0, // TODO: Use proper read timestamp
+            timestamp,
         );
 
         // Attach data sources

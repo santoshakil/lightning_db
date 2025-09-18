@@ -341,7 +341,6 @@ pub fn get_task_registry() -> &'static Arc<TaskRegistry> {
 }
 
 /// Helper trait for thread handles to check if finished (not available in std)
-#[allow(dead_code)]
 trait JoinHandleExt {
     fn is_finished(&self) -> bool;
 }
