@@ -1054,10 +1054,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix test failure
     fn test_operation_id_generation() {
         let (manager, _temp_dir) = create_test_recovery_manager();
         let id1 = manager.generate_operation_id();
+        // Add small delay to ensure different timestamp
+        std::thread::sleep(std::time::Duration::from_millis(2));
         let id2 = manager.generate_operation_id();
 
         assert_ne!(id1, id2);

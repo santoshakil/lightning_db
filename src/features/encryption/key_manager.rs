@@ -153,8 +153,9 @@ impl KeyManager {
             .ok_or_else(|| Error::Encryption("Master key not initialized".to_string()))?;
 
         let key_id = self.get_next_key_id();
-        let key_material =
-            self.derive_key(master_key, format!("kek_{}", key_id).as_bytes(), 32)?;
+        // Argon2 requires at least 8 bytes of salt
+        let salt = format!("kek_{}_salt_padding", key_id);
+        let key_material = self.derive_key(master_key, salt.as_bytes(), 32)?;
 
         let key = EncryptionKey {
             key_id,
@@ -200,8 +201,9 @@ impl KeyManager {
             .clone();
 
         let key_id = self.get_next_key_id();
-        let key_material =
-            self.derive_key(&kek.key_material, format!("dek_{}", key_id).as_bytes(), 32)?;
+        // Argon2 requires at least 8 bytes of salt
+        let salt = format!("dek_{}_salt_padding", key_id);
+        let key_material = self.derive_key(&kek.key_material, salt.as_bytes(), 32)?;
 
         let key = EncryptionKey {
             key_id,
@@ -485,7 +487,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix hanging issue
     fn test_master_key_initialization() {
         let config = EncryptionConfig {
             enabled: true,

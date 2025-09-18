@@ -1016,7 +1016,6 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    #[ignore] // TODO: Fix test failure
     fn test_full_backup_restore() {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test_db");
@@ -1043,8 +1042,12 @@ mod tests {
             drop(db);
         }
 
-        // Create backup
-        let manager = BackupManager::new(BackupConfig::default());
+        // Create backup with compression disabled
+        let config = BackupConfig {
+            compress: false, // Disable compression to avoid Zstd requirement
+            ..Default::default()
+        };
+        let manager = BackupManager::new(config);
 
         let metadata = manager.create_backup(&db_path, &backup_path).unwrap();
 
@@ -1068,7 +1071,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix test failure
     fn test_incremental_backup() {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test_db");
@@ -1080,8 +1082,12 @@ mod tests {
         db.put(b"key1", b"value1").unwrap();
         db.sync().unwrap();
 
-        // Create full backup
-        let manager = BackupManager::new(BackupConfig::default());
+        // Create full backup with compression disabled
+        let config = BackupConfig {
+            compress: false, // Disable compression to avoid Zstd requirement
+            ..Default::default()
+        };
+        let manager = BackupManager::new(config);
         let full_metadata = manager.create_backup(&db_path, &full_backup_path).unwrap();
 
         // Add more data

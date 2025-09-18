@@ -703,7 +703,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore] // TODO: Fix hanging issue
     fn test_compression_levels() {
         assert_eq!(CompressionLevel::Fastest.as_int(), 1);
         assert_eq!(CompressionLevel::Maximum.as_int(), 12);
