@@ -246,18 +246,15 @@ impl SerializationValidator {
             .ok_or(Error::TransactionNotFound { id: tx_id })?;
 
         let mut conflicts = Vec::new();
-        let committed_transactions = self.committed_transactions.read();
 
-        // Check against all transactions that committed after our start time
-        for &(commit_ts, committed_tx_id) in committed_transactions.iter() {
-            if commit_ts > validation_info.start_timestamp {
-                if let Some(committed_info) = tx_info.get(&committed_tx_id) {
-                    // Check for overlapping write sets
-                    for write_key in &validation_info.write_set.keys {
-                        if committed_info.write_set.keys.contains(write_key) {
-                            conflicts.push(committed_tx_id);
-                            break;
-                        }
+        // Check against all committed transactions
+        for (other_tx_id, other_info) in tx_info.iter() {
+            if *other_tx_id != tx_id && other_info.committed {
+                // Check for overlapping write sets
+                for write_key in &validation_info.write_set.keys {
+                    if other_info.write_set.keys.contains(write_key) {
+                        conflicts.push(*other_tx_id);
+                        break;
                     }
                 }
             }

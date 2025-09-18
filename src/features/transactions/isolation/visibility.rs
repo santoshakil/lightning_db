@@ -545,21 +545,21 @@ mod tests {
     fn test_repeatable_read_isolation() {
         let engine = VisibilityEngine::new();
 
-        // Start transaction with repeatable read
-        engine
-            .begin_transaction(1, IsolationLevel::RepeatableRead)
-            .unwrap();
+        let key = Bytes::from("test_key");
+
+        // Create initial value first
         engine
             .begin_transaction(2, IsolationLevel::ReadCommitted)
             .unwrap();
-
-        let key = Bytes::from("test_key");
-
-        // Initial value
         engine
             .add_version(key.clone(), Some(Bytes::from("initial")), 2, 1)
             .unwrap();
         engine.commit_transaction(2).unwrap();
+
+        // NOW start transaction 1 with repeatable read
+        engine
+            .begin_transaction(1, IsolationLevel::RepeatableRead)
+            .unwrap();
 
         // Transaction 1 reads the value
         let visible1 = engine.get_visible_version(1, &key).unwrap();
