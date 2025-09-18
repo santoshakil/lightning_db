@@ -755,17 +755,24 @@ mod tests {
 
     #[test]
     fn test_emergency_cleanup() {
-        let manager = ResourceManager::new();
+        // Use the global resource manager
+        let manager = &*RESOURCE_MANAGER;
 
-        // Create some resources
-        for i in 0..10 {
-            let _ = manager.create_resource(
-                vec![0u8; 1024],
-                ResourceType::Custom(format!("test_{}", i)),
-                Priority::Low,
-                None,
-            );
-        }
+        // Clear any existing resources first
+        manager.resources.clear();
+
+        // Create some resources and keep them alive
+        let _handles: Vec<_> = (0..10)
+            .map(|i| {
+                manager.create_resource(
+                    vec![0u8; 1024],
+                    ResourceType::Custom(format!("test_{}", i)),
+                    Priority::Low,
+                    None,
+                )
+                .unwrap()
+            })
+            .collect();
 
         let result = manager.emergency_cleanup();
         assert!(result.resources_cleaned > 0);
