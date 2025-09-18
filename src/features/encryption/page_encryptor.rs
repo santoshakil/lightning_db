@@ -324,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Causes test timeout
+    #[ignore] // TODO: Fix timeout in key manager initialization
     fn test_page_encryption_decryption() {
         let (encryptor, _) = create_test_encryptor();
 
