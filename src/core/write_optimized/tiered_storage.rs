@@ -359,7 +359,11 @@ impl MigrationJob {
         // Copy SSTable to new tier
         let source_path = &self.sstable.metadata().file_path;
         let target_dir = tiered_manager.get_tier_path(&self.to_tier)?;
-        let target_path = target_dir.join(source_path.file_name().unwrap());
+        let file_name = source_path.file_name()
+            .ok_or_else(|| Error::InvalidArgument(
+                format!("Invalid file path: {:?}", source_path)
+            ))?;
+        let target_path = target_dir.join(file_name);
 
         std::fs::copy(source_path, &target_path)?;
 
@@ -582,16 +586,16 @@ impl TieredStorageManager {
         // Update access patterns for all SSTables
         for tier_sstables in sstables_write.values_mut() {
             for tiered_sstable in tier_sstables.iter_mut() {
-                let file_name = tiered_sstable
+                if let Some(file_name_os) = tiered_sstable
                     .sstable
                     .metadata()
                     .file_path
                     .file_name()
-                    .unwrap()
-                    .to_string_lossy();
-
-                if let Some(pattern) = patterns_read.get(file_name.as_ref()) {
-                    tiered_sstable.access_pattern = pattern.clone();
+                {
+                    let file_name = file_name_os.to_string_lossy();
+                    if let Some(pattern) = patterns_read.get(file_name.as_ref()) {
+                        tiered_sstable.access_pattern = pattern.clone();
+                    }
                 }
 
                 // Update placement score
