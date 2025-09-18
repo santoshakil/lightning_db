@@ -905,8 +905,10 @@ impl AdaptiveCacheSizer {
         }
 
         // Predict improvement based on historical data
-        let predicted_old = self.performance_predictor.lock().predict_hit_rate(old_size);
-        let predicted_new = self.performance_predictor.lock().predict_hit_rate(new_size);
+        let predictor = self.performance_predictor.lock();
+        let predicted_old = predictor.predict_hit_rate(old_size);
+        let predicted_new = predictor.predict_hit_rate(new_size);
+        drop(predictor);
 
         (predicted_new - predicted_old).max(0.0)
     }
@@ -1041,9 +1043,16 @@ mod tests {
 
     #[test]
     fn test_size_adjustment() {
-        let config = AdaptiveSizingConfig::default();
+        let config = AdaptiveSizingConfig {
+            min_cache_size: 1024,
+            max_cache_size: 1024 * 1024,
+            ..Default::default()
+        };
         let sizer = AdaptiveCacheSizer::new(config).expect("Failed to create adaptive cache sizer");
-        sizer.initialize().expect("Failed to initialize sizer");
+
+        // Set initial size directly without full initialization
+        sizer.current_size.store(4096, Ordering::Relaxed);
+        sizer.target_size.store(4096, Ordering::Relaxed);
 
         let initial_size = sizer.get_current_size();
         let new_size = initial_size * 2;

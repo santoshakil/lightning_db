@@ -488,8 +488,12 @@ mod tests {
         // Remove reference to make it eligible for cleanup
         manager.remove_reference(snapshot_id, 100).unwrap();
 
-        // Wait a bit and run cleanup
-        std::thread::sleep(Duration::from_millis(10));
+        // Wait for cleanup interval to pass and for snapshot to age
+        std::thread::sleep(Duration::from_millis(5));
+
+        // Force update the last cleanup time to allow cleanup to run
+        *manager.last_cleanup.write() = Instant::now() - Duration::from_secs(1);
+
         let cleaned = manager.cleanup_snapshots().unwrap();
 
         assert!(cleaned > 0);
