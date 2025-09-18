@@ -349,7 +349,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix hanging issue
     fn test_different_pages_different_ciphertexts() {
         let (encryptor, _) = create_test_encryptor();
 

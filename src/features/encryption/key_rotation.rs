@@ -489,7 +489,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix hanging issue
     fn test_rotation_state_initialization() {
         let (manager, _) = create_test_rotation_manager();
         let state = manager.get_rotation_state();
@@ -500,7 +499,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix hanging issue
     fn test_needs_rotation() {
         let (manager, _) = create_test_rotation_manager();
 
@@ -518,7 +516,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix hanging issue
     fn test_rotation_history() {
         let (manager, _) = create_test_rotation_manager();
 
@@ -539,7 +536,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix hanging issue
     fn test_cancel_rotation() {
         let (manager, _) = create_test_rotation_manager();
 

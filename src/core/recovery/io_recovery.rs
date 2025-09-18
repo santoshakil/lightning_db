@@ -549,7 +549,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // TODO: Fix hanging issue
     async fn test_checksum_validation() {
         let temp_dir = TempDir::new().unwrap();
         let config = IoRecoveryConfig::default();
