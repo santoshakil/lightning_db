@@ -290,6 +290,13 @@ impl LZMACompression {
 }
 
 #[cfg(feature = "lzma")]
+impl Default for LZMACompression {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "lzma")]
 impl CompressionAlgorithmTrait for LZMACompression {
     fn compress(&self, data: &[u8], level: CompressionLevel) -> Result<Vec<u8>> {
         if data.is_empty() {
@@ -337,6 +344,13 @@ pub struct BrotliCompression;
 impl BrotliCompression {
     pub fn new() -> Self {
         Self
+    }
+}
+
+#[cfg(feature = "brotli")]
+impl Default for BrotliCompression {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -478,6 +492,7 @@ impl CompressionAlgorithmFactory {
 
     /// Get available algorithms
     pub fn available_algorithms() -> Vec<CompressionAlgorithm> {
+        #[allow(unused_mut)]
         let mut algorithms = vec![
             CompressionAlgorithm::None,
             CompressionAlgorithm::LZ4,
