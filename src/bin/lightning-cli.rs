@@ -311,10 +311,12 @@ fn run_command(matches: ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_create(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let path = matches.get_one::<String>("path").unwrap();
+    let path = matches
+        .get_one::<String>("path")
+        .ok_or("path argument is required")?;
     let cache_size: u64 = matches
         .get_one::<String>("cache-size")
-        .unwrap()
+        .ok_or("cache-size argument is required")?
         .parse::<u64>()?
         * 1024
         * 1024;
@@ -334,9 +336,15 @@ fn cmd_create(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_get(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let path = matches.get_one::<String>("path").unwrap();
-    let key = matches.get_one::<String>("key").unwrap();
-    let format = matches.get_one::<String>("format").unwrap();
+    let path = matches
+        .get_one::<String>("path")
+        .ok_or("path argument is required")?;
+    let key = matches
+        .get_one::<String>("key")
+        .ok_or("key argument is required")?;
+    let format = matches
+        .get_one::<String>("format")
+        .ok_or("format argument is required")?;
 
     let db = Database::open(path, LightningDbConfig::default())?;
 
@@ -370,9 +378,15 @@ fn cmd_get(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_put(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let path = matches.get_one::<String>("path").unwrap();
-    let key = matches.get_one::<String>("key").unwrap();
-    let value = matches.get_one::<String>("value").unwrap();
+    let path = matches
+        .get_one::<String>("path")
+        .ok_or("path argument is required")?;
+    let key = matches
+        .get_one::<String>("key")
+        .ok_or("key argument is required")?;
+    let value = matches
+        .get_one::<String>("value")
+        .ok_or("value argument is required")?;
 
     let db = Database::open(path, LightningDbConfig::default())?;
     db.put(key.as_bytes(), value.as_bytes())?;
@@ -382,8 +396,12 @@ fn cmd_put(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_delete(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let path = matches.get_one::<String>("path").unwrap();
-    let key = matches.get_one::<String>("key").unwrap();
+    let path = matches
+        .get_one::<String>("path")
+        .ok_or("path argument is required")?;
+    let key = matches
+        .get_one::<String>("key")
+        .ok_or("key argument is required")?;
 
     let db = Database::open(path, LightningDbConfig::default())?;
     db.delete(key.as_bytes())?;
@@ -393,10 +411,17 @@ fn cmd_delete(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_scan(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let path = matches.get_one::<String>("path").unwrap();
-    let start = matches.get_one::<String>("start").unwrap();
+    let path = matches
+        .get_one::<String>("path")
+        .ok_or("path argument is required")?;
+    let start = matches
+        .get_one::<String>("start")
+        .ok_or("start argument is required")?;
     let end = matches.get_one::<String>("end");
-    let limit: usize = matches.get_one::<String>("limit").unwrap().parse()?;
+    let limit: usize = matches
+        .get_one::<String>("limit")
+        .ok_or("limit argument is required")?
+        .parse()?
     let reverse = matches.get_flag("reverse");
 
     let db = Database::open(path, LightningDbConfig::default())?;
@@ -456,10 +481,16 @@ fn cmd_scan(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_backup(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let db_path = matches.get_one::<String>("path").unwrap();
-    let backup_path = matches.get_one::<String>("output").unwrap();
+    let db_path = matches
+        .get_one::<String>("path")
+        .ok_or("path argument is required")?;
+    let backup_path = matches
+        .get_one::<String>("output")
+        .ok_or("output argument is required")?;
     let incremental = matches.get_flag("incremental");
-    let compress = matches.get_one::<String>("compress").unwrap();
+    let compress = matches
+        .get_one::<String>("compress")
+        .ok_or("compress argument is required")?;
 
     println!(
         "Creating {} backup...",
@@ -492,8 +523,12 @@ fn cmd_backup(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_restore(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let backup_path = matches.get_one::<String>("backup").unwrap();
-    let restore_path = matches.get_one::<String>("output").unwrap();
+    let backup_path = matches
+        .get_one::<String>("backup")
+        .ok_or("backup argument is required")?;
+    let restore_path = matches
+        .get_one::<String>("output")
+        .ok_or("output argument is required")?;
     let verify = matches.get_flag("verify");
 
     println!("Restoring from backup...");
@@ -521,7 +556,9 @@ fn cmd_restore(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_stats(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let path = matches.get_one::<String>("path").unwrap();
+    let path = matches
+        .get_one::<String>("path")
+        .ok_or("path argument is required")?;
     let detailed = matches.get_flag("detailed");
 
     let _db = Database::open(path, LightningDbConfig::default())?;
@@ -568,7 +605,9 @@ fn cmd_stats(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_health(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let path = matches.get_one::<String>("path").unwrap();
+    let path = matches
+        .get_one::<String>("path")
+        .ok_or("path argument is required")?;
     let verify = matches.get_flag("verify");
 
     println!("Checking database health...");
@@ -625,7 +664,9 @@ fn cmd_health(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_compact(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let path = matches.get_one::<String>("path").unwrap();
+    let path = matches
+        .get_one::<String>("path")
+        .ok_or("path argument is required")?;
     let force = matches.get_flag("force");
 
     let db = Database::open(path, LightningDbConfig::default())?;
@@ -648,10 +689,21 @@ fn cmd_compact(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_bench(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let path = matches.get_one::<String>("path").unwrap();
-    let ops: usize = matches.get_one::<String>("operations").unwrap().parse()?;
-    let threads: usize = matches.get_one::<String>("threads").unwrap().parse()?;
-    let value_size: usize = matches.get_one::<String>("value-size").unwrap().parse()?;
+    let path = matches
+        .get_one::<String>("path")
+        .ok_or("path argument is required")?;
+    let ops: usize = matches
+        .get_one::<String>("operations")
+        .ok_or("operations argument is required")?
+        .parse()?;
+    let threads: usize = matches
+        .get_one::<String>("threads")
+        .ok_or("threads argument is required")?
+        .parse()?;
+    let value_size: usize = matches
+        .get_one::<String>("value-size")
+        .ok_or("value-size argument is required")?
+        .parse()?
 
     println!("Running benchmark...");
     println!("  Operations: {}", ops);
@@ -677,14 +729,16 @@ fn cmd_bench(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
         let handle = std::thread::spawn(move || {
             for i in 0..ops_per_thread {
                 let key = format!("bench_{}_{}", thread_id, i);
-                db_clone.put(key.as_bytes(), &value_clone).unwrap();
+                if let Err(e) = db_clone.put(key.as_bytes(), &value_clone) {
+                    eprintln!("Error in write operation: {}", e);
+                }
             }
         });
         handles.push(handle);
     }
 
     for handle in handles {
-        handle.join().unwrap();
+        handle.join().map_err(|_| "Thread join failed")?;
     }
 
     let write_duration = start.elapsed();
@@ -704,14 +758,16 @@ fn cmd_bench(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
         let handle = std::thread::spawn(move || {
             for i in 0..ops_per_thread {
                 let key = format!("bench_{}_{}", thread_id, i);
-                db_clone.get(key.as_bytes()).unwrap();
+                if let Err(e) = db_clone.get(key.as_bytes()) {
+                    eprintln!("Error in read operation: {}", e);
+                }
             }
         });
         handles.push(handle);
     }
 
     for handle in handles {
-        handle.join().unwrap();
+        handle.join().map_err(|_| "Thread join failed")?;
     }
 
     let read_duration = start.elapsed();
@@ -747,8 +803,13 @@ fn cmd_bench(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_check(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
-    let path = matches.get_one::<String>("path").unwrap();
-    let checksum_sample: usize = matches.get_one::<String>("checksums").unwrap().parse()?;
+    let path = matches
+        .get_one::<String>("path")
+        .ok_or("path argument is required")?;
+    let checksum_sample: usize = matches
+        .get_one::<String>("checksums")
+        .ok_or("checksums argument is required")?
+        .parse()?
     let verbose = matches.get_flag("verbose");
 
     println!("🔍 Checking database integrity: {}", path);
