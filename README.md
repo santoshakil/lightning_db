@@ -18,7 +18,10 @@ Lightning-fast embedded key-value database written in Rust. Optimized for perfor
 - **ACID Transactions**: Full transaction support with MVCC isolation
 - **Crash Recovery**: Automatic recovery with Write-Ahead Logging (WAL)
 - **Zero-Copy Keys**: Optimized key operations with inline storage
-- **Compression**: Built-in Zstd and LZ4 compression support
+- **Adaptive Compression**: Built-in LZ4 and Snappy compression with automatic algorithm selection
+- **Encryption**: Page-level encryption with AES-256-GCM and key rotation support
+- **Backup & Recovery**: Full and incremental backup support with point-in-time recovery
+- **Monitoring**: Built-in metrics, health checks, and performance profiling
 - **Production Ready**: Comprehensive error handling, retry logic, and monitoring
 
 ## Quick Start
@@ -92,12 +95,22 @@ cargo run --example stress_test --release
 
 ## Testing
 
+Lightning DB has comprehensive test coverage including unit tests, integration tests, and real-world scenario tests.
+
 ```bash
 # Run all tests
 cargo test
 
-# Run edge case tests
-cargo test --test edge_cases
+# Run release mode tests (faster)
+cargo test --release
+
+# Run specific test suites
+cargo test --test edge_cases      # Edge case and boundary tests
+cargo test --test real_world_scenarios  # Complex workload tests
+cargo test --test core_functionality    # Core functionality tests
+
+# Run library tests only
+cargo test --lib
 
 # Run real-world scenario tests
 cargo test --test real_world_scenarios
