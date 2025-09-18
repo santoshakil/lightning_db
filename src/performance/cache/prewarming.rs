@@ -1103,8 +1103,7 @@ mod tests {
         };
 
         let allocation = crate::performance::cache::adaptive_sizing::CacheAllocation::new(
-            512 * 1024 * 1024,
-            &workload_pattern,
+            512 * 1024 * 1024
         );
 
         let strategy = prewarmer.generate_warming_strategy(&workload_pattern, &allocation);
