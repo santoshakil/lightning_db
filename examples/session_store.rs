@@ -1,5 +1,6 @@
 use lightning_db::{Database, LightningDbConfig, Result};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use base64::{Engine, engine::general_purpose};
 
 /// Simple session store example demonstrating Lightning DB usage
 /// for a web application session management system
@@ -24,7 +25,7 @@ impl SessionStore {
         let key = format!("session:{}", session_id);
 
         // Store session data with user ID prefix for easy lookup
-        let value = format!("{}:{}", user_id, base64::encode(data));
+        let value = format!("{}:{}", user_id, general_purpose::STANDARD.encode(data));
         self.db.put(key.as_bytes(), value.as_bytes())?;
 
         // Also create a reverse index for finding sessions by user
@@ -75,7 +76,7 @@ impl SessionStore {
             let value_str = String::from_utf8_lossy(&value);
             if let Some(colon_pos) = value_str.find(':') {
                 let user_id = value_str[..colon_pos].to_string();
-                let data = base64::decode(&value_str[colon_pos + 1..])
+                let data = general_purpose::STANDARD.decode(&value_str[colon_pos + 1..])
                     .unwrap_or_default();
                 return Ok(Some((user_id, data)));
             }

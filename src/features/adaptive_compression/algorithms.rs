@@ -492,21 +492,12 @@ impl CompressionAlgorithmFactory {
 
     /// Get available algorithms
     pub fn available_algorithms() -> Vec<CompressionAlgorithm> {
-        #[allow(unused_mut)]
-        let mut algorithms = vec![
+        vec![
             CompressionAlgorithm::None,
             CompressionAlgorithm::LZ4,
             CompressionAlgorithm::Zstd,
             CompressionAlgorithm::Snappy,
-        ];
-
-        #[cfg(feature = "lzma")]
-        algorithms.push(CompressionAlgorithm::LZMA);
-
-        #[cfg(feature = "brotli")]
-        algorithms.push(CompressionAlgorithm::Brotli);
-
-        algorithms
+        ]
     }
 }
 
