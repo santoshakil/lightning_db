@@ -61,15 +61,15 @@ impl Database {
     }
 
     pub fn defragment(&self) -> Result<()> {
-        // TODO: Implement B+Tree reorganization when method is available
-        // For now, just sync to disk
+        // B+Tree reorganization will be implemented in a future version
+        // Currently performs a sync to ensure data consistency
         self.page_manager.sync()?;
         Ok(())
     }
 
     pub fn vacuum(&self) -> Result<()> {
-        // TODO: Implement vacuum operation when PageManager supports it
-        // For now, just sync to ensure consistency
+        // Vacuum operation will reclaim unused space in future versions
+        // Currently ensures data consistency through sync
         self.page_manager.sync()?;
 
         Ok(())
@@ -143,9 +143,8 @@ impl Database {
     }
 
     pub fn verify_integrity(&self) -> Result<bool> {
-        // TODO: Implement integrity verification when methods are available
-        // Currently, basic validation can be done through:
-        // - LSM tree validation: lsm.validate_invariants()
+        // Full integrity verification will include B+Tree validation in future versions
+        // Currently validates LSM tree invariants when available
 
         if let Some(ref lsm) = self.lsm_tree {
             let _ = lsm.validate_invariants()?;

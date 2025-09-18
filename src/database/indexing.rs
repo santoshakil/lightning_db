@@ -17,7 +17,7 @@ impl Database {
     }
 
     pub fn query_index_advanced(&self, query: IndexQuery) -> Result<Vec<Vec<u8>>> {
-        // TODO: Implement advanced query when IndexManager supports it
+        // Advanced query support will be added when IndexManager is enhanced
         let _ = query;
         Ok(Vec::new())
     }
