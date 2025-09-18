@@ -905,7 +905,7 @@ impl AdaptiveCacheSizer {
         }
 
         // Predict improvement based on historical data
-        let predictor = self.performance_predictor.lock();
+        let mut predictor = self.performance_predictor.lock();
         let predicted_old = predictor.predict_hit_rate(old_size);
         let predicted_new = predictor.predict_hit_rate(new_size);
         drop(predictor);
