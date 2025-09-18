@@ -627,7 +627,8 @@ impl UnifiedCache {
                     miss_penalty_ms: 1.0, // Placeholder
                     eviction_rate: 0.1,   // Placeholder
                     memory_utilization: self.size() as f64 / self.capacity as f64,
-                    average_latency_us: 10.0,       // Placeholder
+                    avg_latency_us: 10.0,            // Placeholder
+                    average_latency_us: 10.0,        // Placeholder
                     throughput_ops_per_sec: 1000.0, // Placeholder
                     working_set_hit_rate: self.stats.hit_rate(),
                 };
