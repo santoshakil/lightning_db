@@ -443,10 +443,10 @@ fn cmd_scan(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     for (key, value) in results.iter().take(display_count) {
-        let key_str = String::from_utf8_lossy(&key);
+        let key_str = String::from_utf8_lossy(key);
         let value_str = match String::from_utf8(value.to_vec()) {
             Ok(s) => s,
-            Err(_) => format!("<binary: {}>", hex::encode(&value)),
+            Err(_) => format!("<binary: {}>", hex::encode(value)),
         };
         println!("{}: {}", key_str, value_str);
     }
@@ -808,8 +808,10 @@ fn cmd_check(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
 // Add hex encoding support
 mod hex {
     pub fn encode(data: &[u8]) -> String {
-        data.iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<String>()
+        use std::fmt::Write;
+        data.iter().fold(String::new(), |mut output, b| {
+            let _ = write!(output, "{:02x}", b);
+            output
+        })
     }
 }
