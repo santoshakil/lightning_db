@@ -1,3 +1,5 @@
+#![allow(deprecated)] // Suppress rand::thread_rng deprecation warnings
+
 use lightning_db::{Database, LightningDbConfig, WriteBatch};
 use std::sync::Arc;
 use std::thread;
@@ -180,7 +182,7 @@ fn test_large_values() {
     let db = Database::open(db_path, Default::default()).expect("Failed to open database");
 
     // Test various sizes
-    let sizes = vec![1024, 10 * 1024, 100 * 1024, 1024 * 1024];
+    let sizes = [1024, 10 * 1024, 100 * 1024, 1024 * 1024];
 
     for (idx, size) in sizes.iter().enumerate() {
         let key = format!("large_{}", idx);
