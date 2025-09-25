@@ -523,69 +523,87 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    #[tokio::test]
-    #[ignore] // Hangs with single-threaded test execution
-    async fn test_io_recovery_basic() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = IoRecoveryConfig::default();
-        let recovery_manager = IoRecoveryManager::new(config);
-
-        let test_file = temp_dir.path().join("test.dat");
-        let test_data = b"Hello, World!";
-
-        // Write data
-        recovery_manager
-            .write_with_recovery(&test_file, test_data)
-            .await
+    #[test]
+    fn test_io_recovery_basic() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
             .unwrap();
 
-        // Read data back
-        let read_data = recovery_manager
-            .read_with_recovery(&test_file)
-            .await
-            .unwrap();
+        rt.block_on(async {
+            let temp_dir = TempDir::new().unwrap();
+            let config = IoRecoveryConfig::default();
+            let recovery_manager = IoRecoveryManager::new(config);
 
-        // Skip checksum bytes for comparison
-        assert_eq!(&read_data[4..], test_data);
+            let test_file = temp_dir.path().join("test.dat");
+            let test_data = b"Hello, World!";
+
+            // Write data
+            recovery_manager
+                .write_with_recovery(&test_file, test_data)
+                .await
+                .unwrap();
+
+            // Read data back
+            let read_data = recovery_manager
+                .read_with_recovery(&test_file)
+                .await
+                .unwrap();
+
+            // Skip checksum bytes for comparison
+            assert_eq!(&read_data[4..], test_data);
+        });
     }
 
-    #[tokio::test]
-    #[ignore] // Hangs with single-threaded test execution
-    async fn test_checksum_validation() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = IoRecoveryConfig::default();
-        let recovery_manager = IoRecoveryManager::new(config);
-
-        let test_file = temp_dir.path().join("test.dat");
-        let test_data = b"Hello, World!";
-
-        // Write data with checksum
-        recovery_manager
-            .write_with_recovery(&test_file, test_data)
-            .await
+    #[test]
+    fn test_checksum_validation() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
             .unwrap();
 
-        // Corrupt the file
-        let mut corrupted_data = async_fs::read(&test_file).await.unwrap();
-        corrupted_data[5] = !corrupted_data[5]; // Flip some bits
-        async_fs::write(&test_file, corrupted_data).await.unwrap();
+        rt.block_on(async {
+            let temp_dir = TempDir::new().unwrap();
+            let config = IoRecoveryConfig::default();
+            let recovery_manager = IoRecoveryManager::new(config);
 
-        // Reading should detect corruption
-        let result = recovery_manager.read_with_recovery(&test_file).await;
-        assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            Error::ChecksumMismatch { .. }
-        ));
+            let test_file = temp_dir.path().join("test.dat");
+            let test_data = b"Hello, World!";
+
+            // Write data with checksum
+            recovery_manager
+                .write_with_recovery(&test_file, test_data)
+                .await
+                .unwrap();
+
+            // Corrupt the file
+            let mut corrupted_data = async_fs::read(&test_file).await.unwrap();
+            corrupted_data[5] = !corrupted_data[5]; // Flip some bits
+            async_fs::write(&test_file, corrupted_data).await.unwrap();
+
+            // Reading should detect corruption
+            let result = recovery_manager.read_with_recovery(&test_file).await;
+            assert!(result.is_err());
+            assert!(matches!(
+                result.unwrap_err(),
+                Error::ChecksumMismatch { .. }
+            ));
+        });
     }
 
-    #[tokio::test]
-    #[ignore] // Hangs with single-threaded test execution
-    async fn test_disk_health_monitoring() {
-        let config = IoRecoveryConfig::default();
-        let recovery_manager = IoRecoveryManager::new(config);
+    #[test]
+    fn test_disk_health_monitoring() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
 
-        let report = recovery_manager.monitor_disk_health().await.unwrap();
-        assert_eq!(report.status, DiskHealthStatus::Healthy);
+        rt.block_on(async {
+            let config = IoRecoveryConfig::default();
+            let recovery_manager = IoRecoveryManager::new(config);
+
+            let report = recovery_manager.monitor_disk_health().await.unwrap();
+            assert_eq!(report.status, DiskHealthStatus::Healthy);
+        });
     }
 }

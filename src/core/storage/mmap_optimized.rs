@@ -594,7 +594,6 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    #[ignore] // Hangs with single-threaded test execution
     fn test_mmap_manager_basic() {
         let dir = tempdir().expect("Failed to create temp directory for mmap test");
         let path = dir.path().join("test.mmap");
@@ -628,7 +627,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Hangs with single-threaded test execution
     fn test_region_eviction() {
         let dir = tempdir().expect("Failed to create temp directory for eviction test");
         let path = dir.path().join("test_evict.mmap");
