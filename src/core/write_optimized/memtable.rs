@@ -285,20 +285,25 @@ impl MemTableManager {
         const MAX_RETRIES: usize = 3;
 
         loop {
-            let active = self.active.read();
+            // Check if rotation is needed first
+            let should_rotate = {
+                let active = self.active.read();
+                active.should_flush()
+            };
 
-            // Try to insert into active memtable
-            match active.put(key.to_vec(), value.to_vec()) {
-                Ok(()) => {
-                    // Check if we need to rotate
-                    if active.should_flush() {
-                        drop(active);
-                        self.rotate_memtable()?;
-                    }
-                    return Ok(());
-                }
+            if should_rotate {
+                self.rotate_memtable()?;
+            }
+
+            // Try to insert
+            let result = {
+                let active = self.active.read();
+                active.put(key.to_vec(), value.to_vec())
+            };
+
+            match result {
+                Ok(()) => return Ok(()),
                 Err(e) => {
-                    drop(active);
                     // If frozen, rotate and retry
                     if e.to_string().contains("frozen") {
                         retry_count += 1;
