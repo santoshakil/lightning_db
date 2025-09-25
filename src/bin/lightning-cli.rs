@@ -421,7 +421,7 @@ fn cmd_scan(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     let limit: usize = matches
         .get_one::<String>("limit")
         .ok_or("limit argument is required")?
-        .parse()?
+        .parse()?;
     let reverse = matches.get_flag("reverse");
 
     let db = Database::open(path, LightningDbConfig::default())?;
@@ -703,7 +703,7 @@ fn cmd_bench(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     let value_size: usize = matches
         .get_one::<String>("value-size")
         .ok_or("value-size argument is required")?
-        .parse()?
+        .parse()?;
 
     println!("Running benchmark...");
     println!("  Operations: {}", ops);
@@ -809,7 +809,7 @@ fn cmd_check(matches: &ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
     let checksum_sample: usize = matches
         .get_one::<String>("checksums")
         .ok_or("checksums argument is required")?
-        .parse()?
+        .parse()?;
     let verbose = matches.get_flag("verbose");
 
     println!("🔍 Checking database integrity: {}", path);
