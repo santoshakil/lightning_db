@@ -1,3 +1,5 @@
+#![allow(deprecated)] // Suppress rand::thread_rng deprecation warnings
+
 use lightning_db::{Database, LightningDbConfig, WriteBatch};
 use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use std::thread;
@@ -25,7 +27,7 @@ fn test_concurrent_stress() {
 
     let mut handles = vec![];
 
-    for thread_id in 0..STRESS_THREADS {
+    for _thread_id in 0..STRESS_THREADS {
         let db_clone = Arc::clone(&db);
         let ops_clone = Arc::clone(&total_ops);
         let err_clone = Arc::clone(&errors);
@@ -114,7 +116,7 @@ fn test_extreme_value_sizes() {
     let db = Database::open(db_path, Default::default()).expect("Failed to open database");
 
     // Test various value sizes
-    let sizes = vec![0, 1, 1024, 100 * 1024, 1024 * 1024, 5 * 1024 * 1024];
+    let sizes = [0, 1, 1024, 100 * 1024, 1024 * 1024, 5 * 1024 * 1024];
 
     for (idx, size) in sizes.iter().enumerate() {
         let key = format!("value_size_{}", idx);
@@ -298,7 +300,7 @@ fn test_scan_performance() {
     let start = Instant::now();
     let iter = db.scan(Some(b"scan_key_0100"), Some(b"scan_key_0200")).expect("Range scan failed");
     let range_count = iter.count();
-    assert!(range_count >= 100 && range_count <= 101);
+    assert!((100..=101).contains(&range_count));
 
     let range_scan_time = start.elapsed();
 

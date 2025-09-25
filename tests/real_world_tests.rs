@@ -1,3 +1,5 @@
+#![allow(deprecated)] // Suppress rand::thread_rng deprecation warnings
+
 use lightning_db::{Database, LightningDbConfig, WriteBatch};
 use std::sync::Arc;
 use std::thread;
@@ -94,7 +96,7 @@ fn test_time_series_workload() {
         }
     }
 
-    if batch.len() > 0 {
+    if !batch.is_empty() {
         db.write_batch(&batch).expect("Final batch write failed");
     }
 
@@ -149,7 +151,7 @@ fn test_social_media_workload() {
                 let post_id = rng.gen_range(0..5);
                 let like_key = format!("like:user:{}:post:{}:{}",
                                       rng.gen_range(0..20), user_id, post_id);
-                let like_value = format!(r#"{{"timestamp":"2024-01-01T00:00:00Z"}}"#);
+                let like_value = r#"{"timestamp":"2024-01-01T00:00:00Z"}"#.to_string();
                 db_clone.put(like_key.as_bytes(), like_value.as_bytes()).expect("Like failed");
             }
         });
@@ -274,7 +276,7 @@ fn test_cache_workload() {
     handles.push(writer);
 
     // Multiple reader threads
-    for reader_id in 0..3 {
+    for _reader_id in 0..3 {
         let db_reader = Arc::clone(&db);
         let reader = thread::spawn(move || {
             let mut rng = thread_rng();
