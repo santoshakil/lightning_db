@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod optimizations;
 pub mod prefetch;
 pub mod read_cache;
 pub mod small_alloc;
