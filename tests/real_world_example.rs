@@ -33,7 +33,7 @@ fn test_e_commerce_workload() {
     let mut handles = vec![];
 
     // Reader threads
-    for thread_id in 0..3 {
+    for _thread_id in 0..3 {
         let db_clone = Arc::clone(&db);
         let handle = thread::spawn(move || {
             for i in 0..50 {
@@ -56,12 +56,12 @@ fn test_e_commerce_workload() {
     let handle = thread::spawn(move || {
         for i in 0..20 {
             let mut batch = WriteBatch::new();
-            let session_key = format!("session:{}", i);
+            let _session_key = format!("session:{}", i);
             let cart_key = format!("cart:user:{}", i);
             let cart_value = format!(r#"{{"items":[{{"product_id":{},"quantity":2}}],"total":{}.98}}"#,
                                     i, i * 20);
 
-            batch.put(cart_key.as_bytes(), cart_value.as_bytes()).expect("Failed to add to batch");
+            batch.put(cart_key.into_bytes(), cart_value.into_bytes()).expect("Failed to add to batch");
             db_clone.write_batch(&batch).expect("Failed to write batch");
             thread::sleep(Duration::from_millis(5));
         }
@@ -110,7 +110,7 @@ fn test_time_series_workload() {
                 let key = format!("sensor:{}:{}", sensor_id, timestamp);
                 let value = format!(r#"{{"temperature":{}.{},"humidity":{}}}"#,
                                   20 + (sensor_id * 2), minute % 10, 40 + (minute % 20));
-                batch.put(key.as_bytes(), value.as_bytes()).expect("Failed to add to batch");
+                batch.put(key.into_bytes(), value.into_bytes()).expect("Failed to add to batch");
 
                 // Flush batch periodically
                 if batch.len() >= 100 {
@@ -142,7 +142,12 @@ fn test_time_series_workload() {
     for sensor_id in 0..5 {
         let prefix = format!("sensor:{}:", sensor_id);
         let iter = db.scan(Some(prefix.as_bytes()), None).expect("Failed to scan");
-        let count = iter.take_while(|(k, _)| k.starts_with(prefix.as_bytes())).count();
+        let count = iter.take_while(|result| {
+            match result {
+                Ok((k, _)) => k.starts_with(prefix.as_bytes()),
+                Err(_) => false,
+            }
+        }).count();
         total_records += count;
         assert_eq!(count, 24 * 60, "Each sensor should have 24*60 records");
     }
@@ -207,7 +212,12 @@ fn test_social_media_workload() {
         let timeline_prefix = format!("timeline:{}:", user_id);
         let iter = db.scan(Some(timeline_prefix.as_bytes()), None).expect("Failed to scan timeline");
         let posts: Vec<_> = iter
-            .take_while(|(k, _)| k.starts_with(timeline_prefix.as_bytes()))
+            .take_while(|result| {
+                match result {
+                    Ok((k, _)) => k.starts_with(timeline_prefix.as_bytes()),
+                    Err(_) => false,
+                }
+            })
             .collect();
         assert_eq!(posts.len(), 5, "User {} should have 5 posts in timeline", user_id);
     }
