@@ -1,7 +1,7 @@
 use lightning_db::{Database, LightningDbConfig, WriteBatch};
-use std::sync::{Arc, atomic::{AtomicU64, AtomicBool, Ordering}};
+use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tempfile::TempDir;
 use rand::{Rng, thread_rng};
 
