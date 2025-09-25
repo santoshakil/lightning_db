@@ -112,6 +112,10 @@ pub mod utils;
 // Database module with split implementations
 mod database;
 
+// Configuration presets
+mod config_presets;
+pub use config_presets::{ConfigPreset, ConfigBuilder};
+
 // Re-export core types and functionality
 pub use crate::core::error::{Error, Result};
 pub use crate::core::index::{IndexConfig, IndexKey, IndexQuery, IndexType};
