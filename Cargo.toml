@@ -181,4 +181,9 @@ name = "critical_operations"
 harness = false
 path = "benches/critical_operations.rs"
 
+[[bench]]
+name = "performance"
+harness = false
+path = "benches/performance.rs"
+
 
