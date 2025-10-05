@@ -304,8 +304,8 @@ impl MemTableManager {
             match result {
                 Ok(()) => return Ok(()),
                 Err(e) => {
-                    // If frozen, rotate and retry
-                    if e.to_string().contains("frozen") {
+                    let err_msg = e.to_string();
+                    if err_msg.contains("frozen") || err_msg.contains("size limit exceeded") {
                         retry_count += 1;
                         if retry_count > MAX_RETRIES {
                             return Err(Error::ResourceExhausted {
