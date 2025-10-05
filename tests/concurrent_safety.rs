@@ -3,7 +3,7 @@
 use lightning_db::{Database, LightningDbConfig};
 use std::sync::{Arc, atomic::{AtomicU64, AtomicBool, Ordering}};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tempfile::TempDir;
 use rand::{thread_rng, Rng};
 
