@@ -277,7 +277,7 @@ impl<T> Clone for TrackedWeak<T> {
 
 impl<T> Drop for TrackedWeak<T> {
     fn drop(&mut self) {
-        let weak_count = self.inner.weak_count() - 1;
+        let weak_count = self.inner.weak_count().saturating_sub(1);
         LEAK_DETECTOR.update_ref_count(self.object_id, self.inner.strong_count(), weak_count);
     }
 }
