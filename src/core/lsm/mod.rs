@@ -183,7 +183,7 @@ impl LSMTree {
         let levels = Arc::new(RwLock::new(levels));
         let shutdown = Arc::new(AtomicUsize::new(0));
 
-        let read_cache = Arc::new(DashMap::with_capacity(10000));
+        let read_cache = Arc::new(DashMap::with_capacity(20000));
 
         // Initialize delta compressor
         let delta_compressor = Arc::new(RwLock::new(DeltaCompressor::new(
