@@ -53,6 +53,10 @@ fn bench_1m_random_reads() {
         db.put(key.as_bytes(), value.as_bytes()).unwrap();
     }
 
+    println!("  Flushing and compacting...");
+    db.flush_lsm().unwrap();
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
     let num_reads = 1_000_000;
     let start = Instant::now();
     for i in 0..num_reads {
