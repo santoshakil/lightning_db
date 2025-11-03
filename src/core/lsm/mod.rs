@@ -43,8 +43,8 @@ pub struct LSMConfig {
 impl Default for LSMConfig {
     fn default() -> Self {
         Self {
-            memtable_size: 4 * 1024 * 1024, // 4MB
-            level0_file_num_trigger: 4,
+            memtable_size: 16 * 1024 * 1024, // 16MB for fewer flushes
+            level0_file_num_trigger: 2, // More aggressive compaction
             max_levels: 7,
             level_size_multiplier: 10,
             bloom_filter_bits_per_key: 10,
@@ -549,9 +549,8 @@ impl LSMTree {
         if let Some(scheduler) = compaction_scheduler {
             self.compaction_thread = Some(std::thread::spawn(move || {
                 while shutdown.load(Ordering::Relaxed) == 0 {
-                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    std::thread::sleep(std::time::Duration::from_millis(50));
 
-                    // Use parallel compaction scheduler
                     let job_ids = scheduler.maybe_schedule_compaction();
 
                     if !job_ids.is_empty() {
