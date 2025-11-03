@@ -53,7 +53,7 @@ struct IndexEntry {
 
 #[derive(Debug)]
 struct DataBlock {
-    entries: Vec<BlockEntry>,
+    entries: Arc<Vec<BlockEntry>>,
     _compressed_data: Vec<u8>,
 }
 
@@ -139,8 +139,8 @@ impl SSTable {
         for index_entry in &self.index.entries {
             match self.read_block(index_entry.offset, index_entry.size) {
                 Ok(block) => {
-                    for entry in block.entries {
-                        all_entries.push((entry.key, entry.value));
+                    for entry in block.entries.iter() {
+                        all_entries.push((entry.key.clone(), entry.value.clone()));
                     }
                 }
                 Err(e) => {
@@ -166,7 +166,7 @@ impl SSTable {
     fn read_block(&self, offset: u64, size: u32) -> Result<DataBlock> {
         if let Some(cached) = self.block_cache.get(&offset) {
             return Ok(DataBlock {
-                entries: cached.value().as_ref().clone(),
+                entries: cached.value().clone(),
                 _compressed_data: vec![],
             });
         }
@@ -206,10 +206,11 @@ impl SSTable {
             entries.push(BlockEntry { key, value });
         }
 
-        self.block_cache.insert(offset, Arc::new(entries.clone()));
+        let arc_entries = Arc::new(entries);
+        self.block_cache.insert(offset, arc_entries.clone());
 
         Ok(DataBlock {
-            entries,
+            entries: arc_entries,
             _compressed_data: vec![],
         })
     }
