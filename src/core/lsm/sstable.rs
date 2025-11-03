@@ -24,7 +24,7 @@ pub struct SSTable {
     size_bytes: usize,
     creation_time: std::time::SystemTime,
     mmap: Option<Arc<Mmap>>,
-    block_cache: dashmap::DashMap<u64, Arc<Vec<u8>>>,
+    block_cache: dashmap::DashMap<u64, Arc<Vec<BlockEntry>>>,
 }
 
 impl std::fmt::Debug for SSTable {
@@ -165,23 +165,8 @@ impl SSTable {
 
     fn read_block(&self, offset: u64, size: u32) -> Result<DataBlock> {
         if let Some(cached) = self.block_cache.get(&offset) {
-            let mut cursor = cached.value().as_slice();
-            let mut entries = Vec::new();
-
-            while cursor.remaining() > 0 {
-                let key_len = cursor.get_u32() as usize;
-                let mut key = vec![0u8; key_len];
-                cursor.copy_to_slice(&mut key);
-
-                let value_len = cursor.get_u32() as usize;
-                let mut value = vec![0u8; value_len];
-                cursor.copy_to_slice(&mut value);
-
-                entries.push(BlockEntry { key, value });
-            }
-
             return Ok(DataBlock {
-                entries,
+                entries: cached.value().as_ref().clone(),
                 _compressed_data: vec![],
             });
         }
@@ -205,8 +190,6 @@ impl SSTable {
             compressor.decompress(&compressed_data[1..])?
         };
 
-        self.block_cache.insert(offset, Arc::new(decompressed.clone()));
-
         // Parse block entries
         let mut cursor = &decompressed[..];
         let mut entries = Vec::new();
@@ -222,6 +205,8 @@ impl SSTable {
 
             entries.push(BlockEntry { key, value });
         }
+
+        self.block_cache.insert(offset, Arc::new(entries.clone()));
 
         Ok(DataBlock {
             entries,
