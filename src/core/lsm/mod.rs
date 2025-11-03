@@ -9,9 +9,8 @@ pub mod sstable;
 
 use crate::core::error::{Error, Result};
 use crate::features::adaptive_compression::CompressionType;
-use lru::LruCache;
+use dashmap::DashMap;
 use parking_lot::RwLock;
-use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -68,7 +67,7 @@ pub struct LSMTree {
     next_file_number: Arc<AtomicU64>,
     compaction_thread: Option<std::thread::JoinHandle<()>>,
     shutdown: Arc<AtomicUsize>,
-    read_cache: Arc<RwLock<LruCache<Vec<u8>, Vec<u8>>>>,
+    read_cache: Arc<DashMap<Vec<u8>, Vec<u8>>>,
     cache_hits: Arc<AtomicUsize>,
     cache_misses: Arc<AtomicUsize>,
     delta_compressor: Arc<RwLock<DeltaCompressor>>,
@@ -184,10 +183,7 @@ impl LSMTree {
         let levels = Arc::new(RwLock::new(levels));
         let shutdown = Arc::new(AtomicUsize::new(0));
 
-        // Create read cache with 10K entries
-        let cache_size = NonZeroUsize::new(10000)
-            .ok_or_else(|| Error::Generic("Invalid cache size".to_string()))?;
-        let read_cache = Arc::new(RwLock::new(LruCache::new(cache_size)));
+        let read_cache = Arc::new(DashMap::with_capacity(10000));
 
         // Initialize delta compressor
         let delta_compressor = Arc::new(RwLock::new(DeltaCompressor::new(
@@ -284,8 +280,7 @@ impl LSMTree {
     }
 
     pub fn insert(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        // Remove from cache to ensure fresh reads
-        self.read_cache.write().pop(&key);
+        self.read_cache.remove(&key);
 
         // CRITICAL FIX: Atomic rotation with proper synchronization
         loop {
@@ -335,79 +330,57 @@ impl LSMTree {
     }
 
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        // Check read cache first - need write lock for LRU update
-        let cache_result = {
-            let mut cache = self.read_cache.write();
-            cache.get(&key.to_vec()).cloned()
-        };
-
-        if let Some(value) = cache_result {
+        if let Some(value) = self.read_cache.get(key) {
             self.cache_hits.fetch_add(1, Ordering::Relaxed);
-            // Check if cached value is a tombstone
-            if Self::is_tombstone(&value) {
+            let val = value.value().clone();
+            if Self::is_tombstone(&val) {
                 return Ok(None);
             }
-            return Ok(Some(value));
+            return Ok(Some(val));
         }
         self.cache_misses.fetch_add(1, Ordering::Relaxed);
 
-        // Check active memtable
         let memtable = self.memtable.read();
         if let Some(value) = memtable.get(key) {
-            // Check if this is a tombstone
             if Self::is_tombstone(&value) {
-                // Update cache with tombstone
-                self.read_cache.write().put(key.to_vec(), value.clone());
+                self.read_cache.insert(key.to_vec(), value.clone());
                 return Ok(None);
             }
-            // Update cache
-            self.read_cache.write().put(key.to_vec(), value.clone());
+            self.read_cache.insert(key.to_vec(), value.clone());
             return Ok(Some(value));
         }
         drop(memtable);
 
-        // Check immutable memtables
         let immutable = self.immutable_memtables.read();
         for memtable in immutable.iter().rev() {
             if let Some(value) = memtable.get(key) {
-                // Check if this is a tombstone
                 if Self::is_tombstone(&value) {
-                    // Update cache with tombstone
-                    self.read_cache.write().put(key.to_vec(), value.clone());
+                    self.read_cache.insert(key.to_vec(), value.clone());
                     return Ok(None);
                 }
-                // Update cache
-                self.read_cache.write().put(key.to_vec(), value.clone());
+                self.read_cache.insert(key.to_vec(), value.clone());
                 return Ok(Some(value));
             }
         }
         drop(immutable);
 
-        // Check SSTables level by level
         let levels = self.levels.read();
         for level in &*levels {
-            // Use bloom filters to skip SSTables - early termination optimization
             for sstable in &level.sstables {
-                // Quick bounds check first
-                if key < sstable.min_key() || key > sstable.max_key() {
-                    continue;
-                }
-
-                // Bloom filter check to avoid disk I/O
                 if !sstable.might_contain(key) {
                     continue;
                 }
 
-                // Actually try to get the value
+                if key < sstable.min_key() || key > sstable.max_key() {
+                    continue;
+                }
+
                 if let Some(value) = sstable.get(key)? {
-                    // Check if this is a tombstone
                     if Self::is_tombstone(&value) {
-                        // Update cache with tombstone
-                        self.read_cache.write().put(key.to_vec(), value);
+                        self.read_cache.insert(key.to_vec(), value);
                         return Ok(None);
                     }
-                    // Update cache and return immediately (early termination)
-                    self.read_cache.write().put(key.to_vec(), value.clone());
+                    self.read_cache.insert(key.to_vec(), value.clone());
                     return Ok(Some(value));
                 }
             }
@@ -417,10 +390,7 @@ impl LSMTree {
     }
 
     pub fn delete(&self, key: &[u8]) -> Result<()> {
-        // Remove from cache first
-        self.read_cache.write().pop(&key.to_vec());
-
-        // Insert tombstone marker
+        self.read_cache.remove(key);
         self.insert(key.to_vec(), Self::TOMBSTONE_MARKER.to_vec())
     }
 
