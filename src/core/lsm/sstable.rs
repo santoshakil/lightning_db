@@ -4,6 +4,7 @@ use crate::core::write_optimized::bloom_filter::{BloomFilter, BloomFilterBuilder
 use crate::features::adaptive_compression::{get_compressor, CompressionType};
 use bincode::{Decode, Encode};
 use bytes::{Buf, BufMut, BytesMut};
+use memmap2::Mmap;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
@@ -22,6 +23,7 @@ pub struct SSTable {
     max_key: Vec<u8>,
     size_bytes: usize,
     creation_time: std::time::SystemTime,
+    mmap: Option<Arc<Mmap>>,
 }
 
 impl std::fmt::Debug for SSTable {
@@ -122,17 +124,12 @@ impl SSTable {
             None => return Ok(None),
         };
 
-        // Read and decompress block
         let block = self.read_block(index_entry.offset, index_entry.size)?;
 
-        // Binary search in block
-        for entry in &block.entries {
-            if entry.key == key {
-                return Ok(Some(entry.value.clone()));
-            }
+        match block.entries.binary_search_by(|entry| entry.key.as_slice().cmp(key)) {
+            Ok(idx) => Ok(Some(block.entries[idx].value.clone())),
+            Err(_) => Ok(None),
         }
-
-        Ok(None)
     }
 
     pub fn iter(&self) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
@@ -166,17 +163,20 @@ impl SSTable {
     }
 
     fn read_block(&self, offset: u64, size: u32) -> Result<DataBlock> {
-        let mut file = File::open(&self.path)?;
-        file.seek(SeekFrom::Start(offset))?;
-
-        let mut compressed_data = vec![0u8; size as usize];
-        file.read_exact(&mut compressed_data)?;
-
-        // Decompress if needed
-        let decompressed = if self.index.entries.is_empty() {
-            compressed_data
+        let compressed_data = if let Some(mmap) = &self.mmap {
+            let start = offset as usize;
+            let end = start + size as usize;
+            if end > mmap.len() {
+                return Err(Error::Io("Block extends past file end".to_string()));
+            }
+            &mmap[start..end]
         } else {
-            // Get compression type from first byte of data
+            return Err(Error::Io("No mmap available".to_string()));
+        };
+
+        let decompressed = if self.index.entries.is_empty() {
+            compressed_data.to_vec()
+        } else {
             let compression_type = CompressionType::from_u8(compressed_data[0]);
             let compressor = get_compressor(compression_type);
             compressor.decompress(&compressed_data[1..])?
@@ -458,13 +458,17 @@ impl SSTableBuilder {
         let metadata = self.writer.get_ref().metadata()?;
         let size_bytes = metadata.len() as usize;
 
-        // Extract ID from filename (assumed to be numeric)
         let id = self
             .path
             .file_stem()
             .and_then(|s| s.to_str())
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(0);
+
+        let file = File::open(&self.path)?;
+        let mmap = unsafe {
+            Mmap::map(&file).ok().map(Arc::new)
+        };
 
         Ok(SSTable {
             id,
@@ -477,6 +481,7 @@ impl SSTableBuilder {
             max_key,
             size_bytes,
             creation_time: std::time::SystemTime::now(),
+            mmap,
         })
     }
 }
@@ -569,10 +574,13 @@ impl SSTableReader {
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(0);
 
-        // Get creation time from file metadata
         let creation_time = metadata
             .created()
             .unwrap_or_else(|_| std::time::SystemTime::now());
+
+        let mmap = unsafe {
+            Mmap::map(&file).ok().map(Arc::new)
+        };
 
         Ok(SSTable {
             id,
@@ -583,6 +591,7 @@ impl SSTableReader {
             max_key,
             size_bytes: file_size as usize,
             creation_time,
+            mmap,
         })
     }
 }
