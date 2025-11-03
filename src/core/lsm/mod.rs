@@ -43,7 +43,7 @@ pub struct LSMConfig {
 impl Default for LSMConfig {
     fn default() -> Self {
         Self {
-            memtable_size: 16 * 1024 * 1024, // 16MB for fewer flushes
+            memtable_size: 64 * 1024 * 1024, // 64MB to reduce flush frequency at scale
             level0_file_num_trigger: 2, // More aggressive compaction
             max_levels: 7,
             level_size_multiplier: 10,
