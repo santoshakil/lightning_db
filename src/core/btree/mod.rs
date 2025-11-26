@@ -22,8 +22,6 @@ pub use iterator::BTreeLeafIterator;
 use crate::core::error::{Error, Result};
 use crate::core::storage::page::PAGE_SIZE;
 use crate::core::storage::{Page, PageManager, PageManagerWrapper};
-#[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
-use crate::performance::optimizations::simd::simd_compare_keys;
 use parking_lot::RwLock;
 use split_handler::SplitHandler;
 use std::cmp::Ordering;

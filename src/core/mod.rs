@@ -12,8 +12,6 @@ pub mod iterator;
 pub mod recovery;
 pub mod index;
 pub mod query_planner;
-pub mod mvcc;
-pub mod optimizations;
 
 // Re-export commonly used storage types
 pub use self::storage::{

@@ -582,6 +582,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "zstd-compression")]
     fn test_zstd_compression() {
         let compressor = ZstdCompression::new();
         // Use repetitive data to ensure compression
