@@ -104,21 +104,10 @@ impl PageManagerAsync for Arc<RwLock<PageManager>> {
                 )
             })?) as PageId;
             let mut page = Page::new(page_id);
-            // Copy data to page (handling size mismatch)
+            // Copy data to page using safe Arc::make_mut (handles shared refs gracefully)
             let data_len = data.len().min(PAGE_SIZE);
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    data.as_ptr(),
-                    Arc::get_mut(&mut page.data)
-                        .ok_or_else(|| {
-                            crate::core::error::Error::Internal(
-                                "Page data is shared and cannot be mutated".to_string(),
-                            )
-                        })?
-                        .as_mut_ptr(),
-                    data_len,
-                );
-            }
+            let page_data = Arc::make_mut(&mut page.data);
+            page_data[..data_len].copy_from_slice(&data[..data_len]);
             page.dirty = true;
             self.save_page(&page).await
         } else {
