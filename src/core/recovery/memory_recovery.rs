@@ -175,9 +175,43 @@ impl MemoryRecoveryManager {
             return Ok(());
         }
 
+        // Verify allocation when tracking is enabled (prevents double-free and size mismatch)
+        if self.config.allocation_tracking {
+            let tracker = self.allocation_tracker.lock().await;
+            let addr = ptr as usize;
+
+            // Check if this allocation is tracked
+            if !tracker.is_tracked(addr) {
+                error!(
+                    "Attempted to deallocate untracked pointer: 0x{:x}, size: {}",
+                    addr, size
+                );
+                return Err(Error::InvalidArgument(
+                    "Invalid deallocation: pointer not tracked".to_string(),
+                ));
+            }
+
+            // Verify size matches
+            if tracker.verify_allocation(addr, size).is_none() {
+                error!(
+                    "Attempted to deallocate with wrong size: 0x{:x}, provided: {}",
+                    addr, size
+                );
+                return Err(Error::InvalidArgument(
+                    "Invalid deallocation: size mismatch".to_string(),
+                ));
+            }
+            drop(tracker);
+        }
+
         let layout =
             Layout::from_size_align(size, std::mem::align_of::<u8>()).map_err(|_| Error::Memory)?;
 
+        // SAFETY: We verified above that:
+        // 1. ptr is non-null (checked at function start)
+        // 2. ptr was allocated by this manager (verified via tracker)
+        // 3. size matches original allocation (verified via tracker)
+        // 4. Layout is valid (from_size_align check above)
         unsafe { dealloc(ptr, layout) };
 
         // Update statistics
@@ -186,7 +220,7 @@ impl MemoryRecoveryManager {
             .current_allocated
             .fetch_sub(size as u64, Ordering::SeqCst);
 
-        // Track deallocation if enabled
+        // Remove from tracker
         if self.config.allocation_tracking {
             let mut tracker = self.allocation_tracker.lock().await;
             tracker.track_deallocation(ptr as usize);
@@ -432,6 +466,20 @@ impl AllocationTracker {
 
     fn track_deallocation(&mut self, address: usize) {
         self.allocations.remove(&address);
+    }
+
+    fn verify_allocation(&self, address: usize, expected_size: usize) -> Option<usize> {
+        self.allocations.get(&address).and_then(|(size, _)| {
+            if *size == expected_size {
+                Some(*size)
+            } else {
+                None
+            }
+        })
+    }
+
+    fn is_tracked(&self, address: usize) -> bool {
+        self.allocations.contains_key(&address)
     }
 
     fn detect_leaks(&self) -> Vec<MemoryLeakInfo> {

@@ -226,12 +226,28 @@ impl OptimizedMmapManager {
         // - Memory mapping is valid for file's lifetime
         // - OS manages page fault handling and synchronization
         // - map_mut() ensures exclusive access to mapped region
-        let mmap = unsafe {
+        #[allow(unused_mut)] // mut needed on Linux for advise_huge_pages
+        let mut mmap = unsafe {
             mmap_options
                 .offset(offset)
                 .len(region_size)
                 .map_mut(&*file)?
         };
+
+        // TOCTOU defense: Re-validate file size after mmap creation
+        // Another process may have truncated the file between size check and mmap
+        let post_mmap_size = file.metadata().map(|m| m.len()).unwrap_or(0);
+        if post_mmap_size < offset + region_size as u64 {
+            // File was truncated - mmap may be invalid, reject this region
+            warn!(
+                "File size changed during mmap: expected at least {}, got {}",
+                offset + region_size as u64,
+                post_mmap_size
+            );
+            return Err(Error::Storage(
+                "File truncated during mmap creation".to_string(),
+            ));
+        }
 
         // Apply huge pages hint on Linux
         #[cfg(target_os = "linux")]
@@ -350,18 +366,37 @@ impl OptimizedMmapManager {
         // - No memory corruption as these are hints only
         unsafe {
             // Advise kernel to use huge pages
-            libc::madvise(mmap.as_mut_ptr() as *mut c_void, mmap.len(), MADV_HUGEPAGE);
+            let ret = libc::madvise(mmap.as_mut_ptr() as *mut c_void, mmap.len(), MADV_HUGEPAGE);
+            if ret != 0 {
+                warn!(
+                    "madvise MADV_HUGEPAGE failed: {}",
+                    std::io::Error::last_os_error()
+                );
+            }
 
             // Advise sequential access pattern
-            libc::madvise(
+            let ret = libc::madvise(
                 mmap.as_mut_ptr() as *mut c_void,
                 mmap.len(),
                 MADV_SEQUENTIAL,
             );
+            if ret != 0 {
+                warn!(
+                    "madvise MADV_SEQUENTIAL failed: {}",
+                    std::io::Error::last_os_error()
+                );
+            }
 
             // Advise that we'll need this memory soon
             if self.config.populate_on_map {
-                libc::madvise(mmap.as_mut_ptr() as *mut c_void, mmap.len(), MADV_WILLNEED);
+                let ret =
+                    libc::madvise(mmap.as_mut_ptr() as *mut c_void, mmap.len(), MADV_WILLNEED);
+                if ret != 0 {
+                    warn!(
+                        "madvise MADV_WILLNEED failed: {}",
+                        std::io::Error::last_os_error()
+                    );
+                }
             }
         }
 
@@ -516,7 +551,17 @@ impl OptimizedMmapManager {
                             if enable_async_msync {
                                 region.mmap.flush_async()
                             } else {
-                                region.mmap.flush()
+                                // Sync flush blocks while holding read lock - warn if slow
+                                let start = Instant::now();
+                                let result = region.mmap.flush();
+                                let elapsed = start.elapsed();
+                                if elapsed > Duration::from_millis(100) {
+                                    warn!(
+                                        "Sync flush for region {} took {:?} - consider enabling async_msync",
+                                        region_id, elapsed
+                                    );
+                                }
+                                result
                             }
                         } else {
                             continue;
