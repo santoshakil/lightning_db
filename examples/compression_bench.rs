@@ -10,7 +10,7 @@ fn main() {
     bench_compression("None (B+Tree)", "none");
 }
 
-fn bench_compression(name: &str, feature: &str) {
+fn bench_compression(name: &str, _feature: &str) {
     println!("Testing: {}", name);
     println!("-------------------");
 

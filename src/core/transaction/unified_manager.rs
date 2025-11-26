@@ -215,16 +215,25 @@ impl UnifiedTransactionManager {
             });
         }
 
-        // CRITICAL FIX: Check for timestamp overflow BEFORE allocation
-        let current_ts = self.next_timestamp.load(Ordering::Acquire);
-        if current_ts >= u64::MAX - 1000 {
-            // Reserve 1000 for safety
-            return Err(Error::Internal("Timestamp overflow".to_string()));
-        }
+        // Atomically allocate timestamp with overflow check using CAS loop
+        let read_timestamp = loop {
+            let current_ts = self.next_timestamp.load(Ordering::Acquire);
+            if current_ts >= u64::MAX - 10_000 {
+                return Err(Error::Internal("Timestamp overflow imminent".to_string()));
+            }
+            let new_ts = current_ts + 1;
+            match self.next_timestamp.compare_exchange(
+                current_ts,
+                new_ts,
+                Ordering::SeqCst,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break current_ts,
+                Err(_) => continue,
+            }
+        };
 
-        // Atomically get transaction ID and read timestamp
         let tx_id = self.next_tx_id.fetch_add(1, Ordering::SeqCst);
-        let read_timestamp = self.next_timestamp.fetch_add(1, Ordering::SeqCst);
 
         // Create MVCC snapshot
         let snapshot = {
@@ -672,14 +681,13 @@ impl UnifiedTransactionManager {
             return;
         }
 
-        // CRITICAL FIX: Get consecutive timestamps without gaps
-        let base_commit_ts = self.next_timestamp.fetch_add(1, Ordering::SeqCst) + 1;
-        let mut next_ts = base_commit_ts;
+        // Pre-allocate all timestamps at once for the batch - no gaps
+        let batch_len = batch.len() as u64;
+        let base_commit_ts = self.next_timestamp.fetch_add(batch_len, Ordering::SeqCst);
 
         // Apply writes
-        for (tx_id, tx_data) in batch.iter() {
-            let commit_ts = next_ts;
-            next_ts = self.next_timestamp.fetch_add(1, Ordering::SeqCst) + 1;
+        for (idx, (tx_id, tx_data)) in batch.iter().enumerate() {
+            let commit_ts = base_commit_ts + idx as u64;
 
             for write_op in tx_data.write_set.values() {
                 self.version_store.put_version(

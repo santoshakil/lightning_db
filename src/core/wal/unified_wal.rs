@@ -621,7 +621,9 @@ impl UnifiedWriteAheadLog {
                 self.commit_condvar.notify_one();
             }
 
-            // Wait for result with exponential backoff
+            // Wait for result with exponential backoff and timeout
+            let start = std::time::Instant::now();
+            let timeout = Duration::from_secs(30);
             let mut spin_count = 0;
             loop {
                 {
@@ -632,6 +634,13 @@ impl UnifiedWriteAheadLog {
                             Err(e) => Err(Error::Storage(format!("WAL write failed: {:?}", e))),
                         };
                     }
+                }
+
+                // Check timeout
+                if start.elapsed() > timeout {
+                    return Err(Error::Storage(
+                        "WAL group commit timed out after 30s".to_string(),
+                    ));
                 }
 
                 // Spin a few times before yielding

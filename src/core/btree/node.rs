@@ -1,10 +1,6 @@
 use super::{KeyEntry, MAX_KEYS_PER_NODE};
 use crate::core::error::{Error, Result};
 use crate::core::storage::{Page, PAGE_SIZE};
-#[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
-use crate::performance::optimizations::simd::safe::{
-    compare_keys as simd_compare_keys, search_prefix,
-};
 use bytes::{Buf, BufMut, BytesMut};
 use smallvec::SmallVec;
 use std::io::{Cursor, Read};

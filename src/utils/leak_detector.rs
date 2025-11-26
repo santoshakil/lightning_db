@@ -326,19 +326,17 @@ impl LeakDetector {
         *cfg = config;
     }
 
-    /// Start leak detection
+    /// Start leak detection using the global LEAK_DETECTOR instance
     pub fn start(&self) {
         info!("Starting leak detector");
 
-        // Start scanning thread
         let config = self.config.read().unwrap().clone();
-        let detector = Arc::new(self as *const _ as usize); // Unsafe but needed
         let shutdown_flag = self.shutdown_flag.clone();
 
         let handle = thread::Builder::new()
             .name("leak-detector".to_string())
             .spawn(move || {
-                Self::scanning_loop(detector, shutdown_flag, config);
+                Self::scanning_loop(shutdown_flag, config);
             })
             .expect("Failed to start leak detection thread");
 
@@ -523,18 +521,9 @@ impl LeakDetector {
 
     // Private implementation methods
 
-    fn scanning_loop(
-        detector_ptr: Arc<usize>,
-        shutdown_flag: Arc<AtomicBool>,
-        config: LeakDetectionConfig,
-    ) {
-        let detector = unsafe { &*(detector_ptr.as_ref() as *const usize as *const LeakDetector) };
-
+    fn scanning_loop(shutdown_flag: Arc<AtomicBool>, config: LeakDetectionConfig) {
         while !shutdown_flag.load(Ordering::Relaxed) {
-            // Perform scan
-            let _report = detector.scan_for_leaks();
-
-            // Sleep
+            let _report = LEAK_DETECTOR.scan_for_leaks();
             thread::sleep(config.scan_interval);
         }
     }
