@@ -61,12 +61,11 @@ impl CpuThrottle {
 
     /// Check if CPU usage is within quota
     pub fn check_cpu_quota(&self) -> Result<bool> {
-        if self.cpu_quota_percent.is_none() {
+        let Some(quota) = self.cpu_quota_percent else {
             return Ok(true);
-        }
+        };
 
         let usage = self.get_current_usage();
-        let quota = self.cpu_quota_percent.unwrap();
 
         if usage > quota {
             debug!("CPU usage {:.1}% exceeds quota {:.1}%", usage, quota);
@@ -84,12 +83,11 @@ impl CpuThrottle {
             self.cpu_quota_percent
         };
 
-        if quota.is_none() {
+        let Some(limit) = quota else {
             return Ok(());
-        }
+        };
 
         let usage = self.get_current_usage();
-        let limit = quota.unwrap();
 
         if usage > limit {
             let throttle_ratio = (usage - limit) / usage;

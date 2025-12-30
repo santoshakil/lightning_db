@@ -412,7 +412,11 @@ impl TransactionRecoveryManager {
             Ok(())
         } else {
             // Lock is held by another transaction
-            let blocking_tx = *lock_holders.iter().next().unwrap();
+            // Safe: we're in the else branch where !lock_holders.is_empty()
+            let blocking_tx = *lock_holders
+                .iter()
+                .next()
+                .expect("lock_holders must be non-empty in else branch");
 
             // Update wait graph
             {

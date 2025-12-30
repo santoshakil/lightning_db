@@ -80,8 +80,9 @@ fn compare_bytes_fast(a: &[u8], b: &[u8]) -> Ordering {
     if a.len() == b.len() && a.len() >= 8 {
         let mut i = 0;
         while i + 8 <= a.len() {
-            let a_word = u64::from_le_bytes(a[i..i + 8].try_into().unwrap());
-            let b_word = u64::from_le_bytes(b[i..i + 8].try_into().unwrap());
+            // Safe: loop condition guarantees i + 8 <= a.len(), use unwrap_or_default for robustness
+            let a_word = u64::from_le_bytes(a[i..i + 8].try_into().unwrap_or_default());
+            let b_word = u64::from_le_bytes(b[i..i + 8].try_into().unwrap_or_default());
             match a_word.cmp(&b_word) {
                 Ordering::Equal => i += 8,
                 other => return other,

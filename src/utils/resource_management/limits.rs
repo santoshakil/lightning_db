@@ -139,11 +139,12 @@ impl ThroughputTracker {
     }
 
     fn current_throughput(&self) -> u64 {
-        if self.samples.is_empty() {
+        // Defensive: check both front and back exist
+        let (Some(front), Some(back)) = (self.samples.front(), self.samples.back()) else {
             return 0;
-        }
+        };
 
-        let duration = self.samples.back().unwrap().0 - self.samples.front().unwrap().0;
+        let duration = back.0 - front.0;
         if duration.as_secs_f64() > 0.0 {
             (self.total_bytes as f64 / duration.as_secs_f64()) as u64
         } else {

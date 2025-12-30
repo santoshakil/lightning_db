@@ -615,7 +615,8 @@ impl QueryPlanner {
         if predicates.is_empty() {
             Ok(None)
         } else if predicates.len() == 1 {
-            Ok(Some(predicates.into_iter().next().unwrap()))
+            // Safe after len() == 1 check, but use if-let for defensive coding
+            Ok(predicates.into_iter().next())
         } else {
             let mut result = predicates[0].clone();
             for pred in predicates.into_iter().skip(1) {

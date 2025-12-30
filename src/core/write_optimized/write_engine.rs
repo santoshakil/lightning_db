@@ -325,8 +325,8 @@ impl WriteOptimizedEngine {
                         .metadata()
                         .file_path
                         .file_name()
-                        .unwrap()
-                        .to_string_lossy();
+                        .map(|f| f.to_string_lossy())
+                        .unwrap_or_else(|| std::borrow::Cow::Borrowed("unknown"));
 
                     match sstable.get(key) {
                         Ok(Some(value)) => {
@@ -403,7 +403,7 @@ impl WriteOptimizedEngine {
         // Create SSTable from MemTable
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
 
         let sstable_path = tier_path.join(format!("sstable_{}.sst", timestamp));
@@ -481,7 +481,7 @@ impl WriteOptimizedEngine {
         // Create SSTable from MemTable
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
 
         let sstable_path = tier_path.join(format!("bg_sstable_{}.sst", timestamp));
@@ -572,7 +572,9 @@ impl WriteOptimizedEngine {
 
 impl Drop for WriteOptimizedEngine {
     fn drop(&mut self) {
-        let _ = self.stop();
+        if let Err(e) = self.stop() {
+            eprintln!("WARNING: Write engine stop failed during drop: {}. Data may be incomplete.", e);
+        }
     }
 }
 

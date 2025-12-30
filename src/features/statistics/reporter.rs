@@ -47,7 +47,7 @@ impl MetricsReporter {
         serde_json::json!({
             "timestamp": std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
             "operations": {
                 "reads": snapshot.reads,
@@ -103,7 +103,7 @@ impl MetricsReporter {
             "{},{},{},{},{},{},{},{:.2},{},{},{},{},{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
             snapshot.reads,
             snapshot.writes,

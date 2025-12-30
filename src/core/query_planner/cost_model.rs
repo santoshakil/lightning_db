@@ -99,7 +99,11 @@ impl CostModel {
                 )
             }
             ScanType::Range => {
-                let selectivity = scan.estimated_rows as f64 / table_stats.row_count as f64;
+                let selectivity = if table_stats.row_count > 0 {
+                    scan.estimated_rows as f64 / table_stats.row_count as f64
+                } else {
+                    1.0 // Assume full scan if row count unknown
+                };
                 let pages = (table_stats.total_pages as f64 * selectivity).max(1.0);
                 (
                     pages * self.config.random_page_cost,

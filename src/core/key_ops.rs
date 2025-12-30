@@ -91,7 +91,7 @@ impl Database {
         let mut batch = WriteBatch::new();
 
         for (key, value) in pairs {
-            let _ = batch.put(key.to_vec(), value.clone());
+            batch.put(key.to_vec(), value.clone())?;
         }
 
         self.write_batch(&batch)

@@ -31,6 +31,7 @@ pub enum SecureAlgorithm {
 }
 
 #[derive(Debug, Clone, ZeroizeOnDrop)]
+#[allow(dead_code)]
 pub struct SecureKey {
     #[zeroize(skip)]
     pub algorithm: SecureAlgorithm,

@@ -119,6 +119,8 @@ impl PageManager {
         })?;
 
         // Create memory map with retry
+        // SAFETY: File is open with read/write access and has been sized.
+        // The mmap will be valid for the file's lifetime (held in struct).
         let mmap = RetryableOperations::file_operation(|| {
             unsafe { MmapOptions::new().map_mut(&file) }
                 .map_err(|e| Error::Io(format!("Failed to create memory map: {}", e)))
@@ -154,6 +156,8 @@ impl PageManager {
         let file_size = metadata.len();
 
         // Create memory map with retry
+        // SAFETY: File is open with read/write access and exists.
+        // The mmap will be valid for the file's lifetime (held in struct).
         let mmap = RetryableOperations::file_operation(|| {
             unsafe { MmapOptions::new().map_mut(&file) }
                 .map_err(|e| Error::Io(format!("Failed to create memory map: {}", e)))
@@ -353,6 +357,8 @@ impl PageManager {
         self.file_size = grow_size;
 
         // Recreate mmap with new size using retry
+        // SAFETY: File is open with read/write access and has been resized.
+        // Old mmap is dropped below via std::mem::replace.
         let new_mmap = RetryableOperations::file_operation(|| {
             unsafe { MmapOptions::new().map_mut(&self.file) }
                 .map_err(|e| Error::Io(format!("Failed to recreate memory map after grow: {}", e)))

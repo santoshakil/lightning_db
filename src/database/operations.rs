@@ -311,6 +311,38 @@ impl Database {
         Ok(iterator)
     }
 
+    /// Scan keys in reverse order (from end to start).
+    /// This is more efficient than collecting all results and reversing them.
+    pub fn scan_reverse(&self, start: Option<&[u8]>, end: Option<&[u8]>) -> Result<crate::core::iterator::RangeIterator> {
+        use crate::core::iterator::{RangeIterator, ScanDirection};
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        // For reverse scan, swap start and end to iterate backwards
+        // Also swap the include flags: original start (now end) should be included,
+        // original end (now start) should be excluded
+        let mut iterator = RangeIterator::new(
+            end.map(|e| e.to_vec()),   // Start from the end (upper bound, exclusive)
+            start.map(|s| s.to_vec()), // End at the start (lower bound, inclusive)
+            ScanDirection::Backward,
+            timestamp,
+        ).with_bounds(false, true); // include_start=false (exclude upper), include_end=true (include lower)
+
+        // Attach data sources
+        if let Some(ref lsm) = self.lsm_tree {
+            iterator.attach_lsm(lsm)?;
+        } else {
+            // For non-LSM mode, attach B+Tree
+            let btree = self.btree.read();
+            iterator.attach_btree(&btree)?;
+        }
+
+        Ok(iterator)
+    }
+
     pub fn scan_prefix(&self, prefix: &[u8]) -> Result<crate::core::iterator::RangeIterator> {
         use crate::core::iterator::{RangeIterator, ScanDirection};
         // Calculate end key for prefix scan

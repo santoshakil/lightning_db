@@ -43,7 +43,8 @@ impl ShardedPageManager {
 
         Ok(Self {
             managers,
-            page_cache: Arc::new(DashMap::with_capacity(10000)),
+            // Increased capacity for better cache hit rate (50K pages = ~200MB with 4KB pages)
+            page_cache: Arc::new(DashMap::with_capacity(50000)),
             stats: Arc::new(ShardStats::default()),
             shard_mask: (NUM_SHARDS - 1) as u32,
         })
@@ -64,7 +65,8 @@ impl ShardedPageManager {
 
         Ok(Self {
             managers,
-            page_cache: Arc::new(DashMap::with_capacity(10000)),
+            // Increased capacity for better cache hit rate (50K pages = ~200MB with 4KB pages)
+            page_cache: Arc::new(DashMap::with_capacity(50000)),
             stats: Arc::new(ShardStats::default()),
             shard_mask: (NUM_SHARDS - 1) as u32,
         })

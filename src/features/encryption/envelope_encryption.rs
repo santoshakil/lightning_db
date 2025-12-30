@@ -135,6 +135,7 @@ pub enum CompressionAlgorithm {
 
 /// Temporary DEK for encryption operations
 #[derive(ZeroizeOnDrop)]
+#[allow(dead_code)]
 struct EphemeralDEK {
     /// Key material (automatically zeroed)
     key: SecureKey,
@@ -403,7 +404,7 @@ impl EnvelopeEncryptionManager {
             let context = context.to_vec();
 
             let task = task::spawn(async move {
-                let _permit = permit.acquire().await.unwrap();
+                let _permit = permit.acquire().await.expect("encryption semaphore closed unexpectedly");
 
                 let chunk_context =
                     format!("chunk_{}_{}", index, hex::encode(&context)).into_bytes();
@@ -492,7 +493,7 @@ impl EnvelopeEncryptionManager {
             let chunk = chunk.clone();
 
             let task = task::spawn(async move {
-                let _permit = permit.acquire().await.unwrap();
+                let _permit = permit.acquire().await.expect("encryption semaphore closed unexpectedly");
 
                 let decrypted =
                     crypto_provider.decrypt(&dek_clone, &chunk.encrypted_data, &[], None)?;

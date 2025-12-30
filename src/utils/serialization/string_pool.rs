@@ -1,7 +1,8 @@
 use bytes::Bytes;
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 /// String pool for deduplicating common strings
 #[derive(Debug, Clone)]
@@ -36,14 +37,7 @@ impl StringPool {
 
     /// Intern a string and return its ID
     pub fn intern(&self, s: &str) -> u32 {
-        let mut pool = match self.pool.write() {
-            Ok(p) => p,
-            Err(e) => {
-                // Lock was poisoned, try to recover
-                eprintln!("Warning: StringPool lock was poisoned, recovering: {}", e);
-                e.into_inner()
-            }
-        };
+        let mut pool = self.pool.write();
 
         if let Some(&id) = pool.strings.get(s) {
             // Move to end of access order (LRU)
@@ -87,23 +81,10 @@ impl StringPool {
 
     /// Get a string by its ID
     pub fn get(&self, id: u32) -> Option<String> {
-        match self.pool.read() {
-            Ok(pool) => pool
-                .reverse
-                .get(&id)
-                .map(|bytes| String::from_utf8_lossy(bytes).into_owned()),
-            Err(e) => {
-                // Lock was poisoned, try to recover
-                eprintln!(
-                    "Warning: StringPool read lock was poisoned, recovering: {}",
-                    e
-                );
-                e.into_inner()
-                    .reverse
-                    .get(&id)
-                    .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
-            }
-        }
+        let pool = self.pool.read();
+        pool.reverse
+            .get(&id)
+            .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
     }
 
     /// Encode a string to bytes (ID-based)
@@ -124,7 +105,7 @@ impl StringPool {
 
     /// Get current statistics
     pub fn stats(&self) -> StringPoolStats {
-        let pool = self.pool.read().unwrap();
+        let pool = self.pool.read();
         StringPoolStats {
             total_strings: pool.strings.len(),
             current_size: pool.current_size,
@@ -135,7 +116,7 @@ impl StringPool {
 
     /// Clear the pool
     pub fn clear(&self) {
-        let mut pool = self.pool.write().unwrap();
+        let mut pool = self.pool.write();
         pool.strings.clear();
         pool.reverse.clear();
         pool.access_order.clear();

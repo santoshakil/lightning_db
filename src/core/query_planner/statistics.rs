@@ -315,8 +315,16 @@ impl Histogram {
             };
         }
 
-        let _min_val = values.iter().min().unwrap();
-        let max_val = values.iter().max().unwrap();
+        // Safe after empty check above, but use if-let for defensive coding
+        let (Some(_min_val), Some(max_val)) = (values.iter().min(), values.iter().max()) else {
+            return Self {
+                bucket_boundaries: Vec::new(),
+                bucket_counts: Vec::new(),
+                bucket_distinct: Vec::new(),
+                total_count: 0,
+                histogram_type: HistogramType::EquiWidth,
+            };
+        };
 
         let mut bucket_boundaries = Vec::new();
         let mut bucket_counts = vec![0; bucket_count];
@@ -364,7 +372,7 @@ impl Histogram {
         let bucket_count = self.bucket_counts[bucket_idx] as f64;
         let bucket_distinct = self.bucket_distinct[bucket_idx] as f64;
 
-        if bucket_distinct > 0.0 {
+        if bucket_distinct > 0.0 && self.total_count > 0 {
             (bucket_count / bucket_distinct) / self.total_count as f64
         } else {
             0.0
@@ -372,37 +380,64 @@ impl Histogram {
     }
 
     pub fn estimate_range_selectivity(&self, low: &[u8], high: &[u8]) -> f64 {
+        if self.bucket_counts.is_empty() {
+            return 0.0;
+        }
+
         let low_bucket = Self::find_bucket_index(low, &self.bucket_boundaries);
         let high_bucket = Self::find_bucket_index(high, &self.bucket_boundaries);
 
         let mut count = 0;
-        for i in low_bucket..=high_bucket.min(self.bucket_counts.len() - 1) {
+        let max_idx = self.bucket_counts.len().saturating_sub(1);
+        for i in low_bucket.min(max_idx)..=high_bucket.min(max_idx) {
             count += self.bucket_counts[i];
         }
 
-        count as f64 / self.total_count as f64
+        if self.total_count > 0 {
+            count as f64 / self.total_count as f64
+        } else {
+            0.0
+        }
     }
 
     pub fn estimate_greater_than_selectivity(&self, value: &[u8]) -> f64 {
+        if self.bucket_counts.is_empty() {
+            return 0.0;
+        }
+
         let bucket_idx = Self::find_bucket_index(value, &self.bucket_boundaries);
+        let start = bucket_idx.min(self.bucket_counts.len());
 
         let mut count = 0;
-        for i in bucket_idx..self.bucket_counts.len() {
+        for i in start..self.bucket_counts.len() {
             count += self.bucket_counts[i];
         }
 
-        count as f64 / self.total_count as f64
+        if self.total_count > 0 {
+            count as f64 / self.total_count as f64
+        } else {
+            0.0
+        }
     }
 
     pub fn estimate_less_than_selectivity(&self, value: &[u8]) -> f64 {
+        if self.bucket_counts.is_empty() {
+            return 0.0;
+        }
+
         let bucket_idx = Self::find_bucket_index(value, &self.bucket_boundaries);
+        let max_idx = self.bucket_counts.len().saturating_sub(1);
 
         let mut count = 0;
-        for i in 0..=bucket_idx.min(self.bucket_counts.len() - 1) {
+        for i in 0..=bucket_idx.min(max_idx) {
             count += self.bucket_counts[i];
         }
 
-        count as f64 / self.total_count as f64
+        if self.total_count > 0 {
+            count as f64 / self.total_count as f64
+        } else {
+            0.0
+        }
     }
 }
 

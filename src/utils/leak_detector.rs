@@ -13,11 +13,12 @@ use std::{
     marker::PhantomData,
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
-        Arc, Mutex, RwLock, Weak,
+        Arc, Weak,
     },
     thread,
     time::{Duration, SystemTime},
 };
+use parking_lot::{Mutex, RwLock};
 
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -322,7 +323,7 @@ impl LeakDetector {
 
     /// Configure leak detection
     pub fn configure(&self, config: LeakDetectionConfig) {
-        let mut cfg = self.config.write().unwrap();
+        let mut cfg = self.config.write();
         *cfg = config;
     }
 
@@ -330,7 +331,7 @@ impl LeakDetector {
     pub fn start(&self) {
         info!("Starting leak detector");
 
-        let config = self.config.read().unwrap().clone();
+        let config = self.config.read().clone();
         let shutdown_flag = self.shutdown_flag.clone();
 
         let handle = thread::Builder::new()
@@ -340,7 +341,7 @@ impl LeakDetector {
             })
             .expect("Failed to start leak detection thread");
 
-        *self.scan_thread.lock().unwrap() = Some(handle);
+        *self.scan_thread.lock() = Some(handle);
     }
 
     /// Stop leak detection
@@ -349,10 +350,9 @@ impl LeakDetector {
 
         self.shutdown_flag.store(true, Ordering::SeqCst);
 
-        if let Ok(mut guard) = self.scan_thread.lock() {
-            if let Some(handle) = guard.take() {
-                let _ = handle.join();
-            }
+        let mut guard = self.scan_thread.lock();
+        if let Some(handle) = guard.take() {
+            let _ = handle.join();
         }
 
         self.shutdown_flag.store(false, Ordering::SeqCst);
@@ -366,7 +366,7 @@ impl LeakDetector {
         size: usize,
         location: Option<String>,
     ) {
-        let config = self.config.read().unwrap();
+        let config = self.config.read();
 
         // Check capacity
         if self.tracked_objects.len() >= config.max_tracked_objects {
@@ -456,7 +456,7 @@ impl LeakDetector {
         let mut leaks = Vec::new();
         let objects_scanned = self.tracked_objects.len();
 
-        let config = self.config.read().unwrap();
+        let config = self.config.read();
 
         // 1. Detect circular references
         if config.detect_cycles {
@@ -483,7 +483,7 @@ impl LeakDetector {
         self.total_scans.fetch_add(1, Ordering::Relaxed);
         self.total_leaks_detected
             .fetch_add(leaks.len() as u64, Ordering::Relaxed);
-        *self.last_scan.lock().unwrap() = Some(start_time);
+        *self.last_scan.lock() = Some(start_time);
 
         info!(
             "Leak detection scan completed in {:?}, found {} potential leaks",
@@ -514,7 +514,7 @@ impl LeakDetector {
             total_objects_tracked: self.total_objects_tracked.load(Ordering::Relaxed),
             total_scans_performed: self.total_scans.load(Ordering::Relaxed),
             total_leaks_detected: self.total_leaks_detected.load(Ordering::Relaxed),
-            last_scan_time: *self.last_scan.lock().unwrap(),
+            last_scan_time: *self.last_scan.lock(),
             objects_by_type: self.get_objects_by_type(),
         }
     }

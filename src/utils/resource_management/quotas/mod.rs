@@ -10,12 +10,12 @@
 
 use crate::{Error, Result};
 use dashmap::DashMap;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{
     atomic::{AtomicU64, AtomicUsize, Ordering},
-    Arc, RwLock,
+    Arc,
 };
 use std::time::{Duration, Instant, SystemTime};
 use tracing::{info, warn};
@@ -535,12 +535,12 @@ impl QuotaManager {
 
     /// Get quota statistics
     pub fn get_statistics(&self) -> QuotaStatistics {
-        self.stats.read().unwrap().clone()
+        self.stats.read().clone()
     }
 
     /// Reset statistics
     pub fn reset_statistics(&self) {
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = self.stats.write();
         *stats = QuotaStatistics {
             last_reset: Instant::now(),
             ..Default::default()
@@ -609,7 +609,7 @@ impl QuotaManager {
     where
         F: FnOnce(&mut QuotaStatistics),
     {
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = self.stats.write();
         f(&mut stats);
     }
 }

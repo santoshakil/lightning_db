@@ -612,11 +612,13 @@ impl Drop for OptimizedMmapManager {
         self.shutdown.store(1, Ordering::Relaxed);
 
         if let Some(handle) = self.sync_thread.lock().take() {
-            let _ = handle.join();
+            let _ = handle.join(); // Thread join failure is non-critical
         }
 
-        // Final sync
-        let _ = self.sync();
+        // Final sync - critical for data persistence
+        if let Err(e) = self.sync() {
+            eprintln!("WARNING: Mmap final sync failed during drop: {}. Data may be lost.", e);
+        }
     }
 }
 

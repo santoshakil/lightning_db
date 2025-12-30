@@ -1,6 +1,26 @@
-use crate::{LightningDbConfig, WalSyncMode, MmapConfig, ConsistencyConfig};
+use crate::{LightningDbConfig, WalSyncMode, MmapConfig, ConsistencyConfig, Result, Error};
 use crate::features::encryption::EncryptionConfig;
 use crate::utils::quotas::QuotaConfig;
+
+/// Configuration validation limits
+pub mod limits {
+    /// Minimum page size (512 bytes)
+    pub const MIN_PAGE_SIZE: u64 = 512;
+    /// Maximum page size (1MB - must be power of 2)
+    pub const MAX_PAGE_SIZE: u64 = 1024 * 1024;
+    /// Maximum cache size (100GB)
+    pub const MAX_CACHE_SIZE: u64 = 100 * 1024 * 1024 * 1024;
+    /// Minimum active transactions
+    pub const MIN_ACTIVE_TRANSACTIONS: usize = 1;
+    /// Maximum active transactions
+    pub const MAX_ACTIVE_TRANSACTIONS: usize = 100_000;
+    /// Maximum write batch size
+    pub const MAX_WRITE_BATCH_SIZE: usize = 100_000;
+    /// Maximum prefetch workers
+    pub const MAX_PREFETCH_WORKERS: usize = 64;
+    /// Maximum prefetch distance
+    pub const MAX_PREFETCH_DISTANCE: usize = 1024;
+}
 
 /// Production-ready configuration presets for different use cases
 #[derive(Debug, Clone, Copy)]
@@ -278,6 +298,125 @@ impl ConfigBuilder {
     pub fn build(self) -> LightningDbConfig {
         self.config
     }
+
+    /// Build configuration with validation
+    /// Returns an error if any configuration values are invalid
+    pub fn build_validated(self) -> Result<LightningDbConfig> {
+        self.validate()?;
+        Ok(self.config)
+    }
+
+    /// Validate configuration without building
+    /// Returns a list of validation errors or Ok(()) if valid
+    pub fn validate(&self) -> Result<()> {
+        let config = &self.config;
+
+        // Validate page_size
+        if config.page_size < limits::MIN_PAGE_SIZE {
+            return Err(Error::Config(format!(
+                "page_size {} is below minimum {}",
+                config.page_size, limits::MIN_PAGE_SIZE
+            )));
+        }
+        if config.page_size > limits::MAX_PAGE_SIZE {
+            return Err(Error::Config(format!(
+                "page_size {} exceeds maximum {}",
+                config.page_size, limits::MAX_PAGE_SIZE
+            )));
+        }
+        // Page size must be a power of 2
+        if !config.page_size.is_power_of_two() {
+            return Err(Error::Config(format!(
+                "page_size {} must be a power of 2",
+                config.page_size
+            )));
+        }
+
+        // Validate cache_size
+        if config.cache_size > limits::MAX_CACHE_SIZE {
+            return Err(Error::Config(format!(
+                "cache_size {} exceeds maximum {} (100GB)",
+                config.cache_size, limits::MAX_CACHE_SIZE
+            )));
+        }
+
+        // Validate max_active_transactions
+        if config.max_active_transactions < limits::MIN_ACTIVE_TRANSACTIONS {
+            return Err(Error::Config(format!(
+                "max_active_transactions {} is below minimum {}",
+                config.max_active_transactions, limits::MIN_ACTIVE_TRANSACTIONS
+            )));
+        }
+        if config.max_active_transactions > limits::MAX_ACTIVE_TRANSACTIONS {
+            return Err(Error::Config(format!(
+                "max_active_transactions {} exceeds maximum {}",
+                config.max_active_transactions, limits::MAX_ACTIVE_TRANSACTIONS
+            )));
+        }
+
+        // Validate write_batch_size (0 is allowed - means no batching)
+        if config.write_batch_size > limits::MAX_WRITE_BATCH_SIZE {
+            return Err(Error::Config(format!(
+                "write_batch_size {} exceeds maximum {}",
+                config.write_batch_size, limits::MAX_WRITE_BATCH_SIZE
+            )));
+        }
+
+        // Validate prefetch settings if enabled
+        if config.prefetch_enabled {
+            if config.prefetch_workers == 0 {
+                return Err(Error::Config(
+                    "prefetch_workers must be at least 1 when prefetch is enabled".into()
+                ));
+            }
+            if config.prefetch_workers > limits::MAX_PREFETCH_WORKERS {
+                return Err(Error::Config(format!(
+                    "prefetch_workers {} exceeds maximum {}",
+                    config.prefetch_workers, limits::MAX_PREFETCH_WORKERS
+                )));
+            }
+            if config.prefetch_distance == 0 {
+                return Err(Error::Config(
+                    "prefetch_distance must be at least 1 when prefetch is enabled".into()
+                ));
+            }
+            if config.prefetch_distance > limits::MAX_PREFETCH_DISTANCE {
+                return Err(Error::Config(format!(
+                    "prefetch_distance {} exceeds maximum {}",
+                    config.prefetch_distance, limits::MAX_PREFETCH_DISTANCE
+                )));
+            }
+        }
+
+        // Validate compression settings
+        if config.compression_enabled {
+            if let Some(level) = config.compression_level {
+                // ZSTD levels are 1-22, LZ4 and Snappy don't use levels
+                if config.compression_type == 1 && !(1..=22).contains(&level) {
+                    return Err(Error::Config(format!(
+                        "ZSTD compression_level {} must be between 1 and 22",
+                        level
+                    )));
+                }
+            }
+        }
+
+        // Validate mmap_config if present
+        if let Some(ref mmap) = config.mmap_config {
+            if mmap.region_size == 0 {
+                return Err(Error::Config(
+                    "mmap region_size cannot be 0".into()
+                ));
+            }
+            if mmap.max_mapped_regions == 0 {
+                return Err(Error::Config(
+                    "mmap max_mapped_regions cannot be 0".into()
+                ));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for ConfigBuilder {
@@ -337,5 +476,58 @@ mod tests {
             assert!(config.cache_size > 0);
             assert!(config.max_active_transactions > 0);
         }
+    }
+
+    #[test]
+    fn test_all_presets_pass_validation() {
+        let presets = vec![
+            ConfigPreset::ReadOptimized,
+            ConfigPreset::WriteOptimized,
+            ConfigPreset::Balanced,
+            ConfigPreset::LowMemory,
+            ConfigPreset::Development,
+            ConfigPreset::MaxDurability,
+        ];
+
+        for preset in presets {
+            let builder = ConfigBuilder::from_preset(preset);
+            assert!(builder.validate().is_ok(), "Preset {:?} failed validation", preset);
+        }
+    }
+
+    #[test]
+    fn test_validation_page_size_too_small() {
+        let builder = ConfigBuilder::new().page_size(256);
+        let result = builder.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("page_size"));
+    }
+
+    #[test]
+    fn test_validation_page_size_not_power_of_two() {
+        let builder = ConfigBuilder::new().page_size(5000);
+        let result = builder.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("power of 2"));
+    }
+
+    #[test]
+    fn test_validation_max_transactions_zero() {
+        let builder = ConfigBuilder::new().max_active_transactions(0);
+        let result = builder.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("max_active_transactions"));
+    }
+
+    #[test]
+    fn test_build_validated_success() {
+        let config = ConfigBuilder::new().build_validated();
+        assert!(config.is_ok());
+    }
+
+    #[test]
+    fn test_build_validated_failure() {
+        let config = ConfigBuilder::new().page_size(100).build_validated();
+        assert!(config.is_err());
     }
 }

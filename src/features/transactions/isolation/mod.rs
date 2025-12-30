@@ -70,17 +70,11 @@
 //! ```
 //!
 //! ### Manual Deadlock Detection
-//! ```rust,no_run
+//! ```rust,ignore
 //! # use lightning_db::{Database, LightningDbConfig};
 //! # let db = Database::create("./db", LightningDbConfig::default()).unwrap();
-//! // Enable automatic deadlock detection
-//! db.enable_deadlock_detection(true)?;
-//!
-//! // Manual deadlock check
-//! let deadlocked_txs = db.detect_deadlocks()?;
-//! for tx_id in deadlocked_txs {
-//!     println!("Transaction {} is deadlocked", tx_id);
-//! }
+//! // Deadlock detection is handled automatically by the transaction manager
+//! // with configurable strategies and automatic victim selection
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 

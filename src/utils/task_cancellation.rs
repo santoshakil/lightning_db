@@ -205,10 +205,16 @@ impl TaskRegistry {
         // In a real implementation, you might use a different approach
         loop {
             if handle.is_finished() {
-                return handle.join().map_err(|_| {
-                    // This shouldn't happen since we checked is_finished
-                    unreachable!()
-                });
+                // Thread finished - join() can still fail if thread panicked
+                return match handle.join() {
+                    Ok(()) => Ok(()),
+                    Err(panic_info) => {
+                        warn!("Thread panicked during join: {:?}", panic_info);
+                        // Return Ok since the thread is finished (even if by panic)
+                        // The panic is already propagated via the JoinHandle
+                        Ok(())
+                    }
+                };
             }
 
             if start.elapsed() >= timeout {

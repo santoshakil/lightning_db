@@ -5,7 +5,8 @@ use std::fs::{remove_file, rename, File, OpenOptions};
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn};
 
@@ -192,13 +193,13 @@ impl LogRotationManager {
 
         self.current_segment_id
             .store(max_segment_id + 1, Ordering::SeqCst);
-        *self.active_segments.lock().unwrap() = active_segments;
-        *self.archived_segments.lock().unwrap() = archived_segments;
+        *self.active_segments.lock() = active_segments;
+        *self.archived_segments.lock() = archived_segments;
 
         info!(
             "Found {} active segments and {} archived segments",
-            self.active_segments.lock().unwrap().len(),
-            self.archived_segments.lock().unwrap().len()
+            self.active_segments.lock().len(),
+            self.archived_segments.lock().len()
         );
 
         Ok(())
@@ -305,7 +306,7 @@ impl LogRotationManager {
     /// Check if current segment should be rotated
     pub fn should_rotate_segment(&self, current_segment_size: u64) -> bool {
         current_segment_size >= self.config.max_segment_size
-            || self.active_segments.lock().unwrap().len() >= self.config.max_active_segments
+            || self.active_segments.lock().len() >= self.config.max_active_segments
     }
 
     /// Rotate the current WAL segment
@@ -357,7 +358,7 @@ impl LogRotationManager {
 
         // Add new segment to active segments
         {
-            let mut active = self.active_segments.lock().unwrap();
+            let mut active = self.active_segments.lock();
             let metadata =
                 SegmentMetadata::new(new_segment_id, current_lsn, new_segment_path.clone());
             active.insert(new_segment_id, metadata);
@@ -384,7 +385,7 @@ impl LogRotationManager {
         let mut segments_to_archive = Vec::new();
 
         {
-            let active = self.active_segments.lock().unwrap();
+            let active = self.active_segments.lock();
             if active.len() <= self.config.max_active_segments {
                 return Ok(());
             }
@@ -411,7 +412,7 @@ impl LogRotationManager {
         info!("Archiving segment {}", segment_id);
 
         let metadata = {
-            let active = self.active_segments.lock().unwrap();
+            let active = self.active_segments.lock();
             active.get(&segment_id).cloned().ok_or_else(|| {
                 Error::Generic(format!(
                     "Segment {} not found in active segments",
@@ -437,8 +438,8 @@ impl LogRotationManager {
 
         // Move from active to archived
         {
-            let mut active = self.active_segments.lock().unwrap();
-            let mut archived = self.archived_segments.lock().unwrap();
+            let mut active = self.active_segments.lock();
+            let mut archived = self.archived_segments.lock();
 
             active.remove(&segment_id);
             archived.insert(segment_id, archived_metadata);
@@ -454,7 +455,7 @@ impl LogRotationManager {
         let now = SystemTime::now();
 
         {
-            let archived = self.archived_segments.lock().unwrap();
+            let archived = self.archived_segments.lock();
 
             // Skip if we don't have enough archives to consider cleanup
             if archived.len() <= self.config.min_archive_count {
@@ -499,7 +500,7 @@ impl LogRotationManager {
         info!("Deleting archived segment {}", segment_id);
 
         let file_path = {
-            let mut archived = self.archived_segments.lock().unwrap();
+            let mut archived = self.archived_segments.lock();
             let metadata = archived.remove(&segment_id).ok_or_else(|| {
                 Error::Generic(format!("Archived segment {} not found", segment_id))
             })?;
@@ -517,7 +518,6 @@ impl LogRotationManager {
     pub fn get_active_segments(&self) -> Vec<SegmentMetadata> {
         self.active_segments
             .lock()
-            .unwrap()
             .values()
             .cloned()
             .collect()
@@ -527,7 +527,6 @@ impl LogRotationManager {
     pub fn get_archived_segments(&self) -> Vec<SegmentMetadata> {
         self.archived_segments
             .lock()
-            .unwrap()
             .values()
             .cloned()
             .collect()
@@ -538,14 +537,12 @@ impl LogRotationManager {
         let active_usage: u64 = self
             .active_segments
             .lock()
-            .unwrap()
             .values()
             .map(|m| m.file_size)
             .sum();
         let archived_usage: u64 = self
             .archived_segments
             .lock()
-            .unwrap()
             .values()
             .map(|m| m.file_size)
             .sum();

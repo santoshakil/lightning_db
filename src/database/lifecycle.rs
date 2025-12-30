@@ -79,13 +79,19 @@ impl Database {
         // Initialize UnifiedCache replacing legacy MemoryPool
         let unified_cache = if config.cache_size > 0 {
             use crate::performance::cache::unified_cache::UnifiedCacheConfig;
+            // Convert cache_size (bytes) to entry count
+            // Each cached page is approximately page_size bytes, so we divide by page_size
+            // Use a minimum of 1000 entries and cap at 1 million for sanity
+            let avg_entry_size = config.page_size.max(4096);
+            let cache_entry_count = (config.cache_size / avg_entry_size)
+                .clamp(1000, 1_000_000) as usize;
             let cache_config = UnifiedCacheConfig {
-                capacity: config.cache_size as usize,
+                capacity: cache_entry_count,
                 num_segments: 16, // Optimize for concurrency
                 enable_adaptive_sizing: true,
                 enable_prefetching: true,
                 eviction_batch_size: 32,
-                enable_thread_local: true,
+                enable_thread_local: cache_entry_count > 100,
                 adaptive_config: Default::default(),
             };
             Some(Arc::new(
@@ -531,13 +537,19 @@ impl Database {
             // Initialize UnifiedCache replacing legacy MemoryPool
             let unified_cache = if config.cache_size > 0 {
                 use crate::performance::cache::unified_cache::UnifiedCacheConfig;
+                // Convert cache_size (bytes) to entry count
+                // Each cached page is approximately page_size bytes, so we divide by page_size
+                // Use a minimum of 1000 entries and cap at 1 million for sanity
+                let avg_entry_size = config.page_size.max(4096);
+                let cache_entry_count = (config.cache_size / avg_entry_size)
+                    .clamp(1000, 1_000_000) as usize;
                 let cache_config = UnifiedCacheConfig {
-                    capacity: config.cache_size as usize,
+                    capacity: cache_entry_count,
                     num_segments: 16, // Optimize for concurrency
                     enable_adaptive_sizing: true,
                     enable_prefetching: true,
                     eviction_batch_size: 32,
-                    enable_thread_local: true,
+                    enable_thread_local: cache_entry_count > 100,
                     adaptive_config: Default::default(),
                 };
                 Some(Arc::new(

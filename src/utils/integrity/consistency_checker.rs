@@ -224,18 +224,20 @@ impl ConsistencyChecker {
 
         // All leaves should be at the same depth
         if leaf_depths.len() > 1 {
-            let min_depth = leaf_depths.iter().min().unwrap();
-            let max_depth = leaf_depths.iter().max().unwrap();
-
-            errors.push(ConsistencyError {
-                error_type: ConsistencyErrorType::BTreeDepthMismatch,
-                description: format!(
-                    "B+Tree leaves at different depths: {} to {}",
-                    min_depth, max_depth
-                ),
-                affected_pages: vec![],
-                severity: ErrorSeverity::Critical,
-            });
+            // Safe: we just checked len() > 1 so min/max will succeed
+            if let (Some(&min_depth), Some(&max_depth)) =
+                (leaf_depths.iter().min(), leaf_depths.iter().max())
+            {
+                errors.push(ConsistencyError {
+                    error_type: ConsistencyErrorType::BTreeDepthMismatch,
+                    description: format!(
+                        "B+Tree leaves at different depths: {} to {}",
+                        min_depth, max_depth
+                    ),
+                    affected_pages: vec![],
+                    severity: ErrorSeverity::Critical,
+                });
+            }
         }
 
         Ok(())

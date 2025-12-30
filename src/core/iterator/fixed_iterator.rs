@@ -349,10 +349,10 @@ impl Iterator for FixedRangeIterator {
                 continue;
             }
 
-            // We have a valid entry
+            // We have a valid entry (tombstones filtered above, so value must be Some)
             self.last_key = Some(entry.key.clone());
             self.count += 1;
-            return Some(Ok((entry.key, entry.value.unwrap())));
+            return Some(Ok((entry.key, entry.value.expect("value should be Some after tombstone filter"))));
         }
     }
 }

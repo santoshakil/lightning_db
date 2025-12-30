@@ -94,8 +94,11 @@ lightning_db = { path = "path/to/lightning_db" }
 ## Examples
 
 ```bash
+# Run basic usage example
+cargo run --example basic_usage --release
+
 # Run performance benchmark
-cargo run --example performance_benchmark --release
+cargo run --example performance_test --release
 
 # Run stress test
 cargo run --example stress_test --release
@@ -173,19 +176,24 @@ Lightning DB includes a powerful command-line interface:
 # Build CLI tools
 cargo build --release --features cli
 
-# Database operations
-./target/release/lightning-cli open my_db
-./target/release/lightning-cli put my_db key value
-./target/release/lightning-cli get my_db key
+# Create a new database and store data
+./target/release/lightning-cli create my_db
+./target/release/lightning-cli put my_db mykey myvalue
+./target/release/lightning-cli get my_db mykey
 ./target/release/lightning-cli scan my_db --limit 100
 
 # Benchmarking
 ./target/release/lightning-cli bench my_db --ops 1000000 --threads 8
 
 # Database maintenance
+./target/release/lightning-cli stats my_db
+./target/release/lightning-cli health my_db
 ./target/release/lightning-cli check my_db --verbose
-./target/release/lightning-backup create my_db backup.ldb
-./target/release/lightning-backup restore backup.ldb restored_db
+./target/release/lightning-cli compact my_db
+
+# Backup and restore
+./target/release/lightning-cli backup my_db ./backup_dir
+./target/release/lightning-cli restore ./backup_dir ./restored_db
 ```
 
 ## Contributing

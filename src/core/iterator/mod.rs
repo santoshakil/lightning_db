@@ -247,7 +247,7 @@ impl Iterator for RangeIterator {
             let mut skip_duplicates = Vec::new();
             while let Some(next_entry) = self.merge_heap.peek() {
                 if next_entry.key == entry.key {
-                    skip_duplicates.push(self.merge_heap.pop().unwrap());
+                    skip_duplicates.push(self.merge_heap.pop().expect("heap should not be empty after successful peek"));
                 } else {
                     break;
                 }
@@ -305,9 +305,9 @@ impl Iterator for RangeIterator {
                 }
             }
 
-            // Return the value
+            // Return the value (tombstones filtered above, so value must be Some)
             self.count += 1;
-            return Some(Ok((entry.key, entry.value.unwrap())));
+            return Some(Ok((entry.key, entry.value.expect("value should be Some after tombstone filter"))));
         }
     }
 }
@@ -402,20 +402,25 @@ impl LSMIterator {
     }
 
     fn next(&mut self) -> Result<Option<IteratorEntry>> {
-        if let Some((key, value_opt, _ts)) = self.lsm_iter.advance() {
-            if let Some(value) = value_opt {
-                Ok(Some(IteratorEntry {
-                    key,
-                    value: Some(value),
-                    source: IteratorSource::Lsm,
-                    timestamp: self.read_timestamp,
-                }))
-            } else {
-                // Skip tombstones
-                self.next()
+        // Use a loop instead of recursion to avoid stack overflow with many tombstones
+        loop {
+            match self.lsm_iter.advance() {
+                Some((key, Some(value), _ts)) => {
+                    return Ok(Some(IteratorEntry {
+                        key,
+                        value: Some(value),
+                        source: IteratorSource::Lsm,
+                        timestamp: self.read_timestamp,
+                    }));
+                }
+                Some((_, None, _)) => {
+                    // Tombstone - continue to next entry
+                    continue;
+                }
+                None => {
+                    return Ok(None);
+                }
             }
-        } else {
-            Ok(None)
         }
     }
 }

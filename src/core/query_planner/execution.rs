@@ -594,14 +594,14 @@ impl PhysicalOperator for SortOperator {
 
 impl SortOperator {
     fn sort_batches(&self, batches: Vec<RecordBatch>) -> Result<RecordBatch, Error> {
-        if batches.is_empty() {
-            return Ok(RecordBatch {
+        // Return first batch or empty batch if none
+        match batches.into_iter().next() {
+            Some(batch) => Ok(batch),
+            None => Ok(RecordBatch {
                 columns: HashMap::new(),
                 row_count: 0,
-            });
+            }),
         }
-
-        Ok(batches.into_iter().next().unwrap())
     }
 }
 
@@ -756,7 +756,9 @@ impl TaskScheduler {
         F: Future<Output = Result<R, Error>> + Send + 'static,
         R: Send + 'static,
     {
-        let _permit = self._semaphore.acquire().await.unwrap();
+        let _permit = self._semaphore.acquire().await.map_err(|_| Error::InvalidOperation {
+            reason: "Scheduler semaphore closed".to_string(),
+        })?;
         task.await
     }
 }

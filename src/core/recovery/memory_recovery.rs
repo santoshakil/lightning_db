@@ -131,6 +131,8 @@ impl MemoryRecoveryManager {
         let layout =
             Layout::from_size_align(size, std::mem::align_of::<u8>()).map_err(|_| Error::Memory)?;
 
+        // SAFETY: Layout was validated above via from_size_align.
+        // The returned pointer is checked for null below before use.
         let ptr = unsafe { alloc(layout) };
         if ptr.is_null() {
             return Err(Error::Memory);

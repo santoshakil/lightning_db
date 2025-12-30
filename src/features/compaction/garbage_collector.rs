@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+use tracing::error;
 
 #[derive(Debug, Clone)]
 pub struct VersionInfo {
@@ -425,7 +426,7 @@ impl GarbageCollector {
                 interval_timer.tick().await;
 
                 if let Err(e) = gc.collect().await {
-                    eprintln!("Background GC error: {}", e);
+                    error!("Background GC error: {}", e);
                 }
             }
         });

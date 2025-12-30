@@ -174,27 +174,109 @@ pub struct RangeJoinParams {
 // Re-export unified WalSyncMode to maintain compatibility
 pub use crate::core::wal::UnifiedWalSyncMode as WalSyncMode;
 
+/// Configuration options for Lightning DB.
+///
+/// Use [`Default::default()`] for sensible defaults, or [`ConfigPreset`] for
+/// production-ready configurations optimized for specific workloads.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use lightning_db::{Database, LightningDbConfig, WalSyncMode};
+///
+/// let config = LightningDbConfig {
+///     cache_size: 128 * 1024 * 1024,  // 128MB cache
+///     compression_enabled: true,
+///     wal_sync_mode: WalSyncMode::Sync,
+///     ..Default::default()
+/// };
+/// let db = Database::create("./my_db", config)?;
+/// # Ok::<(), lightning_db::Error>(())
+/// ```
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LightningDbConfig {
+    /// Page size in bytes. Must be a power of 2.
+    /// Range: 512 bytes to 1MB. Default: 4096 (4KB).
     pub page_size: u64,
+
+    /// Page cache size in bytes. Set to 0 to disable caching.
+    /// Larger values improve read performance at the cost of memory.
+    /// Default: 0 (disabled for better write performance).
     pub cache_size: u64,
+
+    /// Memory-mapped file size in bytes. Set to None to disable mmap.
+    /// When enabled, improves read performance for large datasets.
     pub mmap_size: Option<u64>,
+
+    /// Enable data compression. Reduces disk usage at the cost of CPU.
+    /// Default: true.
     pub compression_enabled: bool,
-    pub compression_type: i32, // Use i32 to match protobuf enum
+
+    /// Compression algorithm: 0=None, 1=ZSTD, 2=LZ4.
+    /// ZSTD offers better compression ratio, LZ4 offers faster speed.
+    /// Default: 1 (ZSTD).
+    pub compression_type: i32,
+
+    /// Compression level for ZSTD (1-22). Higher = better compression, slower.
+    /// Default: Some(3).
     pub compression_level: Option<i32>,
+
+    /// Maximum number of concurrent transactions.
+    /// Range: 1 to 100,000. Default: 1000.
     pub max_active_transactions: usize,
+
+    /// Enable read-ahead prefetching for sequential access patterns.
+    /// Default: false.
     pub prefetch_enabled: bool,
+
+    /// Number of pages to prefetch ahead. Range: 1-1024.
+    /// Default: 8.
     pub prefetch_distance: usize,
+
+    /// Number of background prefetch worker threads. Range: 1-64.
+    /// Default: 2.
     pub prefetch_workers: usize,
+
+    /// Use optimized transaction engine. May improve transaction throughput.
+    /// Default: false (disabled due to edge case issues).
     pub use_optimized_transactions: bool,
+
+    /// Use optimized page manager. May improve I/O performance.
+    /// Default: false (disabled for stability).
     pub use_optimized_page_manager: bool,
+
+    /// Memory-mapped I/O configuration. None to disable mmap.
     pub mmap_config: Option<MmapConfig>,
+
+    /// Consistency level configuration for operations.
     pub consistency_config: ConsistencyConfig,
+
+    /// Use unified Write-Ahead Log system.
+    /// Default: true.
     pub use_unified_wal: bool,
+
+    /// WAL synchronization mode controlling durability vs performance.
+    ///
+    /// - `Async`: Best performance, data may be lost on crash
+    /// - `Sync`: Balanced durability and performance
+    /// - `Full`: Maximum durability, fsync on every write
+    ///
+    /// Default: Async.
     pub wal_sync_mode: WalSyncMode,
+
+    /// Maximum operations to batch before flushing.
+    /// Higher values improve write throughput. Range: 1-100,000.
+    /// Default: 1000.
     pub write_batch_size: usize,
+
+    /// Encryption configuration for at-rest data protection.
     pub encryption_config: features::encryption::EncryptionConfig,
+
+    /// Resource quota configuration for limiting database size and connections.
     pub quota_config: utils::quotas::QuotaConfig,
+
+    /// Enable performance statistics collection.
+    /// Default: true.
     pub enable_statistics: bool,
 }
 
@@ -297,11 +379,16 @@ impl Drop for Database {
 
         if let Some(ref lsm_tree) = self.lsm_tree {
             // Flush LSM tree to ensure all data is persisted
-            let _ = lsm_tree.flush();
+            // CRITICAL: Log errors instead of silently ignoring
+            if let Err(e) = lsm_tree.flush() {
+                eprintln!("WARNING: LSM flush failed during shutdown: {}. Data may be lost.", e);
+            }
             // LSM tree will stop its own background threads in its Drop impl
         } else {
             // If not using LSM, ensure B+Tree changes are persisted
-            let _ = self.page_manager.sync();
+            if let Err(e) = self.page_manager.sync() {
+                eprintln!("WARNING: Page manager sync failed during shutdown: {}", e);
+            }
         }
 
         // Shutdown unified WAL if present
@@ -311,7 +398,9 @@ impl Drop for Database {
 
         // Flush write buffer if present
         if let Some(ref write_buffer) = self.btree_write_buffer {
-            let _ = write_buffer.flush();
+            if let Err(e) = write_buffer.flush() {
+                eprintln!("WARNING: Write buffer flush failed during shutdown: {}", e);
+            }
         }
 
         // Stop version cleanup thread to prevent memory leaks
@@ -319,8 +408,10 @@ impl Drop for Database {
             cleanup_thread.stop();
         }
 
-        // Sync any pending writes
-        let _ = self.page_manager.sync();
+        // Sync any pending writes - critical for durability
+        if let Err(e) = self.page_manager.sync() {
+            eprintln!("WARNING: Final page sync failed during shutdown: {}", e);
+        }
     }
 }
 

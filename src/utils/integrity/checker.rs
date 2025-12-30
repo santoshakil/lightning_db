@@ -52,6 +52,7 @@ pub struct IntegrityChecker<'a> {
     errors: Vec<IntegrityError>,
     warnings: Vec<IntegrityWarning>,
     stats: IntegrityStats,
+    verbose: bool,
 }
 
 impl<'a> IntegrityChecker<'a> {
@@ -61,12 +62,37 @@ impl<'a> IntegrityChecker<'a> {
             errors: Vec::new(),
             warnings: Vec::new(),
             stats: IntegrityStats::default(),
+            verbose: true, // Default to verbose for backward compatibility
+        }
+    }
+
+    /// Create a new IntegrityChecker with verbose output disabled
+    pub fn new_quiet(db: &'a Database) -> Self {
+        Self {
+            db,
+            errors: Vec::new(),
+            warnings: Vec::new(),
+            stats: IntegrityStats::default(),
+            verbose: false,
+        }
+    }
+
+    /// Set verbose mode
+    pub fn set_verbose(&mut self, verbose: bool) -> &mut Self {
+        self.verbose = verbose;
+        self
+    }
+
+    /// Helper to print only in verbose mode
+    fn log(&self, message: &str) {
+        if self.verbose {
+            println!("{}", message);
         }
     }
 
     /// Perform complete integrity check
     pub fn check_all(&mut self) -> Result<IntegrityReport> {
-        println!("Starting database integrity check...");
+        self.log("Starting database integrity check...");
 
         // Check B+Tree structure
         self.check_btree_integrity()?;
@@ -98,7 +124,7 @@ impl<'a> IntegrityChecker<'a> {
 
     /// Check B+Tree structure integrity
     fn check_btree_integrity(&mut self) -> Result<()> {
-        println!("Checking B+Tree integrity...");
+        self.log("Checking B+Tree integrity...");
 
         // Simplified check - just verify we can iterate through some keys
         let mut key_count = 0;
@@ -133,44 +159,44 @@ impl<'a> IntegrityChecker<'a> {
         self.stats.btree_nodes = key_count / 10; // Rough estimate
         self.stats.btree_depth = 3; // Typical value
 
-        println!("  Verified keys: {}", key_count);
+        self.log(&format!("  Verified keys: {}", key_count));
 
         Ok(())
     }
 
     /// Check page allocation consistency
     fn check_page_allocation(&mut self) -> Result<()> {
-        println!("Checking page allocation...");
+        self.log("Checking page allocation...");
 
         // For now, we'll estimate based on B+Tree nodes
         // In a real implementation, we'd have page manager methods
         self.stats.total_pages = self.stats.btree_nodes;
-        println!("  Estimated pages: {}", self.stats.total_pages);
+        self.log(&format!("  Estimated pages: {}", self.stats.total_pages));
 
         Ok(())
     }
 
     /// Check version store integrity
     fn check_version_store(&mut self) -> Result<()> {
-        println!("Checking version store...");
+        self.log("Checking version store...");
 
         // Basic check - just verify version store is accessible
         // In a real implementation, we'd need public methods to inspect the version store
         self.stats.total_versions = 0; // Would need actual count
 
-        println!("  Version store check completed");
+        self.log("  Version store check completed");
 
         Ok(())
     }
 
     /// Check LSM tree integrity
     fn check_lsm_integrity(&mut self) -> Result<()> {
-        println!("Checking LSM tree...");
+        self.log("Checking LSM tree...");
 
         if self.db.lsm_tree.is_some() {
             // Basic check - just verify it exists
             self.stats.lsm_levels = 3; // Typical value
-            println!("  LSM tree present");
+            self.log("  LSM tree present");
         }
 
         Ok(())
@@ -178,21 +204,21 @@ impl<'a> IntegrityChecker<'a> {
 
     /// Check WAL integrity
     fn check_wal_integrity(&mut self) -> Result<()> {
-        println!("Checking WAL integrity...");
+        self.log("Checking WAL integrity...");
 
         // Basic check - verify WAL exists
         // The actual WAL is behind a RwLock, we'll just note it exists
-        println!("  WAL check completed");
+        self.log("  WAL check completed");
 
         Ok(())
     }
 
     /// Verify checksums for a sample of pages
     pub fn verify_checksums(&mut self, _sample_size: usize) -> Result<()> {
-        println!("Verifying checksums...");
+        self.log("Verifying checksums...");
 
         // Simplified version - in real implementation would check actual page checksums
-        println!("  Checksum verification not implemented in this version");
+        self.log("  Checksum verification not implemented in this version");
 
         Ok(())
     }

@@ -3,6 +3,7 @@ use crate::core::error::{Error, Result};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+use tracing::warn;
 
 #[derive(Debug, Clone)]
 pub struct ScheduledTask {
@@ -229,7 +230,7 @@ impl MaintenanceScheduler {
                         self.update_stats_on_completion(duration).await;
                     }
                     Err(e) => {
-                        eprintln!("Task execution failed: {}", e);
+                        warn!("Task execution failed: {}", e);
 
                         // Retry if possible
                         if task.retry_count < task.max_retries {

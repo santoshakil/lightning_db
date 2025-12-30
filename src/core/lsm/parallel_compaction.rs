@@ -1,9 +1,8 @@
 use super::{Level, SSTable, SSTableBuilder};
 use crate::core::error::Result;
 use std::collections::VecDeque;
-use std::sync::Mutex;
 use dashmap::DashMap;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -105,7 +104,7 @@ impl ParallelCompactionCoordinator {
         };
 
         self.active_compactions.insert(job_id, progress);
-        self.work_queue.lock().unwrap().push_back(job);
+        self.work_queue.lock().push_back(job);
 
         job_id
     }
@@ -127,7 +126,7 @@ impl ParallelCompactionCoordinator {
     /// Worker loop
     fn worker_loop(&self, _worker_id: usize) {
         while !self.shutdown.load(Ordering::Relaxed) {
-            if let Some(job) = self.work_queue.lock().unwrap().pop_front() {
+            if let Some(job) = self.work_queue.lock().pop_front() {
                 self.execute_compaction(job);
             } else {
                 std::thread::sleep(Duration::from_millis(10));

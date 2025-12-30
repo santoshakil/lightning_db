@@ -7,9 +7,10 @@
 use crate::core::storage::PAGE_SIZE;
 use crate::{Database, Error, Result};
 use crc32fast::Hasher;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
@@ -276,7 +277,7 @@ fn check_page_integrity(
     // Calculate and verify checksum
     let calculated_checksum = calculate_checksum(page_data);
 
-    let mut checksum_cache = checksums.write().unwrap();
+    let mut checksum_cache = checksums.write();
     match checksum_cache.get(&page_id) {
         Some(&stored_checksum) => {
             if calculated_checksum != stored_checksum {

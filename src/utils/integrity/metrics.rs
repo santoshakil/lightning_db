@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::RwLock;
+use parking_lot::RwLock;
 use std::time::{Duration, Instant};
 
 /// Comprehensive metrics for data integrity validation
@@ -170,7 +170,7 @@ impl IntegrityMetrics {
         }
 
         // Update operation-specific metrics
-        if let Ok(mut operations) = self.operations.write() {
+        { let mut operations = self.operations.write();
             let metrics =
                 operations
                     .entry(operation.to_string())
@@ -227,7 +227,7 @@ impl IntegrityMetrics {
         }
 
         // Update path metrics
-        if let Ok(mut paths) = self.paths.write() {
+        { let mut paths = self.paths.write();
             let path_metrics = paths
                 .entry(path.to_string())
                 .or_insert_with(|| PathMetrics {
@@ -252,7 +252,7 @@ impl IntegrityMetrics {
         }
 
         // Add to history
-        if let Ok(mut history) = self.history.write() {
+        { let mut history = self.history.write();
             history.add_entry(ValidationEntry {
                 timestamp: Instant::now(),
                 operation: operation.to_string(),
@@ -299,8 +299,8 @@ impl IntegrityMetrics {
         };
         let avg_time = if total > 0 { total_time / total } else { 0 };
 
-        let operations = self.operations.read().unwrap().clone();
-        let paths = self.paths.read().unwrap().clone();
+        let operations = self.operations.read().clone();
+        let paths = self.paths.read().clone();
 
         MetricsSnapshot {
             timestamp: chrono::Utc::now(),
@@ -325,11 +325,8 @@ impl IntegrityMetrics {
 
     /// Get error rate for a specific path
     pub fn get_path_error_rate(&self, path: &str) -> f64 {
-        if let Ok(paths) = self.paths.read() {
-            paths.get(path).map_or(0.0, |metrics| metrics.error_rate)
-        } else {
-            0.0
-        }
+        let paths = self.paths.read();
+        paths.get(path).map_or(0.0, |metrics| metrics.error_rate)
     }
 
     /// Check if a path has frequent errors
@@ -341,22 +338,19 @@ impl IntegrityMetrics {
     pub fn get_recent_activity(&self, since: Duration) -> Vec<ValidationSummary> {
         let cutoff = Instant::now() - since;
 
-        if let Ok(history) = self.history.read() {
-            history
-                .entries
-                .iter()
-                .filter(|entry| entry.timestamp > cutoff)
-                .map(|entry| ValidationSummary {
-                    operation: entry.operation.clone(),
-                    path: entry.path.clone(),
-                    success: entry.success,
-                    duration: entry.duration,
-                    error_type: entry.error_type.clone(),
-                })
-                .collect()
-        } else {
-            Vec::new()
-        }
+        let history = self.history.read();
+        history
+            .entries
+            .iter()
+            .filter(|entry| entry.timestamp > cutoff)
+            .map(|entry| ValidationSummary {
+                operation: entry.operation.clone(),
+                path: entry.path.clone(),
+                success: entry.success,
+                duration: entry.duration,
+                error_type: entry.error_type.clone(),
+            })
+            .collect()
     }
 
     /// Reset all metrics
@@ -377,15 +371,15 @@ impl IntegrityMetrics {
         self.temporal_errors.store(0, Ordering::Relaxed);
         self.critical_errors.store(0, Ordering::Relaxed);
 
-        if let Ok(mut operations) = self.operations.write() {
+        { let mut operations = self.operations.write();
             operations.clear();
         }
 
-        if let Ok(mut paths) = self.paths.write() {
+        { let mut paths = self.paths.write();
             paths.clear();
         }
 
-        if let Ok(mut history) = self.history.write() {
+        { let mut history = self.history.write();
             history.clear();
         }
     }

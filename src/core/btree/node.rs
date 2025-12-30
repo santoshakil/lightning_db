@@ -166,17 +166,49 @@ impl BTreeNode {
                 return Ok(Self::new_leaf(page.id));
             }
             let key_len = cursor.get_u32_le() as usize;
+
+            // Validate key length - max 64KB, must fit in page
+            const MAX_KEY_SIZE: usize = 64 * 1024;
+            if key_len > MAX_KEY_SIZE || key_len > cursor.remaining() {
+                return Err(Error::Corruption(format!(
+                    "Invalid key length {} (remaining: {}, max: {})",
+                    key_len,
+                    cursor.remaining(),
+                    MAX_KEY_SIZE
+                )));
+            }
+
             let mut key = vec![0u8; key_len];
             cursor
                 .read_exact(&mut key)
                 .map_err(|_| Error::Corruption(String::from("Corrupted page")))?;
 
+            // Check we have 4 bytes for value length
+            if cursor.remaining() < 4 {
+                return Err(Error::Corruption(String::from("Corrupted page: missing value length")));
+            }
+
             let value_len = cursor.get_u32_le() as usize;
+
+            // Validate value length - max 100MB, must fit in remaining data
+            const MAX_VALUE_SIZE: usize = 100 * 1024 * 1024;
+            if value_len > MAX_VALUE_SIZE || value_len > cursor.remaining() {
+                return Err(Error::Corruption(format!(
+                    "Invalid value length {} (remaining: {})",
+                    value_len,
+                    cursor.remaining()
+                )));
+            }
+
             let mut value = vec![0u8; value_len];
             cursor
                 .read_exact(&mut value)
                 .map_err(|_| Error::Corruption(String::from("Corrupted page")))?;
 
+            // Check we have 8 bytes for timestamp
+            if cursor.remaining() < 8 {
+                return Err(Error::Corruption(String::from("Corrupted page: missing timestamp")));
+            }
             let timestamp = cursor.get_u64_le();
 
             entries.push(KeyEntry {
@@ -191,6 +223,9 @@ impl BTreeNode {
         // Read children for internal nodes
         if node_type == NodeType::Internal {
             for _ in 0..children_count {
+                if cursor.remaining() < 4 {
+                    return Err(Error::Corruption(String::from("Corrupted page: missing child pointer")));
+                }
                 children.push(cursor.get_u32_le());
             }
         }

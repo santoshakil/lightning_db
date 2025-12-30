@@ -6,6 +6,7 @@ use crate::core::error::{Error, Result};
 use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read, Seek, Write};
 use std::path::Path;
+use tracing::{info, warn};
 
 /// File wrapper that tracks whether it's opened in read-only mode
 #[derive(Debug)]
@@ -39,7 +40,7 @@ impl GracefulFile {
             }),
             Err(e) if e.kind() == ErrorKind::PermissionDenied => {
                 // Permission denied - try read-only fallback
-                eprintln!(
+                warn!(
                     "Permission denied for read-write access to {:?}, attempting read-only fallback",
                     path
                 );
@@ -49,7 +50,7 @@ impl GracefulFile {
                     .open(path)
                 {
                     Ok(file) => {
-                        eprintln!("Successfully opened {:?} in read-only mode", path);
+                        info!("Successfully opened {:?} in read-only mode", path);
                         Ok(FileOpenResult {
                             file: GracefulFile {
                                 file,
@@ -96,7 +97,7 @@ impl GracefulFile {
             }),
             Err(e) if e.kind() == ErrorKind::PermissionDenied => {
                 // Can't create - try to open existing file in read-only mode
-                eprintln!(
+                warn!(
                     "Permission denied for creating {:?}, attempting to open existing file in read-only mode",
                     path
                 );

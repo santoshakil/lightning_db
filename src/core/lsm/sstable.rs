@@ -14,6 +14,10 @@ use std::sync::Arc;
 const MAGIC: u32 = 0x5354_424C; // "STBL"
 const VERSION: u32 = 1;
 
+// Maximum number of blocks to cache per SSTable to prevent memory leaks
+// With 16KB blocks, 1000 entries = ~16MB max cache per SSTable
+const MAX_BLOCK_CACHE_ENTRIES: usize = 1000;
+
 pub struct SSTable {
     id: u64,
     path: PathBuf,
@@ -190,16 +194,44 @@ impl SSTable {
             compressor.decompress(&compressed_data[1..])?
         };
 
-        // Parse block entries
+        // Parse block entries with bounds checking
+        const MAX_KEY_SIZE: usize = 64 * 1024; // 64KB max key
+        const MAX_VALUE_SIZE: usize = 100 * 1024 * 1024; // 100MB max value
+
         let mut cursor = &decompressed[..];
         let mut entries = Vec::new();
 
-        while cursor.remaining() > 0 {
+        while cursor.remaining() >= 4 {
             let key_len = cursor.get_u32() as usize;
+
+            // Validate key length
+            if key_len > MAX_KEY_SIZE || key_len > cursor.remaining() {
+                return Err(Error::Corruption(format!(
+                    "Invalid key length {} (remaining: {})",
+                    key_len,
+                    cursor.remaining()
+                )));
+            }
+
             let mut key = vec![0u8; key_len];
             cursor.copy_to_slice(&mut key);
 
+            // Check we have enough data for value length
+            if cursor.remaining() < 4 {
+                return Err(Error::Corruption("Truncated block: missing value length".to_string()));
+            }
+
             let value_len = cursor.get_u32() as usize;
+
+            // Validate value length
+            if value_len > MAX_VALUE_SIZE || value_len > cursor.remaining() {
+                return Err(Error::Corruption(format!(
+                    "Invalid value length {} (remaining: {})",
+                    value_len,
+                    cursor.remaining()
+                )));
+            }
+
             let mut value = vec![0u8; value_len];
             cursor.copy_to_slice(&mut value);
 
@@ -207,6 +239,22 @@ impl SSTable {
         }
 
         let arc_entries = Arc::new(entries);
+
+        // Bounded cache: evict entries if cache is at capacity to prevent memory leak
+        if self.block_cache.len() >= MAX_BLOCK_CACHE_ENTRIES {
+            // Simple eviction: remove ~10% of entries to make room
+            // This is more efficient than evicting one-by-one
+            let to_remove = MAX_BLOCK_CACHE_ENTRIES / 10;
+            let keys_to_remove: Vec<u64> = self.block_cache
+                .iter()
+                .take(to_remove)
+                .map(|entry| *entry.key())
+                .collect();
+            for key in keys_to_remove {
+                self.block_cache.remove(&key);
+            }
+        }
+
         self.block_cache.insert(offset, arc_entries.clone());
 
         Ok(DataBlock {
@@ -477,9 +525,9 @@ impl SSTableBuilder {
             .unwrap_or(0);
 
         let file = File::open(&self.path)?;
-        let mmap = unsafe {
-            Mmap::map(&file).ok().map(Arc::new)
-        };
+        // SAFETY: File is open and valid. Mmap is read-only.
+        // We handle errors gracefully by converting to Option via .ok().
+        let mmap = unsafe { Mmap::map(&file).ok().map(Arc::new) };
 
         Ok(SSTable {
             id,
@@ -590,9 +638,9 @@ impl SSTableReader {
             .created()
             .unwrap_or_else(|_| std::time::SystemTime::now());
 
-        let mmap = unsafe {
-            Mmap::map(&file).ok().map(Arc::new)
-        };
+        // SAFETY: File is open and valid. Mmap is read-only.
+        // We handle errors gracefully by converting to Option via .ok().
+        let mmap = unsafe { Mmap::map(&file).ok().map(Arc::new) };
 
         Ok(SSTable {
             id,

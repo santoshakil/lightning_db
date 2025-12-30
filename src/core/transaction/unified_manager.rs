@@ -514,8 +514,12 @@ impl UnifiedTransactionManager {
                 if existing.tx_id == tx_id {
                     Ok(())
                 } else if existing.timestamp.elapsed() > self.lock_timeout {
-                    entry.remove();
-                    self.acquire_write_lock(tx_id, key)
+                    // Lock has timed out - remove it and retry
+                    // Note: We drop the entry reference to release the lock before retrying
+                    drop(entry);
+                    // Return a special error that tells the caller to retry
+                    // The caller should use acquire_write_lock_with_retry() instead
+                    Err(Error::Transaction("Lock timeout - retry".to_string()))
                 } else {
                     // Deadlock prevention using wound-wait
                     if lock_info.priority > existing.priority
@@ -530,6 +534,29 @@ impl UnifiedTransactionManager {
                 }
             }
         }
+    }
+
+    /// Acquire write lock with automatic retry on timeout (non-recursive, bounded)
+    pub fn acquire_write_lock_with_retry(&self, tx_id: u64, key: &[u8]) -> Result<()> {
+        const MAX_LOCK_RETRY_ATTEMPTS: u32 = 3;
+
+        for attempt in 0..MAX_LOCK_RETRY_ATTEMPTS {
+            match self.acquire_write_lock(tx_id, key) {
+                Ok(()) => return Ok(()),
+                Err(e) if e.to_string().contains("Lock timeout - retry") => {
+                    // Remove the timed-out lock and retry
+                    self.write_locks.remove(&bytes::Bytes::copy_from_slice(key));
+                    // Small backoff before retry
+                    if attempt < MAX_LOCK_RETRY_ATTEMPTS - 1 {
+                        std::thread::sleep(std::time::Duration::from_micros(100 * (attempt as u64 + 1)));
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        self.stats.conflict_count.fetch_add(1, Ordering::Relaxed);
+        Err(Error::Transaction("Failed to acquire write lock after max retries".to_string()))
     }
 
     pub fn acquire_read_lock(&self, tx_id: u64, key: &[u8]) -> Result<()> {

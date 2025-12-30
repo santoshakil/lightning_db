@@ -397,9 +397,21 @@ impl CheckpointManager {
         }
 
         // Read active transactions
+        const MAX_ACTIVE_TRANSACTIONS: usize = 1_000_000; // Reasonable limit
+
         let mut tx_count = [0u8; 4];
         reader.read_exact(&mut tx_count)?;
         let tx_count = u32::from_le_bytes(tx_count) as usize;
+
+        if tx_count > MAX_ACTIVE_TRANSACTIONS {
+            return Err(Error::WalCorruption {
+                offset: 0,
+                reason: format!(
+                    "Invalid active transaction count: {} (max: {})",
+                    tx_count, MAX_ACTIVE_TRANSACTIONS
+                ),
+            });
+        }
 
         let mut active_transactions = Vec::with_capacity(tx_count);
         for _ in 0..tx_count {

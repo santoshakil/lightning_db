@@ -15,8 +15,9 @@ use tracing::{debug, info, warn};
 const WAL_MAGIC: u32 = 0x5741_4C33; // "WAL3" - unified version
 const WAL_VERSION: u32 = 3;
 const SEGMENT_SIZE: u64 = 64 * 1024 * 1024; // 64MB segments
-const GROUP_COMMIT_INTERVAL: Duration = Duration::from_micros(100);
-const GROUP_COMMIT_SIZE: usize = 2000;
+// Tuned for enterprise throughput: batch more writes before commit
+const GROUP_COMMIT_INTERVAL: Duration = Duration::from_millis(2); // 2ms batching window
+const GROUP_COMMIT_SIZE: usize = 5000; // Higher batch size for throughput
 
 /// Unified WAL operation types - consolidates all variants
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
@@ -129,11 +130,21 @@ impl WALEntry {
         use crate::core::error::Error;
 
         // Read length prefix
+        const MAX_WAL_ENTRY_SIZE: usize = 100 * 1024 * 1024; // 100MB max entry
+
         let mut len_bytes = [0u8; 4];
         reader
             .read_exact(&mut len_bytes)
             .map_err(|e| Error::Io(e.to_string()))?;
         let len = u32::from_le_bytes(len_bytes) as usize;
+
+        // Validate length to prevent OOM
+        if len == 0 || len > MAX_WAL_ENTRY_SIZE {
+            return Err(Error::Corruption(format!(
+                "Invalid WAL entry length: {} (max: {})",
+                len, MAX_WAL_ENTRY_SIZE
+            )));
+        }
 
         // Read entry data
         let mut data = vec![0u8; len];
@@ -312,9 +323,9 @@ impl WALSegment {
         let len = u32::from_le_bytes(len_bytes) as usize;
 
         // Sanity check on length
-        if len > 10 * 1024 * 1024 {
-            // 10MB max entry size
-            return Err(Error::Storage("Entry size too large".to_string()));
+        if len == 0 || len > 10 * 1024 * 1024 {
+            // 10MB max entry size, 0 is invalid
+            return Err(Error::Storage(format!("Invalid entry size: {}", len)));
         }
 
         // Try to read entry data
@@ -397,7 +408,9 @@ impl WALSegment {
 
 impl Drop for WALSegment {
     fn drop(&mut self) {
-        let _ = self.close();
+        if let Err(e) = self.close() {
+            eprintln!("WARNING: WAL segment close failed during drop: {}. Data may be incomplete.", e);
+        }
     }
 }
 
@@ -793,7 +806,9 @@ impl UnifiedWriteAheadLog {
 
         // Single sync for the batch based on config
         if matches!(self.config.sync_mode, WalSyncMode::Sync) {
-            let _ = segment.sync();
+            if let Err(e) = segment.sync() {
+                eprintln!("WARNING: WAL batch sync failed: {}. Durability may be compromised.", e);
+            }
         }
     }
 
@@ -985,8 +1000,10 @@ impl UnifiedWriteAheadLog {
             }
         }
 
-        // Final sync
-        let _ = self.sync();
+        // Final sync - critical for durability
+        if let Err(e) = self.sync() {
+            eprintln!("WARNING: WAL final sync failed during shutdown: {}. Data may be lost.", e);
+        }
     }
 
     pub fn get_recovery_info(&self) -> RecoveryInfo {

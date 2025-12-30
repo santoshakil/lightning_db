@@ -28,6 +28,10 @@ pub use parallel_compaction::{
 };
 pub use sstable::{SSTable, SSTableBuilder, SSTableReader};
 
+// Maximum number of entries in read cache to prevent unbounded memory growth
+// 20K entries with average 1KB values = ~20MB max cache size
+const MAX_READ_CACHE_ENTRIES: usize = 20000;
+
 #[derive(Debug, Clone)]
 pub struct LSMConfig {
     pub memtable_size: usize,           // Size in bytes before flush
@@ -44,7 +48,7 @@ impl Default for LSMConfig {
     fn default() -> Self {
         Self {
             memtable_size: 64 * 1024 * 1024, // 64MB to reduce flush frequency at scale
-            level0_file_num_trigger: 2, // More aggressive compaction
+            level0_file_num_trigger: 4, // Reduced write amplification (was 2, too aggressive)
             max_levels: 7,
             level_size_multiplier: 10,
             bloom_filter_bits_per_key: 10,
@@ -52,7 +56,7 @@ impl Default for LSMConfig {
             compression_type: CompressionType::Zstd,
             #[cfg(not(feature = "zstd-compression"))]
             compression_type: CompressionType::Snappy,
-            block_size: 4096,
+            block_size: 16384, // 16KB blocks for better compression ratio (was 4KB)
             delta_compression_config: DeltaCompressionConfig::default(),
         }
     }
@@ -164,6 +168,24 @@ impl LSMTree {
         value == Self::TOMBSTONE_MARKER
     }
 
+    /// Evict entries from read cache if it exceeds the maximum size.
+    /// Uses simple random eviction for O(1) performance - evicts ~10% when at capacity.
+    fn maybe_evict_read_cache(&self) {
+        if self.read_cache.len() >= MAX_READ_CACHE_ENTRIES {
+            // Evict ~10% of entries to make room for new ones
+            let to_remove = MAX_READ_CACHE_ENTRIES / 10;
+            let keys_to_remove: Vec<Vec<u8>> = self
+                .read_cache
+                .iter()
+                .take(to_remove)
+                .map(|entry| entry.key().clone())
+                .collect();
+            for key in keys_to_remove {
+                self.read_cache.remove(&key);
+            }
+        }
+    }
+
     pub fn new<P: AsRef<Path>>(db_path: P, config: LSMConfig) -> Result<Self> {
         let db_path = db_path.as_ref().to_path_buf();
         std::fs::create_dir_all(&db_path)?;
@@ -224,11 +246,11 @@ impl LSMTree {
     }
 
     fn recover_sstables(&mut self) -> Result<()> {
-        eprintln!("LSM: Recovering existing SSTable files...");
+        tracing::debug!("LSM: Recovering existing SSTable files...");
 
         // Check if LSM directory exists
         if !self.db_path.exists() {
-            eprintln!("LSM: No existing LSM directory found");
+            tracing::debug!("LSM: No existing LSM directory found");
             return Ok(());
         }
 
@@ -246,12 +268,12 @@ impl LSMTree {
 
         sst_files.sort(); // Sort by filename to maintain order
 
-        eprintln!("LSM: Found {} SSTable files to recover", sst_files.len());
+        tracing::debug!("LSM: Found {} SSTable files to recover", sst_files.len());
 
         // Load each SSTable file
         let mut levels = self.levels.write();
         for sst_path in sst_files {
-            eprintln!("LSM: Loading SSTable: {:?}", sst_path);
+            tracing::debug!("LSM: Loading SSTable: {:?}", sst_path);
             match SSTableReader::open(&sst_path) {
                 Ok(sstable) => {
                     // Find the highest file number for next_file_number
@@ -270,12 +292,12 @@ impl LSMTree {
                     levels[0].add_sstable(Arc::new(sstable));
                 }
                 Err(e) => {
-                    eprintln!("LSM: Failed to load SSTable {:?}: {}", sst_path, e);
+                    tracing::warn!("LSM: Failed to load SSTable {:?}: {}", sst_path, e);
                 }
             }
         }
 
-        eprintln!("LSM: Recovery complete");
+        tracing::debug!("LSM: Recovery complete");
         Ok(())
     }
 
@@ -339,6 +361,9 @@ impl LSMTree {
             return Ok(Some(val));
         }
         self.cache_misses.fetch_add(1, Ordering::Relaxed);
+
+        // Evict from cache if at capacity before inserting new entries
+        self.maybe_evict_read_cache();
 
         let memtable = self.memtable.read();
         if let Some(value) = memtable.get(key) {
@@ -563,7 +588,7 @@ impl LSMTree {
 
     pub fn flush(&self) -> Result<()> {
         // Force flush of current memtable
-        eprintln!("LSM flush: rotating memtable");
+        tracing::debug!("LSM flush: rotating memtable");
 
         // First, rotate the current memtable but don't flush it yet
         let mut memtable = self.memtable.write();
@@ -582,7 +607,7 @@ impl LSMTree {
 
             match memtable_to_flush {
                 Some(memtable) => {
-                    eprintln!(
+                    tracing::debug!(
                         "LSM flush: flushing immutable memtable with {} entries",
                         memtable.iter().count()
                     );
@@ -592,7 +617,7 @@ impl LSMTree {
             }
         }
 
-        eprintln!("LSM flush: all memtables flushed");
+        tracing::debug!("LSM flush: all memtables flushed");
         Ok(())
     }
 
@@ -614,7 +639,7 @@ impl LSMTree {
             }
 
             if start.elapsed() > timeout {
-                eprintln!("LSM compact_all: timeout waiting for compaction to complete");
+                tracing::warn!("LSM compact_all: timeout waiting for compaction to complete");
                 break;
             }
 
@@ -869,11 +894,13 @@ impl Drop for LSMTree {
 
             // Note: We can't use a timeout on join() in stable Rust,
             // but the thread should exit quickly after shutdown flag is set
-            let _ = thread.join();
+            let _ = thread.join(); // Thread join failure is non-critical
         }
 
-        // Flush remaining data (ignore errors during shutdown)
-        let _ = self.flush();
+        // Flush remaining data - critical for data persistence
+        if let Err(e) = self.flush() {
+            eprintln!("WARNING: LSM flush failed during shutdown: {}. Data may be lost.", e);
+        }
     }
 }
 

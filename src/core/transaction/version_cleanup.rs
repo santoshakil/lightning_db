@@ -4,6 +4,7 @@ use std::sync::{
     Arc,
 };
 use std::thread;
+use tracing::warn;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Automatic version cleanup for MVCC
@@ -62,8 +63,8 @@ impl VersionCleanupThread {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_micros() as u64)
             .unwrap_or_else(|e| {
-                eprintln!(
-                    "Warning: Failed to get system time for version cleanup: {}",
+                warn!(
+                    "Failed to get system time for version cleanup: {}",
                     e
                 );
                 // Return last cleanup time + interval as fallback

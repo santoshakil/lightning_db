@@ -1,8 +1,10 @@
 use crate::core::error::{Error, Result};
 use crate::utils::retry::RetryableOperations;
+use parking_lot::Mutex;
 use std::fs::{File, Metadata, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Centralized file operations with error handling and retry logic
@@ -379,24 +381,24 @@ pub struct FileOpStats {
 
 /// File operations with statistics tracking
 pub struct StatisticsFileOps {
-    stats: std::sync::Arc<std::sync::Mutex<FileOpStats>>,
+    stats: Arc<Mutex<FileOpStats>>,
     config: FileOpConfig,
 }
 
 impl StatisticsFileOps {
     pub fn new(config: FileOpConfig) -> Self {
         Self {
-            stats: std::sync::Arc::new(std::sync::Mutex::new(FileOpStats::default())),
+            stats: Arc::new(Mutex::new(FileOpStats::default())),
             config,
         }
     }
 
     pub fn get_stats(&self) -> FileOpStats {
-        self.stats.lock().unwrap().clone()
+        self.stats.lock().clone()
     }
 
     pub fn reset_stats(&self) {
-        *self.stats.lock().unwrap() = FileOpStats::default();
+        *self.stats.lock() = FileOpStats::default();
     }
 
     /// Read with statistics tracking
@@ -405,14 +407,14 @@ impl StatisticsFileOps {
 
         match FileOps::read_to_vec(path) {
             Ok(data) => {
-                let mut stats = self.stats.lock().unwrap();
+                let mut stats = self.stats.lock();
                 stats.reads += 1;
                 stats.bytes_read += data.len() as u64;
                 stats.total_read_time += start.elapsed();
                 Ok(data)
             }
             Err(e) => {
-                let mut stats = self.stats.lock().unwrap();
+                let mut stats = self.stats.lock();
                 stats.errors += 1;
                 Err(e)
             }
@@ -426,14 +428,14 @@ impl StatisticsFileOps {
         let configurable = ConfigurableFileOps::new(self.config.clone());
         match configurable.write(path, data) {
             Ok(()) => {
-                let mut stats = self.stats.lock().unwrap();
+                let mut stats = self.stats.lock();
                 stats.writes += 1;
                 stats.bytes_written += data.len() as u64;
                 stats.total_write_time += start.elapsed();
                 Ok(())
             }
             Err(e) => {
-                let mut stats = self.stats.lock().unwrap();
+                let mut stats = self.stats.lock();
                 stats.errors += 1;
                 Err(e)
             }

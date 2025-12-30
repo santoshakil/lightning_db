@@ -74,7 +74,8 @@ impl JoinOptimizer {
         }
 
         if joins.len() == 1 {
-            return Ok(Arc::new(PlanNode::Join(joins.into_iter().next().unwrap())));
+            // Safe: we just checked len() == 1, use into_iter which returns the only element
+            return Ok(Arc::new(PlanNode::Join(joins.into_iter().next().expect("len was 1"))));
         }
 
         let join_graph = self.build_join_graph(&joins, stats)?;
@@ -214,10 +215,11 @@ impl JoinOptimizer {
                             cardinality: output_cardinality,
                         };
 
-                        if best_entry.is_none()
-                            || new_entry.cost.total_cost
-                                < best_entry.as_ref().unwrap().cost.total_cost
-                        {
+                        let should_update = match &best_entry {
+                            None => true,
+                            Some(current) => new_entry.cost.total_cost < current.cost.total_cost,
+                        };
+                        if should_update {
                             best_entry = Some(new_entry);
                         }
                     }
@@ -371,11 +373,15 @@ impl JoinOptimizer {
         let best_idx = fitness_scores
             .iter()
             .enumerate()
-            .min_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-            .map(|(i, _)| i)
-            .unwrap();
+            .min_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i);
 
-        Ok(population[best_idx].clone())
+        match best_idx {
+            Some(idx) => Ok(population[idx].clone()),
+            None => Err(Error::InvalidOperation {
+                reason: "No valid join order found in genetic algorithm".to_string(),
+            }),
+        }
     }
 
     fn generate_initial_population(
@@ -424,31 +430,51 @@ impl JoinOptimizer {
         fitness: &[f64],
         count: usize,
     ) -> Vec<JoinOrder> {
+        // Guard against empty population
+        if population.is_empty() {
+            return Vec::new();
+        }
+
         let mut indexed: Vec<_> = fitness.iter().enumerate().collect();
-        indexed.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap());
+        indexed.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         indexed
             .iter()
             .take(count)
-            .map(|(i, _)| population[*i].clone())
+            // Use get() for safe access in case of length mismatch
+            .filter_map(|(i, _)| population.get(*i).cloned())
             .collect()
     }
 
     fn tournament_selection(&self, population: &[JoinOrder], fitness: &[f64]) -> JoinOrder {
         const TOURNAMENT_SIZE: usize = 5;
 
+        // Guard against empty population
+        if population.is_empty() {
+            return JoinOrder::Single(0);
+        }
+
         let mut best = None;
         let mut best_fitness = f64::MAX;
 
-        for _ in 0..TOURNAMENT_SIZE {
+        // Limit tournament size to population size
+        let tournament_size = TOURNAMENT_SIZE.min(population.len());
+
+        for _ in 0..tournament_size {
             let idx = (rand::random::<u32>() as usize) % population.len();
-            if fitness[idx] < best_fitness {
-                best_fitness = fitness[idx];
-                best = Some(idx);
+            // Safe: idx is always < population.len() and fitness has same length
+            if let Some(&fit) = fitness.get(idx) {
+                if fit < best_fitness {
+                    best_fitness = fit;
+                    best = Some(idx);
+                }
             }
         }
 
-        population[best.unwrap()].clone()
+        // Use first element as fallback if no best found
+        let best_idx = best.unwrap_or(0);
+        // Safe: population is not empty (checked above)
+        population[best_idx].clone()
     }
 
     fn crossover(&self, parent1: &JoinOrder, _parent2: &JoinOrder) -> Result<JoinOrder, Error> {

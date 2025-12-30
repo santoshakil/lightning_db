@@ -381,7 +381,7 @@ impl CacheInfo {
                     if let Ok(level_str) = std::fs::read_to_string(path.join("level")) {
                         if let Ok(level) = level_str.trim().parse::<u32>() {
                             if let Ok(size_str) = std::fs::read_to_string(path.join("size")) {
-                                if let Ok(size_kb) = Self::parse_cache_size(&size_str) {
+                                if let Ok(size_kb) = Self::_parse_cache_size(&size_str) {
                                     match level {
                                         1 => {
                                             if index_name.contains("index0") {
@@ -600,14 +600,14 @@ impl StorageCapabilities {
                     let name = entry.file_name();
                     if let Some(name_str) = name.to_str() {
                         if name_str.starts_with("nvme") {
-                            return Self::nvme_defaults();
+                            return Self::_nvme_defaults();
                         }
                     }
                 }
             }
 
             // Assume SSD if no NVMe found
-            Self::ssd_defaults()
+            Self::_ssd_defaults()
         } else {
             Self::default()
         }
@@ -697,7 +697,7 @@ impl CompressionHardware {
                             entry
                                 .file_name()
                                 .to_str()
-                                .map_or(false, |name| name.contains("amdgpu"))
+                                .is_some_and(|name| name.contains("amdgpu"))
                         })
                     })
                     .unwrap_or(false)
@@ -779,7 +779,7 @@ impl ThreadingCapabilities {
                         entry
                             .file_name()
                             .to_str()
-                            .map_or(false, |name| name.starts_with("node"))
+                            .is_some_and(|name| name.starts_with("node"))
                     })
                     .count() as u32
             } else {

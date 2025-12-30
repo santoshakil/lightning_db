@@ -47,6 +47,7 @@ use crate::core::error::Result;
 use crate::{Database, LightningDbConfig};
 use std::path::Path;
 use std::sync::Arc;
+use tracing::{debug, info};
 
 /// Recovery manager that coordinates all recovery operations
 ///
@@ -132,7 +133,7 @@ impl RecoveryManager {
         let recovered_pages = dwb
             .recover(|page_id, _data| {
                 // In real implementation, write to page manager
-                println!("Recovered page {} from double-write buffer", page_id);
+                debug!("Recovered page {} from double-write buffer", page_id);
                 Ok(())
             })
             .map_err(|e| crate::core::error::Error::RecoveryFailed(
@@ -140,7 +141,7 @@ impl RecoveryManager {
             ))?;
 
         if recovered_pages > 0 {
-            println!(
+            info!(
                 "Recovered {} pages from double-write buffer",
                 recovered_pages
             );
@@ -160,7 +161,7 @@ impl RecoveryManager {
                 format!("WAL recovery failed: {}", e)
             ))?;
 
-        println!("WAL recovery stats: {:?}", stats);
+        debug!("WAL recovery stats: {:?}", stats);
 
         // Step 4: Open database normally
         self.progress.set_phase("Opening database");

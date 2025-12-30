@@ -19,7 +19,7 @@ use std::{
 use dashmap::DashMap;
 use parking_lot::{Mutex as ParkingMutex, RwLock as ParkingRwLock};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Global resource manager instance
 pub static RESOURCE_MANAGER: once_cell::sync::Lazy<Arc<ResourceManager>> =

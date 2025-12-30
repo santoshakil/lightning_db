@@ -76,7 +76,7 @@ impl CompactionJob {
             compression_type,
             created_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
             estimated_output_size,
         }
@@ -121,14 +121,20 @@ impl CompactionJob {
             }
 
             let should_finalize = {
-                let builder = current_builder.as_mut().unwrap();
+                // Safe: current_builder was just set to Some above if it was None
+                let builder = current_builder
+                    .as_mut()
+                    .expect("current_builder was just initialized");
                 builder.add(key, value)?;
                 // Check if we should finalize this SSTable
                 builder.current_size() >= target_file_size
             };
 
             if should_finalize {
-                let builder = current_builder.take().unwrap();
+                // Safe: should_finalize is true only when current_builder was Some
+                let builder = current_builder
+                    .take()
+                    .expect("current_builder must be Some when should_finalize is true");
                 let metadata = builder.finish()?;
                 output_sstables.push(metadata);
                 output_file_count += 1;
@@ -251,7 +257,11 @@ impl SSTableMerger {
         // Find the minimum key among all iterators
         for (i, (_, entry)) in self.iterators.iter().enumerate() {
             if let Some((key, _)) = entry {
-                if min_key.is_none() || key < min_key.as_ref().unwrap() {
+                let is_smaller = match &min_key {
+                    None => true,
+                    Some(current_min) => key < current_min,
+                };
+                if is_smaller {
                     min_key = Some(key.clone());
                     min_index = i;
                 }
@@ -259,7 +269,14 @@ impl SSTableMerger {
         }
 
         if let Some(key) = min_key {
-            let (_, value) = self.iterators[min_index].1.take().unwrap();
+            // Safe: min_index was set only when entry was Some
+            let (_, value) = match self.iterators[min_index].1.take() {
+                Some(entry) => entry,
+                None => {
+                    // Should never happen, but handle gracefully
+                    return Ok(None);
+                }
+            };
 
             // Skip duplicate keys (take the newest value)
             while let Some(same_key_index) = self.find_same_key(&key) {
@@ -443,11 +460,14 @@ impl CompactionManager {
         let mut levels = Vec::new();
 
         // Initialize levels with exponential size limits
-        for level in 0..max_levels {
+        // Cap at level 7 to prevent overflow (256MB * 10^7 = 2.56PB)
+        let safe_max_levels = max_levels.min(8);
+        for level in 0..safe_max_levels {
             let max_size = if level == 0 {
                 256 * 1024 * 1024 // 256MB for level 0
             } else {
-                256 * 1024 * 1024 * (10_u64.pow(level as u32))
+                // Use saturating_mul to prevent overflow
+                (256_u64 * 1024 * 1024).saturating_mul(10_u64.saturating_pow(level as u32))
             };
             levels.push(CompactionLevel::new(level, max_size));
         }
