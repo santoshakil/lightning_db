@@ -1,9 +1,16 @@
 # Build artifacts
 /target/
+/target_before/
+/build/
 *.rlib
 *.so
 *.dylib
 *.dll
+*.a
+*.zip
+*.tar.gz
+*.xcframework
+*.framework
 
 # Demo and test data
 /data/
@@ -70,3 +77,15 @@ unwrap_removal_progress.csv
 
 # Reference projects
 reference_projects/
+
+# Compiled test binaries
+test_simple
+test_batch
+test_batch_fix
+
+# FFI compiled libraries in Dart/Flutter packages
+lightning_db_dart/**/lib*.a
+lightning_db_dart/**/lib*.dylib
+lightning_db_dart/**/lib*.so
+**/macos/*.a
+**/ios/*.a
